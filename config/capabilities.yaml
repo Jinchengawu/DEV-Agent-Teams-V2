@@ -1,0 +1,23 @@
+schema_version: "3"
+
+capabilities:
+  - id: hermes-pm
+    version: "1.0.0"
+    labels: [planner, product]
+    adapter:
+      type: hermes.acp
+
+  - id: hermes-project-admin
+    version: "1.0.0"
+    labels: [planner, tasking]
+    adapter:
+      type: hermes.acp
+
+  - id: codex-backend
+    version: "1.0.0"
+    labels: [developer, backend]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: workspace-write
+        timeout_seconds: 180

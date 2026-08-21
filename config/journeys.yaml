@@ -1,0 +1,26 @@
+schema_version: "3"
+
+journeys:
+  - id: backend-delivery
+    version: "1.0.0"
+    steps:
+      - kind: stage
+        id: requirements
+        workflow_mode: agentscope.role-turn
+        bindings: {actor: hermes-pm}
+      - kind: stage
+        id: tasking
+        workflow_mode: agentscope.role-turn
+        bindings: {actor: hermes-project-admin}
+      - kind: approval_gate
+        id: approve-plan
+        subject_kind: delivery-plan
+      - kind: stage
+        id: delivery
+        workflow_mode: code-delivery
+        bindings: {developer: codex-backend}
+        output_validator: backend-candidate-v1
+      - kind: approval_gate
+        id: approve-candidate
+        subject_kind: candidate-change
+

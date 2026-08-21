@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dev-agent-teams-v2"
+version = "0.1.0"
+description = "Agent-Team-OS delivery service built on ACWM, AgentScope, Hermes and Codex."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "agent-capability-workflow-matrix==0.3.0",
+  "fastapi>=0.116,<1",
+  "pydantic>=2.11,<3",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[tool.uv.sources]
+agent-capability-workflow-matrix = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git", rev = "b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" }
+
+[project.optional-dependencies]
+live = [
+  "agent-client-protocol==0.9.0",
+  "agentscope==2.0.6",
+]
+dev = [
+  "httpx>=0.28,<1",
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_team_os"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["agent_team_os"]
