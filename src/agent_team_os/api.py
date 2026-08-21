@@ -12,6 +12,7 @@ from .delivery import (
     DeliveryRun,
     DeliveryStateConflictError,
     DeliveryVersionConflictError,
+    PlanningServiceError,
 )
 from .readiness import ReadinessProbe, RuntimeReadiness
 
@@ -33,7 +34,7 @@ class PlanDecisionRequest(BaseModel):
 class CandidateDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: Literal["reject"]
+    decision: Literal["accept", "reject"]
     expected_version: int = Field(ge=1)
 
 
@@ -59,10 +60,15 @@ def create_app(
         request: DeliveryRequest,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
-        return await service.submit(
-            workspace_id=request.workspace_id,
-            user_request=request.user_request,
-        )
+        try:
+            return await service.submit(
+                workspace_id=request.workspace_id,
+                user_request=request.user_request,
+            )
+        except PlanningServiceError as error:
+            raise HTTPException(
+                status_code=502, detail="planning service returned invalid output"
+            ) from error
 
     @app.post("/v1/deliveries/{delivery_id}/plan-decision", response_model=DeliveryRun)
     async def decide_plan(
@@ -94,14 +100,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="delivery not found") from error
 
     @app.post("/v1/deliveries/{delivery_id}/candidate-decision", response_model=DeliveryRun)
-    def decide_candidate(
+    async def decide_candidate(
         delivery_id: str,
         request: CandidateDecisionRequest,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         try:
-            return service.reject_candidate(
-                delivery_id, expected_version=request.expected_version
+            return await service.decide_candidate(
+                delivery_id,
+                decision=request.decision,
+                expected_version=request.expected_version,
             )
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error

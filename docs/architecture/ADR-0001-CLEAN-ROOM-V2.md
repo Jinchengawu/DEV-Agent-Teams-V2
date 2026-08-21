@@ -19,3 +19,6 @@ Every successful delivery must have independently traceable planning artifacts, 
 evidence, verification evidence, user decision and apply receipt. Deterministic test adapters and
 live runtime adapters produce different evidence identities.
 
+During bootstrap, Codex may simulate Hermes PM and Project Admin behind the same AgentScope/ACWM
+boundary. This compatibility path uses the explicit `codex-simulated-hermes` evidence identity and
+does not satisfy a future live-Hermes release gate.

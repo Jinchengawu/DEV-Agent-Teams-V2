@@ -45,6 +45,20 @@ class CandidateChange(ImmutableModel):
     changed_files: tuple[str, ...]
 
 
+class VerificationRun(ImmutableModel):
+    status: Literal["passed", "failed"]
+    commands: tuple[str, ...]
+    exit_code: int
+    log_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ApplyReceipt(ImmutableModel):
+    before_revision: str
+    candidate_revision: str
+    after_revision: str
+    result: Literal["applied"]
+
+
 class DeliveryRun(ImmutableModel):
     id: str
     workspace_id: str
@@ -62,7 +76,11 @@ class DeliveryRun(ImmutableModel):
     requirements: RequirementArtifact | None = None
     task: TaskContract | None = None
     candidate: CandidateChange | None = None
+    verification: VerificationRun | None = None
+    apply_receipt: ApplyReceipt | None = None
     evidence_identity: str
+    planning_identity: str
+    execution_identity: str | None = None
 
 
 class PlanningService(Protocol):
@@ -77,6 +95,20 @@ class CodeExecutor(Protocol):
     evidence_identity: str
 
     async def execute(self, task: TaskContract, workspace_id: str) -> CandidateChange: ...
+
+
+class PlanningServiceError(RuntimeError):
+    pass
+
+
+class CandidateVerifier(Protocol):
+    async def verify(
+        self, candidate: CandidateChange, task: TaskContract, workspace_id: str
+    ) -> VerificationRun: ...
+
+
+class CandidateApplier(Protocol):
+    async def apply(self, candidate: CandidateChange, workspace_id: str) -> ApplyReceipt: ...
 
 
 class DeliveryNotFoundError(LookupError):
@@ -146,10 +178,14 @@ class DeliveryCoordinator:
         *,
         planning: PlanningService,
         executor: CodeExecutor,
+        verifier: CandidateVerifier | None = None,
+        applier: CandidateApplier | None = None,
         repository: DeliveryRepository | None = None,
     ) -> None:
         self._planning = planning
         self._executor = executor
+        self._verifier = verifier
+        self._applier = applier
         self._repository = repository or InMemoryDeliveryRepository()
 
     async def submit(self, *, workspace_id: str, user_request: str) -> DeliveryRun:
@@ -164,6 +200,7 @@ class DeliveryCoordinator:
             requirements=requirements,
             task=task,
             evidence_identity=self._planning.evidence_identity,
+            planning_identity=self._planning.evidence_identity,
         )
         self._repository.save(delivery)
         return delivery
@@ -192,25 +229,62 @@ class DeliveryCoordinator:
             )
         else:
             candidate = await self._executor.execute(delivery.task, delivery.workspace_id)
+            verification = (
+                await self._verifier.verify(candidate, delivery.task, delivery.workspace_id)
+                if self._verifier is not None
+                else None
+            )
             updated = delivery.model_copy(
                 update={
-                    "status": "awaiting_candidate_decision",
+                    "status": (
+                        "failed"
+                        if verification is not None and verification.status == "failed"
+                        else "awaiting_candidate_decision"
+                    ),
                     "version": delivery.version + 1,
                     "candidate": candidate,
+                    "verification": verification,
                     "evidence_identity": self._executor.evidence_identity,
+                    "execution_identity": self._executor.evidence_identity,
                 }
             )
         self._repository.save(updated)
         return updated
 
-    def reject_candidate(self, delivery_id: str, *, expected_version: int) -> DeliveryRun:
+    async def decide_candidate(
+        self,
+        delivery_id: str,
+        *,
+        decision: Literal["accept", "reject"],
+        expected_version: int,
+    ) -> DeliveryRun:
         delivery = self.get(delivery_id)
         if delivery.version != expected_version:
             raise DeliveryVersionConflictError(delivery_id)
         if delivery.status != "awaiting_candidate_decision" or delivery.candidate is None:
             raise DeliveryStateConflictError(delivery_id)
-        updated = delivery.model_copy(
-            update={"status": "rejected", "version": delivery.version + 1}
-        )
+        if decision == "reject":
+            updated = delivery.model_copy(
+                update={"status": "rejected", "version": delivery.version + 1}
+            )
+        else:
+            if delivery.verification is None or delivery.verification.status != "passed":
+                raise DeliveryStateConflictError("candidate is not verified")
+            if self._applier is None:
+                raise DeliveryStateConflictError("candidate applier is not configured")
+            receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
+            if (
+                receipt.before_revision != delivery.candidate.base_revision
+                or receipt.candidate_revision != delivery.candidate.candidate_revision
+                or receipt.after_revision != delivery.candidate.candidate_revision
+            ):
+                raise DeliveryStateConflictError("apply receipt does not match candidate")
+            updated = delivery.model_copy(
+                update={
+                    "status": "completed",
+                    "version": delivery.version + 1,
+                    "apply_receipt": receipt,
+                }
+            )
         self._repository.save(updated)
         return updated

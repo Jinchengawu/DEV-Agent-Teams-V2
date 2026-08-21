@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from .delivery import (
     AcceptanceCriterion,
+    ApplyReceipt,
     CandidateChange,
     RequirementArtifact,
     TaskContract,
+    VerificationRun,
 )
 
 
@@ -43,4 +45,26 @@ class DeterministicCodeExecutor:
             candidate_revision="candidate-revision",
             diff_sha256="a" * 64,
             changed_files=("src/health.py", "tests/test_health.py"),
+        )
+
+
+class DeterministicCandidateVerifier:
+    async def verify(
+        self, candidate: CandidateChange, task: TaskContract, workspace_id: str
+    ) -> VerificationRun:
+        return VerificationRun(
+            status="passed",
+            commands=task.system_policy.verification_commands,
+            exit_code=0,
+            log_sha256="b" * 64,
+        )
+
+
+class DeterministicCandidateApplier:
+    async def apply(self, candidate: CandidateChange, workspace_id: str) -> ApplyReceipt:
+        return ApplyReceipt(
+            before_revision=candidate.base_revision,
+            candidate_revision=candidate.candidate_revision,
+            after_revision=candidate.candidate_revision,
+            result="applied",
         )
