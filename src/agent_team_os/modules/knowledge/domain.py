@@ -89,6 +89,12 @@ class DocumentPatch(BaseModel):
     content: JsonValue | None = None
 
 
+class RevisionRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class Comment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
