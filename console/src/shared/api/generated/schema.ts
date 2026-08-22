@@ -851,6 +851,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deliveries/{delivery_id}/pipeline-run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Delivery Pipeline Run */
+        get: operations["get_delivery_pipeline_run_v1_deliveries__delivery_id__pipeline_run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/pipeline-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Pipeline Run */
+        get: operations["get_pipeline_run_v1_pipeline_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deliveries/{delivery_id}/events": {
         parameters: {
             query?: never;
@@ -1276,6 +1310,8 @@ export interface components {
             user_request: string;
             /** Journey Revision Id */
             journey_revision_id?: string | null;
+            /** Pipeline Revision Id */
+            pipeline_revision_id?: string | null;
         };
         /** DeliveryRun */
         DeliveryRun: {
@@ -1299,6 +1335,12 @@ export interface components {
             apply_receipt?: components["schemas"]["ApplyReceipt"] | null;
             plan_gate?: components["schemas"]["GateRecord"] | null;
             candidate_gate?: components["schemas"]["GateRecord"] | null;
+            /** Pipeline Run Id */
+            pipeline_run_id?: string | null;
+            /** Pipeline Revision Id */
+            pipeline_revision_id?: string | null;
+            /** Resolved Pipeline Sha256 */
+            resolved_pipeline_sha256?: string | null;
             /** Journey Revision Id */
             journey_revision_id?: string | null;
             /** Journey Binding Snapshot */
@@ -1831,6 +1873,35 @@ export interface components {
              * Format: date-time
              */
             published_at?: string;
+        };
+        /** PipelineRunRecord */
+        PipelineRunRecord: {
+            /** Id */
+            id: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Graph Fingerprint */
+            graph_fingerprint: string;
+            /** Status */
+            status: string;
+            /** Version */
+            version: number;
+            /** Snapshot */
+            snapshot: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
         };
         /** PipelineWithDraft */
         PipelineWithDraft: {
@@ -5821,6 +5892,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeliveryRun"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_delivery_pipeline_run_v1_deliveries__delivery_id__pipeline_run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineRunRecord"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_pipeline_run_v1_pipeline_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineRunRecord"];
                 };
             };
             /** @description 目标资源不存在 */

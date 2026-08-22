@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .domain import GraphCompilation, Pipeline, PipelineDraft, PipelineRevision
+from ...shared.events import ProductEvent
+from .domain import (
+    GraphCompilation,
+    Pipeline,
+    PipelineDraft,
+    PipelineRevision,
+    PipelineRunRecord,
+)
 
 
 class JourneyGraphCompiler(Protocol):
@@ -13,6 +20,36 @@ class CapabilityBindingResolver(Protocol):
     def snapshot(
         self, capability_ids: tuple[str, ...]
     ) -> dict[str, dict[str, object]]: ...
+
+
+class PipelineGraphRuntime(Protocol):
+    def create(
+        self, run_id: str, compiled_graph: dict[str, object]
+    ) -> dict[str, object]: ...
+
+    def transition(
+        self,
+        snapshot: dict[str, object],
+        *,
+        command: str,
+        node_id: str,
+        activated_conditions: tuple[str, ...] = (),
+        exit_condition_met: bool | None = None,
+    ) -> dict[str, object]: ...
+
+
+class PipelineRunRepository(Protocol):
+    def create(self, run: PipelineRunRecord, event: ProductEvent) -> None: ...
+
+    def get(self, run_id: str) -> PipelineRunRecord: ...
+
+    def get_for_delivery(self, delivery_id: str) -> PipelineRunRecord: ...
+
+    def compare_and_swap(
+        self, expected_version: int, run: PipelineRunRecord, event: ProductEvent
+    ) -> bool: ...
+
+    def list_events(self, run_id: str) -> tuple[ProductEvent, ...]: ...
 
 
 class PipelineRepository(Protocol):

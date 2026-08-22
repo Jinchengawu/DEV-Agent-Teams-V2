@@ -4,6 +4,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 from ...shared.errors import ProductError
+from ...shared.events import ProductEvent
 from ...shared.ids import new_id
 from .domain import (
     Pipeline,
@@ -11,9 +12,132 @@ from .domain import (
     PipelineDraft,
     PipelineDraftPatch,
     PipelineRevision,
+    PipelineRunRecord,
     PipelineWithDraft,
 )
-from .ports import CapabilityBindingResolver, JourneyGraphCompiler, PipelineRepository
+from .ports import (
+    CapabilityBindingResolver,
+    JourneyGraphCompiler,
+    PipelineGraphRuntime,
+    PipelineRepository,
+    PipelineRunRepository,
+)
+
+_COMMAND_EVENT_SUFFIX = {
+    "start": "started",
+    "succeed": "succeeded",
+    "start-loop-iteration": "loop-iteration-started",
+    "complete-loop-iteration": "loop-iteration-completed",
+}
+
+
+class PipelineRunLedger:
+    def __init__(
+        self, repository: PipelineRunRepository, runtime: PipelineGraphRuntime
+    ) -> None:
+        self.repository = repository
+        self.runtime = runtime
+
+    def start(
+        self, *, delivery_id: str, revision: PipelineRevision, run_id: str | None = None
+    ) -> PipelineRunRecord:
+        resolved_run_id = run_id or new_id()
+        snapshot = self.runtime.create(resolved_run_id, revision.compiled_graph)
+        run = PipelineRunRecord(
+            id=resolved_run_id,
+            delivery_id=delivery_id,
+            pipeline_revision_id=f"{revision.pipeline_id}:{revision.revision}",
+            graph_fingerprint=revision.fingerprint,
+            status=self._status(snapshot),
+            version=self._version(snapshot),
+            snapshot=snapshot,
+        )
+        self.repository.create(
+            run,
+            self._event(run, "pipeline-run.created", {"delivery_id": delivery_id}),
+        )
+        return run
+
+    def get(self, run_id: str) -> PipelineRunRecord:
+        return self.repository.get(run_id)
+
+    def get_for_delivery(self, delivery_id: str) -> PipelineRunRecord:
+        return self.repository.get_for_delivery(delivery_id)
+
+    def transition(
+        self,
+        run_id: str,
+        *,
+        command: str,
+        node_id: str,
+        expected_version: int,
+        activated_conditions: tuple[str, ...] = (),
+        exit_condition_met: bool | None = None,
+    ) -> PipelineRunRecord:
+        current = self.repository.get(run_id)
+        if current.version != expected_version:
+            self._raise_version_conflict(expected_version, current.version)
+        snapshot = self.runtime.transition(
+            current.snapshot,
+            command=command,
+            node_id=node_id,
+            activated_conditions=activated_conditions,
+            exit_condition_met=exit_condition_met,
+        )
+        updated = current.model_copy(
+            update={
+                "status": self._status(snapshot),
+                "version": self._version(snapshot),
+                "snapshot": snapshot,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        event_type = f"pipeline-node.{_COMMAND_EVENT_SUFFIX.get(command, command)}"
+        if not self.repository.compare_and_swap(
+            current.version,
+            updated,
+            self._event(updated, event_type, {"node_id": node_id}),
+        ):
+            latest = self.repository.get(run_id)
+            self._raise_version_conflict(expected_version, latest.version)
+        return updated
+
+    @staticmethod
+    def _event(
+        run: PipelineRunRecord, event_type: str, payload: dict[str, object]
+    ) -> ProductEvent:
+        return ProductEvent(
+            event_type=event_type,
+            aggregate_type="pipeline-run",
+            aggregate_id=run.id,
+            aggregate_version=run.version,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _status(snapshot: dict[str, object]) -> str:
+        value = snapshot.get("status")
+        if not isinstance(value, str) or not value:
+            raise ValueError("ACWM GraphRun snapshot is missing status")
+        return value
+
+    @staticmethod
+    def _version(snapshot: dict[str, object]) -> int:
+        value = snapshot.get("version")
+        if not isinstance(value, int) or value < 1:
+            raise ValueError("ACWM GraphRun snapshot is missing version")
+        return value
+
+    @staticmethod
+    def _raise_version_conflict(expected: int, actual: int) -> None:
+        raise ProductError(
+            code="PIPELINE_RUN_VERSION_CONFLICT",
+            title="流水线运行版本冲突",
+            detail="节点运行状态已被其他执行器更新。",
+            repair="刷新运行快照后重新提交节点转换。",
+            expected_version=expected,
+            actual_version=actual,
+        )
 
 
 class PipelineCatalog:
@@ -127,6 +251,41 @@ class PipelineCatalog:
 
     def get_revision(self, pipeline_id: str, revision: int) -> PipelineRevision:
         return self.repository.get_revision(pipeline_id, revision)
+
+    def resolve_revision(self, reference: str) -> PipelineRevision:
+        pipeline_id, separator, raw_revision = reference.rpartition(":")
+        if not separator or not pipeline_id:
+            raise ProductError(
+                code="PIPELINE_REVISION_REFERENCE_INVALID",
+                title="流水线版本引用无效",
+                detail="流水线版本必须使用 pipeline-id:revision 格式。",
+                repair="从已发布版本列表重新选择流水线版本。",
+            )
+        try:
+            revision = int(raw_revision)
+        except ValueError as error:
+            raise ProductError(
+                code="PIPELINE_REVISION_REFERENCE_INVALID",
+                title="流水线版本引用无效",
+                detail="流水线版本号必须是正整数。",
+                repair="从已发布版本列表重新选择流水线版本。",
+            ) from error
+        if revision < 1:
+            raise ProductError(
+                code="PIPELINE_REVISION_REFERENCE_INVALID",
+                title="流水线版本引用无效",
+                detail="流水线版本号必须是正整数。",
+                repair="从已发布版本列表重新选择流水线版本。",
+            )
+        try:
+            return self.repository.get_revision(pipeline_id, revision)
+        except KeyError as error:
+            raise ProductError(
+                code="PIPELINE_REVISION_NOT_FOUND",
+                title="流水线版本不存在",
+                detail=f"没有找到已发布版本 {reference}。",
+                repair="刷新流水线目录并选择仍然存在的不可变版本。",
+            ) from error
 
     def get_draft(self, draft_id: str) -> PipelineDraft:
         return self.repository.get_draft(draft_id)

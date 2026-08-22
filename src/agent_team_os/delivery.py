@@ -114,6 +114,9 @@ class DeliveryRun(ImmutableModel):
     apply_receipt: ApplyReceipt | None = None
     plan_gate: GateRecord | None = None
     candidate_gate: GateRecord | None = None
+    pipeline_run_id: str | None = None
+    pipeline_revision_id: str | None = None
+    resolved_pipeline_sha256: Sha256 | None = None
     journey_revision_id: str | None = None
     journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
     resolved_journey_sha256: Sha256 | None
@@ -331,13 +334,16 @@ class DeliveryCoordinator:
         workspace_id: str,
         user_request: str,
         journey_revision_id: str | None = None,
+        pipeline_revision_id: str | None = None,
+        pipeline_run_id: str | None = None,
         journey_binding_snapshot: dict[str, dict[str, object]] | None = None,
         resolved_journey_sha256: str | None = None,
+        resolved_pipeline_sha256: str | None = None,
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
         binding_snapshot = journey_binding_snapshot or {}
-        if journey_revision_id is not None:
+        if journey_revision_id is not None or pipeline_revision_id is not None:
             self._validate_runtime_bindings(binding_snapshot)
         delivery = DeliveryRun(
             id=str(uuid4()),
@@ -347,6 +353,13 @@ class DeliveryCoordinator:
             version=1,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
+            pipeline_run_id=pipeline_run_id,
+            pipeline_revision_id=pipeline_revision_id,
+            resolved_pipeline_sha256=(
+                None
+                if resolved_pipeline_sha256 is None
+                else Sha256.validate(resolved_pipeline_sha256)
+            ),
             journey_revision_id=journey_revision_id,
             journey_binding_snapshot=binding_snapshot,
             resolved_journey_sha256=journey_hash,
@@ -354,6 +367,21 @@ class DeliveryCoordinator:
         self._repository.save(delivery)
         self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
+
+    def fail_initialization(self, delivery_id: str, error_code: str) -> DeliveryRun:
+        task = self._background.pop(delivery_id, None)
+        if task is not None:
+            task.cancel()
+        delivery = self.get(delivery_id)
+        failed = delivery.model_copy(
+            update={
+                "status": "failed",
+                "error_code": error_code,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._repository.save(failed)
+        return failed
 
     def _validate_runtime_bindings(
         self, snapshot: dict[str, dict[str, object]]
@@ -363,12 +391,19 @@ class DeliveryCoordinator:
             "hermes-project-admin": self._planning.evidence_identity,
             "codex-backend": self._executor.evidence_identity,
         }
-        for capability_id, expected_identity in expected_identities.items():
-            binding = snapshot.get(capability_id)
-            actual_identity = None if binding is None else binding.get("identity")
+        if not snapshot:
+            raise RuntimeBindingConflictError(
+                "pipeline-capabilities", "published-binding-snapshot", None
+            )
+        for capability_id, binding in snapshot.items():
+            expected_identity = expected_identities.get(capability_id)
+            actual_identity = binding.get("identity")
+            if expected_identity is None:
+                raise RuntimeBindingConflictError(
+                    capability_id, "registered-capability-adapter", None
+                )
             if (
-                binding is None
-                or not isinstance(binding.get("instance_id"), str)
+                not isinstance(binding.get("instance_id"), str)
                 or not binding["instance_id"]
                 or not isinstance(binding.get("instance_version"), int)
                 or not isinstance(binding.get("runtime_type"), str)

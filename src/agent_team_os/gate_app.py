@@ -12,13 +12,22 @@ from .control_plane import ControlPlaneService, HealthResult
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from .git_delivery import GitCandidateApplier, GitCandidateVerifier, GitCodeExecutor
 from .git_sandbox import GitSandbox
-from .infrastructure.acwm import ACWMGraphCompiler, ControlPlaneBindingResolver
+from .infrastructure.acwm import (
+    ACWMGraphCompiler,
+    ACWMPipelineGraphRuntime,
+    ControlPlaneBindingResolver,
+)
 from .infrastructure.database import MigrationRunner
 from .journey import resolve_backend_delivery_fingerprint
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import SQLiteWikiRepository, WikiService
-from .modules.orchestration import PipelineCatalog, SQLitePipelineRepository
+from .modules.orchestration import (
+    PipelineCatalog,
+    PipelineRunLedger,
+    SQLitePipelineRepository,
+    SQLitePipelineRunRepository,
+)
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .release import DeterministicWorkspaceAgent
 from .testing import DeterministicPlanningService
@@ -79,6 +88,9 @@ def build_gate_app() -> FastAPI:
             binding_resolver=ControlPlaneBindingResolver(
                 control_plane.get_binding, control_plane.get_instance
             ),
+        ),
+        pipeline_runs=PipelineRunLedger(
+            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
         ),
     )
     install_preview_ui(result, project_root / "console" / "dist")

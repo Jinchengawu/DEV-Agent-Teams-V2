@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from ...shared.events import ProductEvent
-from .domain import Pipeline, PipelineDraft, PipelineRevision
+from .domain import Pipeline, PipelineDraft, PipelineRevision, PipelineRunRecord
 
 
 class SQLitePipelineRepository:
@@ -171,6 +172,7 @@ class SQLitePipelineRepository:
             _append_event(connection, event)
         return True
 
+
     def publish(
         self,
         draft: PipelineDraft,
@@ -280,6 +282,105 @@ class SQLitePipelineRepository:
         return True
 
 
+class SQLitePipelineRunRepository:
+    def __init__(self, database: Path) -> None:
+        self.database = database
+
+    def create(self, run: PipelineRunRecord, event: ProductEvent) -> None:
+        pipeline_id, revision = _split_revision(run.pipeline_revision_id)
+        with sqlite3.connect(self.database, timeout=5) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """INSERT INTO pipeline_runs(
+                id,delivery_id,pipeline_id,pipeline_revision,graph_fingerprint,status,
+                version,snapshot_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    run.id,
+                    run.delivery_id,
+                    pipeline_id,
+                    revision,
+                    run.graph_fingerprint,
+                    run.status,
+                    run.version,
+                    _json(run.snapshot),
+                    run.created_at.isoformat(),
+                    run.updated_at.isoformat(),
+                ),
+            )
+            _append_pipeline_run_event(connection, event)
+
+    def get(self, run_id: str) -> PipelineRunRecord:
+        return self._find("id", run_id)
+
+    def get_for_delivery(self, delivery_id: str) -> PipelineRunRecord:
+        return self._find("delivery_id", delivery_id)
+
+    def _find(self, field: str, value: str) -> PipelineRunRecord:
+        if field not in {"id", "delivery_id"}:
+            raise ValueError("Unsafe pipeline run lookup")
+        with sqlite3.connect(self.database) as connection:
+            row = connection.execute(
+                f"""SELECT id,delivery_id,pipeline_id,pipeline_revision,
+                graph_fingerprint,status,version,snapshot_json,created_at,updated_at
+                FROM pipeline_runs WHERE {field}=?""",  # noqa: S608
+                (value,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(value)
+        values = dict(zip(_PIPELINE_RUN_FIELDS, row, strict=True))
+        values["pipeline_revision_id"] = (
+            f"{values.pop('pipeline_id')}:{values.pop('pipeline_revision')}"
+        )
+        values["snapshot"] = json.loads(str(values["snapshot"]))
+        return PipelineRunRecord.model_validate(values)
+
+    def compare_and_swap(
+        self, expected_version: int, run: PipelineRunRecord, event: ProductEvent
+    ) -> bool:
+        with sqlite3.connect(self.database, timeout=5) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                """UPDATE pipeline_runs SET status=?,version=?,snapshot_json=?,updated_at=?
+                WHERE id=? AND version=?""",
+                (
+                    run.status,
+                    run.version,
+                    _json(run.snapshot),
+                    run.updated_at.isoformat(),
+                    run.id,
+                    expected_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                return False
+            _append_pipeline_run_event(connection, event)
+        return True
+
+    def list_events(self, run_id: str) -> tuple[ProductEvent, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,event_type,aggregate_version,payload_json,occurred_at
+                FROM pipeline_run_events WHERE pipeline_run_id=?
+                ORDER BY occurred_at,id""",
+                (run_id,),
+            ).fetchall()
+        return tuple(
+            ProductEvent(
+                id=str(row[0]),
+                event_type=str(row[1]),
+                aggregate_type="pipeline-run",
+                aggregate_id=run_id,
+                aggregate_version=int(row[2]),
+                payload=json.loads(str(row[3])),
+                occurred_at=datetime.fromisoformat(str(row[4])),
+            )
+            for row in rows
+        )
+
+
 _PIPELINE_FIELDS = (
     "id",
     "name",
@@ -314,6 +415,18 @@ _REVISION_FIELDS = (
     "published_by",
     "published_at",
 )
+_PIPELINE_RUN_FIELDS = (
+    "id",
+    "delivery_id",
+    "pipeline_id",
+    "pipeline_revision",
+    "graph_fingerprint",
+    "status",
+    "version",
+    "snapshot",
+    "created_at",
+    "updated_at",
+)
 
 
 def _json(value: object) -> str:
@@ -335,3 +448,28 @@ def _append_event(connection: sqlite3.Connection, event: ProductEvent) -> None:
             event.occurred_at.isoformat(),
         ),
     )
+
+
+def _append_pipeline_run_event(
+    connection: sqlite3.Connection, event: ProductEvent
+) -> None:
+    connection.execute(
+        """INSERT INTO pipeline_run_events(
+        id,pipeline_run_id,event_type,aggregate_version,payload_json,occurred_at)
+        VALUES(?,?,?,?,?,?)""",
+        (
+            event.id,
+            event.aggregate_id,
+            event.event_type,
+            event.aggregate_version,
+            _json(event.payload),
+            event.occurred_at.isoformat(),
+        ),
+    )
+
+
+def _split_revision(reference: str) -> tuple[str, int]:
+    pipeline_id, separator, revision = reference.rpartition(":")
+    if not separator:
+        raise ValueError("Invalid pipeline revision reference")
+    return pipeline_id, int(revision)

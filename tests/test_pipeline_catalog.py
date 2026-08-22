@@ -3,15 +3,20 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agent_team_os.api import create_app
+from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.modules.orchestration import (
     GraphCompilation,
     PipelineCatalog,
     PipelineCreate,
     PipelineDraftPatch,
+    PipelineRunLedger,
     SQLitePipelineRepository,
+    SQLitePipelineRunRepository,
     create_pipeline_router,
 )
+from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
 
 class GraphCompiler:
@@ -219,3 +224,128 @@ def test_catalog_updates_a_pipeline_draft_with_cas_and_invalidates_validation(
     assert updated.validation_status == "unknown"
     assert updated.validation_errors == ()
     assert updated.layout["review"] == {"x": 40, "y": 80}
+
+
+def test_delivery_pins_an_explicit_pipeline_revision(tmp_path: Path) -> None:
+    class RuntimeCompiler:
+        def compile(self, definition: dict[str, object]) -> GraphCompilation:
+            return GraphCompilation(
+                graph={
+                    "id": definition["id"],
+                    "topological_order": ["plan", "delivery"],
+                    "entry_node_ids": ["plan"],
+                    "exit_node_ids": ["delivery"],
+                    "nodes": [],
+                    "edges": [],
+                    "loops": [],
+                    "fingerprint": "b" * 64,
+                },
+                fingerprint="b" * 64,
+                capability_ids=(
+                    "codex-backend",
+                    "hermes-pm",
+                    "hermes-project-admin",
+                ),
+            )
+
+    class RuntimeBindings:
+        def snapshot(
+            self, capability_ids: tuple[str, ...]
+        ) -> dict[str, dict[str, object]]:
+            return {
+                capability_id: {
+                    "instance_id": f"instance:{capability_id}",
+                    "instance_version": 1,
+                    "runtime_type": "codex-cli",
+                    "identity": "deterministic-test",
+                }
+                for capability_id in capability_ids
+            }
+
+    database = tmp_path / "agent-team-os.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    catalog = PipelineCatalog(
+        SQLitePipelineRepository(database),
+        graph_compiler=RuntimeCompiler(),
+        binding_resolver=RuntimeBindings(),
+    )
+    created = catalog.create_pipeline(
+        PipelineCreate(
+            id="backend-delivery",
+            name="后端交付",
+            definition={
+                "id": "backend-delivery",
+                "version": "4.0.0",
+                "nodes": [],
+                "edges": [],
+            },
+        ),
+        created_by="admin",
+    )
+    validated = catalog.validate_draft(
+        created.draft.id, expected_version=created.draft.version
+    )
+    revision = catalog.publish_draft(
+        created.draft.id,
+        expected_version=validated.version,
+        published_by="admin",
+    )
+    coordinator = DeliveryCoordinator(
+        planning=DeterministicPlanningService(), executor=DeterministicCodeExecutor()
+    )
+
+    class Runtime:
+        def create(
+            self, run_id: str, compiled_graph: dict[str, object]
+        ) -> dict[str, object]:
+            return {
+                "id": run_id,
+                "graph": compiled_graph,
+                "status": "running",
+                "version": 1,
+                "nodes": [],
+                "edges": [],
+            }
+
+        def transition(
+            self,
+            snapshot: dict[str, object],
+            *,
+            command: str,
+            node_id: str,
+            activated_conditions: tuple[str, ...] = (),
+            exit_condition_met: bool | None = None,
+        ) -> dict[str, object]:
+            return snapshot
+
+    pipeline_runs = PipelineRunLedger(
+        SQLitePipelineRunRepository(database), Runtime()
+    )
+    with TestClient(
+        create_app(
+            coordinator, pipeline_catalog=catalog, pipeline_runs=pipeline_runs
+        )
+    ) as client:
+        response = client.post(
+            "/v1/deliveries",
+            json={
+                "workspace_id": "backend-demo",
+                "user_request": "增加健康检查",
+                "pipeline_revision_id": (
+                    f"{revision.pipeline_id}:{revision.revision}"
+                ),
+            },
+        )
+        graph_run = client.get(
+            f"/v1/deliveries/{response.json()['id']}/pipeline-run"
+        )
+
+    assert response.status_code == 202, response.json()
+    assert response.json()["pipeline_revision_id"] == "backend-delivery:1"
+    assert response.json()["resolved_pipeline_sha256"] == "b" * 64
+    assert graph_run.status_code == 200
+    assert graph_run.json()["id"] == response.json()["pipeline_run_id"]
+    assert (
+        response.json()["journey_binding_snapshot"]["codex-backend"]["identity"]
+        == "deterministic-test"
+    )

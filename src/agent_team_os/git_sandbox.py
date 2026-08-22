@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path, PurePosixPath
 
@@ -182,9 +183,14 @@ if __name__ == "__main__":
             raise EvidenceMismatchError("Candidate evidence does not match Git")
         self._validate_paths(actual_files, policy)
         worktree = self._worktree_for_revision(candidate.candidate_revision)
+        runtime_command = (
+            (sys.executable, *policy.verification_command[1:])
+            if policy.verification_command[0] == "python"
+            else policy.verification_command
+        )
         try:
             result = subprocess.run(
-                policy.verification_command,
+                runtime_command,
                 cwd=worktree,
                 capture_output=True,
                 text=True,

@@ -108,6 +108,24 @@ def _create_and_publish_graph(page: Page) -> None:
         page.get_by_role("button", name=f"激活 R{published['revision']}").click()
     assert activated_response.value.json()["active_revision"] == published["revision"]
 
+    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_label("执行流水线").select_option(
+        f"{published['pipeline_id']}:{published['revision']}"
+    )
+    page.get_by_label("交付需求").fill("增加可审计的健康检查。")
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+        and response.url.endswith("/v1/deliveries")
+    ) as delivery_response:
+        page.get_by_role("button", name="按所选流水线启动闭环").click()
+    delivery = delivery_response.value.json()
+    assert delivery["pipeline_revision_id"] == (
+        f"{published['pipeline_id']}:{published['revision']}"
+    )
+    assert delivery["pipeline_run_id"]
+    page.get_by_text("ACWM DAG 运行账本", exact=True).wait_for()
+    page.get_by_text("不可变图指纹", exact=True).wait_for()
+
 
 def _add_dependency(
     page: Page, label: str, source: str, target: str, condition: str = ""

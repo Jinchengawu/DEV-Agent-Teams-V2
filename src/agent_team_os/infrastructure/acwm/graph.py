@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from importlib import import_module
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from ...modules.orchestration import GraphCompilation
 
@@ -25,6 +25,59 @@ class ACWMGraphCompiler:
             fingerprint=str(compiled.fingerprint),
             capability_ids=tuple(sorted(_capability_ids(definition))),
         )
+
+
+class ACWMPipelineGraphRuntime:
+    """Calls ACWM reducers while keeping their contracts authoritative upstream."""
+
+    def create(
+        self, run_id: str, compiled_graph: dict[str, object]
+    ) -> dict[str, object]:
+        domain = import_module("acwm.domain")
+        graph_type = self._required(domain, "CompiledJourneyGraph")
+        create_run = self._required(domain, "create_graph_run")
+        graph = graph_type.model_validate(compiled_graph)
+        run = create_run(run_id, graph)
+        return cast(dict[str, object], run.model_dump(mode="json"))
+
+    def transition(
+        self,
+        snapshot: dict[str, object],
+        *,
+        command: str,
+        node_id: str,
+        activated_conditions: tuple[str, ...] = (),
+        exit_condition_met: bool | None = None,
+    ) -> dict[str, object]:
+        domain = import_module("acwm.domain")
+        run_type = self._required(domain, "GraphRun")
+        run = run_type.model_validate(snapshot)
+        if command == "start":
+            updated = self._required(domain, "start_graph_node")(run, node_id)
+        elif command == "succeed":
+            updated = self._required(domain, "succeed_graph_node")(
+                run, node_id, activated_conditions=set(activated_conditions)
+            )
+        elif command == "start-loop-iteration":
+            updated = self._required(domain, "start_loop_iteration")(run, node_id)
+        elif command == "complete-loop-iteration":
+            if exit_condition_met is None:
+                raise ValueError("Loop completion requires exit_condition_met")
+            updated = self._required(domain, "complete_loop_iteration")(
+                run, node_id, exit_condition_met=exit_condition_met
+            )
+        else:
+            raise ValueError(f"Unsupported ACWM graph transition: {command}")
+        return cast(dict[str, object], updated.model_dump(mode="json"))
+
+    @staticmethod
+    def _required(domain: object, name: str) -> Any:
+        value = getattr(domain, name, None)
+        if value is None:
+            raise ValueError(
+                "ACWM_GRAPH_RUNTIME_UNAVAILABLE: install the pinned ACWM v0.4 revision"
+            )
+        return value
 
 
 class BindingRecord(Protocol):

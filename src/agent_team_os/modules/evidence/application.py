@@ -20,15 +20,25 @@ class EvidenceLedger:
         execution_identity = str(snapshot.get("execution_identity") or planning_identity)
         candidates: list[tuple[EvidenceKind, str, str, str | None, object]] = []
 
-        journey_hash = _text(snapshot.get("resolved_journey_sha256"))
+        pipeline_revision_id = _text(snapshot.get("pipeline_revision_id"))
+        journey_revision_id = _text(snapshot.get("journey_revision_id"))
+        journey_hash = _text(
+            snapshot.get("resolved_pipeline_sha256")
+            or snapshot.get("resolved_journey_sha256")
+        )
         candidates.append(
             (
                 EvidenceKind.JOURNEY,
-                "journey-revision",
-                str(snapshot.get("journey_revision_id") or f"{delivery_id}:legacy-journey"),
+                "pipeline-revision" if pipeline_revision_id else "journey-revision",
+                str(
+                    pipeline_revision_id
+                    or journey_revision_id
+                    or f"{delivery_id}:legacy-journey"
+                ),
                 journey_hash,
                 {
-                    "journey_revision_id": snapshot.get("journey_revision_id"),
+                    "pipeline_revision_id": pipeline_revision_id,
+                    "journey_revision_id": journey_revision_id,
                     "sha256": journey_hash,
                 },
             )
@@ -103,7 +113,9 @@ class EvidenceLedger:
                 source_kind=source_kind,
                 source_id=source_id,
                 producer_identity=(
-                    planning_identity if kind == EvidenceKind.PLAN_GATE else execution_identity
+                    planning_identity
+                    if kind in {EvidenceKind.JOURNEY, EvidenceKind.PLAN_GATE}
+                    else execution_identity
                 ),
                 content_sha256=(Sha256.validate(source_hash) if valid and source_hash else None),
                 status=(EvidenceStatus.VERIFIED if valid else EvidenceStatus.INVALID),

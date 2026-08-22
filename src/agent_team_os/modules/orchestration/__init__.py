@@ -1,4 +1,4 @@
-from .application import PipelineCatalog
+from .application import PipelineCatalog, PipelineRunLedger
 from .domain import (
     GraphCompilation,
     Pipeline,
@@ -6,10 +6,11 @@ from .domain import (
     PipelineDraft,
     PipelineDraftPatch,
     PipelineRevision,
+    PipelineRunRecord,
     PipelineWithDraft,
 )
 from .http import create_pipeline_router
-from .repository import SQLitePipelineRepository
+from .repository import SQLitePipelineRepository, SQLitePipelineRunRepository
 
 __all__ = [
     "Pipeline",
@@ -19,7 +20,10 @@ __all__ = [
     "PipelineDraft",
     "PipelineDraftPatch",
     "PipelineRevision",
+    "PipelineRunLedger",
+    "PipelineRunRecord",
     "PipelineWithDraft",
     "SQLitePipelineRepository",
+    "SQLitePipelineRunRepository",
     "create_pipeline_router",
 ]

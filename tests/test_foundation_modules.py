@@ -38,7 +38,7 @@ ROOT = Path(__file__).parents[1]
 def _database(tmp_path: Path) -> tuple[Path, MigrationRunner]:
     database = tmp_path / "agent-team-os.sqlite"
     runner = MigrationRunner(database, ROOT / "migrations")
-    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
     return database, runner
 
 
@@ -152,6 +152,29 @@ def test_evidence_ledger_never_marks_zero_hash_as_verified(tmp_path: Path) -> No
     assert journey.content_sha256 is None
     assert diff.status == EvidenceStatus.VERIFIED
     assert ledger.verify(journey.id).status == EvidenceStatus.INVALID
+
+
+def test_evidence_ledger_prefers_pinned_pipeline_revision(tmp_path: Path) -> None:
+    database, _runner = _database(tmp_path)
+    ledger = EvidenceLedger(SQLiteEvidenceRepository(database))
+
+    records = ledger.sync_delivery(
+        {
+            "id": "delivery-pipeline",
+            "created_at": "2026-08-23T00:00:00+00:00",
+            "planning_identity": "codex-simulated-hermes",
+            "pipeline_revision_id": "backend-delivery:3",
+            "resolved_pipeline_sha256": "d" * 64,
+            "journey_revision_id": None,
+            "resolved_journey_sha256": "a" * 64,
+        }
+    )
+
+    pipeline = next(item for item in records if item.kind == EvidenceKind.JOURNEY)
+    assert pipeline.status == EvidenceStatus.VERIFIED
+    assert pipeline.source_kind == "pipeline-revision"
+    assert pipeline.source_id == "backend-delivery:3"
+    assert pipeline.content_sha256 == "d" * 64
 
 
 def test_settings_use_compare_and_swap_and_keep_security_policy_locked(

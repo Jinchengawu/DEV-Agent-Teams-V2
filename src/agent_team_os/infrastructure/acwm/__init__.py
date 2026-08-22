@@ -1,3 +1,7 @@
-from .graph import ACWMGraphCompiler, ControlPlaneBindingResolver
+from .graph import ACWMGraphCompiler, ACWMPipelineGraphRuntime, ControlPlaneBindingResolver
 
-__all__ = ["ACWMGraphCompiler", "ControlPlaneBindingResolver"]
+__all__ = [
+    "ACWMGraphCompiler",
+    "ACWMPipelineGraphRuntime",
+    "ControlPlaneBindingResolver",
+]

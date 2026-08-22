@@ -61,6 +61,20 @@ class GraphCompilation(BaseModel):
     capability_ids: tuple[str, ...]
 
 
+class PipelineRunRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    delivery_id: str
+    pipeline_revision_id: str
+    graph_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: str
+    version: int = Field(ge=1)
+    snapshot: dict[str, object]
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class PipelineCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
