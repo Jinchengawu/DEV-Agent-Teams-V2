@@ -237,6 +237,7 @@ def test_board_commands_drive_delivery_and_knowledge_keeps_provenance(tmp_path: 
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
     with TestClient(create_app(coordinator, control_plane=service)) as client:
         created = client.post(

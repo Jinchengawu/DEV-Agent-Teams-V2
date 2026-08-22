@@ -22,6 +22,9 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+from .shared.events import ProductEvent
+from .shared.hashes import Sha256
+
 
 class ImmutableModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -113,7 +116,7 @@ class DeliveryRun(ImmutableModel):
     candidate_gate: GateRecord | None = None
     journey_revision_id: str | None = None
     journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
-    resolved_journey_sha256: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
+    resolved_journey_sha256: Sha256 | None
     error_code: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -175,19 +178,28 @@ class DeliveryRepository(Protocol):
 
     def list(self) -> tuple[DeliveryRun, ...]: ...
 
+    def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]: ...
+
 
 class InMemoryDeliveryRepository:
     def __init__(self) -> None:
         self._deliveries: dict[str, DeliveryRun] = {}
+        self._events: list[ProductEvent] = []
 
     def save(self, delivery: DeliveryRun) -> None:
+        previous = self._deliveries.get(delivery.id)
         self._deliveries[delivery.id] = delivery
+        if previous != delivery:
+            self._events.append(_delivery_event(delivery))
 
     def get(self, delivery_id: str) -> DeliveryRun | None:
         return self._deliveries.get(delivery_id)
 
     def list(self) -> tuple[DeliveryRun, ...]:
         return tuple(self._deliveries.values())
+
+    def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]:
+        return tuple(event for event in self._events if event.aggregate_id == delivery_id)
 
 
 class SQLiteDeliveryRepository:
@@ -203,14 +215,44 @@ class SQLiteDeliveryRepository:
                 snapshot_json TEXT NOT NULL
                 )"""
             )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS product_events(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT NOT NULL UNIQUE,
+                event_type TEXT NOT NULL,
+                aggregate_type TEXT NOT NULL,
+                aggregate_id TEXT NOT NULL,
+                aggregate_version INTEGER NOT NULL,
+                payload_json TEXT NOT NULL,
+                occurred_at TEXT NOT NULL)"""
+            )
 
     def save(self, delivery: DeliveryRun) -> None:
         with sqlite3.connect(self.path) as connection:
+            previous = connection.execute(
+                "SELECT snapshot_json FROM deliveries WHERE id=?", (delivery.id,)
+            ).fetchone()
             connection.execute(
                 """INSERT INTO deliveries(id, snapshot_json) VALUES(?, ?)
                 ON CONFLICT(id) DO UPDATE SET snapshot_json=excluded.snapshot_json""",
                 (delivery.id, delivery.model_dump_json()),
             )
+            if previous is None or previous[0] != delivery.model_dump_json():
+                event = _delivery_event(delivery)
+                connection.execute(
+                    """INSERT INTO product_events(
+                    event_id,event_type,aggregate_type,aggregate_id,aggregate_version,
+                    payload_json,occurred_at) VALUES(?,?,?,?,?,?,?)""",
+                    (
+                        event.id,
+                        event.event_type,
+                        event.aggregate_type,
+                        event.aggregate_id,
+                        event.aggregate_version,
+                        json.dumps(event.payload, ensure_ascii=False, separators=(",", ":")),
+                        event.occurred_at.isoformat(),
+                    ),
+                )
 
     def get(self, delivery_id: str) -> DeliveryRun | None:
         with sqlite3.connect(self.path) as connection:
@@ -226,6 +268,29 @@ class SQLiteDeliveryRepository:
             ).fetchall()
         return tuple(DeliveryRun.model_validate_json(row[0]) for row in rows)
 
+    def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]:
+        with sqlite3.connect(self.path) as connection:
+            rows = connection.execute(
+                """SELECT event_id,event_type,aggregate_type,aggregate_id,
+                aggregate_version,payload_json,occurred_at FROM product_events
+                WHERE aggregate_type='delivery' AND aggregate_id=? ORDER BY sequence""",
+                (delivery_id,),
+            ).fetchall()
+        return tuple(
+            ProductEvent.model_validate(
+                {
+                    "id": row[0],
+                    "event_type": row[1],
+                    "aggregate_type": row[2],
+                    "aggregate_id": row[3],
+                    "aggregate_version": row[4],
+                    "payload": json.loads(row[5]),
+                    "occurred_at": row[6],
+                }
+            )
+            for row in rows
+        )
+
 
 class DeliveryCoordinator:
     """Own the product state transition; runtimes only provide bounded capabilities."""
@@ -238,14 +303,18 @@ class DeliveryCoordinator:
         verifier: CandidateVerifier | None = None,
         applier: CandidateApplier | None = None,
         repository: DeliveryRepository | None = None,
-        resolved_journey_sha256: str = "0" * 64,
+        resolved_journey_sha256: str | None = None,
     ) -> None:
         self._planning = planning
         self._executor = executor
         self._verifier = verifier
         self._applier = applier
         self._repository = repository or InMemoryDeliveryRepository()
-        self._resolved_journey_sha256 = resolved_journey_sha256
+        self._resolved_journey_sha256 = (
+            None
+            if resolved_journey_sha256 is None
+            else Sha256.validate(resolved_journey_sha256)
+        )
         self._background: dict[str, asyncio.Task[None]] = {}
 
     def enqueue(
@@ -258,6 +327,7 @@ class DeliveryCoordinator:
         resolved_journey_sha256: str | None = None,
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
+        journey_hash = self._require_journey_hash(resolved_journey_sha256)
         delivery = DeliveryRun(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -268,7 +338,7 @@ class DeliveryCoordinator:
             planning_identity=self._planning.evidence_identity,
             journey_revision_id=journey_revision_id,
             journey_binding_snapshot=journey_binding_snapshot or {},
-            resolved_journey_sha256=(resolved_journey_sha256 or self._resolved_journey_sha256),
+            resolved_journey_sha256=journey_hash,
         )
         self._repository.save(delivery)
         self._schedule(delivery.id, self._plan_queued(delivery))
@@ -337,8 +407,16 @@ class DeliveryCoordinator:
         if any(item.workspace_id == workspace_id and item.status in active for item in self.list()):
             raise ActiveDeliveryConflictError(workspace_id)
 
+    def _require_journey_hash(self, override: str | None = None) -> Sha256:
+        if override is not None:
+            return Sha256.validate(override)
+        if self._resolved_journey_sha256 is None:
+            raise DeliveryStateConflictError("a published Journey revision is required")
+        return self._resolved_journey_sha256
+
     async def submit(self, *, workspace_id: str, user_request: str) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
+        journey_hash = self._require_journey_hash()
         requirements = await self._planning.analyze(user_request)
         task = await self._planning.plan(requirements)
         subject_hash = _sha256({"requirements": requirements, "task": task})
@@ -360,7 +438,7 @@ class DeliveryCoordinator:
             requirements=requirements,
             task=task,
             plan_gate=_gate_record(gate),
-            resolved_journey_sha256=self._resolved_journey_sha256,
+            resolved_journey_sha256=journey_hash,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
         )
@@ -375,6 +453,11 @@ class DeliveryCoordinator:
 
     def list(self) -> tuple[DeliveryRun, ...]:
         return self._repository.list()
+
+    def events(self, delivery_id: str) -> tuple[ProductEvent, ...]:
+        if self._repository.get(delivery_id) is None:
+            raise DeliveryNotFoundError(delivery_id)
+        return self._repository.list_events(delivery_id)
 
     def start_plan_decision(
         self,
@@ -705,6 +788,26 @@ def _sha256(value: object) -> str:
         default=lambda item: item.model_dump(mode="json"),
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _delivery_event(delivery: DeliveryRun) -> ProductEvent:
+    return ProductEvent(
+        event_type=f"delivery.{delivery.status}",
+        aggregate_type="delivery",
+        aggregate_id=delivery.id,
+        aggregate_version=delivery.version,
+        payload={
+            "status": delivery.status,
+            "title": delivery.task.title if delivery.task else delivery.user_request,
+            "acceptance_ids": (
+                list(delivery.task.acceptance_ids) if delivery.task else []
+            ),
+            "error_code": delivery.error_code,
+            "planning_identity": delivery.planning_identity,
+            "execution_identity": delivery.execution_identity,
+        },
+        occurred_at=delivery.updated_at,
+    )
 
 
 def _gate_record(

@@ -29,6 +29,7 @@ from .delivery import (
     VerificationRun,
 )
 from .git_sandbox import GitSandbox, SandboxPolicy
+from .shared.hashes import sha256_json
 
 
 class WorkspaceAgent(Protocol):
@@ -110,9 +111,10 @@ class ACWMCodexWorkspaceAgent:
     evidence_identity = "codex-cli"
 
     def __init__(self, config: CodexCLIConfig | None = None) -> None:
-        self._adapter = CodexCLICapabilityAdapter(
-            config or CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+        self._config = config or CodexCLIConfig(
+            sandbox="workspace-write", timeout_seconds=180
         )
+        self._adapter = CodexCLICapabilityAdapter(self._config)
         self._workflow = CodeDeliveryWorkflowAdapter()
 
     async def run(self, *, instruction: str, workspace: Path) -> str:
@@ -124,9 +126,15 @@ class ACWMCodexWorkspaceAgent:
             adapter_version=manifest.adapter_version,
             features=manifest.features,
             required_features=frozenset(),
-            config_fingerprint="0" * 64,
+            config_fingerprint=sha256_json(self._config.model_dump(mode="json")),
             policy_version="1.0",
-            policy_fingerprint="0" * 64,
+            policy_fingerprint=sha256_json(
+                {
+                    "sandbox": "workspace-write",
+                    "allowed_paths": ["src/**", "tests/**"],
+                    "dependency_changes": False,
+                }
+            ),
         )
         stage = ResolvedStage(
             stage_id="delivery",

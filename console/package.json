@@ -1,26 +1,35 @@
 {
   "name": "agent-team-os-console",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
+    "typecheck": "node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit",
     "build": "node ./node_modules/vite/bin/vite.js build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "api:generate": "openapi-typescript ./openapi.json -o ./src/shared/api/generated/schema.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@tanstack/react-query": "^5.85.5",
     "@xyflow/react": "^12.8.4",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-router-dom": "^7.18.2",
     "zod": "^4.1.5"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
+    "jsdom": "^30.0.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.2",
     "vite": "^7.1.4",
     "vitest": "^3.2.4"

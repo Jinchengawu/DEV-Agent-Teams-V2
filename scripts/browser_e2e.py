@@ -12,6 +12,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     parser.add_argument("--screenshot", type=Path)
+    parser.add_argument(
+        "--smoke-only",
+        action="store_true",
+        help="Only verify rendering, navigation and console integrity; do not mutate data.",
+    )
     args = parser.parse_args()
 
     with sync_playwright() as playwright:
@@ -27,38 +32,60 @@ def main() -> None:
         page.goto(args.url)
         page.wait_for_load_state("networkidle")
 
-        page.get_by_role("button", name="智能体实例").click()
+        assert page.locator("body").inner_text().strip(), "rendered page is blank"
+        assert not page.locator(".vite-error-overlay").count(), "Vite error overlay found"
+        for navigation in (
+            "交付",
+            "看板",
+            "可视化编排",
+            "智能体实例",
+            "知识中心",
+            "证据",
+            "设置",
+        ):
+            page.get_by_role("link", name=navigation, exact=True).click()
+            page.get_by_role("heading", name=navigation, exact=True).wait_for()
+        if args.screenshot:
+            args.screenshot.parent.mkdir(parents=True, exist_ok=True)
+            page.screenshot(path=str(args.screenshot), full_page=True)
+        if args.smoke_only:
+            assert not console_errors, console_errors
+            browser.close()
+            return
+
+        page.get_by_role("link", name="智能体实例").click()
         page.get_by_label("实例名称").fill("Browser simulated Codex")
         page.get_by_role("button", name="注册实例").click()
         page.get_by_text("Browser simulated Codex").wait_for()
 
-        page.get_by_role("button", name="可视化编排").click()
+        page.get_by_role("link", name="可视化编排").click()
         page.get_by_role("button", name="克隆为草稿").click()
         page.get_by_role("button", name="ACWM 校验").click()
         page.get_by_text("草稿", exact=False).first.wait_for()
         page.get_by_role("button", name="发布不可变版本").click()
 
-        page.get_by_role("button", name="交付").click()
-        page.locator("textarea").fill(
+        page.get_by_role("link", name="交付").click()
+        page.get_by_label("交付需求").fill(
             "增加 health_status 函数，返回 status=ok 和 version=0.1，并补充 unittest。"
         )
-        page.get_by_role("button", name="启动交付闭环 →").click()
+        page.get_by_role("button", name="启动真实闭环").click()
         page.locator(".map-label b").filter(has_text="等待计划审批").wait_for(timeout=300_000)
-        page.get_by_role("button", name="看板").click()
-        page.get_by_role("button", name="批准计划").click()
-        page.get_by_role("button", name="接受候选").wait_for(timeout=360_000)
-        page.get_by_role("button", name="接受候选").click()
+        page.get_by_role("button", name="批准计划并开始执行").click()
+        page.get_by_role("button", name="接受候选并原子应用").wait_for(
+            timeout=360_000
+        )
+        page.get_by_role("button", name="接受候选并原子应用").click()
         page.locator(".map-label b").filter(has_text="已完成").wait_for(timeout=60_000)
 
-        page.get_by_role("button", name="证据").click()
-        assert "差异哈希" in page.locator(".evidence-grid").inner_text()
-        assert "应用回执" in page.locator(".evidence-grid").inner_text()
-        page.get_by_role("button", name="知识中心").click()
-        page.get_by_placeholder("搜索交付、验收编号或产物…").fill("health")
+        page.get_by_role("link", name="证据").click()
+        page.get_by_text("应用回执", exact=True).first.wait_for()
+        page.get_by_role("link", name="知识中心").click()
+        page.get_by_label("搜索知识").fill("health")
         page.get_by_text("需求", exact=False).first.wait_for(timeout=15_000)
         page.reload()
         page.wait_for_load_state("networkidle")
-        page.locator(".status-completed").wait_for(timeout=15_000)
+        page.get_by_role("link", name="交付").click()
+        page.locator(".status-completed").first.wait_for(timeout=15_000)
         if args.screenshot:
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(args.screenshot), full_page=True)

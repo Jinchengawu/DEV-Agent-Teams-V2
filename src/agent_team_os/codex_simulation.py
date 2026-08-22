@@ -26,6 +26,7 @@ from acwm.domain import (
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
+from .shared.hashes import sha256_json
 
 
 class CodexRoleRunner(Protocol):
@@ -123,9 +124,10 @@ class ACWMCodexRoleRunner:
         config: CodexCLIConfig | None = None,
     ) -> None:
         self.workspace = workspace.resolve()
-        self._adapter = CodexCLICapabilityAdapter(
-            config or CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+        self._config = config or CodexCLIConfig(
+            sandbox="read-only", timeout_seconds=120
         )
+        self._adapter = CodexCLICapabilityAdapter(self._config)
         self._role_turn = AgentScopeRoleTurnAdapter()
 
     async def run(self, role: str, prompt: str) -> str:
@@ -137,9 +139,15 @@ class ACWMCodexRoleRunner:
             adapter_version=manifest.adapter_version,
             features=manifest.features,
             required_features=frozenset(),
-            config_fingerprint="0" * 64,
+            config_fingerprint=sha256_json(self._config.model_dump(mode="json")),
             policy_version="1.0",
-            policy_fingerprint="0" * 64,
+            policy_fingerprint=sha256_json(
+                {
+                    "sandbox": "read-only",
+                    "workspace": str(self.workspace),
+                    "role": role,
+                }
+            ),
         )
         stage = ResolvedStage(
             stage_id=role,

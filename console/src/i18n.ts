@@ -15,6 +15,12 @@ const statuses: Record<string, string> = {
   valid: "校验通过",
   invalid: "校验失败",
   passed: "通过",
+  verified: "已验证",
+  unavailable: "不可用",
+  backlog: "待规划",
+  "plan-approval": "计划审批",
+  "candidate-approval": "候选审批",
+  "failed-cancelled": "失败 / 取消",
 };
 
 const commands: Record<string, string> = {

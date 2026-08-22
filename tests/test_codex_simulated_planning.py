@@ -47,6 +47,7 @@ def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> N
     coordinator = DeliveryCoordinator(
         planning=CodexSimulatedHermesPlanning(runner),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
 
     with TestClient(create_app(coordinator)) as client:
@@ -79,6 +80,7 @@ def test_invalid_codex_planning_fails_as_an_upstream_error() -> None:
             ScriptedCodexRoleRunner(["not json", "still not json"])
         ),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
 
     with TestClient(create_app(coordinator), raise_server_exceptions=False) as client:

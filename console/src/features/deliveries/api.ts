@@ -1,0 +1,63 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { request, type Delivery, type EvidenceRecord, type ProductEvent } from "../../shared/api/client";
+
+export const deliveryKeys = {
+  all: ["deliveries"] as const,
+  detail: (id: string) => ["deliveries", id] as const,
+  events: (id: string) => ["deliveries", id, "events"] as const,
+  evidence: (id: string) => ["deliveries", id, "evidence"] as const,
+};
+
+export function useDeliveries() {
+  return useQuery({ queryKey: deliveryKeys.all, queryFn: () => request<Delivery[]>("/v1/deliveries"), refetchInterval: 1500 });
+}
+
+export function useDelivery(id?: string) {
+  return useQuery({ queryKey: deliveryKeys.detail(id ?? ""), queryFn: () => request<Delivery>(`/v1/deliveries/${id}`), enabled: Boolean(id), refetchInterval: 1000 });
+}
+
+export function useDeliveryEvents(id?: string) {
+  return useQuery({ queryKey: deliveryKeys.events(id ?? ""), queryFn: () => request<ProductEvent[]>(`/v1/deliveries/${id}/events`), enabled: Boolean(id), refetchInterval: 1000 });
+}
+
+export function useDeliveryEvidence(id?: string) {
+  return useQuery({ queryKey: deliveryKeys.evidence(id ?? ""), queryFn: () => request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`), enabled: Boolean(id), refetchInterval: 1000 });
+}
+
+export function useCreateDelivery(onCreated: (id: string) => void) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (userRequest: string) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ workspace_id: "backend-demo", user_request: userRequest }) }),
+    onSuccess: async (delivery) => { await client.invalidateQueries({ queryKey: deliveryKeys.all }); onCreated(delivery.id); },
+  });
+}
+
+export type DeliveryDecision = "approve-plan" | "reject-plan" | "accept-candidate" | "reject-candidate";
+type DecisionInput = { delivery: Delivery; decision: DeliveryDecision };
+
+export function useDeliveryDecision() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ delivery, decision }: DecisionInput) => {
+      const plan = decision.endsWith("plan");
+      const gate = plan ? delivery.plan_gate : delivery.candidate_gate;
+      const path = plan ? "plan-decision" : "candidate-decision";
+      if (!gate) throw new Error("当前审批主题尚未生成，请等待状态推进。");
+      return request<Delivery>(`/v1/deliveries/${delivery.id}/${path}`, {
+        method: "POST",
+        body: JSON.stringify({
+          decision: decision === "approve-plan" ? "approve" : decision === "accept-candidate" ? "accept" : "reject",
+          expected_version: delivery.version,
+          expected_subject_sha256: gate.subject_sha256,
+        }),
+      });
+    },
+    onSuccess: async (delivery) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: deliveryKeys.all }),
+        client.invalidateQueries({ queryKey: deliveryKeys.detail(delivery.id) }),
+        client.invalidateQueries({ queryKey: deliveryKeys.events(delivery.id) }),
+      ]);
+    },
+  });
+}

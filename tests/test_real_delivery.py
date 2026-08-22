@@ -48,6 +48,7 @@ async def _exercise_real_delivery(tmp_path: Path) -> None:
         verifier=GitCandidateVerifier(sandbox),
         applier=GitCandidateApplier(sandbox),
         repository=InMemoryDeliveryRepository(),
+        resolved_journey_sha256="a" * 64,
     )
 
     planned = await coordinator.submit(

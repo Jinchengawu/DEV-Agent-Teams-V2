@@ -7,7 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +25,6 @@ from .control_plane import (
     JourneyRevision,
     KnowledgeDocument,
     KnowledgeDocumentCreate,
-    WorkItem,
     WorkItemCommand,
 )
 from .delivery import (
@@ -35,8 +35,14 @@ from .delivery import (
     DeliveryVersionConflictError,
     PlanningServiceError,
 )
+from .modules.board import BoardProjector, WorkItem
+from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
+from .modules.settings import AppSettings, AppSettingsPatch, SettingsManager
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
+from .shared.errors import ProblemDetail, ProductError
+from .shared.events import ProductEvent
+from .shared.ids import new_id
 
 
 class DeliveryRequest(BaseModel):
@@ -76,13 +82,63 @@ def create_app(
     report_dir: Path | None = None,
     workspace_reset: Callable[[], str] | None = None,
     control_plane: ControlPlaneService | None = None,
+    evidence: EvidenceLedger | None = None,
+    settings: SettingsManager | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Agent-Team-OS", version="0.2.0")
+    app = FastAPI(
+        title="Agent-Team-OS",
+        version="0.2.1",
+        responses={
+            404: {"model": ProblemDetail, "description": "目标资源不存在"},
+            409: {"model": ProblemDetail, "description": "状态或版本冲突"},
+            422: {"model": ProblemDetail, "description": "输入校验失败"},
+            503: {"model": ProblemDetail, "description": "运行依赖未就绪"},
+        },
+    )
     readiness_probe = readiness or RuntimeReadiness()
     reports = report_dir
 
     def get_coordinator() -> DeliveryCoordinator:
         return coordinator
+
+    @app.exception_handler(ProductError)
+    async def product_error_handler(_request: Request, error: ProductError) -> JSONResponse:
+        return JSONResponse(
+            status_code=error.status_code,
+            content=error.problem(new_id()).model_dump(mode="json", exclude_none=True),
+            media_type="application/problem+json",
+        )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(_request: Request, error: HTTPException) -> JSONResponse:
+        code, title, detail, repair = _http_problem(error.status_code)
+        return JSONResponse(
+            status_code=error.status_code,
+            content={
+                "code": code,
+                "title": title,
+                "detail": detail,
+                "repair": repair,
+                "trace_id": new_id(),
+            },
+            media_type="application/problem+json",
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        _request: Request, _error: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "REQUEST_VALIDATION_FAILED",
+                "title": "输入内容不符合要求",
+                "detail": "一个或多个字段缺失、格式错误或超出安全范围。",
+                "repair": "检查表单中的必填项、版本号和哈希后重新提交。",
+                "trace_id": new_id(),
+            },
+            media_type="application/problem+json",
+        )
 
     @app.get("/v1/readiness")
     def get_readiness() -> JSONResponse:
@@ -91,6 +147,52 @@ def create_app(
             status_code=200 if report.status == "ready" else 503,
             content=report.model_dump(mode="json"),
         )
+
+    if settings is not None:
+
+        @app.get("/v1/settings", response_model=AppSettings)
+        def get_settings() -> AppSettings:
+            return settings.get()
+
+        @app.patch("/v1/settings", response_model=AppSettings)
+        def patch_settings(request: AppSettingsPatch) -> AppSettings:
+            return settings.patch(request)
+
+    if evidence is not None:
+
+        @app.get("/v1/evidence", response_model=list[EvidenceRecord])
+        def list_evidence(
+            delivery_id: str | None = None,
+            kind: EvidenceKind | None = None,
+            evidence_status: EvidenceStatus | None = None,
+        ) -> tuple[EvidenceRecord, ...]:
+            for delivery in coordinator.list():
+                evidence.sync_delivery(delivery.model_dump(mode="json"))
+            records = evidence.list(delivery_id)
+            return tuple(
+                item
+                for item in records
+                if (kind is None or item.kind == kind)
+                and (evidence_status is None or item.status == evidence_status)
+            )
+
+        @app.get(
+            "/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord]
+        )
+        def get_delivery_evidence(delivery_id: str) -> tuple[EvidenceRecord, ...]:
+            try:
+                delivery = coordinator.get(delivery_id)
+            except DeliveryNotFoundError as error:
+                raise HTTPException(status_code=404, detail="delivery not found") from error
+            evidence.sync_delivery(delivery.model_dump(mode="json"))
+            return evidence.list(delivery_id)
+
+        @app.post("/v1/evidence/{evidence_id}/verify", response_model=EvidenceRecord)
+        def verify_evidence(evidence_id: str) -> EvidenceRecord:
+            try:
+                return evidence.verify(evidence_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail="evidence not found") from error
 
     if control_plane is not None:
 
@@ -201,7 +303,12 @@ def create_app(
 
         @app.get("/v1/board", response_model=list[WorkItem])
         def get_board() -> tuple[WorkItem, ...]:
-            return control_plane.board(coordinator.list())
+            events = tuple(
+                event
+                for delivery in coordinator.list()
+                for event in coordinator.events(delivery.id)
+            )
+            return BoardProjector().rebuild(events).items
 
         @app.post(
             "/v1/work-items/{work_item_id}/command",
@@ -350,6 +457,16 @@ def create_app(
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
 
+    @app.get("/v1/deliveries/{delivery_id}/events", response_model=list[ProductEvent])
+    def get_delivery_events(
+        delivery_id: str,
+        service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
+    ) -> tuple[ProductEvent, ...]:
+        try:
+            return service.events(delivery_id)
+        except DeliveryNotFoundError as error:
+            raise HTTPException(status_code=404, detail="delivery not found") from error
+
     @app.get("/v1/deliveries", response_model=list[DeliveryRun])
     def list_deliveries(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
@@ -427,6 +544,50 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
 
     return app
+
+
+def _http_problem(status_code: int) -> tuple[str, str, str, str]:
+    problems = {
+        404: (
+            "RESOURCE_NOT_FOUND",
+            "未找到请求的数据",
+            "目标记录不存在，或已经不属于当前工作区。",
+            "刷新列表并重新选择目标记录。",
+        ),
+        409: (
+            "STATE_OR_VERSION_CONFLICT",
+            "当前状态不允许此操作",
+            "记录版本、审批主题或交付状态已经发生变化。",
+            "刷新当前详情，确认最新状态后重新提交。",
+        ),
+        501: (
+            "CAPABILITY_NOT_CONFIGURED",
+            "当前能力尚未配置",
+            "服务未配置完成此操作所需的运行能力。",
+            "在设置或实例管理中完成依赖配置。",
+        ),
+        502: (
+            "AGENT_OUTPUT_INVALID",
+            "智能体输出未通过合同校验",
+            "规划或执行结果不是系统允许的结构化产物。",
+            "检查智能体身份和日志后创建新的交付。",
+        ),
+        503: (
+            "RUNTIME_NOT_READY",
+            "运行依赖尚未就绪",
+            "一个或多个真实运行依赖未通过就绪检查。",
+            "根据就绪报告完成登录、凭据或本地依赖配置。",
+        ),
+    }
+    return problems.get(
+        status_code,
+        (
+            f"HTTP_{status_code}",
+            "操作未能完成",
+            "服务拒绝了当前请求。",
+            "刷新页面并检查运行状态后重试。",
+        ),
+    )
 
 
 def _combined_gate_status(found: dict[str, GateReport | None]) -> dict[str, str]:
