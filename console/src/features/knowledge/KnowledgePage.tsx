@@ -149,6 +149,10 @@ export function KnowledgePage() {
     onSuccess: async (document) => {
       setNewDocumentTitle("");
       setNewDocumentContent("");
+      client.setQueryData<Document[]>(["wiki-documents", selectedSpaceId, search], (current) => [
+        document,
+        ...(current ?? []).filter((item) => item.id !== document.id),
+      ]);
       setSelectedDocumentId(document.id);
       await Promise.all([
         client.invalidateQueries({ queryKey: ["wiki-documents"] }),
@@ -389,7 +393,7 @@ export function KnowledgePage() {
             <div className="revision-list" role="list" aria-label="版本列表">
               {revisions.data.map((revision) => (
                 <article key={revision.revision} className="revision-item" role="listitem">
-                  <div><b>Revision {revision.revision}</b><small>创建于 {revision.created_at}</small></div>
+                  <div><b>修订 {revision.revision}</b><small>创建于 {revision.created_at}</small></div>
                   <small>SHA-256 {revision.content_sha256.slice(0, 12)}</small>
                   <button
                     className="secondary"
@@ -419,7 +423,7 @@ export function KnowledgePage() {
               <div className="comment-list" role="list" aria-label="评论列表">
                 {comments.data.map((comment) => (
                   <article key={comment.id} className="comment-item" role="listitem">
-                    <div className="comment-meta">{comment.id} · 作者 {comment.author_id} · resolved {comment.resolved ? "已解析" : "未解析"}</div>
+                    <div className="comment-meta">{comment.id} · 作者 {comment.author_id} · 处理状态 {comment.resolved ? "已解析" : "未解析"}</div>
                     <p>{comment.body}</p>
                     <small>版本 {comment.version} · {comment.created_at}</small>
                   </article>
