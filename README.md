@@ -55,3 +55,15 @@ uv build
 AGENT_TEAM_OS_LIVE_CODEX=1 uv run pytest \
   tests/integration/test_live_codex_simulated_planning.py -q
 ```
+
+### Start the interactive Preview
+
+The Preview uses Codex to simulate Hermes PM/Admin through AgentScope and ACWM. Candidate execution,
+verification and apply are deterministic preview adapters and do not modify a real repository.
+
+```bash
+uv sync --extra dev --extra live
+uv run --extra live agent-team-os
+```
+
+Open <http://127.0.0.1:8080/>. Preview data is stored under `.agent-team-os/`.

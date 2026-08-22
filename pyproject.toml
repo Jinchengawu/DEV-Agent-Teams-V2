@@ -29,6 +29,9 @@ dev = [
   "ruff>=0.12,<1",
 ]
 
+[project.scripts]
+agent-team-os = "agent_team_os.preview:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_team_os"]
 
