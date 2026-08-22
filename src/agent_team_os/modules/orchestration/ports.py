@@ -22,6 +22,10 @@ class CapabilityBindingResolver(Protocol):
     ) -> dict[str, dict[str, object]]: ...
 
 
+class PipelineDefinitionPolicy(Protocol):
+    def validate(self, definition: dict[str, object]) -> tuple[str, ...]: ...
+
+
 class PipelineGraphRuntime(Protocol):
     def create(
         self, run_id: str, compiled_graph: dict[str, object]

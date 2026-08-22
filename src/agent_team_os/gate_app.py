@@ -18,12 +18,17 @@ from .infrastructure.acwm import (
     ControlPlaneBindingResolver,
 )
 from .infrastructure.database import MigrationRunner
-from .journey import resolve_backend_delivery_fingerprint
+from .journey import (
+    load_backend_delivery_definition,
+    resolve_backend_delivery_fingerprint,
+)
+from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import SQLiteWikiRepository, WikiService
 from .modules.orchestration import (
     PipelineCatalog,
+    PipelineCreate,
     PipelineRunLedger,
     SQLitePipelineRepository,
     SQLitePipelineRunRepository,
@@ -75,6 +80,23 @@ def build_gate_app() -> FastAPI:
         planning_identity="deterministic-test",
         execution_identity="deterministic-model-boundary",
     )
+    pipeline_catalog = PipelineCatalog(
+        SQLitePipelineRepository(database),
+        graph_compiler=ACWMGraphCompiler(),
+        binding_resolver=ControlPlaneBindingResolver(
+            control_plane.get_binding, control_plane.get_instance
+        ),
+        definition_policy=BackendDeliveryPipelinePolicy(),
+    )
+    pipeline_catalog.ensure_builtin_pipeline(
+        PipelineCreate(
+            id="backend-delivery",
+            name="内置后端交付闭环",
+            description="需求、计划审批、代码交付、候选审批与原子应用",
+            definition=load_backend_delivery_definition(project_root / "config"),
+        ),
+        actor_id="system",
+    )
     result = create_app(
         coordinator,
         control_plane=control_plane,
@@ -82,13 +104,7 @@ def build_gate_app() -> FastAPI:
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
         knowledge=WikiService(SQLiteWikiRepository(database)),
-        pipeline_catalog=PipelineCatalog(
-            SQLitePipelineRepository(database),
-            graph_compiler=ACWMGraphCompiler(),
-            binding_resolver=ControlPlaneBindingResolver(
-                control_plane.get_binding, control_plane.get_instance
-            ),
-        ),
+        pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
         ),

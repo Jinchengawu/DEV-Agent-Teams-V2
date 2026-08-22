@@ -21,6 +21,11 @@ def resolve_backend_delivery_fingerprint(config_root: Path) -> str:
     return resolve_journey_fingerprint(config_root, definition)
 
 
+def load_backend_delivery_definition(config_root: Path) -> dict[str, object]:
+    definition = load_journeys(config_root / "journeys.yaml")["backend-delivery"]
+    return definition.model_dump(mode="json")
+
+
 def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition) -> str:
     catalog = load_capabilities(config_root / "capabilities.yaml")
     adapters = {

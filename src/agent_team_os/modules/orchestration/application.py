@@ -18,6 +18,7 @@ from .domain import (
 from .ports import (
     CapabilityBindingResolver,
     JourneyGraphCompiler,
+    PipelineDefinitionPolicy,
     PipelineGraphRuntime,
     PipelineRepository,
     PipelineRunRepository,
@@ -168,10 +169,12 @@ class PipelineCatalog:
         *,
         graph_compiler: JourneyGraphCompiler | None = None,
         binding_resolver: CapabilityBindingResolver | None = None,
+        definition_policy: PipelineDefinitionPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_compiler = graph_compiler
         self.binding_resolver = binding_resolver
+        self.definition_policy = definition_policy
 
     def create_pipeline(
         self, request: PipelineCreate, *, created_by: str
@@ -205,6 +208,50 @@ class PipelineCatalog:
     def list_pipelines(self) -> tuple[Pipeline, ...]:
         return self.repository.list_pipelines()
 
+    def ensure_builtin_pipeline(
+        self, request: PipelineCreate, *, actor_id: str
+    ) -> Pipeline:
+        """Idempotently migrate one built-in Journey into an active Pipeline."""
+        try:
+            pipeline = self.repository.get_pipeline(request.id)
+        except KeyError:
+            created = self.create_pipeline(request, created_by=actor_id)
+            pipeline = created.pipeline
+            draft = created.draft
+        else:
+            if pipeline.active_revision is not None:
+                return pipeline
+            drafts = self.repository.list_drafts(request.id)
+            if not drafts:
+                raise ProductError(
+                    code="BUILTIN_PIPELINE_DRAFT_MISSING",
+                    title="内置流水线缺少草稿",
+                    detail="已存在的内置流水线没有可恢复的草稿。",
+                    repair="检查数据库迁移审计后重建内置流水线。",
+                )
+            draft = drafts[0]
+        validated = self.validate_draft(
+            draft.id, expected_version=draft.version
+        )
+        if validated.validation_status != "valid":
+            raise ProductError(
+                code="BUILTIN_PIPELINE_INVALID",
+                title="内置流水线无法迁移",
+                detail="；".join(validated.validation_errors),
+                repair="修复内置 Journey 与产品兼容性策略后重新启动。",
+            )
+        revision = self.publish_draft(
+            validated.id,
+            expected_version=validated.version,
+            published_by=actor_id,
+        )
+        return self.activate_revision(
+            request.id,
+            revision=revision.revision,
+            expected_version=pipeline.version,
+            activated_by=actor_id,
+        )
+
     def validate_draft(self, draft_id: str, *, expected_version: int) -> PipelineDraft:
         draft = self.repository.get_draft(draft_id)
         self._require_version(draft, expected_version)
@@ -215,6 +262,8 @@ class PipelineCatalog:
             self.graph_compiler.compile(draft.definition)
         except ValueError as error:
             errors = (str(error),)
+        if self.definition_policy is not None:
+            errors = (*errors, *self.definition_policy.validate(draft.definition))
         updated = draft.model_copy(
             update={
                 "version": draft.version + 1,

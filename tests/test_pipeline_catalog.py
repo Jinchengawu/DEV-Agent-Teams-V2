@@ -47,6 +47,11 @@ class BindingResolver:
         }
 
 
+class RejectingProductPolicy:
+    def validate(self, definition: dict[str, object]) -> tuple[str, ...]:
+        return ("DELIVERY_PIPELINE_MISSING_GATE:candidate-change",)
+
+
 def _catalog(tmp_path: Path) -> PipelineCatalog:
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
@@ -88,6 +93,87 @@ def test_catalog_creates_multiple_pipelines_with_independent_drafts(tmp_path: Pa
     assert backend.draft.id != review.draft.id
     assert backend.pipeline.active_revision is None
     assert catalog.list_drafts("backend-delivery") == (backend.draft,)
+
+
+def test_catalog_validation_combines_acwm_and_product_compatibility(tmp_path: Path) -> None:
+    database = tmp_path / "agent-team-os.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    catalog = PipelineCatalog(
+        SQLitePipelineRepository(database),
+        graph_compiler=GraphCompiler(),
+        binding_resolver=BindingResolver(),
+        definition_policy=RejectingProductPolicy(),
+    )
+    created = catalog.create_pipeline(
+        PipelineCreate(
+            id="invalid-delivery",
+            name="缺少候选审批",
+            definition={
+                "id": "invalid-delivery",
+                "version": "4.0.0",
+                "nodes": [],
+                "edges": [],
+            },
+        ),
+        created_by="admin",
+    )
+
+    validated = catalog.validate_draft(
+        created.draft.id, expected_version=created.draft.version
+    )
+
+    assert validated.validation_status == "invalid"
+    assert validated.validation_errors == (
+        "DELIVERY_PIPELINE_MISSING_GATE:candidate-change",
+    )
+
+
+def test_catalog_bootstraps_builtin_pipeline_once_and_activates_revision(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    request = PipelineCreate(
+        id="backend-delivery",
+        name="内置后端交付闭环",
+        definition={
+            "id": "backend-delivery",
+            "version": "4.0.0",
+            "nodes": [],
+            "edges": [],
+        },
+    )
+
+    first = catalog.ensure_builtin_pipeline(request, actor_id="system")
+    second = catalog.ensure_builtin_pipeline(request, actor_id="system")
+
+    assert first.id == "backend-delivery"
+    assert first.active_revision == 1
+    assert first.version == 2
+    assert second == first
+    assert len(catalog.list_pipelines()) == 1
+
+
+def test_catalog_recovers_builtin_pipeline_left_inactive_after_create(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    request = PipelineCreate(
+        id="backend-delivery",
+        name="内置后端交付闭环",
+        definition={
+            "id": "backend-delivery",
+            "version": "4.0.0",
+            "nodes": [],
+            "edges": [],
+        },
+    )
+    created = catalog.create_pipeline(request, created_by="system")
+
+    recovered = catalog.ensure_builtin_pipeline(request, actor_id="system")
+
+    assert created.pipeline.active_revision is None
+    assert recovered.active_revision == 1
+    assert recovered.version == 2
 
 
 def test_catalog_publishes_an_immutable_compiled_pipeline_revision(tmp_path: Path) -> None:
