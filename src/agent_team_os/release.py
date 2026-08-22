@@ -15,6 +15,7 @@ import tempfile
 import time
 import urllib.request
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
 from pathlib import Path
 from typing import Literal
 
@@ -683,6 +684,19 @@ def _stop_browser_gate_server(server: subprocess.Popen[str]) -> None:
 
 
 def _acwm_revision() -> str:
+    package_file = getattr(import_module("acwm"), "__file__", None)
+    if isinstance(package_file, str):
+        for parent in Path(package_file).resolve().parents:
+            if (parent / ".git").exists():
+                result = subprocess.run(
+                    ("git", "rev-parse", "HEAD"),
+                    cwd=parent,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
     direct_url = importlib.metadata.distribution("agent-capability-workflow-matrix").read_text(
         "direct_url.json"
     )

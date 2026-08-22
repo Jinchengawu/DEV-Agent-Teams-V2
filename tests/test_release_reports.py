@@ -2,13 +2,36 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+
+from pytest import MonkeyPatch
 
 from agent_team_os.release import (
     GateReport,
+    _acwm_revision,
     _report,
     combined_gate_status,
     latest_reports,
 )
+
+
+def test_acwm_revision_uses_the_imported_source_checkout(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    checkout = tmp_path / "acwm-checkout"
+    package = checkout / "src" / "acwm"
+    package.mkdir(parents=True)
+    (checkout / ".git").mkdir()
+    module = SimpleNamespace(__file__=str(package / "__init__.py"))
+    monkeypatch.setattr("agent_team_os.release.import_module", lambda _name: module)
+    monkeypatch.setattr(
+        "agent_team_os.release.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout="f" * 40 + "\n"
+        ),
+    )
+
+    assert _acwm_revision() == "f" * 40
 
 
 def test_clean_same_revision_reports_are_publishable() -> None:
