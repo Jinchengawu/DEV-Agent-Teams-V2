@@ -162,6 +162,23 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
         revision = client.get("/v1/journeys/backend-delivery/revisions/1")
         drafts = client.get("/v1/journey-drafts")
         journeys = client.get("/v1/journeys")
+        executor = next(
+            item
+            for item in client.get("/v1/agent-instances").json()
+            if item["id"] == instances["codex-backend"]
+        )
+        client.patch(
+            f"/v1/agent-instances/{executor['id']}",
+            json={"expected_version": executor["version"], "enabled": False},
+        )
+        blocked_delivery = client.post(
+            "/v1/deliveries",
+            json={
+                "workspace_id": "backend-demo",
+                "user_request": "Must not start",
+                "journey_revision_id": "backend-delivery:1",
+            },
+        )
 
     assert validation.json()["validation_status"] == "valid"
     assert published.status_code == 201
@@ -174,6 +191,7 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
     assert revision.json() == published.json()
     assert drafts.json()[0]["id"] == draft["id"]
     assert journeys.json()[0]["journey_id"] == "backend-delivery"
+    assert blocked_delivery.status_code == 409
 
 
 def test_delivery_pins_the_requested_published_journey_revision(tmp_path: Path) -> None:

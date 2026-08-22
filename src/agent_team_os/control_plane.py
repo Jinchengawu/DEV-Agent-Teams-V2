@@ -524,6 +524,21 @@ class ControlPlaneService:
             raise KeyError(revision_id)
         return self.get_revision(journey_id, int(revision_text))
 
+    def ensure_revision_available(self, revision: JourneyRevision) -> None:
+        for capability_id, binding in revision.binding_snapshot.items():
+            instance_id = str(binding["instance_id"])
+            try:
+                instance = self.get_instance(instance_id)
+            except KeyError as error:
+                raise ValueError(f"{capability_id} instance is no longer registered") from error
+            if not instance.enabled or instance.health.status != "ready":
+                raise ValueError(f"{capability_id} instance is disabled or unhealthy")
+            published_version = binding.get("instance_version")
+            if not isinstance(published_version, int):
+                raise ValueError(f"{capability_id} binding snapshot is invalid")
+            if instance.version != published_version:
+                raise ValueError(f"{capability_id} instance changed after publication")
+
     def import_builtin_journey(
         self, *, planning_identity: str, execution_identity: str
     ) -> JourneyRevision:
@@ -741,6 +756,12 @@ class ControlPlaneService:
         if value is None:
             raise KeyError(document_id)
         return KnowledgeDocument.model_validate_json(value)
+
+    def list_documents(self) -> tuple[KnowledgeDocument, ...]:
+        return tuple(
+            KnowledgeDocument.model_validate_json(value)
+            for value in self._list("knowledge-document")
+        )
 
     def list_events(self, after: int = 0) -> tuple[ControlEvent, ...]:
         with sqlite3.connect(self.database) as connection:

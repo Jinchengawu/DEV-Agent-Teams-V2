@@ -243,6 +243,12 @@ def create_app(
         ) -> KnowledgeDocument:
             return control_plane.create_document(request)
 
+        @app.get("/v1/knowledge/documents", response_model=list[KnowledgeDocument])
+        def list_knowledge_documents() -> tuple[KnowledgeDocument, ...]:
+            for delivery in coordinator.list():
+                control_plane.sync_delivery_documents(delivery)
+            return control_plane.list_documents()
+
         @app.get("/v1/knowledge/documents/{document_id}", response_model=KnowledgeDocument)
         def get_knowledge_document(document_id: str) -> KnowledgeDocument:
             try:
@@ -284,6 +290,7 @@ def create_app(
             if control_plane is not None:
                 try:
                     revision = control_plane.resolve_revision(request.journey_revision_id)
+                    control_plane.ensure_revision_available(revision)
                 except KeyError as error:
                     if request.journey_revision_id is None:
                         revision = None
@@ -291,6 +298,8 @@ def create_app(
                         raise HTTPException(
                             status_code=404, detail="journey revision not found"
                         ) from error
+                except ValueError as error:
+                    raise HTTPException(status_code=409, detail=str(error)) from error
             return service.enqueue(
                 workspace_id=request.workspace_id,
                 user_request=request.user_request,
