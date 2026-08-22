@@ -220,7 +220,11 @@ class PipelineCatalog:
             draft = created.draft
         else:
             if pipeline.active_revision is not None:
-                return pipeline
+                active = self.repository.get_revision(
+                    pipeline.id, pipeline.active_revision
+                )
+                if active.definition == request.definition:
+                    return pipeline
             drafts = self.repository.list_drafts(request.id)
             if not drafts:
                 raise ProductError(
@@ -230,6 +234,17 @@ class PipelineCatalog:
                     repair="检查数据库迁移审计后重建内置流水线。",
                 )
             draft = drafts[0]
+            if draft.definition != request.definition:
+                draft = self.patch_draft(
+                    draft.id,
+                    PipelineDraftPatch(
+                        expected_version=draft.version,
+                        name=request.name,
+                        definition=request.definition,
+                        layout=request.layout,
+                        input_schema=request.input_schema,
+                    ),
+                )
         validated = self.validate_draft(
             draft.id, expected_version=draft.version
         )

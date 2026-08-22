@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from acwm.config import load_capabilities, load_journeys
-from acwm.domain import ApprovalGateDefinition, StageDefinition
+from acwm.domain import ApprovalGateDefinition, LoopDefinition, StageDefinition
 
 
 def test_v2_delivery_journey_uses_acwm_without_copying_its_control_plane() -> None:
@@ -15,22 +15,33 @@ def test_v2_delivery_journey_uses_acwm_without_copying_its_control_plane() -> No
         "hermes-pm",
         "hermes-project-admin",
     )
-    assert [step.id for step in journey.steps] == [
+    assert [node.id for node in journey.nodes] == [
         "requirements",
         "tasking",
         "approve-plan",
-        "delivery",
+        "code-repair",
         "approve-candidate",
     ]
-    assert [step.id for step in journey.steps if isinstance(step, StageDefinition)] == [
+    assert [node.id for node in journey.nodes if isinstance(node, StageDefinition)] == [
         "requirements",
         "tasking",
-        "delivery",
     ]
+    loop = next(node for node in journey.nodes if isinstance(node, LoopDefinition))
+    assert loop.policy.exit_condition == "machine-tests-passed"
+    assert loop.policy.max_iterations == 3
+    assert [node.id for node in loop.nodes] == ["delivery"]
     gate_subjects = [
-        step.subject_kind for step in journey.steps if isinstance(step, ApprovalGateDefinition)
+        node.subject_kind
+        for node in journey.nodes
+        if isinstance(node, ApprovalGateDefinition)
     ]
     assert gate_subjects == [
         "delivery-plan",
         "candidate-change",
+    ]
+    assert [(edge.source, edge.target, edge.condition) for edge in journey.edges] == [
+        ("requirements", "tasking", None),
+        ("tasking", "approve-plan", None),
+        ("approve-plan", "code-repair", "plan-approved"),
+        ("code-repair", "approve-candidate", None),
     ]

@@ -21,6 +21,7 @@ from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanni
 
 class GraphCompiler:
     def compile(self, definition: dict[str, object]) -> GraphCompilation:
+        fingerprint = "b" * 64 if definition.get("version") == "4.1.0" else "a" * 64
         return GraphCompilation(
             graph={
                 "topological_order": ["plan", "delivery"],
@@ -28,7 +29,7 @@ class GraphCompiler:
                 "exit_node_ids": ["delivery"],
                 "loops": [],
             },
-            fingerprint="a" * 64,
+            fingerprint=fingerprint,
             capability_ids=("codex-backend", "hermes-pm"),
         )
 
@@ -174,6 +175,34 @@ def test_catalog_recovers_builtin_pipeline_left_inactive_after_create(
     assert created.pipeline.active_revision is None
     assert recovered.active_revision == 1
     assert recovered.version == 2
+
+
+def test_catalog_publishes_new_builtin_revision_when_definition_changes(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    original = PipelineCreate(
+        id="backend-delivery",
+        name="内置后端交付闭环",
+        definition={"id": "backend-delivery", "version": "4.0.0", "nodes": []},
+    )
+    first = catalog.ensure_builtin_pipeline(original, actor_id="system")
+    upgraded = original.model_copy(
+        update={
+            "definition": {
+                "id": "backend-delivery",
+                "version": "4.1.0",
+                "nodes": [{"id": "repair", "kind": "loop"}],
+            }
+        }
+    )
+
+    second = catalog.ensure_builtin_pipeline(upgraded, actor_id="system")
+
+    assert first.active_revision == 1
+    assert second.active_revision == 2
+    assert second.version == 3
+    assert catalog.get_revision("backend-delivery", 2).definition == upgraded.definition
 
 
 def test_catalog_publishes_an_immutable_compiled_pipeline_revision(tmp_path: Path) -> None:

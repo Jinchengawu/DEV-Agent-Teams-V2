@@ -76,6 +76,23 @@ def test_combined_gate_rejects_expired_or_untrusted_identity_reports() -> None:
     )
 
 
+def test_combined_gate_rejects_missing_completed_pipeline_run() -> None:
+    now = datetime.now(UTC)
+    deterministic = _gate_report("deterministic", now).model_copy(
+        update={"pipeline_run_status": None}
+    )
+    deterministic = deterministic.model_copy(
+        update={"evidence_sha256": _report_evidence_for(deterministic)}
+    )
+
+    combined = combined_gate_status(
+        {"deterministic": deterministic, "live": _gate_report("live", now)},
+        now=now,
+    )
+
+    assert combined.code == "RELEASE_GATE_DELIVERY_EVIDENCE_INCOMPLETE"
+
+
 def test_latest_reports_do_not_fall_back_past_a_corrupt_new_report(tmp_path: Path) -> None:
     older = _gate_report("deterministic", datetime.now(UTC))
     (tmp_path / "20260822T010000Z-deterministic.json").write_text(
@@ -108,6 +125,10 @@ def _gate_report(
         ),
         execution_identity=execution_identity
         or ("deterministic-model-boundary" if deterministic else "codex-cli"),
+        pipeline_revision_id="backend-delivery:2",
+        pipeline_fingerprint="e" * 64,
+        pipeline_run_id="pipeline-run-1",
+        pipeline_run_status="completed",
         candidate_revision="c" * 40,
         diff_sha256="d" * 64,
         verification_exit_code=0,
@@ -118,3 +139,9 @@ def _gate_report(
             else browser_restart_recovery
         ),
     )
+
+
+def _report_evidence_for(report: GateReport) -> str:
+    from agent_team_os.release import _report_evidence_sha256
+
+    return _report_evidence_sha256(report)

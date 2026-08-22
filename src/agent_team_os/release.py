@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.metadata
 import json
@@ -21,7 +22,12 @@ from acwm.config import CodexCLIConfig
 from pydantic import BaseModel, ConfigDict, Field
 
 from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
-from .delivery import DeliveryCoordinator, PlanningService, SQLiteDeliveryRepository
+from .delivery import (
+    DeliveryCoordinator,
+    DeliveryRun,
+    PlanningService,
+    SQLiteDeliveryRepository,
+)
 from .git_delivery import (
     ACWMCodexWorkspaceAgent,
     GitCandidateApplier,
@@ -30,7 +36,21 @@ from .git_delivery import (
     WorkspaceAgent,
 )
 from .git_sandbox import GitSandbox
-from .journey import resolve_backend_delivery_fingerprint
+from .infrastructure.acwm import ACWMGraphCompiler, ACWMPipelineGraphRuntime
+from .infrastructure.database import MigrationRunner
+from .journey import (
+    load_backend_delivery_definition,
+    resolve_backend_delivery_fingerprint,
+)
+from .modules.delivery import BackendDeliveryPipelinePolicy
+from .modules.orchestration import (
+    PipelineCatalog,
+    PipelineCreate,
+    PipelineRevision,
+    PipelineRunLedger,
+    SQLitePipelineRepository,
+    SQLitePipelineRunRepository,
+)
 from .testing import DeterministicPlanningService
 
 
@@ -47,6 +67,12 @@ class GateReport(BaseModel):
     acwm_revision: str
     planning_identity: str
     execution_identity: str
+    pipeline_revision_id: str | None = None
+    pipeline_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    pipeline_run_id: str | None = None
+    pipeline_run_status: str | None = None
     candidate_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
     diff_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     verification_exit_code: int | None = None
@@ -91,6 +117,33 @@ class DeterministicWorkspaceAgent:
         return "deterministic boundary completed"
 
 
+class GateBindingResolver:
+    """Publish an immutable gate-only binding snapshot without control-plane fixtures."""
+
+    def __init__(self, *, planning_identity: str, execution_identity: str) -> None:
+        self.planning_identity = planning_identity
+        self.execution_identity = execution_identity
+
+    def snapshot(
+        self, capability_ids: tuple[str, ...]
+    ) -> dict[str, dict[str, object]]:
+        return {
+            capability_id: {
+                "instance_id": f"release-gate:{capability_id}",
+                "instance_version": 1,
+                "runtime_type": (
+                    "codex-cli" if capability_id == "codex-backend" else "role-turn"
+                ),
+                "identity": (
+                    self.execution_identity
+                    if capability_id == "codex-backend"
+                    else self.planning_identity
+                ),
+            }
+            for capability_id in capability_ids
+        }
+
+
 async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateReport:
     kind = "live" if live else "deterministic"
     created_at = datetime.now(UTC)
@@ -118,7 +171,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             else:
                 planning = DeterministicPlanningService()
                 agent = DeterministicWorkspaceAgent()
-            repository = SQLiteDeliveryRepository(runtime / "deliveries.sqlite")
+            database = runtime / "agent-team-os.sqlite"
+            MigrationRunner(database, project_root / "migrations").migrate()
+            repository = SQLiteDeliveryRepository(database)
             coordinator = DeliveryCoordinator(
                 planning=planning,
                 executor=GitCodeExecutor(sandbox, agent),
@@ -129,6 +184,33 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                     project_root / "config"
                 ),
             )
+            pipeline_catalog = PipelineCatalog(
+                SQLitePipelineRepository(database),
+                graph_compiler=ACWMGraphCompiler(),
+                binding_resolver=GateBindingResolver(
+                    planning_identity=planning_identity,
+                    execution_identity=execution_identity,
+                ),
+                definition_policy=BackendDeliveryPipelinePolicy(),
+            )
+            pipeline = pipeline_catalog.ensure_builtin_pipeline(
+                PipelineCreate(
+                    id="backend-delivery",
+                    name="内置后端交付闭环",
+                    description="需求、计划审批、代码修复 LOOP、候选审批与原子应用",
+                    definition=load_backend_delivery_definition(project_root / "config"),
+                ),
+                actor_id="release-gate",
+            )
+            if pipeline.active_revision is None:
+                raise RuntimeError("built-in Pipeline has no active revision")
+            pipeline_revision = pipeline_catalog.get_revision(
+                pipeline.id, pipeline.active_revision
+            )
+            pipeline_runs = PipelineRunLedger(
+                SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+            )
+            coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs)
 
             reject_request = (
                 "Create a new function rescue_reject_probe() that returns the exact string "
@@ -145,7 +227,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 else "Add a version status helper with standard-library unit tests."
             )
 
-            rejected_plan = await coordinator.submit(
+            rejected_plan = await _enqueue_gate_delivery(
+                coordinator,
+                pipeline_revision,
                 workspace_id="backend-demo",
                 user_request=reject_request,
             )
@@ -169,7 +253,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             if sandbox.main_revision() != before_reject:
                 raise RuntimeError("reject changed Main")
 
-            accepted_plan = await coordinator.submit(
+            accepted_plan = await _enqueue_gate_delivery(
+                coordinator,
+                pipeline_revision,
                 workspace_id="backend-demo",
                 user_request=accept_request,
             )
@@ -196,11 +282,19 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 executor=GitCodeExecutor(sandbox, agent),
                 verifier=GitCandidateVerifier(sandbox),
                 applier=GitCandidateApplier(sandbox),
-                repository=SQLiteDeliveryRepository(runtime / "deliveries.sqlite"),
+                repository=SQLiteDeliveryRepository(database),
             )
+            restarted_runs = PipelineRunLedger(
+                SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+            )
+            restarted.configure_pipeline_runtime(pipeline_catalog, restarted_runs)
+            await restarted.recover()
             recovered = restarted.get(completed.id)
             if recovered.apply_receipt is None:
                 raise RuntimeError("restart lost apply evidence")
+            recovered_graph = restarted_runs.get_for_delivery(completed.id)
+            if recovered_graph.status != "completed":
+                raise RuntimeError("restart lost completed ACWM GraphRun")
             browser_e2e = False
             browser_restart_recovery = False
             if not live:
@@ -217,6 +311,12 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 acwm_revision=acwm_revision,
                 planning_identity=planning_identity,
                 execution_identity=execution_identity,
+                pipeline_revision_id=(
+                    f"{pipeline_revision.pipeline_id}:{pipeline_revision.revision}"
+                ),
+                pipeline_fingerprint=pipeline_revision.fingerprint,
+                pipeline_run_id=recovered_graph.id,
+                pipeline_run_status=recovered_graph.status,
                 candidate_revision=accepted_candidate.candidate.candidate_revision,
                 diff_sha256=accepted_candidate.candidate.diff_sha256,
                 verification_exit_code=(verification.exit_code if verification else None),
@@ -259,6 +359,10 @@ def write_report(report_dir: Path, report: GateReport) -> None:
         f"- ACWM Revision: `{report.acwm_revision}`",
         f"- Planning: `{report.planning_identity}`",
         f"- Execution: `{report.execution_identity}`",
+        f"- Pipeline Revision: `{report.pipeline_revision_id or 'n/a'}`",
+        f"- Pipeline Fingerprint: `{report.pipeline_fingerprint or 'n/a'}`",
+        f"- Pipeline Run: `{report.pipeline_run_id or 'n/a'}`",
+        f"- Pipeline Run Status: `{report.pipeline_run_status or 'n/a'}`",
         f"- Candidate: `{report.candidate_revision or 'n/a'}`",
         f"- Diff SHA-256: `{report.diff_sha256 or 'n/a'}`",
         f"- Evidence SHA-256: `{report.evidence_sha256}`",
@@ -344,6 +448,10 @@ def combined_gate_status(
         report.candidate_revision is None
         or report.diff_sha256 is None
         or report.verification_exit_code != 0
+        or report.pipeline_revision_id is None
+        or report.pipeline_fingerprint is None
+        or report.pipeline_run_id is None
+        or report.pipeline_run_status != "completed"
         for report in (deterministic, live)
     ):
         return CombinedGateStatus(
@@ -376,6 +484,34 @@ def combined_gate_status(
         code="RELEASE_GATE_PASSED",
         reason="同一 Revision 的确定性门禁与真实 Codex 门禁均已通过。",
     )
+
+
+async def _enqueue_gate_delivery(
+    coordinator: DeliveryCoordinator,
+    revision: PipelineRevision,
+    *,
+    workspace_id: str,
+    user_request: str,
+) -> DeliveryRun:
+    created = coordinator.enqueue(
+        workspace_id=workspace_id,
+        user_request=user_request,
+        pipeline_revision_id=f"{revision.pipeline_id}:{revision.revision}",
+        journey_binding_snapshot=revision.binding_snapshot,
+        resolved_journey_sha256=revision.fingerprint,
+        resolved_pipeline_sha256=revision.fingerprint,
+    )
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        current = coordinator.get(created.id)
+        if current.status == "awaiting_plan_decision":
+            return current
+        if current.status in {"failed", "cancelled", "rejected"}:
+            raise RuntimeError(
+                f"Pipeline planning failed: {current.error_code or current.status}"
+            )
+        await asyncio.sleep(0.05)
+    raise TimeoutError("Pipeline planning gate timed out")
 
 
 def _report(**values: object) -> GateReport:
