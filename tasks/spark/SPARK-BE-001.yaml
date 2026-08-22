@@ -2,7 +2,7 @@ id: SPARK-BE-001
 title: 实现 AppSettings 模块化 HTTP Router
 model: gpt-5.3-codex-spark
 architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
-base_revision: e370b4e8d3e68bf094c4576f7c174971ad03ccc0
+base_revision: d19732f44302c0e6761828461a08228966f2a12b
 kind: backend-crud
 
 allowed_paths:
