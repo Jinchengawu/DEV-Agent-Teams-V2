@@ -19,8 +19,8 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     const loop = createGraphNode("loop", [role, code, gate]);
     expect(role).toMatchObject({ id: "stage-1", kind: "stage" });
     expect(code).toMatchObject({ id: "code-1", bindings: { developer: "codex-backend" } });
-    expect(gate).toMatchObject({ id: "gate-1", kind: "approval_gate" });
-    expect(loop).toMatchObject({ id: "loop-1", kind: "loop", policy: { max_iterations: 3, on_exhausted: "fail" } });
+    expect(gate).toMatchObject({ id: "gate-1", kind: "approval_gate", subject_kind: "delivery-plan" });
+    expect(loop).toMatchObject({ id: "loop-1", kind: "loop", policy: { exit_condition: "requirements-ready", max_iterations: 3, on_exhausted: "fail" } });
   });
   it("拒绝自环、重复边和会形成 DAG 环路的回边", () => {
     const nodes = [createGraphNode("role", []), createGraphNode("code", [])];

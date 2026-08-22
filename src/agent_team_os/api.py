@@ -116,6 +116,8 @@ def create_app(
     pipeline_catalog: PipelineCatalog | None = None,
     pipeline_runs: PipelineRunLedger | None = None,
 ) -> FastAPI:
+    if pipeline_catalog is not None and pipeline_runs is not None:
+        coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs)
     app = FastAPI(
         title="Agent-Team-OS",
         version="0.2.1",
@@ -661,18 +663,6 @@ def create_app(
                     None if pipeline_revision is None else pipeline_revision.fingerprint
                 ),
             )
-            if pipeline_revision is not None and pipeline_runs is not None:
-                try:
-                    pipeline_runs.start(
-                        delivery_id=delivery.id,
-                        revision=pipeline_revision,
-                        run_id=pipeline_run_id,
-                    )
-                except Exception:
-                    service.fail_initialization(
-                        delivery.id, "PIPELINE_RUN_INITIALIZATION_FAILED"
-                    )
-                    raise
             return delivery
         except PlanningServiceError as error:
             raise HTTPException(

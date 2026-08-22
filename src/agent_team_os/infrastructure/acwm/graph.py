@@ -83,6 +83,10 @@ class ACWMPipelineGraphRuntime:
             updated = self._required(domain, reducer_name)(
                 run, node_id, body_node_id, **keywords
             )
+        elif command == "fail":
+            updated = self._required(domain, "fail_graph_node")(run, node_id)
+        elif command == "cancel":
+            updated = self._required(domain, "cancel_graph_run")(run)
         else:
             raise ValueError(f"Unsupported ACWM graph transition: {command}")
         return cast(dict[str, object], updated.model_dump(mode="json"))

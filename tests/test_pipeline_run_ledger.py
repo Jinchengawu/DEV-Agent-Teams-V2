@@ -33,8 +33,16 @@ class FakeGraphRuntime:
         exit_condition_met: bool | None = None,
     ) -> dict[str, object]:
         version = int(snapshot["version"])
-        status = "running" if command == "start" else "completed"
-        node_status = "running" if command == "start" else "succeeded"
+        status = {
+            "start": "running",
+            "fail": "failed",
+            "cancel": "cancelled",
+        }.get(command, "completed")
+        node_status = {
+            "start": "running",
+            "fail": "failed",
+            "cancel": "cancelled",
+        }.get(command, "succeeded")
         return {
             **snapshot,
             "status": status,
@@ -117,3 +125,40 @@ def test_pipeline_run_rejects_stale_transition(tmp_path: Path) -> None:
         )
 
     assert raised.value.code == "PIPELINE_RUN_VERSION_CONFLICT"
+
+
+def test_pipeline_run_records_failure_and_cancel_transitions(tmp_path: Path) -> None:
+    database = tmp_path / "agent-team-os.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    repository = SQLitePipelineRunRepository(database)
+    ledger = PipelineRunLedger(repository, FakeGraphRuntime())
+
+    failed_run = ledger.start(delivery_id="delivery-failed", revision=_revision())
+    running = ledger.transition(
+        failed_run.id,
+        command="start",
+        node_id="plan",
+        expected_version=failed_run.version,
+    )
+    failed = ledger.transition(
+        failed_run.id,
+        command="fail",
+        node_id="plan",
+        expected_version=running.version,
+    )
+    cancelled_run = ledger.start(delivery_id="delivery-cancelled", revision=_revision())
+    cancelled = ledger.transition(
+        cancelled_run.id,
+        command="cancel",
+        node_id="",
+        expected_version=cancelled_run.version,
+    )
+
+    assert failed.status == "failed"
+    assert cancelled.status == "cancelled"
+    assert [event.event_type for event in repository.list_events(failed.id)][-1] == (
+        "pipeline-node.failed"
+    )
+    assert [event.event_type for event in repository.list_events(cancelled.id)][-1] == (
+        "pipeline-run.cancelled"
+    )

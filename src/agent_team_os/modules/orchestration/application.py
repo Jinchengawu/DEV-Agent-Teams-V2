@@ -30,6 +30,8 @@ _COMMAND_EVENT_SUFFIX = {
     "complete-loop-iteration": "loop-iteration-completed",
     "start-loop-body-node": "loop-body-node-started",
     "succeed-loop-body-node": "loop-body-node-succeeded",
+    "fail": "failed",
+    "cancel": "cancelled",
 }
 
 
@@ -96,7 +98,11 @@ class PipelineRunLedger:
                 "updated_at": datetime.now(UTC),
             }
         )
-        event_type = f"pipeline-node.{_COMMAND_EVENT_SUFFIX.get(command, command)}"
+        event_type = (
+            "pipeline-run.cancelled"
+            if command == "cancel"
+            else f"pipeline-node.{_COMMAND_EVENT_SUFFIX.get(command, command)}"
+        )
         if not self.repository.compare_and_swap(
             current.version,
             updated,
