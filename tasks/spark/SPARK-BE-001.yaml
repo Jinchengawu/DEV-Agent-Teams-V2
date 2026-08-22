@@ -2,7 +2,7 @@ id: SPARK-BE-001
 title: 实现 AppSettings 模块化 HTTP Router
 model: gpt-5.3-codex-spark
 architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
-base_revision: bc3b8a8199318a66a4dae6d53620a12bd42a4ab6
+base_revision: e370b4e8d3e68bf094c4576f7c174971ad03ccc0
 kind: backend-crud
 
 allowed_paths:
@@ -32,6 +32,7 @@ acceptance:
   - 新增公共接口测试，覆盖 GET、PATCH 成功和过期 expected_version 的 ProductError 传播
   - 接口测试使用 httpx ASGITransport，不使用会产生 StarletteDeprecationWarning 的 TestClient
   - 全部验证输出必须 WARN=0 且 skipped=0
+  - 向主审交付前，Spark 必须在隔离 Worktree 中亲自运行清单里的全部验证命令并修复全部失败
   - 不新增依赖，不修改密码、权限、迁移、公共合同或其他模块
 
 verification:
