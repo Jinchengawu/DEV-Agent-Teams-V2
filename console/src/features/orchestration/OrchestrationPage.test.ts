@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeCapability, changeStageMode, createStep } from "./OrchestrationPage";
+import { changeCapability, changeStageMode, createStep, parseSteps } from "./OrchestrationPage";
 
 describe("线性 Journey 编辑控制器", () => {
   it("创建稳定且不重复的角色、代码和审批节点", () => {
@@ -24,5 +24,24 @@ describe("线性 Journey 编辑控制器", () => {
     expect(code.output_validator).toBe("backend-candidate-v1");
     expect(admin.bindings).toEqual({ actor: "hermes-project-admin" });
     expect(admin.output_validator).toBeUndefined();
+  });
+
+  it("保留 ACWM 发布定义中显式为空的输出校验器", () => {
+    const steps = parseSteps({
+      id: "backend-delivery",
+      version: "1.0.0",
+      steps: [
+        {
+          id: "requirements",
+          kind: "stage",
+          workflow_mode: "agentscope.role-turn",
+          bindings: { actor: "hermes-pm" },
+          output_validator: null,
+        },
+      ],
+    });
+
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toMatchObject({ id: "requirements", output_validator: null });
   });
 });

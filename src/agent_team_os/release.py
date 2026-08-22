@@ -51,6 +51,7 @@ class GateReport(BaseModel):
     verification_exit_code: int | None = None
     evidence_sha256: str
     browser_e2e: bool = False
+    browser_restart_recovery: bool = False
     error: str | None = None
 
 
@@ -184,9 +185,11 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             if recovered.apply_receipt is None:
                 raise RuntimeError("restart lost apply evidence")
             browser_e2e = False
+            browser_restart_recovery = False
             if not live:
                 _run_browser_gate(project_root, runtime)
                 browser_e2e = True
+                browser_restart_recovery = True
             if _git_status(project_root) != initial_status:
                 raise RuntimeError("release gate changed the DEV worktree")
             verification = accepted_candidate.verification
@@ -201,6 +204,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 diff_sha256=accepted_candidate.candidate.diff_sha256,
                 verification_exit_code=(verification.exit_code if verification else None),
                 browser_e2e=browser_e2e,
+                browser_restart_recovery=browser_restart_recovery,
             )
     except Exception as error:
         report = _report(
@@ -242,6 +246,7 @@ def write_report(report_dir: Path, report: GateReport) -> None:
         f"- Diff SHA-256: `{report.diff_sha256 or 'n/a'}`",
         f"- Evidence SHA-256: `{report.evidence_sha256}`",
         f"- Browser E2E: `{report.browser_e2e}`",
+        f"- Browser Restart Recovery: `{report.browser_restart_recovery}`",
     ]
     if report.error:
         lines.extend(("", f"Error: `{report.error}`"))
@@ -306,6 +311,37 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
         **os.environ,
         "AGENT_TEAM_OS_DATA_DIR": str(runtime / "browser"),
     }
+    state = runtime / "browser-state.json"
+    checkpoint = runtime / "browser-checkpoint.json"
+    server = _start_browser_gate_server(project_root, environment, port)
+    try:
+        _run_browser_phase(
+            project_root,
+            port,
+            phase="execute",
+            state=state,
+            checkpoint=checkpoint,
+        )
+    finally:
+        _stop_browser_gate_server(server)
+
+    restarted = _start_browser_gate_server(project_root, environment, port)
+    try:
+        _run_browser_phase(
+            project_root,
+            port,
+            phase="recover",
+            state=state,
+            checkpoint=checkpoint,
+            screenshot=runtime / "browser-completed.png",
+        )
+    finally:
+        _stop_browser_gate_server(restarted)
+
+
+def _start_browser_gate_server(
+    project_root: Path, environment: dict[str, str], port: int
+) -> subprocess.Popen[str]:
     server = subprocess.Popen(
         (
             sys.executable,
@@ -325,48 +361,66 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                stdout, stderr = server.communicate()
-                raise RuntimeError(f"browser gate server failed: {stdout}{stderr}")
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).close()
-                break
-            except Exception:
-                time.sleep(0.1)
-        else:
-            raise RuntimeError("browser gate server readiness timed out")
-        result = subprocess.run(
-            (
-                sys.executable,
-                str(project_root / "scripts" / "browser_e2e.py"),
-                "--url",
-                f"http://127.0.0.1:{port}",
-                "--screenshot",
-                str(runtime / "browser-completed.png"),
-            ),
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-        if result.returncode != 0:
-            server.terminate()
-            server_stdout, server_stderr = server.communicate(timeout=5)
-            raise RuntimeError(
-                "browser E2E failed: "
-                f"{result.stdout}{result.stderr}\nGate server:\n{server_stdout}{server_stderr}"
-            )
-    finally:
-        server.terminate()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            stdout, stderr = server.communicate()
+            raise RuntimeError(f"browser gate server failed: {stdout}{stderr}")
         try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait()
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).close()
+            return server
+        except Exception:
+            time.sleep(0.1)
+    _stop_browser_gate_server(server)
+    raise RuntimeError("browser gate server readiness timed out")
+
+
+def _run_browser_phase(
+    project_root: Path,
+    port: int,
+    *,
+    phase: str,
+    state: Path,
+    checkpoint: Path,
+    screenshot: Path | None = None,
+) -> None:
+    command = [
+        sys.executable,
+        str(project_root / "scripts" / "browser_e2e.py"),
+        "--url",
+        f"http://127.0.0.1:{port}",
+        "--phase",
+        phase,
+        "--state",
+        str(state),
+        "--checkpoint",
+        str(checkpoint),
+    ]
+    if screenshot is not None:
+        command.extend(("--screenshot", str(screenshot)))
+    result = subprocess.run(
+        command,
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=240,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"browser E2E {phase} phase failed: {result.stdout}{result.stderr}"
+        )
+
+
+def _stop_browser_gate_server(server: subprocess.Popen[str]) -> None:
+    if server.poll() is not None:
+        return
+    server.terminate()
+    try:
+        server.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait()
 
 
 def _acwm_revision() -> str:

@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from .api import create_app
-from .control_plane import ControlPlaneService
+from .control_plane import ControlPlaneService, HealthResult
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from .git_delivery import GitCandidateApplier, GitCandidateVerifier, GitCodeExecutor
 from .git_sandbox import GitSandbox
@@ -21,6 +21,23 @@ from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .release import DeterministicWorkspaceAgent
 from .testing import DeterministicPlanningService
 from .ui import install_preview_ui
+
+
+class DeterministicGateHealthProbe:
+    """Make browser-created instances verifiable without calling a live provider."""
+
+    async def check(self, runtime_type: str, connection: dict[str, str]) -> HealthResult:
+        if runtime_type == "codex-cli" and connection.get("command") == "codex":
+            return HealthResult(
+                status="ready",
+                identity="deterministic-model-boundary",
+                latency_ms=1,
+            )
+        return HealthResult(
+            status="failed",
+            error_code="DETERMINISTIC_GATE_RUNTIME_UNSUPPORTED",
+            latency_ms=1,
+        )
 
 
 def build_gate_app() -> FastAPI:
@@ -39,7 +56,9 @@ def build_gate_app() -> FastAPI:
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
     control_plane = ControlPlaneService(
-        database, config_root=project_root / "config"
+        database,
+        config_root=project_root / "config",
+        probe=DeterministicGateHealthProbe(),
     )
     control_plane.import_builtin_journey(
         planning_identity="deterministic-test",

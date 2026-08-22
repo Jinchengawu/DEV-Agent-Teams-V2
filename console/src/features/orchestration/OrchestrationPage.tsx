@@ -13,11 +13,11 @@ type Draft = components["schemas"]["JourneyDraft"];
 type Revision = components["schemas"]["JourneyRevision"];
 type Binding = components["schemas"]["CapabilityBinding"];
 type Position = { x: number; y: number };
-type StageStep = { id: string; kind: "stage"; workflow_mode: "agentscope.role-turn" | "code-delivery"; bindings: Record<string, string>; output_validator?: string; [key: string]: unknown };
+type StageStep = { id: string; kind: "stage"; workflow_mode: "agentscope.role-turn" | "code-delivery"; bindings: Record<string, string>; output_validator?: string | null; [key: string]: unknown };
 type GateStep = { id: string; kind: "approval_gate"; subject_kind: "delivery-plan" | "candidate-change"; [key: string]: unknown };
 type Step = StageStep | GateStep;
 
-const stageSchema = z.object({ id: z.string(), kind: z.literal("stage"), workflow_mode: z.enum(["agentscope.role-turn", "code-delivery"]), bindings: z.record(z.string(), z.string()), output_validator: z.string().optional() }).passthrough();
+const stageSchema = z.object({ id: z.string(), kind: z.literal("stage"), workflow_mode: z.enum(["agentscope.role-turn", "code-delivery"]), bindings: z.record(z.string(), z.string()), output_validator: z.string().nullable().optional() }).passthrough();
 const gateSchema = z.object({ id: z.string(), kind: z.literal("approval_gate"), subject_kind: z.enum(["delivery-plan", "candidate-change"]) }).passthrough();
 const definitionSchema = z.object({ steps: z.array(z.discriminatedUnion("kind", [stageSchema, gateSchema])) }).passthrough();
 
@@ -156,7 +156,7 @@ export function changeCapability(step: StageStep, capability: string): StageStep
 }
 
 function nextId(prefix: string, ids: string[]) { let index = 1; while (ids.includes(`${prefix}-${index}`)) index += 1; return `${prefix}-${index}`; }
-function parseSteps(definition: unknown): Step[] { const parsed = definitionSchema.safeParse(definition); return parsed.success ? parsed.data.steps : []; }
+export function parseSteps(definition: unknown): Step[] { const parsed = definitionSchema.safeParse(definition); return parsed.success ? parsed.data.steps : []; }
 function nextNodePosition(nodes: Node[]): Position { const ordered = orderedNodes(nodes); const last = ordered.at(-1); return { x: last ? last.position.x + 230 : 40, y: ordered.length % 2 ? 150 : 45 }; }
 function createNodes(steps: Step[], layout?: Record<string, unknown>): Node[] { return steps.map((step, index) => { const stored = layout?.[step.id]; return createNode(step, isPosition(stored) ? stored : { x: index * 230, y: index % 2 ? 150 : 45 }); }); }
 function createNode(step: Step, position: Position): Node { return { id: step.id, position, data: { label: <><small>{step.kind === "approval_gate" ? "审批关卡" : step.workflow_mode === "code-delivery" ? "代码交付" : "角色阶段"}</small><b>{stepDisplayName(step)}</b></> }, className: `flow-node ${step.kind === "approval_gate" ? "gate" : "stage"}` }; }
