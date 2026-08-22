@@ -1,0 +1,17 @@
+{
+  "task_id": "SPARK-UI-001",
+  "base_revision": "ec21ca101e3e992fdf1ca4f32152fa792037d501",
+  "candidate_revision": "5e2b0e85680f6413e4c7394e4eeb038530b9851f",
+  "model": "gpt-5.3-codex-spark",
+  "changed_files": [
+    "console/src/features/evidence/EvidencePage.tsx",
+    "console/src/features/evidence/EvidenceSummary.test.tsx",
+    "console/src/features/evidence/EvidenceSummary.tsx"
+  ],
+  "verification": "passed",
+  "architecture_deviations": [
+    "EvidenceSummary 使用内联布局样式，未遵循控制台集中样式范式"
+  ],
+  "decision": "reject",
+  "reason": "功能和测试通过，但主架构审查不接受内联样式；扩充受控样式路径后重新执行。"
+}

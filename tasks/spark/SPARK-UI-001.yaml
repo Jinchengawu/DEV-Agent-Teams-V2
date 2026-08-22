@@ -7,6 +7,7 @@ kind: frontend-component
 
 allowed_paths:
   - console/src/features/evidence/**
+  - console/src/styles.css
 
 forbidden_paths:
   - migrations/**
@@ -24,6 +25,7 @@ acceptance:
   - 在 EvidencePage 的筛选器上方接入摘要，统计以接口返回的完整账本为准而非筛选结果
   - 只有已验证统计使用可信绿色语义，无效使用红色，不可用保持中性
   - 新增组件测试，覆盖混合状态与空数组，不生成模拟证据或固定生产数据
+  - 禁止 JSX 内联 style；新增样式写入 console/src/styles.css 并沿用控制台设计变量
 
 verification:
   - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
