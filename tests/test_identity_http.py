@@ -8,14 +8,19 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
+from agent_team_os.api import create_app
+from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.modules.identity import (
+    BootstrapRequest,
     IdentityService,
     SQLiteIdentityRepository,
+    UserCreate,
     create_identity_router,
 )
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.ids import new_id
+from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
 ORIGIN = "http://test"
 ADMIN_PASSWORD = "secure-admin-2026"
@@ -181,3 +186,72 @@ async def test_origin_and_last_administrator_guards(tmp_path: Path) -> None:
         )
         assert demote.status_code == 409
         assert demote.json()["code"] == "IDENTITY_LAST_ADMIN_REQUIRED"
+
+
+@pytest.mark.anyio
+async def test_product_api_requires_session_csrf_and_permission(tmp_path: Path) -> None:
+    database = tmp_path / "identity.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    identity = IdentityService(SQLiteIdentityRepository(database))
+    admin_user = identity.bootstrap(BootstrapRequest(password=ADMIN_PASSWORD))
+    identity.create_user(
+        admin_user,
+        UserCreate(
+            username="viewer",
+            display_name="只读访问者",
+            role="viewer",
+            password=VIEWER_PASSWORD,
+        ),
+    )
+    coordinator = DeliveryCoordinator(
+        planning=DeterministicPlanningService(),
+        executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
+    )
+    app = create_app(coordinator, identity=identity)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=ORIGIN
+    ) as client:
+        anonymous = await client.get("/v1/deliveries")
+        assert anonymous.status_code == 401
+
+        await client.post(
+            "/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "admin", "password": ADMIN_PASSWORD},
+        )
+        missing_csrf = await client.post(
+            "/v1/deliveries",
+            headers={"Origin": ORIGIN},
+            json={"workspace_id": "backend-demo", "user_request": "增加健康检查"},
+        )
+        assert missing_csrf.status_code == 403
+        created = await client.post(
+            "/v1/deliveries",
+            headers={
+                "Origin": ORIGIN,
+                "X-CSRF-Token": client.cookies["agent_team_os_csrf"],
+            },
+            json={"workspace_id": "backend-demo", "user_request": "增加健康检查"},
+        )
+        assert created.status_code == 202
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=ORIGIN
+    ) as viewer:
+        await viewer.post(
+            "/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "viewer", "password": VIEWER_PASSWORD},
+        )
+        denied = await viewer.post(
+            "/v1/deliveries",
+            headers={
+                "Origin": ORIGIN,
+                "X-CSRF-Token": viewer.cookies["agent_team_os_csrf"],
+            },
+            json={"workspace_id": "backend-demo", "user_request": "越权交付"},
+        )
+        assert denied.status_code == 403
+        assert denied.json()["code"] == "IDENTITY_PERMISSION_DENIED"

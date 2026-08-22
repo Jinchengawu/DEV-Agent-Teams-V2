@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./shell/AppShell";
 import { LoadingState } from "../shared/feedback/AsyncState";
+import { AuthGate } from "../features/identity/AuthGate";
 
 const DeliveriesPage = lazy(() => import("../features/deliveries/DeliveriesPage").then((module) => ({ default: module.DeliveriesPage })));
 const BoardPage = lazy(() => import("../features/board/BoardPage").then((module) => ({ default: module.BoardPage })));
@@ -12,7 +13,7 @@ const AgentsPage = lazy(() => import("../features/agents/AgentsPage").then((modu
 const KnowledgePage = lazy(() => import("../features/knowledge/KnowledgePage").then((module) => ({ default: module.KnowledgePage })));
 
 export function App() {
-  return <BrowserRouter><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
+  return <BrowserRouter><AuthGate><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
     <Route index element={<Navigate to="/deliveries" replace/>}/>
     <Route path="deliveries" element={<DeliveriesPage/>}/>
     <Route path="board" element={<BoardPage/>}/>
@@ -22,5 +23,5 @@ export function App() {
     <Route path="evidence" element={<EvidencePage/>}/>
     <Route path="settings" element={<SettingsPage/>}/>
     <Route path="*" element={<Navigate to="/deliveries" replace/>}/>
-  </Route></Routes></Suspense></BrowserRouter>;
+  </Route></Routes></Suspense></AuthGate></BrowserRouter>;
 }

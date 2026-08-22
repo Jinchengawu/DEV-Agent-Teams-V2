@@ -29,12 +29,12 @@ def create_identity_router(service: IdentityService) -> APIRouter:
 
     @router.post("/auth/bootstrap", response_model=User, status_code=status.HTTP_201_CREATED)
     def bootstrap(request_body: BootstrapRequest, request: Request) -> User:
-        _ensure_same_origin(request)
+        ensure_same_origin(request)
         return service.bootstrap(request_body)
 
     @router.post("/auth/login", response_model=User)
     def login(request_body: LoginRequest, request: Request, response: Response) -> User:
-        _ensure_same_origin(request)
+        ensure_same_origin(request)
         grant = service.login(request_body)
         max_age = max(int((grant.expires_at - service.clock.now()).total_seconds()), 0)
         response.set_cookie(
@@ -70,7 +70,7 @@ def create_identity_router(service: IdentityService) -> APIRouter:
         bearer: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
         csrf_token: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
     ) -> Response:
-        _ensure_same_origin(request)
+        ensure_same_origin(request)
         service.authenticate_mutation(bearer, csrf_token)
         service.logout(bearer)
         response.delete_cookie(SESSION_COOKIE, path="/")
@@ -91,7 +91,7 @@ def create_identity_router(service: IdentityService) -> APIRouter:
         bearer: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
         csrf_token: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
     ) -> User:
-        _ensure_same_origin(request)
+        ensure_same_origin(request)
         actor = service.authenticate_mutation(bearer, csrf_token)
         return service.create_user(actor, request_body)
 
@@ -103,14 +103,14 @@ def create_identity_router(service: IdentityService) -> APIRouter:
         bearer: Annotated[str | None, Cookie(alias=SESSION_COOKIE)] = None,
         csrf_token: Annotated[str | None, Header(alias=CSRF_HEADER)] = None,
     ) -> User:
-        _ensure_same_origin(request)
+        ensure_same_origin(request)
         actor = service.authenticate_mutation(bearer, csrf_token)
         return service.patch_user(actor, user_id, request_body)
 
     return router
 
 
-def _ensure_same_origin(request: Request) -> None:
+def ensure_same_origin(request: Request) -> None:
     origin = request.headers.get("origin")
     expected = f"{request.url.scheme}://{request.url.netloc}"
     if origin != expected:

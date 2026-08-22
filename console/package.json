@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "typecheck": "node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit",
-    "build": "node ./node_modules/vite/bin/vite.js build",
-    "test": "vitest run",
+    "typecheck": "node --max-old-space-size=300 ./node_modules/typescript/bin/tsc --noEmit",
+    "build": "node --max-old-space-size=300 ./node_modules/vite/bin/vite.js build",
+    "test": "node --max-old-space-size=300 ./node_modules/vitest/vitest.mjs run --maxWorkers=1",
     "api:generate": "openapi-typescript ./openapi.json -o ./src/shared/api/generated/schema.ts"
   },
   "dependencies": {

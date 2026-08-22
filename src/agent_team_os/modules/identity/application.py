@@ -78,18 +78,18 @@ class IdentityService:
 
     def authenticate(self, bearer: str | None) -> User:
         if not bearer:
-            raise self._authentication_required()
+            raise self.authentication_required()
         resolved = self.repository.resolve_session(_token_hash(bearer), self.clock.now())
         if resolved is None:
-            raise self._authentication_required()
+            raise self.authentication_required()
         return resolved[0]
 
     def authenticate_mutation(self, bearer: str | None, csrf_token: str | None) -> User:
         if not bearer:
-            raise self._authentication_required()
+            raise self.authentication_required()
         resolved = self.repository.resolve_session(_token_hash(bearer), self.clock.now())
         if resolved is None:
-            raise self._authentication_required()
+            raise self.authentication_required()
         if not csrf_token or not hmac.compare_digest(resolved[1], _token_hash(csrf_token)):
             raise ProductError(
                 code="IDENTITY_CSRF_REJECTED",
@@ -203,7 +203,7 @@ class IdentityService:
         return self.repository.create_user(user, hash_password(request.password))
 
     @staticmethod
-    def _authentication_required() -> ProductError:
+    def authentication_required() -> ProductError:
         return ProductError(
             code="IDENTITY_AUTHENTICATION_REQUIRED",
             title="需要登录",

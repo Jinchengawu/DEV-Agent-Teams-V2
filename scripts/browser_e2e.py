@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import secrets
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -31,6 +33,27 @@ def main() -> None:
         )
         page.goto(args.url)
         page.wait_for_load_state("networkidle")
+
+        bootstrap_heading = page.get_by_role("heading", name="初始化管理员")
+        if bootstrap_heading.count():
+            password = os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD") or (
+                f"Browser-{secrets.token_urlsafe(18)}-2026"
+            )
+            page.get_by_label("密码").fill(password)
+            page.get_by_role("button", name="创建并登录").click()
+            page.get_by_role("link", name="交付", exact=True).wait_for()
+        elif page.get_by_role("heading", name="登录 Agent-Team-OS").count():
+            password = os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD")
+            if not password:
+                raise AssertionError(
+                    "existing browser-test database requires AGENT_TEAM_OS_TEST_PASSWORD"
+                )
+            page.get_by_label("用户名").fill(
+                os.environ.get("AGENT_TEAM_OS_TEST_USERNAME", "admin")
+            )
+            page.get_by_label("密码").fill(password)
+            page.get_by_role("button", name="登录控制平面").click()
+            page.get_by_role("link", name="交付", exact=True).wait_for()
 
         assert page.locator("body").inner_text().strip(), "rendered page is blank"
         assert not page.locator(".vite-error-overlay").count(), "Vite error overlay found"

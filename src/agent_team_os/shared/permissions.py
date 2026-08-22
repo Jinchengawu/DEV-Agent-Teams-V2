@@ -14,6 +14,9 @@ class Permission(StrEnum):
     PLAN_DECIDE = "delivery:plan-decide"
     CANDIDATE_APPLY = "delivery:candidate-apply"
     JOURNEY_PUBLISH = "journey:publish"
+    JOURNEY_EDIT = "journey:edit"
+    AGENT_MANAGE = "agents:manage"
+    EVIDENCE_VERIFY = "evidence:verify"
     WIKI_EDIT = "wiki:edit"
     SETTINGS_EDIT = "settings:edit"
     USER_MANAGE = "users:manage"
@@ -23,7 +26,12 @@ class Permission(StrEnum):
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.ADMINISTRATOR: frozenset(Permission),
     Role.EDITOR: frozenset(
-        {Permission.DELIVERY_CREATE, Permission.PLAN_DECIDE, Permission.WIKI_EDIT}
+        {
+            Permission.DELIVERY_CREATE,
+            Permission.PLAN_DECIDE,
+            Permission.JOURNEY_EDIT,
+            Permission.WIKI_EDIT,
+        }
     ),
     Role.VIEWER: frozenset(),
 }
@@ -31,4 +39,3 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 
 def permits(role: Role, permission: Permission) -> bool:
     return permission in ROLE_PERMISSIONS[role]
-

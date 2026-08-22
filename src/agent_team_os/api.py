@@ -11,6 +11,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from .control_plane import (
     AgentInstance,
@@ -37,13 +39,21 @@ from .delivery import (
 )
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
-from .modules.identity import IdentityService, create_identity_router
+from .modules.identity import (
+    CSRF_HEADER,
+    SESSION_COOKIE,
+    IdentityService,
+    User,
+    create_identity_router,
+    ensure_same_origin,
+)
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
 from .shared.errors import ProblemDetail, ProductError
 from .shared.events import ProductEvent
 from .shared.ids import new_id
+from .shared.permissions import Permission
 
 
 class DeliveryRequest(BaseModel):
@@ -100,6 +110,48 @@ def create_app(
     readiness_probe = readiness or RuntimeReadiness()
     reports = report_dir
 
+    def require_permission(request: Request, permission: Permission) -> None:
+        if identity is None:
+            return
+        actor = getattr(request.state, "identity_user", None)
+        if not isinstance(actor, User):
+            raise IdentityService.authentication_required()
+        identity.require(actor, permission)
+
+    @app.middleware("http")
+    async def identity_guard(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        public_paths = {
+            "/v1/readiness",
+            "/v1/auth/bootstrap-status",
+            "/v1/auth/bootstrap",
+            "/v1/auth/login",
+        }
+        if (
+            identity is None
+            or not request.url.path.startswith("/v1/")
+            or request.url.path in public_paths
+        ):
+            return await call_next(request)
+        try:
+            bearer = request.cookies.get(SESSION_COOKIE)
+            if request.method in {"GET", "HEAD", "OPTIONS"}:
+                actor = identity.authenticate(bearer)
+            else:
+                ensure_same_origin(request)
+                actor = identity.authenticate_mutation(
+                    bearer, request.headers.get(CSRF_HEADER)
+                )
+            request.state.identity_user = actor
+        except ProductError as error:
+            return JSONResponse(
+                status_code=error.status_code,
+                content=error.problem(new_id()).model_dump(mode="json", exclude_none=True),
+                media_type="application/problem+json",
+            )
+        return await call_next(request)
+
     def get_coordinator() -> DeliveryCoordinator:
         return coordinator
 
@@ -151,7 +203,12 @@ def create_app(
         )
 
     if settings is not None:
-        app.include_router(create_settings_router(settings))
+        app.include_router(
+            create_settings_router(
+                settings,
+                lambda request: require_permission(request, Permission.SETTINGS_EDIT),
+            )
+        )
 
     if identity is not None:
         app.include_router(create_identity_router(identity))
@@ -186,7 +243,8 @@ def create_app(
             return evidence.list(delivery_id)
 
         @app.post("/v1/evidence/{evidence_id}/verify", response_model=EvidenceRecord)
-        def verify_evidence(evidence_id: str) -> EvidenceRecord:
+        def verify_evidence(evidence_id: str, request: Request) -> EvidenceRecord:
+            require_permission(request, Permission.EVIDENCE_VERIFY)
             try:
                 return evidence.verify(evidence_id)
             except KeyError as error:
@@ -195,17 +253,23 @@ def create_app(
     if control_plane is not None:
 
         @app.post("/v1/agent-instances", response_model=AgentInstance, status_code=201)
-        def create_agent_instance(request: AgentInstanceCreate) -> AgentInstance:
-            return control_plane.create_instance(request)
+        def create_agent_instance(
+            request_body: AgentInstanceCreate, request: Request
+        ) -> AgentInstance:
+            require_permission(request, Permission.AGENT_MANAGE)
+            return control_plane.create_instance(request_body)
 
         @app.get("/v1/agent-instances", response_model=list[AgentInstance])
         def list_agent_instances() -> tuple[AgentInstance, ...]:
             return control_plane.list_instances()
 
         @app.patch("/v1/agent-instances/{instance_id}", response_model=AgentInstance)
-        def patch_agent_instance(instance_id: str, request: AgentInstancePatch) -> AgentInstance:
+        def patch_agent_instance(
+            instance_id: str, request_body: AgentInstancePatch, request: Request
+        ) -> AgentInstance:
+            require_permission(request, Permission.AGENT_MANAGE)
             try:
-                return control_plane.patch_instance(instance_id, request)
+                return control_plane.patch_instance(instance_id, request_body)
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="agent instance not found") from error
             except RuntimeError as error:
@@ -215,7 +279,10 @@ def create_app(
             "/v1/agent-instances/{instance_id}/health-check",
             response_model=AgentInstance,
         )
-        async def health_check_agent_instance(instance_id: str) -> AgentInstance:
+        async def health_check_agent_instance(
+            instance_id: str, request: Request
+        ) -> AgentInstance:
+            require_permission(request, Permission.AGENT_MANAGE)
             try:
                 return await control_plane.check_instance(instance_id)
             except KeyError as error:
@@ -223,10 +290,11 @@ def create_app(
 
         @app.put("/v1/capability-bindings/{capability_id}", response_model=CapabilityBinding)
         def put_capability_binding(
-            capability_id: str, request: BindingRequest
+            capability_id: str, request_body: BindingRequest, request: Request
         ) -> CapabilityBinding:
+            require_permission(request, Permission.AGENT_MANAGE)
             try:
-                return control_plane.put_binding(capability_id, request)
+                return control_plane.put_binding(capability_id, request_body)
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="agent instance not found") from error
             except ValueError as error:
@@ -242,8 +310,11 @@ def create_app(
                 raise HTTPException(status_code=404, detail="binding not found") from error
 
         @app.post("/v1/journey-drafts", response_model=JourneyDraft, status_code=201)
-        def create_journey_draft(request: JourneyDraftCreate) -> JourneyDraft:
-            return control_plane.create_draft(request)
+        def create_journey_draft(
+            request_body: JourneyDraftCreate, request: Request
+        ) -> JourneyDraft:
+            require_permission(request, Permission.JOURNEY_EDIT)
+            return control_plane.create_draft(request_body)
 
         @app.get("/v1/journey-drafts", response_model=list[JourneyDraft])
         def list_journey_drafts() -> tuple[JourneyDraft, ...]:
@@ -257,16 +328,20 @@ def create_app(
                 raise HTTPException(status_code=404, detail="journey draft not found") from error
 
         @app.patch("/v1/journey-drafts/{draft_id}", response_model=JourneyDraft)
-        def patch_journey_draft(draft_id: str, request: JourneyDraftPatch) -> JourneyDraft:
+        def patch_journey_draft(
+            draft_id: str, request_body: JourneyDraftPatch, request: Request
+        ) -> JourneyDraft:
+            require_permission(request, Permission.JOURNEY_EDIT)
             try:
-                return control_plane.patch_draft(draft_id, request)
+                return control_plane.patch_draft(draft_id, request_body)
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="journey draft not found") from error
             except RuntimeError as error:
                 raise HTTPException(status_code=409, detail=str(error)) from error
 
         @app.post("/v1/journey-drafts/{draft_id}/validate", response_model=JourneyDraft)
-        def validate_journey_draft(draft_id: str) -> JourneyDraft:
+        def validate_journey_draft(draft_id: str, request: Request) -> JourneyDraft:
+            require_permission(request, Permission.JOURNEY_EDIT)
             try:
                 return control_plane.validate_draft(draft_id)
             except KeyError as error:
@@ -277,7 +352,8 @@ def create_app(
             response_model=JourneyRevision,
             status_code=201,
         )
-        def publish_journey_draft(draft_id: str) -> JourneyRevision:
+        def publish_journey_draft(draft_id: str, request: Request) -> JourneyRevision:
+            require_permission(request, Permission.JOURNEY_PUBLISH)
             try:
                 return control_plane.publish_draft(draft_id)
             except KeyError as error:
@@ -313,30 +389,48 @@ def create_app(
             response_model=DeliveryRun,
             status_code=202,
         )
-        async def command_work_item(work_item_id: str, request: WorkItemCommand) -> DeliveryRun:
+        async def command_work_item(
+            work_item_id: str, request_body: WorkItemCommand, request: Request
+        ) -> DeliveryRun:
+            permission = (
+                Permission.CANDIDATE_APPLY
+                if request_body.command in {"accept-candidate", "reject-candidate"}
+                else Permission.PLAN_DECIDE
+            )
+            require_permission(request, permission)
             try:
                 delivery = coordinator.get(work_item_id)
-                if delivery.version != request.expected_version:
+                if delivery.version != request_body.expected_version:
                     raise DeliveryVersionConflictError(work_item_id)
-                if request.command in {"approve-plan", "reject-plan"}:
+                if request_body.command in {"approve-plan", "reject-plan"}:
                     if delivery.plan_gate is None:
                         raise DeliveryStateConflictError(work_item_id)
                     return coordinator.start_plan_decision(
                         work_item_id,
-                        decision=("approve" if request.command == "approve-plan" else "reject"),
-                        expected_version=request.expected_version,
+                        decision=(
+                            "approve"
+                            if request_body.command == "approve-plan"
+                            else "reject"
+                        ),
+                        expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.plan_gate.subject_sha256,
                     )
-                if request.command in {"accept-candidate", "reject-candidate"}:
+                if request_body.command in {"accept-candidate", "reject-candidate"}:
                     if delivery.candidate_gate is None:
                         raise DeliveryStateConflictError(work_item_id)
                     return coordinator.start_candidate_decision(
                         work_item_id,
-                        decision=("accept" if request.command == "accept-candidate" else "reject"),
-                        expected_version=request.expected_version,
+                        decision=(
+                            "accept"
+                            if request_body.command == "accept-candidate"
+                            else "reject"
+                        ),
+                        expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.candidate_gate.subject_sha256,
                     )
-                return coordinator.cancel(work_item_id, expected_version=request.expected_version)
+                return coordinator.cancel(
+                    work_item_id, expected_version=request_body.expected_version
+                )
             except DeliveryNotFoundError as error:
                 raise HTTPException(status_code=404, detail="work item not found") from error
             except (DeliveryVersionConflictError, DeliveryStateConflictError) as error:
@@ -344,9 +438,11 @@ def create_app(
 
         @app.post("/v1/knowledge/documents", response_model=KnowledgeDocument, status_code=201)
         def create_knowledge_document(
-            request: KnowledgeDocumentCreate,
+            request_body: KnowledgeDocumentCreate,
+            request: Request,
         ) -> KnowledgeDocument:
-            return control_plane.create_document(request)
+            require_permission(request, Permission.WIKI_EDIT)
+            return control_plane.create_document(request_body)
 
         @app.get("/v1/knowledge/documents", response_model=list[KnowledgeDocument])
         def list_knowledge_documents() -> tuple[KnowledgeDocument, ...]:
@@ -387,17 +483,19 @@ def create_app(
 
     @app.post("/v1/deliveries", response_model=DeliveryRun, status_code=status.HTTP_202_ACCEPTED)
     async def create_delivery(
-        request: DeliveryRequest,
+        request_body: DeliveryRequest,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
+        require_permission(request, Permission.DELIVERY_CREATE)
         try:
             revision = None
             if control_plane is not None:
                 try:
-                    revision = control_plane.resolve_revision(request.journey_revision_id)
+                    revision = control_plane.resolve_revision(request_body.journey_revision_id)
                     control_plane.ensure_revision_available(revision)
                 except KeyError as error:
-                    if request.journey_revision_id is None:
+                    if request_body.journey_revision_id is None:
                         revision = None
                     else:
                         raise HTTPException(
@@ -406,8 +504,8 @@ def create_app(
                 except ValueError as error:
                     raise HTTPException(status_code=409, detail=str(error)) from error
             return service.enqueue(
-                workspace_id=request.workspace_id,
-                user_request=request.user_request,
+                workspace_id=request_body.workspace_id,
+                user_request=request_body.user_request,
                 journey_revision_id=(
                     None if revision is None else f"{revision.journey_id}:{revision.revision}"
                 ),
@@ -428,15 +526,17 @@ def create_app(
     )
     async def decide_plan(
         delivery_id: str,
-        request: PlanDecisionRequest,
+        request_body: PlanDecisionRequest,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
+        require_permission(request, Permission.PLAN_DECIDE)
         try:
             return service.start_plan_decision(
                 delivery_id,
-                decision=request.decision,
-                expected_version=request.expected_version,
-                expected_subject_sha256=request.expected_subject_sha256,
+                decision=request_body.decision,
+                expected_version=request_body.expected_version,
+                expected_subject_sha256=request_body.expected_subject_sha256,
             )
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
@@ -478,15 +578,17 @@ def create_app(
     )
     async def decide_candidate(
         delivery_id: str,
-        request: CandidateDecisionRequest,
+        request_body: CandidateDecisionRequest,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
+        require_permission(request, Permission.CANDIDATE_APPLY)
         try:
             return service.start_candidate_decision(
                 delivery_id,
-                decision=request.decision,
-                expected_version=request.expected_version,
-                expected_subject_sha256=request.expected_subject_sha256,
+                decision=request_body.decision,
+                expected_version=request_body.expected_version,
+                expected_subject_sha256=request_body.expected_subject_sha256,
             )
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
@@ -498,11 +600,13 @@ def create_app(
     @app.post("/v1/deliveries/{delivery_id}/cancel", response_model=DeliveryRun)
     def cancel_delivery(
         delivery_id: str,
-        request: CancelRequest,
+        request_body: CancelRequest,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
+        require_permission(request, Permission.PLAN_DECIDE)
         try:
-            return service.cancel(delivery_id, expected_version=request.expected_version)
+            return service.cancel(delivery_id, expected_version=request_body.expected_version)
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
         except (DeliveryVersionConflictError, DeliveryStateConflictError) as error:
@@ -533,7 +637,8 @@ def create_app(
         return history
 
     @app.post("/v1/workspaces/backend-demo/reset")
-    def reset_backend_demo() -> dict[str, str]:
+    def reset_backend_demo(request: Request) -> dict[str, str]:
+        require_permission(request, Permission.WORKSPACE_RESET)
         if workspace_reset is None:
             raise HTTPException(status_code=501, detail="workspace reset is not configured")
         try:

@@ -21,9 +21,18 @@ export class ApiProblem extends Error {
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrfToken = readCookie("agent_team_os_csrf");
   const response = await fetch(path, {
     ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      ...(method !== "GET" && method !== "HEAD" && csrfToken
+        ? { "X-CSRF-Token": csrfToken }
+        : {}),
+      ...init?.headers,
+    },
   });
   const contentType = response.headers.get("content-type") ?? "";
   const body: unknown = contentType.includes("json") ? await response.json() : await response.text();
@@ -41,9 +50,18 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function readCookie(name: string): string | undefined {
+  const prefix = `${encodeURIComponent(name)}=`;
+  return document.cookie
+    .split(";")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(prefix))
+    ?.slice(prefix.length);
+}
+
 export type Delivery = components["schemas"]["DeliveryRun"];
 export type EvidenceRecord = components["schemas"]["EvidenceRecord"];
 export type ProductEvent = components["schemas"]["ProductEvent"];
 export type AppSettings = components["schemas"]["AppSettings"];
 export type AppSettingsPatch = components["schemas"]["AppSettingsPatch"];
-
+export type CurrentUser = components["schemas"]["User"];
