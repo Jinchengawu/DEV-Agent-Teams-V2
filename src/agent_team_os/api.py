@@ -37,6 +37,7 @@ from .delivery import (
 )
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
+from .modules.identity import IdentityService, create_identity_router
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
@@ -84,6 +85,7 @@ def create_app(
     control_plane: ControlPlaneService | None = None,
     evidence: EvidenceLedger | None = None,
     settings: SettingsManager | None = None,
+    identity: IdentityService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agent-Team-OS",
@@ -150,6 +152,9 @@ def create_app(
 
     if settings is not None:
         app.include_router(create_settings_router(settings))
+
+    if identity is not None:
+        app.include_router(create_identity_router(identity))
 
     if evidence is not None:
 

@@ -29,6 +29,7 @@ from .git_sandbox import GitSandbox
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
 from .journey import resolve_backend_delivery_fingerprint
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
+from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
 from .release import run_gate
@@ -107,6 +108,7 @@ def build_preview_app() -> FastAPI:
         control_plane=control_plane,
         evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
         settings=SettingsManager(SQLiteSettingsRepository(database)),
+        identity=IdentityService(SQLiteIdentityRepository(database)),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
