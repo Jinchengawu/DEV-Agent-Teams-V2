@@ -16,6 +16,7 @@ from .domain import (
     WikiAccess,
 )
 from .http import create_wiki_router
+from .provider_application import ProviderKnowledgeManager
 from .provider_domain import (
     KnowledgeProviderKind,
     ProviderActor,
@@ -24,11 +25,19 @@ from .provider_domain import (
     ProviderNode,
     ProviderNodeKind,
     ProviderSnapshot,
+    ProviderSnapshotRecord,
     ProviderSpace,
+    ProviderSyncResult,
     ProviderSyncRun,
     ProviderSyncStatus,
 )
-from .provider_ports import KnowledgeProvider
+from .provider_ports import (
+    KnowledgeProvider,
+    KnowledgeProviderResolver,
+    ProviderFailure,
+    ProviderKnowledgeRepository,
+)
+from .provider_repository import SQLiteProviderKnowledgeRepository
 from .repository import SQLiteWikiRepository
 
 __all__ = [
@@ -40,20 +49,27 @@ __all__ = [
     "DocumentPatch",
     "KnowledgeActor",
     "KnowledgeProvider",
+    "KnowledgeProviderResolver",
     "KnowledgeProviderKind",
     "PermissionGrant",
     "ProviderActor",
     "ProviderBinding",
     "ProviderBindingCreate",
+    "ProviderFailure",
     "ProviderNode",
     "ProviderNodeKind",
+    "ProviderKnowledgeManager",
+    "ProviderKnowledgeRepository",
     "ProviderSnapshot",
+    "ProviderSnapshotRecord",
     "ProviderSpace",
     "ProviderSyncRun",
+    "ProviderSyncResult",
     "ProviderSyncStatus",
     "Revision",
     "RevisionRestoreRequest",
     "SQLiteWikiRepository",
+    "SQLiteProviderKnowledgeRepository",
     "Space",
     "SpaceCreate",
     "SystemKnowledgeArtifact",

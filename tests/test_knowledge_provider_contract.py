@@ -124,7 +124,9 @@ def test_sync_terminal_states_require_traceable_evidence() -> None:
         source_id="doc-1",
         status=ProviderSyncStatus.SUCCEEDED,
         provider_revision="rev-1",
+        snapshot_id="snapshot-1",
         snapshot_sha256="a" * 64,
+        started_at=completed_at,
         completed_at=completed_at,
     )
     assert succeeded.completed_at == completed_at
