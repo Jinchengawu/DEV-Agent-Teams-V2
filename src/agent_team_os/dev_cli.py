@@ -12,7 +12,7 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     spark = commands.add_parser("spark")
     actions = spark.add_subparsers(dest="action", required=True)
-    for action in ("run", "inspect", "accept", "reject"):
+    for action in ("run", "repair", "inspect", "accept", "reject"):
         command = actions.add_parser(action)
         command.add_argument("task_id")
     arguments = parser.parse_args()

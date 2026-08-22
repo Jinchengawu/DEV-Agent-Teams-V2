@@ -81,3 +81,25 @@ def test_previous_spark_attempt_is_archived_before_retry(tmp_path: Path) -> None
     assert not (run_dir / "result.json").exists()
     assert (run_dir / "attempts" / "001" / "result.json").exists()
     assert (run_dir / "attempts" / "001" / "verification.json").exists()
+
+
+def test_repair_only_accepts_machine_verification_failures(tmp_path: Path) -> None:
+    task_dir = tmp_path / "tasks" / "spark"
+    task_dir.mkdir(parents=True)
+    (task_dir / "SPARK-TEST-001.json").write_text(
+        task().model_dump_json(), encoding="utf-8"
+    )
+    result_dir = tmp_path / ".agent-team-os" / "spark-runs" / "SPARK-TEST-001"
+    result_dir.mkdir(parents=True)
+    (result_dir / "result.json").write_text(
+        '{"task_id":"SPARK-TEST-001","status":"failed",'
+        '"model":"gpt-5.3-codex-spark","base_revision":"'
+        + "a" * 40
+        + '","error_code":"SPARK_PATH_VIOLATION"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SparkFailure) as failure:
+        SparkRunner(tmp_path).repair("SPARK-TEST-001")
+
+    assert failure.value.code == "SPARK_REPAIR_NOT_ALLOWED"

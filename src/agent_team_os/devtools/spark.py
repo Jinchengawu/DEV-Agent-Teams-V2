@@ -112,74 +112,8 @@ class SparkRunner:
         try:
             self._preflight(task)
             worktree = self._create_worktree(task)
-            prompt = self._prompt(task)
-            invocation = {
-                "task_id": task.id,
-                "model": SPARK_MODEL,
-                "base_revision": task.base_revision,
-                "worktree": str(worktree),
-                "sandbox": "workspace-write",
-                "ephemeral": True,
-                "started_at": datetime.now(UTC).isoformat(),
-            }
-            self._write_json(run_dir / "invocation.json", invocation)
-            events = run_dir / "codex-events.jsonl"
-            last_message = run_dir / "last-message.txt"
-            command = [
-                "codex",
-                "exec",
-                "--model",
-                SPARK_MODEL,
-                "--sandbox",
-                "workspace-write",
-                "--ephemeral",
-                "--json",
-                "--cd",
-                str(worktree),
-                "--output-last-message",
-                str(last_message),
-                prompt,
-            ]
-            with events.open("w", encoding="utf-8") as output:
-                completed = subprocess.run(
-                    command,
-                    cwd=worktree,
-                    stdout=output,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=900,
-                    check=False,
-                )
-            if completed.returncode != 0:
-                raise SparkFailure("SPARK_MODEL_FAILED", completed.stderr[-4_000:])
-            self._verify_event_stream(events, task)
-            changed_files = self._changed_files(worktree)
-            self._verify_diff_scope(task, changed_files)
-            diff = self._git(worktree, "diff", "--binary", task.base_revision, "--").stdout
-            if not diff.strip():
-                raise SparkFailure("SPARK_NO_CHANGES", "Spark produced no repository change")
-            if SECRET_PATTERN.search(diff):
-                raise SparkFailure("SPARK_SECRET_DETECTED", "Candidate Diff matched secret policy")
-            (run_dir / "diff.patch").write_text(diff, encoding="utf-8")
-            verification = self._verify_commands(task, worktree, run_dir)
-            self._git(worktree, "add", "--", *changed_files)
-            self._git(
-                worktree,
-                "commit",
-                "-m",
-                f"spark({task.id.lower()}): {task.title}",
-            )
-            candidate = self._git(worktree, "rev-parse", "HEAD").stdout.strip()
-            result = SparkResult(
-                task_id=task.id,
-                status="candidate",
-                model=SPARK_MODEL,
-                base_revision=task.base_revision,
-                candidate_revision=candidate,
-                changed_files=tuple(changed_files),
-                diff_sha256=hashlib.sha256(diff.encode()).hexdigest(),
-                verification=verification,
-            )
+            self._invoke_spark(task, worktree, run_dir, self._prompt(task))
+            result = self._candidate_result(task, worktree, run_dir)
         except SparkFailure as error:
             result = SparkResult(
                 task_id=task.id,
@@ -197,6 +131,54 @@ class SparkRunner:
                 base_revision=task.base_revision,
                 error_code="SPARK_TIMEOUT",
                 detail="Codex Spark exceeded the 900 second development limit",
+            )
+        self._write_json(run_dir / "result.json", result.model_dump(mode="json"))
+        return result
+
+    def repair(self, task_id: str) -> SparkResult:
+        task = self.load_task(task_id)
+        previous = self.inspect(task_id)
+        if previous.status != "failed" or not (
+            previous.error_code or ""
+        ).startswith("SPARK_VERIFICATION_"):
+            raise SparkFailure(
+                "SPARK_REPAIR_NOT_ALLOWED",
+                "Only a machine-verification failure may enter a repair turn",
+            )
+        self._ensure_clean_main()
+        worktree = self.worktree_root / task.id
+        if not worktree.exists():
+            raise SparkFailure("SPARK_WORKTREE_REQUIRED", "Failed Spark Worktree is missing")
+        run_dir = self.state_root / task.id
+        verification_log = (run_dir / "verification.json").read_text(encoding="utf-8")
+        self._archive_previous_attempt(run_dir)
+        try:
+            self._invoke_spark(
+                task,
+                worktree,
+                run_dir,
+                self._repair_prompt(task, verification_log),
+            )
+            result = self._candidate_result(task, worktree, run_dir)
+        except SparkFailure as error:
+            result = SparkResult(
+                task_id=task.id,
+                status="blocked"
+                if error.code == "ARCHITECTURE_DECISION_REQUIRED"
+                else "failed",
+                model=SPARK_MODEL,
+                base_revision=task.base_revision,
+                error_code=error.code,
+                detail=error.detail,
+            )
+        except subprocess.TimeoutExpired:
+            result = SparkResult(
+                task_id=task.id,
+                status="failed",
+                model=SPARK_MODEL,
+                base_revision=task.base_revision,
+                error_code="SPARK_TIMEOUT",
+                detail="Codex Spark exceeded the 900 second repair limit",
             )
         self._write_json(run_dir / "result.json", result.model_dump(mode="json"))
         return result
@@ -330,6 +312,80 @@ class SparkRunner:
                 raise SparkFailure("SPARK_DEPENDENCY_PREP_FAILED", completed.stderr[-4_000:])
         return worktree
 
+    def _invoke_spark(
+        self,
+        task: SparkTask,
+        worktree: Path,
+        run_dir: Path,
+        prompt: str,
+    ) -> None:
+        invocation = {
+            "task_id": task.id,
+            "model": SPARK_MODEL,
+            "base_revision": task.base_revision,
+            "worktree": str(worktree),
+            "sandbox": "workspace-write",
+            "ephemeral": True,
+            "started_at": datetime.now(UTC).isoformat(),
+        }
+        self._write_json(run_dir / "invocation.json", invocation)
+        events = run_dir / "codex-events.jsonl"
+        last_message = run_dir / "last-message.txt"
+        command = [
+            "codex",
+            "exec",
+            "--model",
+            SPARK_MODEL,
+            "--sandbox",
+            "workspace-write",
+            "--ephemeral",
+            "--json",
+            "--cd",
+            str(worktree),
+            "--output-last-message",
+            str(last_message),
+            prompt,
+        ]
+        with events.open("w", encoding="utf-8") as output:
+            completed = subprocess.run(
+                command,
+                cwd=worktree,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=900,
+                check=False,
+            )
+        if completed.returncode != 0:
+            raise SparkFailure("SPARK_MODEL_FAILED", completed.stderr[-4_000:])
+        self._verify_event_stream(events, task)
+
+    def _candidate_result(
+        self, task: SparkTask, worktree: Path, run_dir: Path
+    ) -> SparkResult:
+        changed_files = self._changed_files(worktree)
+        self._verify_diff_scope(task, changed_files)
+        diff = self._git(worktree, "diff", "--binary", task.base_revision, "--").stdout
+        if not diff.strip():
+            raise SparkFailure("SPARK_NO_CHANGES", "Spark produced no repository change")
+        if SECRET_PATTERN.search(diff):
+            raise SparkFailure("SPARK_SECRET_DETECTED", "Candidate Diff matched secret policy")
+        (run_dir / "diff.patch").write_text(diff, encoding="utf-8")
+        verification = self._verify_commands(task, worktree, run_dir)
+        self._git(worktree, "add", "--", *changed_files)
+        self._git(worktree, "commit", "-m", f"spark({task.id.lower()}): {task.title}")
+        candidate = self._git(worktree, "rev-parse", "HEAD").stdout.strip()
+        return SparkResult(
+            task_id=task.id,
+            status="candidate",
+            model=SPARK_MODEL,
+            base_revision=task.base_revision,
+            candidate_revision=candidate,
+            changed_files=tuple(changed_files),
+            diff_sha256=hashlib.sha256(diff.encode()).hexdigest(),
+            verification=verification,
+        )
+
     def _prompt(self, task: SparkTask) -> str:
         return f"""Implement the following decision-complete Agent-Team-OS development task.
 You are a development worker, not a product runtime Agent. Do not change architecture.
@@ -350,6 +406,22 @@ Mandatory architecture references:
 Modify only allowed_paths. Do not add dependencies, edit lockfiles, migrations, public contracts,
 state machines, authentication, permissions, evidence semantics, ACWM/AgentScope/Hermes/Codex
 adapters, Git apply policy, concurrency or recovery behavior. Run only the listed verification.
+"""
+
+    def _repair_prompt(self, task: SparkTask, verification_log: str) -> str:
+        return f"""Repair the existing implementation for this decision-complete task.
+You are still the exact Spark worker in the same isolated Worktree. Make only the smallest
+changes required to pass machine verification. Do not change architecture, contracts,
+dependencies or allowed scope. Run every verification command before the final response.
+
+Task manifest:
+{json.dumps(task.model_dump(mode="json"), ensure_ascii=False, indent=2)}
+
+Failed machine verification:
+{verification_log}
+
+If the failure cannot be fixed inside allowed_paths, make no additional changes and end with
+blocked/ARCHITECTURE_DECISION_REQUIRED. Do not commit, merge or push.
 """
 
     def _verify_event_stream(self, events: Path, task: SparkTask) -> None:
