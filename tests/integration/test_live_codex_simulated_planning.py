@@ -47,4 +47,3 @@ def test_real_codex_can_simulate_bounded_planning_without_workspace_changes() ->
         text=True,
     ).stdout
     assert after == before
-

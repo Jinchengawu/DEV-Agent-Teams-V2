@@ -98,11 +98,11 @@ _PAGE = r"""<!doctype html>
   <main class="shell">
     <header>
       <div class="brand"><div class="mark" aria-hidden="true"></div><div><div class="eyebrow">Delivery control plane / V2</div><h1>Agent-Team-OS</h1></div></div>
-      <div class="mode mono">Preview · Codex 模拟角色</div>
+      <div class="mode mono">V0.1 · REAL GIT DELIVERY</div>
     </header>
     <section class="thesis">
       <h2>交付不是一句<br>“已经完成”。</h2>
-      <p>每次变更都必须经过需求、任务、候选、验证和人工决策。这个 Preview 使用真实 API 合同；执行与应用为确定性预览，不修改真实仓库。</p>
+      <p>规划由 Codex 显式模拟 Hermes PM/Admin；代码由真实 Codex CLI 在隔离 Worktree 中执行。只有真实 Diff、固定测试和 CAS Apply 回执才能完成交付。</p>
     </section>
     <nav class="rail" aria-label="Delivery stages">
       <div class="stage" data-stage="request"><span class="mono">01</span><strong>需求</strong></div>
@@ -118,10 +118,11 @@ _PAGE = r"""<!doctype html>
           <label for="request">你希望交付什么？</label>
           <textarea id="request" required>增加一个 GET /health 接口，返回服务状态和版本号，并补充机器测试。</textarea>
           <p class="hint">创建后会先停在计划审批。审批前不会执行代码变更。</p>
-          <div class="btn-row"><button id="create" type="submit">创建 Delivery</button></div>
+          <div class="btn-row"><button id="create" type="submit">创建 Delivery</button><button id="reset" class="secondary" type="button">重置沙箱</button></div>
         </form>
         <div id="actions" class="btn-row" style="margin-top:14px"></div>
         <div id="notice" class="notice" role="alert"></div>
+        <div class="block"><h4>历史 Delivery</h4><pre id="history">正在加载…</pre></div>
       </article>
       <article class="card">
         <div class="card-title"><h3>交付证据</h3><span id="status" class="status">等待创建 Delivery</span></div>
@@ -142,7 +143,8 @@ _PAGE = r"""<!doctype html>
     let delivery = null;
     const $ = (id) => document.getElementById(id);
     const pretty = (value) => JSON.stringify(value, null, 2);
-    const stageOrder = {awaiting_plan_decision:1, awaiting_candidate_decision:4, completed:5, rejected:5, failed:4};
+    const stageOrder = {queued:0, planning:1, awaiting_plan_decision:1, executing:2, verifying:3, awaiting_candidate_decision:4, applying:4, completed:5, rejected:5, failed:4, cancelled:5};
+    const activeStates = new Set(['queued','planning','executing','verifying','applying']);
     function setBusy(busy) { document.querySelectorAll('button').forEach((b) => b.disabled = busy); }
     function showError(message) { $('notice').textContent = message; $('notice').classList.add('visible'); }
     async function request(url, options) {
@@ -157,6 +159,7 @@ _PAGE = r"""<!doctype html>
     function render() {
       $('empty').hidden = true; $('evidence').classList.add('visible');
       $('status').textContent = delivery.status;
+      if (delivery.status === 'failed') showError(`交付失败：${delivery.error_code || 'UNKNOWN'}。请修正需求或运行环境后创建新 Delivery。`);
       $('planning-id').textContent = delivery.planning_identity;
       $('execution-id').textContent = delivery.execution_identity || '尚未执行';
       $('requirements').textContent = pretty(delivery.requirements);
@@ -174,9 +177,42 @@ _PAGE = r"""<!doctype html>
         addAction('接受并应用候选', 'accept', () => decide('candidate', 'accept'));
         addAction('拒绝候选', 'reject', () => decide('candidate', 'reject'));
       }
+      if (!['completed','rejected','failed','cancelled'].includes(delivery.status)) addAction('取消 Delivery', 'secondary', cancelDelivery);
     }
     function addAction(label, style, handler) { const button = document.createElement('button'); button.textContent = label; button.className = style; button.onclick = handler; $('actions').append(button); }
-    function decide(kind, decision) { request(`/v1/deliveries/${delivery.id}/${kind}-decision`, {method:'POST', body:pretty({decision, expected_version:delivery.version})}); }
+    function decide(kind, decision) {
+      const gate = kind === 'plan' ? delivery.plan_gate : delivery.candidate_gate;
+      request(`/v1/deliveries/${delivery.id}/${kind}-decision`, {method:'POST', body:pretty({decision, expected_version:delivery.version, expected_subject_sha256:gate.subject_sha256})});
+    }
+    async function refresh() {
+      if (!delivery || !activeStates.has(delivery.status)) return;
+      try {
+        const response = await fetch(`/v1/deliveries/${delivery.id}`);
+        if (response.ok) { delivery = await response.json(); render(); }
+      } catch (_) {}
+    }
+    async function loadHistory() {
+      try {
+        const response = await fetch('/v1/deliveries');
+        if (!response.ok) return;
+        const rows = await response.json();
+        $('history').textContent = rows.length ? rows.slice(0, 8).map((item) => `${item.id.slice(0,8)}  ${item.status}  v${item.version}`).join('\n') : '暂无历史';
+        if (!delivery && rows.length) { delivery = rows[0]; render(); }
+      } catch (_) {}
+    }
+    function cancelDelivery() { request(`/v1/deliveries/${delivery.id}/cancel`, {method:'POST', body:pretty({expected_version:delivery.version})}); }
+    setInterval(refresh, 1000);
+    setInterval(loadHistory, 5000);
+    loadHistory();
+    $('reset').addEventListener('click', async () => {
+      setBusy(true); $('notice').classList.remove('visible');
+      try {
+        const response = await fetch('/v1/workspaces/backend-demo/reset', {method:'POST'});
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail || '重置失败');
+        $('notice').textContent = `沙箱已重置，Main: ${body.main_revision}`; $('notice').classList.add('visible');
+      } catch (error) { showError(error.message); } finally { setBusy(false); }
+    });
     $('request-form').addEventListener('submit', (event) => { event.preventDefault(); request('/v1/deliveries', {method:'POST', body:pretty({workspace_id:'backend-demo', user_request:$('request').value})}); });
   </script>
 </body>

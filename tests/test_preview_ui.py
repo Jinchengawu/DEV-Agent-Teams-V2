@@ -29,4 +29,3 @@ def test_preview_home_exposes_the_delivery_control_surface() -> None:
     assert "提交 Backend 需求" in response.text
     assert "等待创建 Delivery" in response.text
     assert "E2E Gate PASS" not in response.text
-

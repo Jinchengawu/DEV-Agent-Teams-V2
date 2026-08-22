@@ -98,4 +98,3 @@ class RuntimeReadiness:
             status="ready" if result.returncode == 0 else "failed",
             repair=None if result.returncode == 0 else "Run `codex login` and retry readiness.",
         )
-

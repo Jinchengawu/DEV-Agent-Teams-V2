@@ -1,3 +1,4 @@
+import time
 from collections import deque
 
 from fastapi.testclient import TestClient
@@ -53,15 +54,21 @@ def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> N
             "/v1/deliveries",
             json={"workspace_id": "backend-demo", "user_request": "Add GET /health."},
         )
+        delivery_id = response.json()["id"]
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            delivery = client.get(f"/v1/deliveries/{delivery_id}").json()
+            if delivery["status"] == "awaiting_plan_decision":
+                break
+            time.sleep(0.01)
 
-    assert response.status_code == 201
-    delivery = response.json()
+    assert response.status_code == 202
     assert delivery["evidence_identity"] == "codex-simulated-hermes"
     assert delivery["planning_identity"] == "codex-simulated-hermes"
     assert delivery["execution_identity"] is None
     assert delivery["task"]["system_policy"] == {
         "allowed_paths": ["src/**", "tests/**"],
-        "verification_commands": ["python -m pytest"],
+        "verification_commands": ["python -m unittest discover -s tests -v"],
     }
     assert runner.roles == ["hermes-pm-simulator"] * 2 + ["hermes-admin-simulator"] * 2
 
@@ -79,6 +86,14 @@ def test_invalid_codex_planning_fails_as_an_upstream_error() -> None:
             "/v1/deliveries",
             json={"workspace_id": "backend-demo", "user_request": "Add GET /health."},
         )
+        delivery_id = response.json()["id"]
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            delivery = client.get(f"/v1/deliveries/{delivery_id}").json()
+            if delivery["status"] == "failed":
+                break
+            time.sleep(0.01)
 
-    assert response.status_code == 502
-    assert response.json()["detail"] == "planning service returned invalid output"
+    assert response.status_code == 202
+    assert delivery["status"] == "failed"
+    assert delivery["error_code"] == "PLANNING_FAILED"

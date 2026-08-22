@@ -62,9 +62,7 @@ Do not include permissions, commands, paths, markdown or commentary.
 User request:
 {user_request}
 """
-        return await self._structured(
-            "hermes-pm-simulator", prompt, RequirementArtifact
-        )
+        return await self._structured("hermes-pm-simulator", prompt, RequirementArtifact)
 
     async def plan(self, requirements: RequirementArtifact) -> TaskContract:
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
@@ -75,9 +73,7 @@ Do not include permissions, commands, paths, system_policy, markdown or commenta
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        semantics = await self._structured(
-            "hermes-admin-simulator", prompt, _TaskSemantics
-        )
+        semantics = await self._structured("hermes-admin-simulator", prompt, _TaskSemantics)
         allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
         if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
             raise PlanningOutputError("Task referenced unknown acceptance criteria")
@@ -166,9 +162,7 @@ class ACWMCodexRoleRunner:
 
         class CapabilityBoundary:
             @asynccontextmanager
-            async def stage(
-                boundary_self, run_spec: StageRunSpec
-            ) -> AsyncIterator[Any]:
+            async def stage(boundary_self, run_spec: StageRunSpec) -> AsyncIterator[Any]:
                 async with self._adapter.stage(run_spec, emit) as exchange:
                     yield exchange
 
