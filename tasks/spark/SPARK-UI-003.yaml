@@ -1,0 +1,35 @@
+id: SPARK-UI-003
+title: 修复 Wiki 新建选中态与中文协议文案
+model: gpt-5.3-codex-spark
+architecture_revision: 62fee2a82532cab85c3fde75e3fec944649f74e1
+base_revision: eee22b830e4d9e8d5d0378a810ce6fc197817527
+kind: frontend-component
+
+allowed_paths:
+  - console/src/features/knowledge/KnowledgePage.tsx
+  - console/src/features/knowledge/KnowledgePage.test.tsx
+
+forbidden_paths:
+  - migrations/**
+  - src/**
+  - console/src/shared/**
+  - console/src/styles.css
+  - console/package.json
+  - console/pnpm-lock.yaml
+
+contracts:
+  - POST /v1/wiki/documents
+  - GET /v1/wiki/documents?space_id={space_id}
+  - Document/Revision/Comment@v1 from generated OpenAPI
+
+acceptance:
+  - 新建文档成功后必须在列表重新验证完成前保持该文档选中，不得被基于旧列表的 effect 清空
+  - 可以在创建成功后先使用后端返回的 Document 更新当前 Query Cache，然后再设置 selectedDocumentId 并 invalidate
+  - 新增测试：POST 返回新文档且列表 GET 在刷新前仍是旧值时，界面仍保留新文档选中态并开始读取其当前 Revision
+  - 将用户可见的 `Revision {number}` 改为 `修订 {number}`，将评论中裸露的 `resolved` 改为中文的 `处理状态`
+  - 不修改公共合同、API 路径、样式、依赖或其他页面
+  - 不添加模拟生产状态，测试使用现有 Vitest、Testing Library 和 fetch stub
+
+verification:
+  - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
+  - cd console && pnpm exec vitest run src/features/knowledge --reporter=verbose --maxWorkers=1
