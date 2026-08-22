@@ -26,7 +26,11 @@ from .git_delivery import (
     GitCodeExecutor,
 )
 from .git_sandbox import GitSandbox
+from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
 from .journey import resolve_backend_delivery_fingerprint
+from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
+from .modules.identity import IdentityService, SQLiteIdentityRepository
+from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
 from .release import run_gate
 from .ui import install_preview_ui
@@ -54,6 +58,12 @@ class CodexPreviewReadiness:
 def build_preview_app() -> FastAPI:
     project_root = Path(__file__).parents[2]
     data_dir = Path(os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(project_root / ".agent-team-os")))
+    database = data_dir / "agent-team-os.sqlite"
+    migrations = MigrationRunner(database, project_root / "migrations")
+    migrations.migrate()
+    LegacyDatabaseImporter(migrations, data_dir / "backups").import_if_present(
+        data_dir / "preview.sqlite", data_dir / "control-plane.sqlite"
+    )
     runner = ACWMCodexRoleRunner(workspace=project_root)
     code_agent = ACWMCodexWorkspaceAgent()
     sandbox = GitSandbox(data_dir / "workspaces")
@@ -80,11 +90,11 @@ def build_preview_app() -> FastAPI:
         executor=GitCodeExecutor(sandbox, code_agent),
         verifier=GitCandidateVerifier(sandbox),
         applier=GitCandidateApplier(sandbox),
-        repository=SQLiteDeliveryRepository(data_dir / "preview.sqlite"),
+        repository=SQLiteDeliveryRepository(database),
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
     control_plane = ControlPlaneService(
-        data_dir / "control-plane.sqlite", config_root=project_root / "config"
+        database, config_root=project_root / "config"
     )
     control_plane.import_builtin_journey(
         planning_identity="codex-simulated-hermes",
@@ -96,6 +106,9 @@ def build_preview_app() -> FastAPI:
         report_dir=data_dir / "reports",
         workspace_reset=reset_workspace,
         control_plane=control_plane,
+        evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
+        settings=SettingsManager(SQLiteSettingsRepository(database)),
+        identity=IdentityService(SQLiteIdentityRepository(database)),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 

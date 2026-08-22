@@ -11,7 +11,7 @@ from agent_team_os.testing import (
 from agent_team_os.ui import install_preview_ui
 
 
-def test_preview_home_exposes_the_delivery_control_surface() -> None:
+def test_preview_fallback_explains_how_to_build_the_chinese_console() -> None:
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
@@ -26,10 +26,30 @@ def test_preview_home_exposes_the_delivery_control_surface() -> None:
 
     assert response.status_code == 200
     assert "Agent-Team-OS" in response.text
-    assert "提交 Backend 需求" in response.text
-    assert "等待创建 Delivery" in response.text
-    assert "E2E Gate PASS" not in response.text
-    assert "'awaiting_plan_decision'" in response.text
-    assert "'awaiting_candidate_decision'" in response.text
-    assert "ACWM Journey / Gate Subjects" in response.text
-    assert "/v1/release-gates/latest" in response.text
+    assert "前端控制台尚未构建" in response.text
+    assert "打开接口文档" in response.text
+    assert "Control Plane" not in response.text
+    assert "SYSTEM ONLINE" not in response.text
+
+
+def test_built_console_supports_deep_links_without_masking_api_404(tmp_path) -> None:
+    coordinator = DeliveryCoordinator(
+        planning=DeterministicPlanningService(),
+        executor=DeterministicCodeExecutor(),
+    )
+    distribution = tmp_path / "dist"
+    distribution.mkdir()
+    (distribution / "index.html").write_text(
+        "<!doctype html><title>Agent-Team-OS</title>", encoding="utf-8"
+    )
+    app = create_app(coordinator)
+    install_preview_ui(app, distribution)
+
+    with TestClient(app) as client:
+        deep_link = client.get("/knowledge")
+        missing_api = client.get("/v1/does-not-exist")
+
+    assert deep_link.status_code == 200
+    assert "Agent-Team-OS" in deep_link.text
+    assert missing_api.status_code == 404
+    assert missing_api.headers["content-type"].startswith("application/problem+json")

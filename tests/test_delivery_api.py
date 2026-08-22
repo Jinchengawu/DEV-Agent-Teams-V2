@@ -26,6 +26,7 @@ def test_backend_request_reaches_auditable_candidate_decision() -> None:
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
 
     with TestClient(create_app(coordinator)) as client:
@@ -58,6 +59,7 @@ def test_approved_plan_executes_once_and_exposes_candidate_evidence() -> None:
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
 
     with TestClient(create_app(coordinator)) as client:
@@ -97,6 +99,7 @@ def test_stale_plan_decision_is_rejected_without_execution() -> None:
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
+        resolved_journey_sha256="a" * 64,
     )
 
     with TestClient(create_app(coordinator)) as client:
@@ -115,7 +118,11 @@ def test_stale_plan_decision_is_rejected_without_execution() -> None:
         )
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "delivery version conflict"
+    problem = response.json()
+    assert problem["code"] == "STATE_OR_VERSION_CONFLICT"
+    assert problem["detail"] == "记录版本、审批主题或交付状态已经发生变化。"
+    assert problem["repair"] == "刷新当前详情，确认最新状态后重新提交。"
+    assert problem["trace_id"]
 
 
 def test_candidate_can_be_recovered_after_restart_and_rejected(tmp_path) -> None:
@@ -124,6 +131,7 @@ def test_candidate_can_be_recovered_after_restart_and_rejected(tmp_path) -> None
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
         repository=SQLiteDeliveryRepository(database),
+        resolved_journey_sha256="a" * 64,
     )
     with TestClient(create_app(first)) as client:
         created = client.post(
@@ -145,6 +153,7 @@ def test_candidate_can_be_recovered_after_restart_and_rejected(tmp_path) -> None
         planning=DeterministicPlanningService(),
         executor=DeterministicCodeExecutor(),
         repository=SQLiteDeliveryRepository(database),
+        resolved_journey_sha256="a" * 64,
     )
     with TestClient(create_app(restarted)) as client:
         recovered = client.get(f"/v1/deliveries/{created['id']}")
@@ -171,6 +180,7 @@ def test_verified_candidate_accepts_only_with_an_exact_apply_receipt() -> None:
         executor=DeterministicCodeExecutor(),
         verifier=DeterministicCandidateVerifier(),
         applier=DeterministicCandidateApplier(),
+        resolved_journey_sha256="a" * 64,
     )
     with TestClient(create_app(coordinator)) as client:
         created = client.post(

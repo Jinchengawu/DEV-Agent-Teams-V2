@@ -1,0 +1,41 @@
+id: SPARK-BE-001
+title: 实现 AppSettings 模块化 HTTP Router
+model: gpt-5.3-codex-spark
+architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
+base_revision: d19732f44302c0e6761828461a08228966f2a12b
+kind: backend-crud
+
+allowed_paths:
+  - src/agent_team_os/modules/settings/http.py
+  - src/agent_team_os/modules/settings/__init__.py
+  - tests/test_settings_http.py
+
+forbidden_paths:
+  - migrations/**
+  - src/agent_team_os/api.py
+  - src/agent_team_os/modules/settings/domain.py
+  - src/agent_team_os/modules/settings/application.py
+  - src/agent_team_os/modules/settings/repository.py
+  - pyproject.toml
+  - uv.lock
+
+contracts:
+  - GET /v1/settings -> AppSettings
+  - PATCH /v1/settings AppSettingsPatch -> AppSettings
+  - ProductError@v1
+
+acceptance:
+  - 新增 create_settings_router(manager) 工厂并返回 FastAPI APIRouter
+  - Router 提供现有 GET /v1/settings 与 PATCH /v1/settings，不改变路径、请求或成功响应模型
+  - Router 只做 HTTP 输入输出映射并调用 SettingsManager，不复制 CAS、硬限制或错误决策
+  - 从 settings 包导出 create_settings_router；本任务不修改中央 api.py，集成由主架构线程完成
+  - 新增公共接口测试，覆盖 GET、PATCH 成功和过期 expected_version 的 ProductError 传播
+  - 接口测试使用 httpx ASGITransport，不使用会产生 StarletteDeprecationWarning 的 TestClient
+  - 全部验证输出必须 WARN=0 且 skipped=0
+  - 向主审交付前，Spark 必须在隔离 Worktree 中亲自运行清单里的全部验证命令并修复全部失败
+  - 不新增依赖，不修改密码、权限、迁移、公共合同或其他模块
+
+verification:
+  - uv run --extra dev ruff check src/agent_team_os/modules/settings/http.py src/agent_team_os/modules/settings/__init__.py tests/test_settings_http.py
+  - uv run --extra dev pytest tests/test_settings_http.py -q
+  - uv run --extra dev mypy src

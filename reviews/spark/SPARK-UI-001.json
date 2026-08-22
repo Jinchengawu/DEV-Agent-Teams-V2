@@ -1,0 +1,16 @@
+{
+  "task_id": "SPARK-UI-001",
+  "base_revision": "30b9595b798167ab91ac68f6d4fc7545137535bc",
+  "candidate_revision": "abe949fa7640686788a99a37a12c7f156f7d0983",
+  "model": "gpt-5.3-codex-spark",
+  "changed_files": [
+    "console/src/features/evidence/EvidencePage.tsx",
+    "console/src/features/evidence/EvidenceSummary.test.tsx",
+    "console/src/features/evidence/EvidenceSummary.tsx",
+    "console/src/styles.css"
+  ],
+  "verification": "passed",
+  "architecture_deviations": [],
+  "decision": "accept",
+  "reason": "路径、合同、中文语义、集中样式和固定验证均符合黄金样板；允许择取候选。"
+}

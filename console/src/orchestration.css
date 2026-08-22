@@ -1,19 +1,2 @@
-.orchestration-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.orchestration-actions button {
-  border: 1px solid #36566b;
-  background: transparent;
-  color: var(--ink);
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-.orchestration-actions button.primary {
-  margin: 0;
-  background: var(--blue);
-  color: #05111b;
-}
+/* React Flow overrides stay isolated from the rest of the control console. */
+.react-flow__controls-button{background:#0d2130;color:#dcebf5;border-bottom-color:#29485d}.react-flow__controls-button:hover{background:#143349}.react-flow__minimap{background:#091722;border:1px solid #29485d}.react-flow__edge-path{stroke:#6b8da3;stroke-width:1.5}

@@ -354,7 +354,12 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
             check=False,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"browser E2E failed: {result.stdout}{result.stderr}")
+            server.terminate()
+            server_stdout, server_stderr = server.communicate(timeout=5)
+            raise RuntimeError(
+                "browser E2E failed: "
+                f"{result.stdout}{result.stderr}\nGate server:\n{server_stdout}{server_stderr}"
+            )
     finally:
         server.terminate()
         try:

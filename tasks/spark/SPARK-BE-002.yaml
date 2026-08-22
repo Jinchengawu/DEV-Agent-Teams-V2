@@ -1,0 +1,48 @@
+id: SPARK-BE-002
+title: 实现版本化 Wiki 模块 HTTP Router
+model: gpt-5.3-codex-spark
+architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
+base_revision: 28bc8bc7a2ecc7e79c792d95bb723194e6a51033
+kind: backend-crud
+
+allowed_paths:
+  - src/agent_team_os/modules/knowledge/http.py
+  - src/agent_team_os/modules/knowledge/__init__.py
+  - tests/test_wiki_http.py
+
+forbidden_paths:
+  - migrations/**
+  - src/agent_team_os/api.py
+  - src/agent_team_os/modules/knowledge/domain.py
+  - src/agent_team_os/modules/knowledge/application.py
+  - src/agent_team_os/modules/knowledge/ports.py
+  - src/agent_team_os/modules/knowledge/repository.py
+  - src/agent_team_os/modules/identity/**
+  - pyproject.toml
+  - uv.lock
+
+contracts:
+  - WikiService@v1
+  - KnowledgeActor@v1
+  - Space/Document/Revision/Comment/PermissionGrant@v1
+  - ProductError@v1
+
+acceptance:
+  - 新增 create_wiki_router(service, read_actor, mutation_actor) 工厂；Actor Resolver 类型为 Callable[[Request], KnowledgeActor]
+  - GET/POST /v1/wiki/spaces 分别调用 list_spaces 与 create_space
+  - GET/POST /v1/wiki/documents 支持可选 space_id 并调用 list_documents 与 create_document
+  - GET/PATCH /v1/wiki/documents/{document_id} 调用 get_document 与 patch_document
+  - GET /v1/wiki/documents/{document_id}/revisions 和 GET /revisions/{revision} 调用版本查询
+  - POST /v1/wiki/documents/{document_id}/revisions/{revision}/restore 使用 RevisionRestoreRequest 调用 restore_revision
+  - GET/POST /v1/wiki/documents/{document_id}/comments 调用评论查询与创建
+  - PATCH /v1/wiki/comments/{comment_id} 调用 patch_comment
+  - PUT /v1/wiki/permissions 调用 put_permission
+  - GET /v1/wiki/search?q=... 调用 search
+  - 所有读请求必须通过 read_actor(request)，所有修改请求必须通过 mutation_actor(request)；Router 不实现任何鉴权或 ACL 决策
+  - 使用 httpx ASGITransport 覆盖每类路由映射、Actor Resolver 分流和 ProductError 传播
+  - 测试输出 WARN=0、skipped=0，不新增依赖，不修改公共合同或 ACL 决策
+
+verification:
+  - uv run --extra dev ruff check src/agent_team_os/modules/knowledge/http.py src/agent_team_os/modules/knowledge/__init__.py tests/test_wiki_http.py
+  - uv run --extra dev pytest tests/test_wiki_http.py -q
+  - uv run --extra dev mypy src

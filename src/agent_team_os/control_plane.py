@@ -44,7 +44,7 @@ class AgentInstance(ImmutableModel):
     features: tuple[str, ...] = ()
     enabled: bool = True
     version: int = 1
-    health: HealthResult = HealthResult(status="unknown")
+    health: HealthResult = Field(default_factory=lambda: HealthResult(status="unknown"))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

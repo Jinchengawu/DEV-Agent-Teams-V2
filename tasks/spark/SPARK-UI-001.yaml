@@ -1,0 +1,34 @@
+id: SPARK-UI-001
+title: 实现证据账本真实统计摘要
+model: gpt-5.3-codex-spark
+architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
+base_revision: 30b9595b798167ab91ac68f6d4fc7545137535bc
+kind: frontend-component
+
+allowed_paths:
+  - console/src/features/evidence/**
+  - console/src/styles.css
+
+forbidden_paths:
+  - migrations/**
+  - console/src/shared/api/generated/**
+  - console/pnpm-lock.yaml
+  - src/**
+
+contracts:
+  - GET /v1/evidence
+  - EvidenceRecord@v1
+
+acceptance:
+  - 新增 EvidenceSummary 纯展示组件，输入为真实 EvidenceRecord 数组，不在组件内发起 API 请求
+  - 展示证据总数、已验证、无效、不可用四项中文统计，空数组显示四个零
+  - 在 EvidencePage 的筛选器上方接入摘要，统计以接口返回的完整账本为准而非筛选结果
+  - 只有已验证统计使用可信绿色语义，无效使用红色，不可用保持中性
+  - 新增组件测试，覆盖混合状态与空数组，不生成模拟证据或固定生产数据
+  - 禁止 JSX 内联 style；新增样式写入 console/src/styles.css 并沿用控制台设计变量
+  - 测试只能使用项目现有 Vitest 与 Testing Library API；未安装 jest-dom，禁止使用 toHaveTextContent 等扩展断言
+  - 最终回复前必须实际执行清单中的两条验证命令；任一失败必须先修复再重新执行
+
+verification:
+  - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
+  - cd console && pnpm exec vitest run src/features/evidence --reporter=verbose
