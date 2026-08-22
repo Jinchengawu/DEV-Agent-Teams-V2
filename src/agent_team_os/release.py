@@ -112,9 +112,24 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 ),
             )
 
+            reject_request = (
+                "Create a new function rescue_reject_probe() that returns the exact string "
+                "'reject-candidate' and add a standard-library unittest for it. The symbol "
+                "does not exist yet, so this must produce a non-empty source and test diff."
+                if live
+                else "Add a bounded health status helper with standard-library tests."
+            )
+            accept_request = (
+                "Create a new function rescue_accept_probe() that returns the exact string "
+                "'accept-candidate' and add a standard-library unittest for it. The symbol "
+                "does not exist yet, so this must produce a non-empty source and test diff."
+                if live
+                else "Add a version status helper with standard-library unit tests."
+            )
+
             rejected_plan = await coordinator.submit(
                 workspace_id="backend-demo",
-                user_request="Add a bounded health status helper with standard-library tests.",
+                user_request=reject_request,
             )
             if rejected_plan.plan_gate is None:
                 raise RuntimeError("reject journey did not open the plan gate")
@@ -138,7 +153,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
 
             accepted_plan = await coordinator.submit(
                 workspace_id="backend-demo",
-                user_request="Add a version status helper with standard-library unit tests.",
+                user_request=accept_request,
             )
             if accepted_plan.plan_gate is None:
                 raise RuntimeError("accept journey did not open the plan gate")
