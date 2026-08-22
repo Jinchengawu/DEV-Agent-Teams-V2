@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib.metadata
 import json
 import os
 import re
@@ -15,7 +14,6 @@ import tempfile
 import time
 import urllib.request
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 from pathlib import Path
 from typing import Literal
 
@@ -52,6 +50,7 @@ from .modules.orchestration import (
     SQLitePipelineRepository,
     SQLitePipelineRunRepository,
 )
+from .readiness import imported_acwm_revision
 from .testing import DeterministicPlanningService
 
 
@@ -149,7 +148,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
     kind = "live" if live else "deterministic"
     created_at = datetime.now(UTC)
     dev_revision = _git_revision(project_root)
-    acwm_revision = _acwm_revision()
+    acwm_revision = imported_acwm_revision()
     planning_identity = "codex-simulated-hermes" if live else "deterministic-test"
     execution_identity = "codex-cli" if live else "deterministic-model-boundary"
     initial_status = _git_status(project_root)
@@ -690,28 +689,3 @@ def _stop_browser_gate_server(server: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         server.kill()
         server.wait()
-
-
-def _acwm_revision() -> str:
-    package_file = getattr(import_module("acwm"), "__file__", None)
-    if isinstance(package_file, str):
-        for parent in Path(package_file).resolve().parents:
-            if (parent / ".git").exists():
-                result = subprocess.run(
-                    ("git", "rev-parse", "HEAD"),
-                    cwd=parent,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    return result.stdout.strip()
-    direct_url = importlib.metadata.distribution("agent-capability-workflow-matrix").read_text(
-        "direct_url.json"
-    )
-    if direct_url:
-        data = json.loads(direct_url)
-        commit = data.get("vcs_info", {}).get("commit_id")
-        if commit:
-            return str(commit)
-    return importlib.metadata.version("agent-capability-workflow-matrix")

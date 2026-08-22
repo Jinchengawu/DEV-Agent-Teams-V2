@@ -49,7 +49,12 @@ from .modules.orchestration import (
     SQLitePipelineRunRepository,
 )
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
-from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
+from .readiness import (
+    DependencyCheck,
+    ReadinessReport,
+    RuntimeReadiness,
+    inspect_acwm_revision_lock,
+)
 from .release import combined_gate_status, run_gate
 from .ui import install_preview_ui
 
@@ -74,6 +79,9 @@ class CodexPreviewReadiness:
                     if _has_acwm_graph_runtime()
                     else "安装项目锁定的 ACWM v0.4 Graph Runtime 后重试。"
                 ),
+            ),
+            inspect_acwm_revision_lock(
+                Path(__file__).parents[2] / "config" / "framework-lock.json"
             ),
         )
         return ReadinessReport(

@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 from pytest import MonkeyPatch
 
+from agent_team_os.readiness import imported_acwm_revision
 from agent_team_os.release import (
     GateReport,
-    _acwm_revision,
     _report,
     combined_gate_status,
     latest_reports,
@@ -23,15 +23,44 @@ def test_acwm_revision_uses_the_imported_source_checkout(
     package.mkdir(parents=True)
     (checkout / ".git").mkdir()
     module = SimpleNamespace(__file__=str(package / "__init__.py"))
-    monkeypatch.setattr("agent_team_os.release.import_module", lambda _name: module)
+    monkeypatch.setattr("agent_team_os.readiness.import_module", lambda _name: module)
     monkeypatch.setattr(
-        "agent_team_os.release.subprocess.run",
+        "agent_team_os.readiness.subprocess.run",
         lambda *_args, **_kwargs: SimpleNamespace(
             returncode=0, stdout="f" * 40 + "\n"
         ),
     )
 
-    assert _acwm_revision() == "f" * 40
+    assert imported_acwm_revision() == "f" * 40
+
+
+def test_acwm_revision_does_not_mistake_enclosing_application_repo(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    application = tmp_path / "application"
+    package = application / ".venv" / "site-packages" / "acwm"
+    package.mkdir(parents=True)
+    (application / ".git").mkdir()
+    module = SimpleNamespace(__file__=str(package / "__init__.py"))
+
+    class Distribution:
+        @staticmethod
+        def read_text(_name: str) -> str:
+            return '{"vcs_info":{"commit_id":"' + "c" * 40 + '"}}'
+
+    monkeypatch.setattr("agent_team_os.readiness.import_module", lambda _name: module)
+    monkeypatch.setattr(
+        "agent_team_os.readiness.importlib.metadata.distribution",
+        lambda _name: Distribution(),
+    )
+    monkeypatch.setattr(
+        "agent_team_os.readiness.subprocess.run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("enclosing repository must not be attested as ACWM")
+        ),
+    )
+
+    assert imported_acwm_revision() == "c" * 40
 
 
 def test_clean_same_revision_reports_are_publishable() -> None:
