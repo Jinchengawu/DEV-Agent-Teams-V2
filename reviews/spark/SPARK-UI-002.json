@@ -1,0 +1,22 @@
+{
+  "task_id": "SPARK-UI-002",
+  "base_revision": "de0646889e5bce41b42d440ec834f13bdf135010",
+  "candidate_revision": "c0487acb2cb155bf3d8189bcaf297391cf4e74a6",
+  "model": "gpt-5.3-codex-spark",
+  "changed_files": [
+    "console/src/features/knowledge/KnowledgePage.test.tsx",
+    "console/src/features/knowledge/KnowledgePage.tsx",
+    "console/src/styles.css"
+  ],
+  "verification": {
+    "task_gate": "2 commands passed, 0 warning, 0 skipped",
+    "full_frontend": "12 tests passed, TypeScript passed, production build passed"
+  },
+  "architecture_deviations": [],
+  "decision": "accept",
+  "reason": "页面已完全转向真实 /v1/wiki 合同，实现空间、文档、当前修订、CAS 编辑、版本恢复与评论的真实 Command；修改路径、生成合同、依赖和中文错误边界均符合规范。",
+  "follow_up_required": [
+    "保证新建文档在列表重新验证前不会被清除选中态",
+    "将裸露的 Revision 与 resolved 文案改为中文上下文"
+  ]
+}
