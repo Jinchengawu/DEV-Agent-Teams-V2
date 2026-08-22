@@ -107,7 +107,12 @@ def main() -> None:
         page.get_by_text("需求", exact=False).first.wait_for(timeout=15_000)
         page.reload()
         page.wait_for_load_state("networkidle")
-        page.get_by_role("link", name="交付").click()
+        try:
+            page.get_by_role("link", name="交付", exact=True).wait_for(timeout=15_000)
+        except Exception as error:
+            body = page.locator("body").inner_text()
+            raise AssertionError(f"刷新后会话未恢复：{body}") from error
+        page.get_by_role("link", name="交付", exact=True).click()
         page.locator(".status-completed").first.wait_for(timeout=15_000)
         if args.screenshot:
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
