@@ -50,6 +50,43 @@ class SQLiteWikiRepository:
             connection.commit()
         return space
 
+    def ensure_system_space(self, space: Space) -> Space:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM wiki_spaces WHERE id=?", (space.id,)
+            ).fetchone()
+            if existing is not None:
+                connection.commit()
+                return self._space(existing)
+            connection.execute(
+                """INSERT INTO wiki_spaces(
+                id,name,description,version,created_by,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (
+                    space.id,
+                    space.name,
+                    space.description,
+                    space.version,
+                    space.created_by,
+                    space.created_at.isoformat(),
+                    space.updated_at.isoformat(),
+                ),
+            )
+            self._append_event(
+                connection,
+                ProductEvent(
+                    event_type="knowledge.space-created",
+                    aggregate_type="wiki-space",
+                    aggregate_id=space.id,
+                    aggregate_version=space.version,
+                    payload={"name": space.name},
+                    occurred_at=space.updated_at,
+                ),
+            )
+            connection.commit()
+        return space
+
     def get_space(self, space_id: str) -> Space | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -67,6 +104,57 @@ class SQLiteWikiRepository:
     def create_document(self, document: Document, revision: Revision) -> Document:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """INSERT INTO wiki_documents(
+                id,space_id,parent_id,title,current_revision,version,created_by,created_at,
+                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    document.id,
+                    document.space_id,
+                    document.parent_id,
+                    document.title,
+                    document.current_revision,
+                    document.version,
+                    document.created_by,
+                    document.created_at.isoformat(),
+                    document.updated_at.isoformat(),
+                    document.source_kind,
+                    document.source_id,
+                ),
+            )
+            self._insert_revision(connection, revision, document)
+            self._append_event(
+                connection,
+                ProductEvent(
+                    event_type="knowledge.document-created",
+                    aggregate_type="wiki-document",
+                    aggregate_id=document.id,
+                    aggregate_version=document.version,
+                    payload={
+                        "space_id": document.space_id,
+                        "revision": revision.revision,
+                        "content_sha256": revision.content_sha256,
+                    },
+                    occurred_at=document.updated_at,
+                ),
+            )
+            connection.commit()
+        return document
+
+    def ensure_system_document(
+        self, document: Document, revision: Revision
+    ) -> Document:
+        if document.source_id is None:
+            raise ValueError("System document requires a source ID")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM wiki_documents WHERE source_kind=? AND source_id=?",
+                (document.source_kind, document.source_id),
+            ).fetchone()
+            if existing is not None:
+                connection.commit()
+                return self._document(existing)
             connection.execute(
                 """INSERT INTO wiki_documents(
                 id,space_id,parent_id,title,current_revision,version,created_by,created_at,

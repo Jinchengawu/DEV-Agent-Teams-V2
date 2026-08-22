@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -230,3 +232,40 @@ def test_delivery_artifact_sync_is_idempotent_and_source_immutable(tmp_path: Pat
             ),
         )
     assert conflict.value.code == "WIKI_SYSTEM_SOURCE_CONFLICT"
+
+
+def test_delivery_artifact_sync_is_idempotent_across_concurrent_requests(
+    tmp_path: Path,
+) -> None:
+    wiki, admin, _editor, _viewer = _services(tmp_path)
+    artifact = SystemKnowledgeArtifact(
+        source_id="delivery-concurrent:requirement",
+        title="并发交付需求",
+        content={"summary": "并发请求只归档一次"},
+    )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = tuple(
+            executor.map(
+                lambda _index: wiki.sync_system_artifacts(admin, (artifact,)),
+                range(24),
+            )
+        )
+
+    document_ids = {result[0].id for result in results}
+    documents = wiki.list_documents(admin, WikiService.SYSTEM_SPACE_ID)
+    assert len(document_ids) == 1
+    assert len(documents) == 1
+    assert documents[0].source_id == artifact.source_id
+    with sqlite3.connect(tmp_path / "wiki.sqlite") as connection:
+        event_counts = dict(
+            connection.execute(
+                """SELECT event_type,COUNT(*) FROM product_events
+                WHERE event_type IN ('knowledge.space-created','knowledge.document-created')
+                GROUP BY event_type"""
+            ).fetchall()
+        )
+    assert event_counts == {
+        "knowledge.document-created": 1,
+        "knowledge.space-created": 1,
+    }
