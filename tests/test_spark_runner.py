@@ -9,6 +9,7 @@ from agent_team_os.devtools.spark import (
     SparkFailure,
     SparkRunner,
     SparkTask,
+    _last_event_error,
     _reports_architecture_block,
     _verification_output_violation,
 )
@@ -103,3 +104,14 @@ def test_repair_only_accepts_machine_verification_failures(tmp_path: Path) -> No
         SparkRunner(tmp_path).repair("SPARK-TEST-001")
 
     assert failure.value.code == "SPARK_REPAIR_NOT_ALLOWED"
+
+
+def test_event_error_reports_model_usage_limit(tmp_path: Path) -> None:
+    events = tmp_path / "events.jsonl"
+    events.write_text(
+        '{"type":"error","message":"You have hit your usage limit for Spark."}\n'
+        '{"type":"turn.failed","error":{"message":"Try again later."}}\n',
+        encoding="utf-8",
+    )
+
+    assert _last_event_error(events) == "Try again later."

@@ -357,7 +357,14 @@ class SparkRunner:
                 check=False,
             )
         if completed.returncode != 0:
-            raise SparkFailure("SPARK_MODEL_FAILED", completed.stderr[-4_000:])
+            event_error = _last_event_error(events)
+            detail = event_error or completed.stderr[-4_000:]
+            code = (
+                "SPARK_MODEL_UNAVAILABLE"
+                if event_error and "usage limit" in event_error.lower()
+                else "SPARK_MODEL_FAILED"
+            )
+            raise SparkFailure(code, detail)
         self._verify_event_stream(events, task)
 
     def _candidate_result(
@@ -568,3 +575,20 @@ def _verification_output_violation(output: str) -> str | None:
         ):
             return "skipped"
     return None
+
+
+def _last_event_error(events: Path) -> str | None:
+    messages: list[str] = []
+    for line in events.read_text(encoding="utf-8").splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "error" and isinstance(item.get("message"), str):
+            messages.append(item["message"])
+        error = item.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            messages.append(error["message"])
+    return messages[-1] if messages else None
