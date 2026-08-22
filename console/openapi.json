@@ -4146,9 +4146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Latest Release Gates V1 Release Gates Latest Get"
+                  "$ref": "#/components/schemas/LatestGateReports"
                 }
               }
             }
@@ -4913,6 +4911,35 @@
         ],
         "title": "CapabilityBinding"
       },
+      "CombinedGateStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "failed",
+              "passed"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "reason"
+        ],
+        "title": "CombinedGateStatus"
+      },
       "Comment": {
         "properties": {
           "id": {
@@ -5592,10 +5619,18 @@
         "properties": {
           "kind": {
             "type": "string",
+            "enum": [
+              "deterministic",
+              "live"
+            ],
             "title": "Kind"
           },
           "status": {
             "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
             "title": "Status"
           },
           "fail": {
@@ -5617,6 +5652,7 @@
           },
           "dev_revision": {
             "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
             "title": "Dev Revision"
           },
           "acwm_revision": {
@@ -5634,7 +5670,8 @@
           "candidate_revision": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
               },
               {
                 "type": "null"
@@ -5645,7 +5682,8 @@
           "diff_sha256": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
               },
               {
                 "type": "null"
@@ -5666,11 +5704,17 @@
           },
           "evidence_sha256": {
             "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
             "title": "Evidence Sha256"
           },
           "browser_e2e": {
             "type": "boolean",
             "title": "Browser E2E",
+            "default": false
+          },
+          "browser_restart_recovery": {
+            "type": "boolean",
+            "title": "Browser Restart Recovery",
             "default": false
           },
           "error": {
@@ -6040,6 +6084,41 @@
           "content"
         ],
         "title": "KnowledgeDocumentCreate"
+      },
+      "LatestGateReports": {
+        "properties": {
+          "deterministic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "combined": {
+            "$ref": "#/components/schemas/CombinedGateStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deterministic",
+          "live",
+          "combined"
+        ],
+        "title": "LatestGateReports"
       },
       "LoginRequest": {
         "properties": {

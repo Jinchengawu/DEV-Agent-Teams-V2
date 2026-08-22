@@ -1092,6 +1092,18 @@ export interface components {
              */
             updated_at?: string;
         };
+        /** CombinedGateStatus */
+        CombinedGateStatus: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unknown" | "failed" | "passed";
+            /** Code */
+            code: string;
+            /** Reason */
+            reason: string;
+        };
         /** Comment */
         Comment: {
             /** Id */
@@ -1303,10 +1315,16 @@ export interface components {
         };
         /** GateReport */
         GateReport: {
-            /** Kind */
-            kind: string;
-            /** Status */
-            status: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deterministic" | "live";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed";
             /** Fail */
             fail: number;
             /** Warn */
@@ -1339,6 +1357,11 @@ export interface components {
              * @default false
              */
             browser_e2e: boolean;
+            /**
+             * Browser Restart Recovery
+             * @default false
+             */
+            browser_restart_recovery: boolean;
             /** Error */
             error?: string | null;
         };
@@ -1499,6 +1522,12 @@ export interface components {
             media_type: "text/plain" | "text/markdown" | "application/json";
             /** Content */
             content: string;
+        };
+        /** LatestGateReports */
+        LatestGateReports: {
+            deterministic: components["schemas"]["GateReport"] | null;
+            live: components["schemas"]["GateReport"] | null;
+            combined: components["schemas"]["CombinedGateStatus"];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -5199,9 +5228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LatestGateReports"];
                 };
             };
             /** @description 目标资源不存在 */
