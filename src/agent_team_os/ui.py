@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -15,6 +15,12 @@ def install_preview_ui(app: FastAPI, console_dist: Path | None = None) -> None:
 
         @app.get("/", response_class=FileResponse, include_in_schema=False)
         def console_home() -> Path:
+            return console_dist / "index.html"
+
+        @app.get("/{frontend_path:path}", response_class=FileResponse, include_in_schema=False)
+        def console_route(frontend_path: str) -> Path:
+            if frontend_path == "v1" or frontend_path.startswith("v1/"):
+                raise HTTPException(status_code=404, detail="API route not found")
             return console_dist / "index.html"
 
         return
