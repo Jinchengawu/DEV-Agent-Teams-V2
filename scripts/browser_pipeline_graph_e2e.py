@@ -58,7 +58,6 @@ def _create_and_publish_graph(page: Page) -> None:
     assert created_response.value.status == 201, created_response.value.text()
     page.get_by_role("button", name="角色 Stage").click()
     page.get_by_role("button", name="角色 Stage").click()
-    page.get_by_role("button", name="交付 Stage").click()
     page.get_by_role("button", name="审批 Gate").click()
     page.get_by_role("button", name="审批 Gate").click()
     page.get_by_role("button", name="有限 LOOP").click()
@@ -67,16 +66,15 @@ def _create_and_publish_graph(page: Page) -> None:
         has_text="stage-2"
     ).click()
     page.get_by_label("Capability").fill("hermes-project-admin")
-    _add_dependency(page, "主图", "stage-1", "loop-1")
-    _add_dependency(page, "主图", "loop-1", "stage-2")
+    _add_dependency(page, "主图", "stage-1", "stage-2")
     _add_dependency(page, "主图", "stage-2", "gate-1")
-    _add_dependency(page, "主图", "gate-1", "code-1", "approved")
-    _add_dependency(page, "主图", "code-1", "gate-2")
+    _add_dependency(page, "主图", "gate-1", "loop-1", "approved")
+    _add_dependency(page, "主图", "loop-1", "gate-2")
 
     page.locator(".flow > .react-flow .react-flow__node").filter(
         has_text="loop-1"
     ).click()
-    page.get_by_label("退出条件策略").fill("requirements-ready")
+    page.get_by_label("退出条件策略").fill("machine-tests-passed")
     page.get_by_label("最大轮次").fill("4")
     page.locator(".loop-body-editor").get_by_role(
         "button", name="角色 Stage"
@@ -90,7 +88,7 @@ def _create_and_publish_graph(page: Page) -> None:
         page.get_by_role("button", name="保存图与布局").click()
     assert saved_response.value.status == 200, saved_response.value.text()
     definition = saved_response.value.json()["definition"]
-    assert len(definition["nodes"]) == 6, definition
+    assert len(definition["nodes"]) == 5, definition
     assert any(edge.get("condition") == "approved" for edge in definition["edges"]), definition
     loop = next(node for node in definition["nodes"] if node["kind"] == "loop")
     assert loop["policy"]["max_iterations"] == 4, loop

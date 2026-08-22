@@ -657,8 +657,11 @@ class DeliveryCoordinator:
                         body_node_id=body_node_id,
                         expected_version=run.version,
                     )
-                    await self._execute_loop_body_capability(delivery_id, body_node)
-                    emitted.update(_pipeline_stage_conditions(body_node))
+                    emitted.update(
+                        await self._execute_loop_body_capability(
+                            delivery_id, body_node
+                        )
+                    )
                     run = ledger.get_for_delivery(delivery_id)
                     ledger.transition(
                         run.id,
@@ -694,7 +697,7 @@ class DeliveryCoordinator:
 
     async def _execute_loop_body_capability(
         self, delivery_id: str, node: dict[str, object]
-    ) -> None:
+    ) -> tuple[str, ...]:
         # Reuse the product capability mapping without applying top-level GraphRun
         # transitions a second time.
         delivery = self.get(delivery_id)
@@ -703,13 +706,66 @@ class DeliveryCoordinator:
         if "hermes-pm" in capabilities:
             requirements = await self._planning.analyze(delivery.user_request)
             self._repository.save(delivery.model_copy(update={"requirements": requirements}))
-            return
+            return ("requirements-ready",)
         if "hermes-project-admin" in capabilities and delivery.requirements is not None:
             task = await self._planning.plan(delivery.requirements)
             self._repository.save(delivery.model_copy(update={"task": task}))
-            return
+            return ("task-ready", "planning-complete")
+        if "codex-backend" in capabilities:
+            if delivery.task is None:
+                raise DeliveryStateConflictError(
+                    "code repair LOOP requires TaskContract"
+                )
+            if self._verifier is None:
+                raise DeliveryStateConflictError(
+                    "code repair LOOP requires machine verifier"
+                )
+            task = delivery.task
+            if (
+                delivery.verification is not None
+                and delivery.verification.status == "failed"
+            ):
+                task = task.model_copy(
+                    update={
+                        "instructions": (
+                            f"{task.instructions}\n\nRepair the previous candidate. "
+                            "The fixed machine verification failed with this "
+                            f"redacted log:\n{delivery.verification.redacted_log}"
+                        )
+                    }
+                )
+            self._repository.save(
+                delivery.model_copy(
+                    update={"status": "executing", "updated_at": datetime.now(UTC)}
+                )
+            )
+            candidate = await self._executor.execute(
+                task, delivery.workspace_id, delivery.id
+            )
+            verification = await self._verifier.verify(
+                candidate, delivery.task, delivery.workspace_id
+            )
+            self._repository.save(
+                self.get(delivery_id).model_copy(
+                    update={
+                        "status": "verifying",
+                        "candidate": candidate,
+                        "verification": verification,
+                        "evidence_identity": self._executor.evidence_identity,
+                        "execution_identity": self._executor.evidence_identity,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+            if verification.status == "passed":
+                return (
+                    "tests-passed",
+                    "machine-tests-passed",
+                    "candidate-verified",
+                )
+            return ("candidate-produced", "tests-failed")
         raise DeliveryStateConflictError(
-            "LOOP body currently supports bounded planning capabilities only"
+            "LOOP body has no supported capability binding"
         )
 
     def _pipeline_exit_condition_met(
@@ -1466,21 +1522,6 @@ def _pipeline_items(value: object) -> tuple[dict[str, object], ...]:
     return tuple(
         cast(dict[str, object], item) for item in value if isinstance(item, dict)
     )
-
-
-def _pipeline_stage_conditions(node: dict[str, object]) -> tuple[str, ...]:
-    bindings = node.get("bindings")
-    capabilities = set(bindings.values()) if isinstance(bindings, dict) else set()
-    conditions: set[str] = set()
-    if "hermes-pm" in capabilities:
-        conditions.add("requirements-ready")
-    if "hermes-project-admin" in capabilities:
-        conditions.update({"task-ready", "planning-complete"})
-    if "codex-backend" in capabilities:
-        conditions.update(
-            {"tests-passed", "machine-tests-passed", "candidate-verified"}
-        )
-    return tuple(sorted(conditions))
 
 
 def _delivery_event(delivery: DeliveryRun) -> ProductEvent:

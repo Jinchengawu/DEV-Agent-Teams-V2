@@ -49,6 +49,36 @@ class ExactApplier:
         )
 
 
+class RepairingExecutor:
+    evidence_identity = "deterministic-test"
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    async def execute(self, task, workspace_id, delivery_id):  # type: ignore[no-untyped-def]
+        self.attempts += 1
+        marker = str(self.attempts) * 40
+        return CandidateChange(
+            base_revision="b" * 40,
+            candidate_revision=marker,
+            diff_sha256=str(self.attempts) * 64,
+            changed_files=("src/service.py", "tests/test_service.py"),
+        )
+
+
+class RepairVerifier:
+    async def verify(self, candidate, task, workspace_id):  # type: ignore[no-untyped-def]
+        passed = candidate.candidate_revision == "2" * 40
+        return VerificationRun(
+            status="passed" if passed else "failed",
+            commands=("python -m unittest discover -s tests -v",),
+            exit_code=0 if passed else 1,
+            log_sha256=("2" if passed else "1") * 64,
+            redacted_log="tests passed" if passed else "one test failed",
+            acceptance_ids=task.acceptance_ids,
+        )
+
+
 def _revision() -> PipelineRevision:
     definition: dict[str, object] = {
         "id": "backend-delivery",
@@ -412,5 +442,84 @@ def test_pipeline_recovery_fails_interrupted_node_in_graph_ledger(tmp_path: Path
 
         assert coordinator.get(delivery.id).error_code == "PROCESS_INTERRUPTED"
         assert runs.get_for_delivery(delivery.id).status == "failed"
+
+    asyncio.run(scenario())
+
+
+def test_code_repair_loop_retries_until_machine_tests_pass(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        definition = _revision().definition.copy()
+        nodes = list(definition["nodes"])  # type: ignore[arg-type]
+        code = next(node for node in nodes if node["id"] == "delivery")
+        loop = {
+            "id": "repair-loop",
+            "kind": "loop",
+            "policy": {
+                "exit_condition": "machine-tests-passed",
+                "max_iterations": 3,
+                "timeout_seconds": 60,
+                "on_exhausted": "fail",
+            },
+            "nodes": [code],
+            "edges": [],
+        }
+        definition["nodes"] = [
+            loop if node["id"] == "delivery" else node for node in nodes
+        ]
+        definition["edges"] = [
+            {
+                "source": "approve-plan" if edge["source"] == "approve-plan" else edge["source"],
+                "target": "repair-loop" if edge["target"] == "delivery" else edge["target"],
+            }
+            for edge in definition["edges"]  # type: ignore[union-attr]
+            if edge["source"] != "delivery"
+        ] + [{"source": "repair-loop", "target": "approve-candidate"}]
+        revision = _revision_for(definition)
+        database = tmp_path / "agent-team-os.sqlite"
+        MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+        runs = PipelineRunLedger(
+            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+        )
+        executor = RepairingExecutor()
+        coordinator = DeliveryCoordinator(
+            planning=DeterministicPlanningService(),
+            executor=executor,
+            verifier=RepairVerifier(),
+            applier=ExactApplier(),
+            repository=InMemoryDeliveryRepository(),
+            resolved_journey_sha256="f" * 64,
+        )
+        coordinator.configure_pipeline_runtime(RevisionCatalog(revision), runs)
+        created = coordinator.enqueue(
+            workspace_id="backend-demo",
+            user_request="修复直到测试通过",
+            pipeline_revision_id="backend-delivery:1",
+            journey_binding_snapshot=revision.binding_snapshot,
+            resolved_journey_sha256=revision.fingerprint,
+            resolved_pipeline_sha256=revision.fingerprint,
+        )
+        plan = await _wait_for(coordinator, created.id, "awaiting_plan_decision")
+        await coordinator.decide_plan(
+            created.id,
+            decision="approve",
+            expected_version=plan.version,
+            expected_subject_sha256=plan.plan_gate.subject_sha256,  # type: ignore[union-attr]
+        )
+
+        candidate = await _wait_for(
+            coordinator, created.id, "awaiting_candidate_decision"
+        )
+        graph = runs.get_for_delivery(created.id)
+        loop_state = next(
+            node
+            for node in graph.snapshot["nodes"]
+            if node["node_id"] == "repair-loop"
+        )
+        assert executor.attempts == 2
+        assert len(loop_state["iterations"]) == 2
+        assert candidate.verification is not None
+        assert candidate.verification.status == "passed"
+        assert candidate.candidate is not None
+        assert candidate.candidate.candidate_revision == "2" * 40
 
     asyncio.run(scenario())

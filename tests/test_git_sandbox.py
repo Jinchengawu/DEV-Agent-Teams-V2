@@ -114,3 +114,36 @@ def test_failed_verification_and_changed_base_never_apply(tmp_path: Path) -> Non
     with pytest.raises(BaseRevisionConflictError):
         sandbox.apply_candidate(fake)
     assert sandbox.main_revision() == base
+
+
+def test_candidate_retry_reuses_worktree_and_preserves_immutable_attempt_refs(
+    tmp_path: Path,
+) -> None:
+    sandbox = GitSandbox(tmp_path / "runtime")
+    sandbox.ensure_initialized()
+    base = sandbox.main_revision()
+    worktree = sandbox.create_worktree("repair-loop", base)
+    (worktree / "src" / "first.py").write_text("FIRST = True\n", encoding="utf-8")
+    first = sandbox.create_candidate(
+        "repair-loop", base_revision=base, policy=SandboxPolicy()
+    )
+
+    assert sandbox.create_worktree("repair-loop", base) == worktree
+    (worktree / "tests" / "test_first.py").write_text(
+        "import unittest\n\nclass FirstTest(unittest.TestCase):\n"
+        "    def test_first(self):\n        self.assertTrue(True)\n",
+        encoding="utf-8",
+    )
+    second = sandbox.create_candidate(
+        "repair-loop", base_revision=base, policy=SandboxPolicy()
+    )
+
+    assert first.candidate_ref != second.candidate_ref
+    assert sandbox._git_bare("rev-parse", first.candidate_ref).strip() == (  # noqa: SLF001
+        first.candidate_revision
+    )
+    assert sandbox._git_bare("rev-parse", second.candidate_ref).strip() == (  # noqa: SLF001
+        second.candidate_revision
+    )
+    assert second.changed_files == ("src/first.py", "tests/test_first.py")
+    assert sandbox.verify_candidate(second, SandboxPolicy()).status == "passed"

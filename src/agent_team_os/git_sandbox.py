@@ -114,7 +114,15 @@ if __name__ == "__main__":
         self.ensure_initialized()
         worktree = self.worktrees / self._safe_id(delivery_id)
         if worktree.exists():
-            raise SandboxError(f"Worktree already exists: {delivery_id}")
+            self._run(
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                base_revision,
+                "HEAD",
+                cwd=worktree,
+            )
+            return worktree
         self._git_bare("worktree", "add", "--detach", str(worktree), base_revision)
         return worktree
 
@@ -137,11 +145,26 @@ if __name__ == "__main__":
         self._run("git", "add", "--all", cwd=worktree)
         self._run("git", "commit", "-m", f"candidate {delivery_id}", cwd=worktree)
         candidate_revision = self._git("rev-parse", "HEAD", cwd=worktree).strip()
-        candidate_ref = f"refs/candidates/{self._safe_id(delivery_id)}"
-        self._git_bare("update-ref", candidate_ref, candidate_revision)
+        candidate_ref = (
+            f"refs/candidates/{self._safe_id(delivery_id)}/{candidate_revision}"
+        )
+        self._git_bare(
+            "update-ref", candidate_ref, candidate_revision, "0" * 40
+        )
         unified_diff = self._git_bare(
             "diff", "--binary", "--no-ext-diff", base_revision, candidate_revision, "--"
         )
+        changed_files = tuple(
+            sorted(
+                line
+                for line in self._git_bare(
+                    "diff", "--name-only", base_revision, candidate_revision
+                ).splitlines()
+                if line
+            )
+        )
+        self._validate_paths(changed_files, policy)
+        self._scan_secrets(worktree, changed_files)
         return CandidateChange(
             base_revision=base_revision,
             candidate_revision=candidate_revision,
