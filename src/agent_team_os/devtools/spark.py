@@ -219,15 +219,26 @@ class SparkRunner:
         self._write_json(
             self.state_root / task.id / "result.json", accepted.model_dump(mode="json")
         )
+        self._cleanup_worktree(task)
         return accepted
 
     def reject(self, task_id: str) -> SparkResult:
+        task = self.load_task(task_id)
         result = self.inspect(task_id)
         rejected = result.model_copy(update={"status": "rejected"})
         self._write_json(
             self.state_root / task_id / "result.json", rejected.model_dump(mode="json")
         )
+        self._cleanup_worktree(task)
         return rejected
+
+    def _cleanup_worktree(self, task: SparkTask) -> None:
+        worktree = self.worktree_root / task.id
+        branch = f"codex/spark/{task.id.lower()}"
+        if worktree.exists():
+            self._git(self.root, "worktree", "remove", "--force", str(worktree))
+        if self._git(self.root, "branch", "--list", branch).stdout.strip():
+            self._git(self.root, "branch", "-D", branch)
 
     def _preflight(self, task: SparkTask) -> None:
         if task.model != SPARK_MODEL:
@@ -274,6 +285,23 @@ class SparkRunner:
             str(worktree),
             task.base_revision,
         )
+        if any(pattern.startswith("console/") for pattern in task.allowed_paths):
+            completed = subprocess.run(
+                [
+                    "pnpm",
+                    "install",
+                    "--offline",
+                    "--frozen-lockfile",
+                    "--ignore-scripts",
+                ],
+                cwd=worktree / "console",
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise SparkFailure("SPARK_DEPENDENCY_PREP_FAILED", completed.stderr[-4_000:])
         return worktree
 
     def _prompt(self, task: SparkTask) -> str:
