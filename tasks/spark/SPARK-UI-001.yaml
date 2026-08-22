@@ -26,6 +26,8 @@ acceptance:
   - 只有已验证统计使用可信绿色语义，无效使用红色，不可用保持中性
   - 新增组件测试，覆盖混合状态与空数组，不生成模拟证据或固定生产数据
   - 禁止 JSX 内联 style；新增样式写入 console/src/styles.css 并沿用控制台设计变量
+  - 测试只能使用项目现有 Vitest 与 Testing Library API；未安装 jest-dom，禁止使用 toHaveTextContent 等扩展断言
+  - 最终回复前必须实际执行清单中的两条验证命令；任一失败必须先修复再重新执行
 
 verification:
   - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
