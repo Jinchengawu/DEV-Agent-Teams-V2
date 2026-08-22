@@ -684,13 +684,7 @@ export interface components {
              * @default 1
              */
             version: number;
-            /**
-             * @default {
-             *       "status": "unknown",
-             *       "checked_at": "2026-08-22T13:16:38.524027Z"
-             *     }
-             */
-            health: components["schemas"]["HealthResult"];
+            health?: components["schemas"]["HealthResult"];
             /**
              * Created At
              * Format: date-time
