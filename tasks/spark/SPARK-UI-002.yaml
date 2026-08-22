@@ -38,7 +38,7 @@ acceptance:
   - 中栏选中文档后必须根据 current_revision 请求真实 Revision，展示正文、修订号和内容 SHA-256
   - 右栏提供创建文档、使用 expected_version 编辑标题与 Markdown 正文、版本列表、恢复历史版本、评论列表和添加评论
   - 页面不自行修改版本号；每个修改成功后重新读取后端状态
-  - 内容使用 JSON {format: markdown, text: string} 传输；未知 JSON 以格式化只读内容展示
+  - "内容使用 JSON {format: markdown, text: string} 传输；未知 JSON 以格式化只读内容展示"
   - 只有真实 request 成功后才显示成功状态，禁止模拟文档、固定哈希或假评论
   - 完整实现 Loading、Empty、Error、Conflict 和 Ready 中文状态；409 必须提示刷新后重试
   - 所有可见文本使用中文；协议 ID、Revision 和 SHA-256 放入中文上下文
