@@ -22,7 +22,7 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from .modules.orchestration import PipelineCatalog, PipelineRevision, PipelineRunLedger
+from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
 
@@ -197,6 +197,38 @@ class DeliveryRepository(Protocol):
     def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]: ...
 
 
+class PipelineExecution(Protocol):
+    """Small product interface for the deep Pipeline execution module."""
+
+    def start(self, delivery: DeliveryRun) -> None: ...
+
+    async def advance(self, delivery_id: str) -> None: ...
+
+    async def decide_plan(
+        self,
+        delivery: DeliveryRun,
+        *,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun: ...
+
+    async def decide_candidate(
+        self,
+        delivery: DeliveryRun,
+        *,
+        decision: Literal["accept", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun: ...
+
+    def cancel(self, delivery: DeliveryRun) -> None: ...
+
+    def fail(self, delivery_id: str, error: Exception) -> None: ...
+
+    async def recover_applying(self, delivery: DeliveryRun) -> None: ...
+
+
 class InMemoryDeliveryRepository:
     def __init__(self) -> None:
         self._deliveries: dict[str, DeliveryRun] = {}
@@ -332,15 +364,23 @@ class DeliveryCoordinator:
             else Sha256.validate(resolved_journey_sha256)
         )
         self._background: dict[str, asyncio.Task[None]] = {}
-        self._pipeline_catalog: PipelineCatalog | None = None
-        self._pipeline_runs: PipelineRunLedger | None = None
+        self._pipeline_execution: PipelineExecution | None = None
 
     def configure_pipeline_runtime(
         self, catalog: PipelineCatalog, runs: PipelineRunLedger
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
-        self._pipeline_catalog = catalog
-        self._pipeline_runs = runs
+        from .modules.delivery import PipelineExecutionModule
+
+        self._pipeline_execution = PipelineExecutionModule(
+            planning=self._planning,
+            executor=self._executor,
+            verifier=self._verifier,
+            applier=self._applier,
+            repository=self._repository,
+            catalog=catalog,
+            runs=runs,
+        )
 
     def enqueue(
         self,
@@ -385,423 +425,17 @@ class DeliveryCoordinator:
         )
         self._repository.save(delivery)
         if pipeline_revision_id is not None:
-            if self._pipeline_catalog is None or self._pipeline_runs is None:
+            if self._pipeline_execution is None:
                 return self.fail_initialization(
                     delivery.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE"
                 )
-            revision = self._pipeline_catalog.resolve_revision(pipeline_revision_id)
-            self._pipeline_runs.start(
-                delivery_id=delivery.id,
-                revision=revision,
-                run_id=resolved_pipeline_run_id,
+            self._pipeline_execution.start(delivery)
+            self._schedule(
+                delivery.id, self._pipeline_execution.advance(delivery.id)
             )
-            self._schedule(delivery.id, self._advance_pipeline(delivery.id))
         else:
             self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
-
-    def _pipeline_revision(self, delivery: DeliveryRun) -> PipelineRevision:
-        if self._pipeline_catalog is None or delivery.pipeline_revision_id is None:
-            raise DeliveryStateConflictError("pipeline revision is unavailable")
-        return self._pipeline_catalog.resolve_revision(delivery.pipeline_revision_id)
-
-    def _pipeline_ledger(self) -> PipelineRunLedger:
-        if self._pipeline_runs is None:
-            raise DeliveryStateConflictError("pipeline run ledger is unavailable")
-        return self._pipeline_runs
-
-    async def _advance_pipeline(self, delivery_id: str) -> None:
-        """Execute only nodes ACWM marks ready; ACWM remains graph-state authority."""
-        try:
-            while True:
-                delivery = self.get(delivery_id)
-                ledger = self._pipeline_ledger()
-                run = ledger.get_for_delivery(delivery_id)
-                if run.status == "completed":
-                    if delivery.apply_receipt is None:
-                        raise DeliveryStateConflictError(
-                            "pipeline completed without an Apply Receipt"
-                        )
-                    self._repository.save(
-                        delivery.model_copy(
-                            update={
-                                "status": "completed",
-                                "updated_at": datetime.now(UTC),
-                            }
-                        )
-                    )
-                    return
-                if run.status in {"failed", "cancelled", "needs_attention"}:
-                    return
-                ready = tuple(
-                    str(node["node_id"])
-                    for node in _pipeline_items(run.snapshot.get("nodes"))
-                    if node.get("status") == "ready"
-                )
-                if not ready:
-                    return
-                revision = self._pipeline_revision(delivery)
-                for node_id in ready:
-                    node = _pipeline_node(revision.definition, node_id)
-                    kind = node.get("kind")
-                    if kind == "stage":
-                        await self._execute_pipeline_stage(delivery_id, node_id, node)
-                    elif kind == "approval_gate":
-                        self._open_pipeline_gate(delivery_id, node_id, node)
-                        return
-                    elif kind == "loop":
-                        await self._execute_pipeline_loop(delivery_id, node_id, node)
-                    else:
-                        raise DeliveryStateConflictError(
-                            f"unsupported pipeline node kind: {kind}"
-                        )
-        except Exception as error:
-            self._fail_pipeline(delivery_id, error)
-
-    async def _execute_pipeline_stage(
-        self, delivery_id: str, node_id: str, node: dict[str, object]
-    ) -> None:
-        ledger = self._pipeline_ledger()
-        run = ledger.get_for_delivery(delivery_id)
-        ledger.transition(
-            run.id, command="start", node_id=node_id, expected_version=run.version
-        )
-        delivery = self.get(delivery_id)
-        bindings = node.get("bindings")
-        capabilities = {
-            str(value) for value in bindings.values()
-        } if isinstance(bindings, dict) else set()
-        activated: tuple[str, ...]
-        if "hermes-pm" in capabilities:
-            requirements = await self._planning.analyze(delivery.user_request)
-            self._repository.save(
-                delivery.model_copy(
-                    update={
-                        "status": "planning",
-                        "requirements": requirements,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-            )
-            activated = ("requirements-ready",)
-        elif "hermes-project-admin" in capabilities:
-            if delivery.requirements is None:
-                raise DeliveryStateConflictError(
-                    "project admin stage requires RequirementArtifact"
-                )
-            task = await self._planning.plan(delivery.requirements)
-            self._repository.save(
-                delivery.model_copy(
-                    update={
-                        "status": "planning",
-                        "task": task,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-            )
-            activated = ("task-ready", "planning-complete")
-        elif "codex-backend" in capabilities:
-            if delivery.task is None:
-                raise DeliveryStateConflictError(
-                    "code delivery stage requires TaskContract"
-                )
-            executing = delivery.model_copy(
-                update={"status": "executing", "updated_at": datetime.now(UTC)}
-            )
-            self._repository.save(executing)
-            candidate = await self._executor.execute(
-                delivery.task, delivery.workspace_id, delivery.id
-            )
-            self._repository.save(
-                executing.model_copy(
-                    update={
-                        "status": "verifying",
-                        "candidate": candidate,
-                        "evidence_identity": self._executor.evidence_identity,
-                        "execution_identity": self._executor.evidence_identity,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-            )
-            verification = (
-                await self._verifier.verify(
-                    candidate, delivery.task, delivery.workspace_id
-                )
-                if self._verifier is not None
-                else None
-            )
-            if verification is not None and verification.status != "passed":
-                raise DeliveryStateConflictError("candidate verification failed")
-            self._repository.save(
-                self.get(delivery_id).model_copy(
-                    update={
-                        "verification": verification,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-            )
-            activated = ("tests-passed", "machine-tests-passed", "candidate-verified")
-        else:
-            raise DeliveryStateConflictError(
-                f"pipeline stage {node_id} has no supported capability binding"
-            )
-        run = ledger.get_for_delivery(delivery_id)
-        ledger.transition(
-            run.id,
-            command="succeed",
-            node_id=node_id,
-            expected_version=run.version,
-            activated_conditions=activated,
-        )
-
-    def _open_pipeline_gate(
-        self, delivery_id: str, node_id: str, node: dict[str, object]
-    ) -> None:
-        delivery = self.get(delivery_id)
-        ledger = self._pipeline_ledger()
-        run = ledger.get_for_delivery(delivery_id)
-        ledger.transition(
-            run.id, command="start", node_id=node_id, expected_version=run.version
-        )
-        subject_kind = node.get("subject_kind")
-        if subject_kind == "delivery-plan":
-            if delivery.requirements is None or delivery.task is None:
-                raise DeliveryStateConflictError("plan gate subject is incomplete")
-            artifact_id = "delivery-plan"
-            subject_hash = _sha256(
-                {"requirements": delivery.requirements, "task": delivery.task}
-            )
-            field = "plan_gate"
-            status = "awaiting_plan_decision"
-        elif subject_kind == "candidate-change":
-            if delivery.candidate is None:
-                raise DeliveryStateConflictError("candidate gate subject is incomplete")
-            if delivery.verification is not None and delivery.verification.status != "passed":
-                raise DeliveryStateConflictError("candidate gate requires passed verification")
-            artifact_id = delivery.candidate.candidate_revision
-            subject_hash = _sha256(
-                {
-                    "candidate": delivery.candidate,
-                    "verification": delivery.verification,
-                }
-            )
-            field = "candidate_gate"
-            status = "awaiting_candidate_decision"
-        else:
-            raise DeliveryStateConflictError(
-                f"unsupported delivery gate subject: {subject_kind}"
-            )
-        opened = open_gate(
-            GateSnapshot(id=node_id, subject_kind=str(subject_kind)),
-            subject=GateSubject(
-                kind=str(subject_kind), artifact_id=artifact_id, sha256=subject_hash
-            ),
-            revision=delivery.version,
-        )
-        self._repository.save(
-            delivery.model_copy(
-                update={
-                    "status": status,
-                    field: _gate_record(opened),
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-        )
-
-    async def _execute_pipeline_loop(
-        self, delivery_id: str, node_id: str, node: dict[str, object]
-    ) -> None:
-        ledger = self._pipeline_ledger()
-        run = ledger.get_for_delivery(delivery_id)
-        ledger.transition(
-            run.id, command="start", node_id=node_id, expected_version=run.version
-        )
-        # The first vertical slice executes nested Stage DAGs. Nested approval gates
-        # are rejected until their durable product Gate record is introduced.
-        while True:
-            run = ledger.get_for_delivery(delivery_id)
-            ledger.transition(
-                run.id,
-                command="start-loop-iteration",
-                node_id=node_id,
-                expected_version=run.version,
-            )
-            emitted: set[str] = set()
-            while True:
-                run = ledger.get_for_delivery(delivery_id)
-                loop_state = next(
-                    item
-                    for item in _pipeline_items(run.snapshot.get("nodes"))
-                    if item["node_id"] == node_id
-                )
-                iterations = _pipeline_items(loop_state.get("iterations"))
-                iteration = iterations[-1]
-                ready = [
-                    str(item["node_id"])
-                    for item in _pipeline_items(iteration.get("nodes"))
-                    if item["status"] == "ready"
-                ]
-                if not ready:
-                    break
-                for body_node_id in ready:
-                    body_node = _pipeline_node({"nodes": node.get("nodes", [])}, body_node_id)
-                    if body_node.get("kind") != "stage":
-                        raise DeliveryStateConflictError(
-                            "nested approval gates require a durable nested Gate record"
-                        )
-                    run = ledger.get_for_delivery(delivery_id)
-                    ledger.transition(
-                        run.id,
-                        command="start-loop-body-node",
-                        node_id=node_id,
-                        body_node_id=body_node_id,
-                        expected_version=run.version,
-                    )
-                    emitted.update(
-                        await self._execute_loop_body_capability(
-                            delivery_id, body_node
-                        )
-                    )
-                    run = ledger.get_for_delivery(delivery_id)
-                    ledger.transition(
-                        run.id,
-                        command="succeed-loop-body-node",
-                        node_id=node_id,
-                        body_node_id=body_node_id,
-                        expected_version=run.version,
-                        activated_conditions=tuple(sorted(emitted)),
-                    )
-            policy = node.get("policy")
-            exit_condition = (
-                str(policy.get("exit_condition"))
-                if isinstance(policy, dict)
-                else ""
-            )
-            exit_met = exit_condition in emitted or self._pipeline_exit_condition_met(
-                delivery_id, exit_condition
-            )
-            run = ledger.get_for_delivery(delivery_id)
-            completed = ledger.transition(
-                run.id,
-                command="complete-loop-iteration",
-                node_id=node_id,
-                expected_version=run.version,
-                exit_condition_met=exit_met,
-            )
-            if completed.status != "running" or next(
-                item
-                for item in _pipeline_items(completed.snapshot.get("nodes"))
-                if item["node_id"] == node_id
-            )["status"] == "succeeded":
-                return
-
-    async def _execute_loop_body_capability(
-        self, delivery_id: str, node: dict[str, object]
-    ) -> tuple[str, ...]:
-        # Reuse the product capability mapping without applying top-level GraphRun
-        # transitions a second time.
-        delivery = self.get(delivery_id)
-        bindings = node.get("bindings")
-        capabilities = set(bindings.values()) if isinstance(bindings, dict) else set()
-        if "hermes-pm" in capabilities:
-            requirements = await self._planning.analyze(delivery.user_request)
-            self._repository.save(delivery.model_copy(update={"requirements": requirements}))
-            return ("requirements-ready",)
-        if "hermes-project-admin" in capabilities and delivery.requirements is not None:
-            task = await self._planning.plan(delivery.requirements)
-            self._repository.save(delivery.model_copy(update={"task": task}))
-            return ("task-ready", "planning-complete")
-        if "codex-backend" in capabilities:
-            if delivery.task is None:
-                raise DeliveryStateConflictError(
-                    "code repair LOOP requires TaskContract"
-                )
-            if self._verifier is None:
-                raise DeliveryStateConflictError(
-                    "code repair LOOP requires machine verifier"
-                )
-            task = delivery.task
-            if (
-                delivery.verification is not None
-                and delivery.verification.status == "failed"
-            ):
-                task = task.model_copy(
-                    update={
-                        "instructions": (
-                            f"{task.instructions}\n\nRepair the previous candidate. "
-                            "The fixed machine verification failed with this "
-                            f"redacted log:\n{delivery.verification.redacted_log}"
-                        )
-                    }
-                )
-            self._repository.save(
-                delivery.model_copy(
-                    update={"status": "executing", "updated_at": datetime.now(UTC)}
-                )
-            )
-            candidate = await self._executor.execute(
-                task, delivery.workspace_id, delivery.id
-            )
-            verification = await self._verifier.verify(
-                candidate, delivery.task, delivery.workspace_id
-            )
-            self._repository.save(
-                self.get(delivery_id).model_copy(
-                    update={
-                        "status": "verifying",
-                        "candidate": candidate,
-                        "verification": verification,
-                        "evidence_identity": self._executor.evidence_identity,
-                        "execution_identity": self._executor.evidence_identity,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-            )
-            if verification.status == "passed":
-                return (
-                    "tests-passed",
-                    "machine-tests-passed",
-                    "candidate-verified",
-                )
-            return ("candidate-produced", "tests-failed")
-        raise DeliveryStateConflictError(
-            "LOOP body has no supported capability binding"
-        )
-
-    def _pipeline_exit_condition_met(
-        self, delivery_id: str, exit_condition: str
-    ) -> bool:
-        delivery = self.get(delivery_id)
-        verified_conditions = {
-            "tests-passed",
-            "machine-tests-passed",
-            "candidate-verified",
-        }
-        return exit_condition in verified_conditions and (
-            delivery.verification is not None
-            and delivery.verification.status == "passed"
-        )
-
-    def _fail_pipeline(self, delivery_id: str, error: Exception) -> None:
-        delivery = self.get(delivery_id)
-        if delivery.pipeline_run_id is not None and self._pipeline_runs is not None:
-            run = self._pipeline_runs.get_for_delivery(delivery_id)
-            running = next(
-                (
-                    str(node["node_id"])
-                    for node in _pipeline_items(run.snapshot.get("nodes"))
-                    if node.get("status") == "running"
-                ),
-                None,
-            )
-            if run.status == "running" and running is not None:
-                self._pipeline_runs.transition(
-                    run.id,
-                    command="fail",
-                    node_id=running,
-                    expected_version=run.version,
-                )
-        self._save_failed(delivery, error, "PIPELINE_EXECUTION_FAILED")
 
     def fail_initialization(self, delivery_id: str, error_code: str) -> DeliveryRun:
         task = self._background.pop(delivery_id, None)
@@ -1081,7 +715,9 @@ class DeliveryCoordinator:
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
         if delivery.pipeline_revision_id is not None:
-            return await self._decide_pipeline_plan(
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            return await self._pipeline_execution.decide_plan(
                 delivery,
                 decision=decision,
                 expected_version=expected_version,
@@ -1167,66 +803,6 @@ class DeliveryCoordinator:
         self._repository.save(updated)
         return updated
 
-    async def _decide_pipeline_plan(
-        self,
-        delivery: DeliveryRun,
-        *,
-        decision: Literal["approve", "reject"],
-        expected_version: int,
-        expected_subject_sha256: str,
-    ) -> DeliveryRun:
-        if delivery.plan_gate is not None and delivery.plan_gate.decision is not None:
-            if delivery.plan_gate.decision == decision:
-                return delivery
-            raise DeliveryStateConflictError(delivery.id)
-        if delivery.version != expected_version:
-            raise DeliveryVersionConflictError(delivery.id)
-        if delivery.status != "awaiting_plan_decision" or delivery.plan_gate is None:
-            raise DeliveryStateConflictError(delivery.id)
-        decided = _decide_gate(
-            delivery.plan_gate,
-            decision=decision,
-            expected_version=expected_version,
-            expected_subject_sha256=expected_subject_sha256,
-        )
-        ledger = self._pipeline_ledger()
-        run = ledger.get_for_delivery(delivery.id)
-        if decision == "reject":
-            ledger.transition(
-                run.id,
-                command="cancel",
-                node_id=delivery.plan_gate.gate_id,
-                expected_version=run.version,
-            )
-            updated = delivery.model_copy(
-                update={
-                    "status": "rejected",
-                    "version": delivery.version + 1,
-                    "plan_gate": decided,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-            self._repository.save(updated)
-            return updated
-        executing = delivery.model_copy(
-            update={
-                "status": "executing",
-                "version": delivery.version + 1,
-                "plan_gate": decided,
-                "updated_at": datetime.now(UTC),
-            }
-        )
-        self._repository.save(executing)
-        ledger.transition(
-            run.id,
-            command="succeed",
-            node_id=delivery.plan_gate.gate_id,
-            expected_version=run.version,
-            activated_conditions=("approved", "plan-approved"),
-        )
-        await self._advance_pipeline(delivery.id)
-        return self.get(delivery.id)
-
     async def decide_candidate(
         self,
         delivery_id: str,
@@ -1237,7 +813,9 @@ class DeliveryCoordinator:
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
         if delivery.pipeline_revision_id is not None:
-            return await self._decide_pipeline_candidate(
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            return await self._pipeline_execution.decide_candidate(
                 delivery,
                 decision=decision,
                 expected_version=expected_version,
@@ -1304,89 +882,6 @@ class DeliveryCoordinator:
         self._repository.save(updated)
         return updated
 
-    async def _decide_pipeline_candidate(
-        self,
-        delivery: DeliveryRun,
-        *,
-        decision: Literal["accept", "reject"],
-        expected_version: int,
-        expected_subject_sha256: str,
-    ) -> DeliveryRun:
-        gate_decision: Literal["approve", "reject"] = (
-            "approve" if decision == "accept" else "reject"
-        )
-        if delivery.candidate_gate is not None and delivery.candidate_gate.decision is not None:
-            if delivery.candidate_gate.decision == gate_decision:
-                return delivery
-            raise DeliveryStateConflictError(delivery.id)
-        if delivery.version != expected_version:
-            raise DeliveryVersionConflictError(delivery.id)
-        if (
-            delivery.status != "awaiting_candidate_decision"
-            or delivery.candidate is None
-            or delivery.candidate_gate is None
-        ):
-            raise DeliveryStateConflictError(delivery.id)
-        decided = _decide_gate(
-            delivery.candidate_gate,
-            decision=gate_decision,
-            expected_version=expected_version,
-            expected_subject_sha256=expected_subject_sha256,
-        )
-        ledger = self._pipeline_ledger()
-        run = ledger.get_for_delivery(delivery.id)
-        if decision == "reject":
-            ledger.transition(
-                run.id,
-                command="cancel",
-                node_id=delivery.candidate_gate.gate_id,
-                expected_version=run.version,
-            )
-            updated = delivery.model_copy(
-                update={
-                    "status": "rejected",
-                    "version": delivery.version + 1,
-                    "candidate_gate": decided,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-            self._repository.save(updated)
-            return updated
-        if delivery.verification is None or delivery.verification.status != "passed":
-            raise DeliveryStateConflictError("candidate is not verified")
-        if self._applier is None:
-            raise DeliveryStateConflictError("candidate applier is not configured")
-        applying = delivery.model_copy(
-            update={
-                "status": "applying",
-                "version": delivery.version + 1,
-                "candidate_gate": decided,
-                "updated_at": datetime.now(UTC),
-            }
-        )
-        self._repository.save(applying)
-        receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
-        if (
-            receipt.before_revision != delivery.candidate.base_revision
-            or receipt.candidate_revision != delivery.candidate.candidate_revision
-            or receipt.after_revision != delivery.candidate.candidate_revision
-        ):
-            raise DeliveryStateConflictError("apply receipt does not match candidate")
-        self._repository.save(
-            applying.model_copy(
-                update={"apply_receipt": receipt, "updated_at": datetime.now(UTC)}
-            )
-        )
-        ledger.transition(
-            run.id,
-            command="succeed",
-            node_id=delivery.candidate_gate.gate_id,
-            expected_version=run.version,
-            activated_conditions=("approved", "accepted", "candidate-accepted"),
-        )
-        await self._advance_pipeline(delivery.id)
-        return self.get(delivery.id)
-
     def cancel(self, delivery_id: str, *, expected_version: int) -> DeliveryRun:
         delivery = self.get(delivery_id)
         if delivery.version != expected_version:
@@ -1403,15 +898,10 @@ class DeliveryCoordinator:
                 "updated_at": datetime.now(UTC),
             }
         )
-        if delivery.pipeline_revision_id is not None and self._pipeline_runs is not None:
-            run = self._pipeline_runs.get_for_delivery(delivery_id)
-            if run.status == "running":
-                self._pipeline_runs.transition(
-                    run.id,
-                    command="cancel",
-                    node_id="",
-                    expected_version=run.version,
-                )
+        if delivery.pipeline_revision_id is not None:
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            self._pipeline_execution.cancel(delivery)
         self._repository.save(updated)
         return updated
 
@@ -1419,7 +909,11 @@ class DeliveryCoordinator:
         for delivery in self.list():
             if delivery.status in {"planning", "executing", "verifying"}:
                 if delivery.pipeline_revision_id is not None:
-                    self._fail_pipeline(
+                    if self._pipeline_execution is None:
+                        raise DeliveryStateConflictError(
+                            "pipeline runtime is unavailable"
+                        )
+                    self._pipeline_execution.fail(
                         delivery.id,
                         ProcessInterruptedError("pipeline node was interrupted"),
                     )
@@ -1435,6 +929,23 @@ class DeliveryCoordinator:
                         )
                     )
             elif delivery.status == "applying" and delivery.candidate is not None:
+                if delivery.pipeline_revision_id is not None:
+                    if self._pipeline_execution is None:
+                        self._save_failed(
+                            delivery,
+                            DeliveryStateConflictError(
+                                "pipeline runtime is unavailable"
+                            ),
+                            "APPLY_RECOVERY_FAILED",
+                        )
+                        continue
+                    try:
+                        await self._pipeline_execution.recover_applying(delivery)
+                    except Exception as error:
+                        self._save_failed(
+                            delivery, error, "APPLY_RECOVERY_FAILED"
+                        )
+                    continue
                 if self._applier is None:
                     self._save_failed(
                         delivery,
@@ -1444,51 +955,17 @@ class DeliveryCoordinator:
                     continue
                 try:
                     receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
-                    recovered = delivery.model_copy(
-                        update={
-                            "status": (
-                                "applying"
-                                if delivery.pipeline_revision_id is not None
-                                else "completed"
-                            ),
-                            "apply_receipt": receipt.model_copy(
-                                update={"recovered": True}
-                            ),
-                            "updated_at": datetime.now(UTC),
-                        }
-                    )
-                    self._repository.save(recovered)
-                    if (
-                        delivery.pipeline_revision_id is not None
-                        and delivery.candidate_gate is not None
-                    ):
-                        ledger = self._pipeline_ledger()
-                        run = ledger.get_for_delivery(delivery.id)
-                        gate_node = next(
-                            (
-                                node
-                                for node in _pipeline_items(
-                                    run.snapshot.get("nodes")
-                                )
-                                if node.get("node_id")
-                                == delivery.candidate_gate.gate_id
-                            ),
-                            None,
+                    self._repository.save(
+                        delivery.model_copy(
+                            update={
+                                "status": "completed",
+                                "apply_receipt": receipt.model_copy(
+                                    update={"recovered": True}
+                                ),
+                                "updated_at": datetime.now(UTC),
+                            }
                         )
-                        if run.status == "running" and gate_node is not None:
-                            if gate_node.get("status") == "running":
-                                ledger.transition(
-                                    run.id,
-                                    command="succeed",
-                                    node_id=delivery.candidate_gate.gate_id,
-                                    expected_version=run.version,
-                                    activated_conditions=(
-                                        "approved",
-                                        "accepted",
-                                        "candidate-accepted",
-                                    ),
-                                )
-                            await self._advance_pipeline(delivery.id)
+                    )
                 except Exception as error:
                     self._save_failed(delivery, error, "APPLY_RECOVERY_FAILED")
 
