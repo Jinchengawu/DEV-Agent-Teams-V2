@@ -14,6 +14,7 @@ from .domain import (
     SpaceCreate,
     WikiAccess,
 )
+from .http import create_wiki_router
 from .repository import SQLiteWikiRepository
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "SpaceCreate",
     "WikiAccess",
     "WikiService",
+    "create_wiki_router",
 ]
