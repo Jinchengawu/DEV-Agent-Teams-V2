@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -89,20 +90,43 @@ class PipelineExecutionModule:
                 if not ready:
                     return
                 revision = self._revision(delivery)
-                for node_id in ready:
-                    node = _pipeline_node(revision.definition, node_id)
+                nodes = tuple(
+                    (node_id, _pipeline_node(revision.definition, node_id))
+                    for node_id in ready
+                )
+                role_stages = tuple(
+                    (node_id, node)
+                    for node_id, node in nodes
+                    if node.get("kind") == "stage"
+                    and node.get("workflow_mode") == "agentscope.role-turn"
+                )
+                if role_stages:
+                    async with asyncio.TaskGroup() as tasks:
+                        for node_id, node in role_stages:
+                            tasks.create_task(
+                                self._execute_stage(delivery_id, node_id, node)
+                            )
+                for node_id, node in nodes:
                     kind = node.get("kind")
+                    if (node_id, node) in role_stages:
+                        continue
                     if kind == "stage":
                         await self._execute_stage(delivery_id, node_id, node)
-                    elif kind == "approval_gate":
-                        self._open_gate(delivery_id, node_id, node)
-                        return
                     elif kind == "loop":
                         await self._execute_loop(delivery_id, node_id, node)
-                    else:
+                    elif kind != "approval_gate":
                         raise DeliveryStateConflictError(
                             f"unsupported pipeline node kind: {kind}"
                         )
+                gates = tuple(
+                    (node_id, node)
+                    for node_id, node in nodes
+                    if node.get("kind") == "approval_gate"
+                )
+                if gates:
+                    node_id, node = gates[0]
+                    self._open_gate(delivery_id, node_id, node)
+                    return
         except Exception as error:
             self.fail(delivery_id, error)
 

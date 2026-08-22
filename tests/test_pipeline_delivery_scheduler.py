@@ -2,11 +2,13 @@ import asyncio
 from pathlib import Path
 
 from agent_team_os.delivery import (
+    AcceptanceCriterion,
     ApplyReceipt,
     CandidateChange,
     DeliveryCoordinator,
     DeliveryRun,
     InMemoryDeliveryRepository,
+    RequirementArtifact,
     VerificationRun,
 )
 from agent_team_os.infrastructure.acwm import ACWMGraphCompiler, ACWMPipelineGraphRuntime
@@ -76,6 +78,24 @@ class RepairVerifier:
             log_sha256=("2" if passed else "1") * 64,
             redacted_log="tests passed" if passed else "one test failed",
             acceptance_ids=task.acceptance_ids,
+        )
+
+
+class ConcurrentPlanningService(DeterministicPlanningService):
+    def __init__(self) -> None:
+        self.active = 0
+        self.max_active = 0
+
+    async def analyze(self, user_request: str) -> RequirementArtifact:
+        self.active += 1
+        self.max_active = max(self.max_active, self.active)
+        await asyncio.sleep(0.02)
+        self.active -= 1
+        return RequirementArtifact(
+            summary=user_request,
+            acceptance_criteria=(
+                AcceptanceCriterion(id="AC-1", statement="并行规划完成"),
+            ),
         )
 
 
@@ -521,5 +541,73 @@ def test_code_repair_loop_retries_until_machine_tests_pass(tmp_path: Path) -> No
         assert candidate.verification.status == "passed"
         assert candidate.candidate is not None
         assert candidate.candidate.candidate_revision == "2" * 40
+
+    asyncio.run(scenario())
+
+
+def test_independent_ready_role_stages_execute_concurrently(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        definition: dict[str, object] = {
+            "id": "backend-delivery",
+            "version": "4.0.0",
+            "nodes": [
+                {
+                    "id": node_id,
+                    "kind": "stage",
+                    "workflow_mode": "agentscope.role-turn",
+                    "bindings": {"actor": "hermes-pm"},
+                }
+                for node_id in ("product-review", "risk-review")
+            ]
+            + [
+                {
+                    "id": "tasking",
+                    "kind": "stage",
+                    "workflow_mode": "agentscope.role-turn",
+                    "bindings": {"actor": "hermes-project-admin"},
+                },
+                {
+                    "id": "approve-plan",
+                    "kind": "approval_gate",
+                    "subject_kind": "delivery-plan",
+                },
+            ],
+            "edges": [
+                {"source": "product-review", "target": "tasking"},
+                {"source": "risk-review", "target": "tasking"},
+                {"source": "tasking", "target": "approve-plan"},
+            ],
+        }
+        revision = _revision_for(definition)
+        database = tmp_path / "agent-team-os.sqlite"
+        MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+        runs = PipelineRunLedger(
+            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+        )
+        planning = ConcurrentPlanningService()
+        coordinator = DeliveryCoordinator(
+            planning=planning,
+            executor=DeterministicCodeExecutor(),
+            repository=InMemoryDeliveryRepository(),
+            resolved_journey_sha256="f" * 64,
+        )
+        coordinator.configure_pipeline_runtime(RevisionCatalog(revision), runs)
+        created = coordinator.enqueue(
+            workspace_id="backend-demo",
+            user_request="并行完成产品与风险分析",
+            pipeline_revision_id="backend-delivery:1",
+            journey_binding_snapshot=revision.binding_snapshot,
+            resolved_journey_sha256=revision.fingerprint,
+            resolved_pipeline_sha256=revision.fingerprint,
+        )
+
+        await _wait_for(coordinator, created.id, "awaiting_plan_decision")
+
+        assert planning.max_active == 2
+        graph = runs.get_for_delivery(created.id)
+        states = {node["node_id"]: node["status"] for node in graph.snapshot["nodes"]}
+        assert states["product-review"] == "succeeded"
+        assert states["risk-review"] == "succeeded"
+        assert states["tasking"] == "succeeded"
 
     asyncio.run(scenario())
