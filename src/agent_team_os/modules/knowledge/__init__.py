@@ -15,6 +15,19 @@ from .domain import (
     WikiAccess,
 )
 from .http import create_wiki_router
+from .provider_domain import (
+    KnowledgeProviderKind,
+    ProviderActor,
+    ProviderBinding,
+    ProviderBindingCreate,
+    ProviderNode,
+    ProviderNodeKind,
+    ProviderSnapshot,
+    ProviderSpace,
+    ProviderSyncRun,
+    ProviderSyncStatus,
+)
+from .provider_ports import KnowledgeProvider
 from .repository import SQLiteWikiRepository
 
 __all__ = [
@@ -25,7 +38,18 @@ __all__ = [
     "DocumentCreate",
     "DocumentPatch",
     "KnowledgeActor",
+    "KnowledgeProvider",
+    "KnowledgeProviderKind",
     "PermissionGrant",
+    "ProviderActor",
+    "ProviderBinding",
+    "ProviderBindingCreate",
+    "ProviderNode",
+    "ProviderNodeKind",
+    "ProviderSnapshot",
+    "ProviderSpace",
+    "ProviderSyncRun",
+    "ProviderSyncStatus",
     "Revision",
     "RevisionRestoreRequest",
     "SQLiteWikiRepository",
