@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { canConnectGraph, changeCapability, changeStageMode, createGraphNode, parseDefinition } from "./OrchestrationPage";
+import {
+  addLoopBodyNode,
+  canConnectGraph,
+  changeCapability,
+  changeStageMode,
+  createDependencyEdge,
+  createGraphNode,
+  parseDefinition,
+  removeLoopBodyNode,
+  setEdgeCondition,
+} from "./OrchestrationPage";
 
 describe("DAG 与 LOOP 流水线编辑控制器", () => {
   it("创建 Stage、Gate 和有界 LOOP 节点", () => {
@@ -30,5 +40,38 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     const admin = changeCapability(changeStageMode(code, "agentscope.role-turn"), "hermes-project-admin");
     expect(code.bindings).toEqual({ developer: "codex-backend" });
     expect(admin.bindings).toEqual({ actor: "hermes-project-admin" });
+  });
+  it("编辑条件边并把条件写回语义数据", () => {
+    const edges = [{ id: "edge-plan-code", source: "plan", target: "code", data: {} }];
+    expect(setEdgeCondition(edges, "edge-plan-code", "approved")[0]?.data).toEqual({
+      condition: "approved",
+    });
+    expect(setEdgeCondition(edges, "edge-plan-code", "   ")[0]?.data).toEqual({
+      condition: undefined,
+    });
+  });
+  it("通过无障碍依赖编辑器创建带条件的边", () => {
+    expect(createDependencyEdge("plan", "code", "approved")).toMatchObject({
+      id: "edge-plan-code",
+      source: "plan",
+      target: "code",
+      data: { condition: "approved" },
+      label: "approved",
+    });
+  });
+  it("在 LOOP 内部增加节点并在删除时清理关联边", () => {
+    const created = createGraphNode("loop", []);
+    if (created.kind !== "loop") throw new Error("测试需要 LOOP");
+    const withGate = addLoopBodyNode(created, "gate");
+    const gate = withGate.nodes.find((node) => node.kind === "approval_gate");
+    if (!gate) throw new Error("应创建内部 Gate");
+    const connected = {
+      ...withGate,
+      edges: [{ source: withGate.nodes[0]!.id, target: gate.id, condition: "retry" }],
+    };
+    const removed = removeLoopBodyNode(connected, gate.id);
+    expect(withGate.nodes).toHaveLength(2);
+    expect(removed.nodes).toHaveLength(1);
+    expect(removed.edges).toEqual([]);
   });
 });
