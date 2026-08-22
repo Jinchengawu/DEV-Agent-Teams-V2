@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 from pathlib import Path
+from typing import Any
 
 from playwright.sync_api import Page, sync_playwright
 
@@ -14,10 +16,21 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     parser.add_argument("--screenshot", type=Path)
+    parser.add_argument("--phase", choices=("execute", "recover"), default="execute")
+    parser.add_argument("--state", type=Path)
+    parser.add_argument("--checkpoint", type=Path)
     args = parser.parse_args()
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1920, "height": 1200})
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1200},
+            storage_state=(
+                str(args.state)
+                if args.phase == "recover" and args.state and args.state.exists()
+                else None
+            ),
+        )
+        page = context.new_page()
         console_errors: list[str] = []
         page.on(
             "console",
@@ -25,8 +38,22 @@ def main() -> None:
             if message.type == "error"
             else None,
         )
-        _authenticate(page, args.url)
-        _create_and_publish_graph(page)
+        if args.phase == "execute":
+            _authenticate(page, args.url)
+            checkpoint = _create_and_publish_graph(page, args.url)
+            if args.state is not None:
+                args.state.parent.mkdir(parents=True, exist_ok=True)
+                context.storage_state(path=str(args.state))
+            if args.checkpoint is not None:
+                args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                args.checkpoint.write_text(
+                    json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+        else:
+            if args.checkpoint is None:
+                raise ValueError("recover phase requires --checkpoint")
+            _verify_recovered_graph(page, args.url, args.checkpoint)
         if args.screenshot is not None:
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=args.screenshot, full_page=True)
@@ -46,7 +73,7 @@ def _authenticate(page: Page, url: str) -> None:
     page.get_by_role("link", name="可视化编排", exact=True).wait_for()
 
 
-def _create_and_publish_graph(page: Page) -> None:
+def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="可视化编排", exact=True).click()
     page.get_by_label("流水线 ID").fill("browser-dag-loop")
     page.get_by_label("流水线名称").fill("浏览器 DAG LOOP 验收")
@@ -140,6 +167,43 @@ def _create_and_publish_graph(page: Page) -> None:
     page.locator(".detail-hero").get_by_text("已完成", exact=True).wait_for(
         timeout=30_000
     )
+    completed = page.context.request.get(f"{url}/v1/deliveries/{delivery['id']}")
+    assert completed.ok, completed.text()
+    graph = page.context.request.get(
+        f"{url}/v1/deliveries/{delivery['id']}/pipeline-run"
+    )
+    assert graph.ok, graph.text()
+    graph_payload = graph.json()
+    assert graph_payload["status"] == "completed", graph_payload
+    return {
+        "delivery_id": delivery["id"],
+        "pipeline_run_id": delivery["pipeline_run_id"],
+        "pipeline_revision_id": delivery["pipeline_revision_id"],
+        "pipeline_fingerprint": published["fingerprint"],
+    }
+
+
+def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None:
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    delivery = page.context.request.get(
+        f"{url}/v1/deliveries/{checkpoint['delivery_id']}"
+    )
+    assert delivery.ok, delivery.text()
+    delivery_payload = delivery.json()
+    assert delivery_payload["status"] == "completed", delivery_payload
+    assert delivery_payload["pipeline_run_id"] == checkpoint["pipeline_run_id"]
+    assert delivery_payload["pipeline_revision_id"] == checkpoint["pipeline_revision_id"]
+    graph = page.context.request.get(
+        f"{url}/v1/pipeline-runs/{checkpoint['pipeline_run_id']}"
+    )
+    assert graph.ok, graph.text()
+    graph_payload = graph.json()
+    assert graph_payload["status"] == "completed", graph_payload
+    assert graph_payload["graph_fingerprint"] == checkpoint["pipeline_fingerprint"]
+    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
 
 
 def _add_dependency(

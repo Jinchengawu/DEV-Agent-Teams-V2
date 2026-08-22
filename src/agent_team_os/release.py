@@ -568,12 +568,13 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
     environment = {
         **os.environ,
         "AGENT_TEAM_OS_DATA_DIR": str(runtime / "browser"),
+        "AGENT_TEAM_OS_TEST_PASSWORD": "Pipeline-Gate-2026-Verified",
     }
     state = runtime / "browser-state.json"
     checkpoint = runtime / "browser-checkpoint.json"
     server = _start_browser_gate_server(project_root, environment, port)
     try:
-        _run_browser_phase(
+        _run_pipeline_browser_phase(
             project_root,
             port,
             phase="execute",
@@ -585,7 +586,7 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
 
     restarted = _start_browser_gate_server(project_root, environment, port)
     try:
-        _run_browser_phase(
+        _run_pipeline_browser_phase(
             project_root,
             port,
             phase="recover",
@@ -633,7 +634,7 @@ def _start_browser_gate_server(
     raise RuntimeError("browser gate server readiness timed out")
 
 
-def _run_browser_phase(
+def _run_pipeline_browser_phase(
     project_root: Path,
     port: int,
     *,
@@ -644,7 +645,7 @@ def _run_browser_phase(
 ) -> None:
     command = [
         sys.executable,
-        str(project_root / "scripts" / "browser_e2e.py"),
+        str(project_root / "scripts" / "browser_pipeline_graph_e2e.py"),
         "--url",
         f"http://127.0.0.1:{port}",
         "--phase",
