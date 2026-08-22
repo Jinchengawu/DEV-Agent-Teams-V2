@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from agent_team_os.devtools.spark import SPARK_MODEL, SparkFailure, SparkRunner, SparkTask
+from agent_team_os.devtools.spark import (
+    SPARK_MODEL,
+    SparkFailure,
+    SparkRunner,
+    SparkTask,
+    _reports_architecture_block,
+)
 
 
 def task(**overrides: object) -> SparkTask:
@@ -46,3 +52,12 @@ def test_scope_gate_rejects_dependency_and_architecture_changes(tmp_path: Path) 
 def test_scope_gate_accepts_only_manifest_paths(tmp_path: Path) -> None:
     runner = SparkRunner(tmp_path)
     runner._verify_diff_scope(task(), ["console/src/features/evidence/EvidenceFilters.tsx"])
+
+
+def test_architecture_block_requires_an_explicit_final_status() -> None:
+    assert _reports_architecture_block(
+        "blocked/ARCHITECTURE_DECISION_REQUIRED\nMissing public contract."
+    )
+    assert not _reports_architecture_block(
+        "No block: blocked/ARCHITECTURE_DECISION_REQUIRED is not needed."
+    )

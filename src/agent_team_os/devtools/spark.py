@@ -336,8 +336,14 @@ adapters, Git apply policy, concurrency or recovery behavior. Run only the liste
                 parsed.append(json.loads(line))
             except json.JSONDecodeError as error:
                 raise SparkFailure("SPARK_EVENT_STREAM_INVALID", str(error)) from error
-        text = json.dumps(parsed, ensure_ascii=False)
-        if "ARCHITECTURE_DECISION_REQUIRED" in text:
+        messages = [
+            str(item["item"].get("text", ""))
+            for item in parsed
+            if isinstance(item, dict)
+            and isinstance(item.get("item"), dict)
+            and item["item"].get("type") == "agent_message"
+        ]
+        if messages and _reports_architecture_block(messages[-1]):
             raise SparkFailure(
                 "ARCHITECTURE_DECISION_REQUIRED", "Spark reported a missing architecture decision"
             )
@@ -428,4 +434,14 @@ def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:
         fnmatch.fnmatchcase(normalized, pattern)
         or (pattern.endswith("/**") and normalized == pattern.removesuffix("/**"))
         for pattern in patterns
+    )
+
+
+def _reports_architecture_block(message: str) -> bool:
+    return bool(
+        re.match(
+            r"^\s*blocked/ARCHITECTURE_DECISION_REQUIRED(?:\s|$)",
+            message,
+            flags=re.IGNORECASE,
+        )
     )
