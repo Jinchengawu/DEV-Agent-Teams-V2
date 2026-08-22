@@ -111,6 +111,8 @@ class DeliveryRun(ImmutableModel):
     apply_receipt: ApplyReceipt | None = None
     plan_gate: GateRecord | None = None
     candidate_gate: GateRecord | None = None
+    journey_revision_id: str | None = None
+    journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
     resolved_journey_sha256: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
     error_code: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -246,7 +248,15 @@ class DeliveryCoordinator:
         self._resolved_journey_sha256 = resolved_journey_sha256
         self._background: dict[str, asyncio.Task[None]] = {}
 
-    def enqueue(self, *, workspace_id: str, user_request: str) -> DeliveryRun:
+    def enqueue(
+        self,
+        *,
+        workspace_id: str,
+        user_request: str,
+        journey_revision_id: str | None = None,
+        journey_binding_snapshot: dict[str, dict[str, object]] | None = None,
+        resolved_journey_sha256: str | None = None,
+    ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         delivery = DeliveryRun(
             id=str(uuid4()),
@@ -256,7 +266,9 @@ class DeliveryCoordinator:
             version=1,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
-            resolved_journey_sha256=self._resolved_journey_sha256,
+            journey_revision_id=journey_revision_id,
+            journey_binding_snapshot=journey_binding_snapshot or {},
+            resolved_journey_sha256=(resolved_journey_sha256 or self._resolved_journey_sha256),
         )
         self._repository.save(delivery)
         self._schedule(delivery.id, self._plan_queued(delivery))

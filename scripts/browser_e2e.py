@@ -26,38 +26,41 @@ def main() -> None:
         )
         page.goto(args.url)
         page.wait_for_load_state("networkidle")
-        page.get_by_label("你希望交付什么？").fill(
+
+        page.get_by_role("button", name="Agents").click()
+        page.get_by_label("实例名称").fill("Browser simulated Codex")
+        page.get_by_role("button", name="注册实例").click()
+        page.get_by_text("Browser simulated Codex").wait_for()
+
+        page.get_by_role("button", name="Orchestration").click()
+        page.get_by_role("button", name="克隆为 Draft").click()
+        page.get_by_role("button", name="ACWM 校验").click()
+        page.get_by_text("DRAFT", exact=False).wait_for()
+        page.get_by_role("button", name="发布不可变 Revision").click()
+
+        page.get_by_role("button", name="Deliveries").click()
+        page.locator("textarea").fill(
             "增加 health_status 函数，返回 status=ok 和 version=0.1，并补充 unittest。"
         )
-        page.get_by_role("button", name="创建 Delivery").click()
-        page.locator("#status").wait_for(state="visible")
-        page.wait_for_function(
-            "document.querySelector('#status').textContent === 'awaiting_plan_decision'",
-            timeout=300_000,
+        page.get_by_role("button", name="启动交付闭环 →").click()
+        page.locator(".map-label b").filter(has_text="awaiting_plan_decision").wait_for(
+            timeout=300_000
         )
-        page.get_by_role("button", name="批准计划并执行").click()
-        page.wait_for_function(
-            "document.querySelector('#status').textContent === 'awaiting_candidate_decision'",
-            timeout=360_000,
-        )
-        candidate = page.locator("#candidate").inner_text()
-        verification = page.locator("#verification").inner_text()
-        assert '"unified_diff": "diff --git' in candidate
-        assert '"candidate_revision"' in candidate
-        assert '"diff_sha256"' in candidate
-        assert '"exit_code": 0' in verification
-        page.get_by_role("button", name="接受并应用候选").click()
-        page.wait_for_function(
-            "document.querySelector('#status').textContent === 'completed'",
-            timeout=60_000,
-        )
-        assert '"after_revision"' in page.locator("#receipt").inner_text()
+        page.get_by_role("button", name="Board").click()
+        page.get_by_role("button", name="approve-plan").click()
+        page.get_by_role("button", name="accept-candidate").wait_for(timeout=360_000)
+        page.get_by_role("button", name="accept-candidate").click()
+        page.locator(".map-label b").filter(has_text="completed").wait_for(timeout=60_000)
+
+        page.get_by_role("button", name="Evidence").click()
+        assert "diff" in page.locator(".evidence-grid").inner_text().lower()
+        assert "APPLY RECEIPT" in page.locator(".evidence-grid").inner_text()
+        page.get_by_role("button", name="Knowledge").click()
+        page.get_by_placeholder("搜索 Delivery、Acceptance ID、Artifact…").fill("health")
+        page.get_by_text("requirement", exact=False).first.wait_for(timeout=15_000)
         page.reload()
         page.wait_for_load_state("networkidle")
-        page.wait_for_function(
-            "document.querySelector('#history').textContent.includes('completed')",
-            timeout=15_000,
-        )
+        page.locator(".status-completed").wait_for(timeout=15_000)
         if args.screenshot:
             args.screenshot.parent.mkdir(parents=True, exist_ok=True)
             page.screenshot(path=str(args.screenshot), full_page=True)

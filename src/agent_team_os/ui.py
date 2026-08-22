@@ -1,11 +1,25 @@
 # ruff: noqa: E501
-"""Single-page Delivery preview served by the reference API."""
+"""Serve the production console, with the V0.1 page as a source fallback."""
+
+from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 
-def install_preview_ui(app: FastAPI) -> None:
+def install_preview_ui(app: FastAPI, console_dist: Path | None = None) -> None:
+    if console_dist is not None and (console_dist / "index.html").is_file():
+        assets = console_dist / "assets"
+        if assets.is_dir():
+            app.mount("/assets", StaticFiles(directory=assets), name="console-assets")
+
+        @app.get("/", response_class=FileResponse, include_in_schema=False)
+        def console_home() -> Path:
+            return console_dist / "index.html"
+
+        return
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def preview_home() -> str:
         return _PAGE

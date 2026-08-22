@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,6 +17,7 @@ from fastapi import FastAPI
 
 from .api import create_app
 from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
+from .control_plane import ControlPlaneService
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from .git_delivery import (
     ACWMCodexWorkspaceAgent,
@@ -81,13 +83,21 @@ def build_preview_app() -> FastAPI:
         repository=SQLiteDeliveryRepository(data_dir / "preview.sqlite"),
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
+    control_plane = ControlPlaneService(
+        data_dir / "control-plane.sqlite", config_root=project_root / "config"
+    )
+    control_plane.import_builtin_journey(
+        planning_identity="codex-simulated-hermes",
+        execution_identity="codex-cli",
+    )
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
         report_dir=data_dir / "reports",
         workspace_reset=reset_workspace,
+        control_plane=control_plane,
     )
-    install_preview_ui(app)
+    install_preview_ui(app, project_root / "console" / "dist")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -101,6 +111,27 @@ def build_preview_app() -> FastAPI:
     app.router.lifespan_context = lifespan
 
     return app
+
+
+def ensure_console_built(project_root: Path) -> None:
+    console = project_root / "console"
+    pnpm = shutil.which("pnpm")
+    if pnpm is None:
+        raise RuntimeError("pnpm is required to build the V0.2 console; install pnpm and retry")
+    if not (console / "node_modules").is_dir():
+        subprocess.run(
+            [pnpm, "install", "--frozen-lockfile"],
+            cwd=console,
+            check=True,
+        )
+    node = shutil.which("node")
+    if node is None:
+        raise RuntimeError("Node.js is required to build the V0.2 console")
+    subprocess.run(
+        [node, str(console / "node_modules" / "vite" / "bin" / "vite.js"), "build"],
+        cwd=console,
+        check=True,
+    )
 
 
 app = build_preview_app()
@@ -137,5 +168,10 @@ def main() -> None:
     if readiness.status != "ready":
         print(readiness.model_dump_json(indent=2))
         raise SystemExit(2)
+    try:
+        ensure_console_built(project_root)
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        print(f"Console startup failed: {error}")
+        raise SystemExit(2) from error
     port = int(os.environ.get("AGENT_TEAM_OS_PORT", "8080"))
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    uvicorn.run(build_preview_app(), host="127.0.0.1", port=port, log_level="info")

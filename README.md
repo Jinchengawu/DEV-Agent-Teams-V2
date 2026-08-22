@@ -25,9 +25,26 @@ Architecture ownership:
 
 V2 is a new project. The legacy DEV-Agent-Teams remains untouched and is not a source tree to copy.
 
-## V0.1 delivery baseline
+## V0.2 control-plane baseline
 
 Implemented:
+
+- preserve the V0.1 real Git delivery loop and its CAS apply guarantees;
+- register `hermes-acp`, `hermes-http`, and `codex-cli` execution instances without persisting secret values;
+- health-check instances and bind healthy, enabled instances to ACWM capabilities;
+- clone, reorder, validate, and publish linear ACWM Journeys as immutable revisions;
+- pin every new Delivery to a published Journey revision and frozen binding snapshot;
+- project Delivery state into a rebuildable six-column Board with legal commands only;
+- archive Journey, requirement, task, gate, candidate, verification, and receipt evidence;
+- search traceable knowledge with SQLite FTS5, content hashes, and source links;
+- expose a durable control event stream at `/v1/events/stream`;
+- serve a React/Vite control console with a persistent Operating Map.
+
+The control plane deliberately does not implement DAG workflows, RAG, embeddings, AgentScope-native
+Agent/Team management, shared long-term memory, multi-tenancy, cloud deployment, or user repository
+adapters. Those remain later milestones.
+
+V0.1 guarantees retained:
 
 - create a Backend Delivery and stop at plan approval;
 - optimistic-version protection for decisions;
@@ -60,6 +77,11 @@ uv run ruff check .
 uv run mypy
 uv build
 
+cd console
+node ./node_modules/typescript/bin/tsc --noEmit
+node ./node_modules/vitest/vitest.mjs run
+node ./node_modules/vite/bin/vite.js build
+
 # Explicit real-Codex smoke test (read-only planning; requires Codex login)
 AGENT_TEAM_OS_LIVE_CODEX=1 uv run pytest \
   tests/integration/test_live_codex_simulated_planning.py -q
@@ -69,10 +91,11 @@ AGENT_TEAM_OS_LIVE_CODEX=1 uv run pytest \
 
 The product uses Codex to simulate Hermes PM/Admin through AgentScope and ACWM. Code execution is a
 real Codex CLI workspace-write turn. The target is the built-in standard-library Python Backend Bare
-Repo under `.agent-team-os/workspaces`; user repositories are intentionally out of scope for V0.1.
+Repo under `.agent-team-os/workspaces`; user repositories are intentionally out of scope for V0.2.
 
 ```bash
 uv sync --extra dev --extra live
+pnpm --dir console install --frozen-lockfile
 uv run --extra live agent-team-os demo
 ```
 

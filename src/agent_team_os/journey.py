@@ -13,9 +13,15 @@ from acwm.adapters.codex_cli import CodexCLICapabilityAdapter
 from acwm.application.runtime import DefaultCapabilityRuntime
 from acwm.application.workflow_runtime import DefaultWorkflowRuntime
 from acwm.config import CodexCLIConfig, load_capabilities, load_journeys
+from acwm.domain import JourneyDefinition
 
 
 def resolve_backend_delivery_fingerprint(config_root: Path) -> str:
+    definition = load_journeys(config_root / "journeys.yaml")["backend-delivery"]
+    return resolve_journey_fingerprint(config_root, definition)
+
+
+def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition) -> str:
     catalog = load_capabilities(config_root / "capabilities.yaml")
     adapters = {
         "hermes-pm": CodexCLICapabilityAdapter(
@@ -37,7 +43,6 @@ def resolve_backend_delivery_fingerprint(config_root: Path) -> str:
         },
         validators={"backend-candidate-v1": _ResolutionOnlyValidator()},
     )
-    definition = load_journeys(config_root / "journeys.yaml")["backend-delivery"]
     resolved = workflows.resolve_journey(definition)
     encoded = json.dumps(
         resolved.model_dump(mode="json"),
