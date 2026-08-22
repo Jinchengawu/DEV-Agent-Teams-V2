@@ -2,7 +2,7 @@ id: SPARK-UI-001
 title: 实现证据账本真实统计摘要
 model: gpt-5.3-codex-spark
 architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
-base_revision: ec21ca101e3e992fdf1ca4f32152fa792037d501
+base_revision: 30b9595b798167ab91ac68f6d4fc7545137535bc
 kind: frontend-component
 
 allowed_paths:
