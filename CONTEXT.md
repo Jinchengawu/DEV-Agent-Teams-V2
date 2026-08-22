@@ -10,6 +10,12 @@ receipt. A successful label is never evidence by itself.
   terminal failure/rejection.
 - **Journey Revision**: the immutable ACWM definition and Capability binding snapshot selected for
   a Delivery.
+- **Pipeline**: a product-managed identity with Draft, immutable Published Revisions, activation,
+  permissions and an input contract. Each Published Revision references one compiled ACWM Journey
+  Graph.
+- **Pipeline Run**: one durable execution of a Published Pipeline Revision. It projects ACWM Node
+  Runs, Attempts and Loop Iterations while product state retains approvals, evidence and final side
+  effects.
 - **Gate**: an ACWM approval decision bound to one Artifact hash and optimistic Revision.
 - **Candidate**: an immutable Git commit created from a recorded Base Revision.
 - **Evidence Record**: an append-only product fact that references immutable content, its source,
@@ -46,4 +52,8 @@ receipt. A successful label is never evidence by itself.
 - Reject never changes Main; Accept succeeds only when Main equals the reviewed Candidate.
 - A Board move expresses a command; it cannot write a terminal state directly.
 - Published Journey Revisions and Evidence Records are immutable.
+- Published Pipeline Revisions pin the compiled Journey Graph, Capability bindings, policies and
+  graph fingerprint; a running Pipeline never silently resolves a newer definition.
+- The outer Journey Graph is acyclic. Repetition is allowed only through an explicit bounded Loop
+  Node with auditable iterations and a deterministic exhaustion outcome.
 - Secrets are represented only by environment or system credential references.
