@@ -37,7 +37,7 @@ from .delivery import (
 )
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
-from .modules.settings import AppSettings, AppSettingsPatch, SettingsManager
+from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
 from .shared.errors import ProblemDetail, ProductError
@@ -149,14 +149,7 @@ def create_app(
         )
 
     if settings is not None:
-
-        @app.get("/v1/settings", response_model=AppSettings)
-        def get_settings() -> AppSettings:
-            return settings.get()
-
-        @app.patch("/v1/settings", response_model=AppSettings)
-        def patch_settings(request: AppSettingsPatch) -> AppSettings:
-            return settings.patch(request)
+        app.include_router(create_settings_router(settings))
 
     if evidence is not None:
 
