@@ -1,3 +1,5 @@
+import { httpErrorLabel } from "./i18n";
+
 export type Delivery = {
   id: string; user_request: string; status: string; version: number;
   planning_identity: string; execution_identity?: string;
@@ -17,6 +19,6 @@ export type Knowledge = { id: string; title: string; artifact_type: string; sha2
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
   const body = await response.json();
-  if (!response.ok) throw new Error(body.detail ?? `HTTP ${response.status}`);
+  if (!response.ok) throw new Error(httpErrorLabel(response.status));
   return body as T;
 }
