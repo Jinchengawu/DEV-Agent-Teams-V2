@@ -9,8 +9,10 @@ from ...shared.ids import new_id
 from ...shared.permissions import Permission, Role, permits
 from .domain import KnowledgeActor
 from .provider_domain import (
+    ProviderActor,
     ProviderBinding,
     ProviderBindingCreate,
+    ProviderNode,
     ProviderSnapshotRecord,
     ProviderSyncResult,
     ProviderSyncRun,
@@ -70,6 +72,17 @@ class ProviderKnowledgeManager:
             raise _permission_denied()
         return self.repository.list_bindings()
 
+    def list_nodes(
+        self, actor: KnowledgeActor, binding_id: str
+    ) -> tuple[ProviderNode, ...]:
+        binding = self._enabled_binding(binding_id)
+        provider_actor = self._provider_actor(binding, actor)
+        try:
+            provider = self.resolver.resolve(binding)
+            return provider.list_nodes(provider_actor, binding.external_space_id)
+        except ProviderFailure as error:
+            raise _provider_query_failed(error) from error
+
     def sync(
         self,
         actor: KnowledgeActor,
@@ -78,31 +91,8 @@ class ProviderKnowledgeManager:
     ) -> ProviderSyncResult:
         if not permits(actor.role, Permission.WIKI_EDIT):
             raise _permission_denied()
-        binding = self.repository.get_binding(binding_id)
-        if binding is None:
-            raise ProductError(
-                code="KNOWLEDGE_PROVIDER_BINDING_NOT_FOUND",
-                title="知识来源绑定不存在",
-                detail="指定的外部知识绑定已不存在。",
-                repair="刷新绑定列表后重试。",
-                status_code=404,
-            )
-        if not binding.enabled:
-            raise ProductError(
-                code="KNOWLEDGE_PROVIDER_BINDING_DISABLED",
-                title="知识来源绑定已禁用",
-                detail="禁用的绑定不能发起新同步。",
-                repair="由管理员启用该绑定后重试。",
-            )
-        provider_actor = self.actor_resolver.resolve(binding, actor)
-        if provider_actor.product_user_id != actor.user_id:
-            raise ProductError(
-                code="KNOWLEDGE_PROVIDER_ACTOR_MISMATCH",
-                title="外部身份不匹配",
-                detail="外部知识身份与当前产品账户不一致。",
-                repair="重新为当前账户完成飞书授权。",
-                status_code=403,
-            )
+        binding = self._enabled_binding(binding_id)
+        provider_actor = self._provider_actor(binding, actor)
         started = self.clock.now()
         running = ProviderSyncRun(
             id=new_id(),
@@ -166,6 +156,39 @@ class ProviderKnowledgeManager:
             self.repository.fail_sync(failed)
             return ProviderSyncResult(run=failed)
 
+    def _enabled_binding(self, binding_id: str) -> ProviderBinding:
+        binding = self.repository.get_binding(binding_id)
+        if binding is None:
+            raise ProductError(
+                code="KNOWLEDGE_PROVIDER_BINDING_NOT_FOUND",
+                title="知识来源绑定不存在",
+                detail="指定的外部知识绑定已不存在。",
+                repair="刷新绑定列表后重试。",
+                status_code=404,
+            )
+        if not binding.enabled:
+            raise ProductError(
+                code="KNOWLEDGE_PROVIDER_BINDING_DISABLED",
+                title="知识来源绑定已禁用",
+                detail="禁用的绑定不能读取或发起新同步。",
+                repair="由管理员启用该绑定后重试。",
+            )
+        return binding
+
+    def _provider_actor(
+        self, binding: ProviderBinding, actor: KnowledgeActor
+    ) -> ProviderActor:
+        provider_actor = self.actor_resolver.resolve(binding, actor)
+        if provider_actor.product_user_id != actor.user_id:
+            raise ProductError(
+                code="KNOWLEDGE_PROVIDER_ACTOR_MISMATCH",
+                title="外部身份不匹配",
+                detail="外部知识身份与当前产品账户不一致。",
+                repair="重新为当前账户完成飞书授权。",
+                status_code=403,
+            )
+        return provider_actor
+
 
 def _snapshot_id(binding_id: str, source_id: str, revision: str) -> str:
     return str(
@@ -198,4 +221,14 @@ def _permission_denied() -> ProductError:
         detail="当前账户无权配置或同步外部知识。",
         repair="联系管理员调整账户角色。",
         status_code=403,
+    )
+
+
+def _provider_query_failed(error: ProviderFailure) -> ProductError:
+    return ProductError(
+        code=error.code,
+        title="外部知识来源不可用" if error.unavailable else "外部知识读取失败",
+        detail="无法从外部知识来源读取当前用户可访问的目录。",
+        repair="重新完成外部账户授权或稍后重试。",
+        status_code=503 if error.unavailable else 502,
     )

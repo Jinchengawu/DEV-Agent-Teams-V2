@@ -24,6 +24,7 @@ from agent_team_os.modules.knowledge import (
     ProviderFailure,
     ProviderKnowledgeManager,
     ProviderNode,
+    ProviderNodeKind,
     ProviderSnapshot,
     ProviderSpace,
     ProviderSyncStatus,
@@ -46,7 +47,18 @@ class DeterministicProvider:
     def list_nodes(
         self, actor: ProviderActor, external_space_id: str
     ) -> tuple[ProviderNode, ...]:
-        return ()
+        if self.failure is not None:
+            raise self.failure
+        return (
+            ProviderNode(
+                external_id=f"node-{actor.provider_user_id}",
+                external_space_id=external_space_id,
+                source_id="docx:doc-feishu",
+                title="可访问文档",
+                kind=ProviderNodeKind.DOCUMENT,
+                provider_revision="rev-1",
+            ),
+        )
 
     def fetch_snapshot(
         self, actor: ProviderActor, source_id: str
@@ -217,6 +229,33 @@ def test_sync_reuses_revision_snapshot_and_records_new_content(tmp_path: Path) -
         ).fetchone()[0]
     assert snapshot_count == 2
     assert synced_events == 3
+
+
+def test_node_listing_uses_current_users_provider_identity_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    manager, _repository, provider, actor_resolver, admin, editor, viewer = _manager(
+        tmp_path
+    )
+    binding = _create_binding(manager, admin)
+
+    nodes = manager.list_nodes(viewer, binding.id)
+    assert nodes[0].external_id == f"node-feishu-{viewer.user_id}"
+    assert nodes[0].source_id == "docx:doc-feishu"
+
+    actor_resolver.product_user_override = admin.user_id
+    with pytest.raises(ProductError) as mismatch:
+        manager.list_nodes(editor, binding.id)
+    assert mismatch.value.code == "KNOWLEDGE_PROVIDER_ACTOR_MISMATCH"
+
+    actor_resolver.product_user_override = None
+    provider.failure = ProviderFailure(
+        "FEISHU_PERMISSION_REVOKED", "revoked", unavailable=True
+    )
+    with pytest.raises(ProductError) as revoked:
+        manager.list_nodes(editor, binding.id)
+    assert revoked.value.code == "FEISHU_PERMISSION_REVOKED"
+    assert revoked.value.status_code == 503
 
 
 def test_revision_conflict_unavailable_and_permission_fail_closed(tmp_path: Path) -> None:

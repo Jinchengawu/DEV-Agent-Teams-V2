@@ -31,6 +31,7 @@ from .provider_domain import (
     ProviderSyncRun,
     ProviderSyncStatus,
 )
+from .provider_http import ProviderSyncRequest, create_provider_knowledge_router
 from .provider_ports import (
     KnowledgeProvider,
     KnowledgeProviderResolver,
@@ -67,6 +68,7 @@ __all__ = [
     "ProviderSpace",
     "ProviderSyncRun",
     "ProviderSyncResult",
+    "ProviderSyncRequest",
     "ProviderSyncStatus",
     "Revision",
     "RevisionRestoreRequest",
@@ -78,4 +80,5 @@ __all__ = [
     "WikiAccess",
     "WikiService",
     "create_wiki_router",
+    "create_provider_knowledge_router",
 ]

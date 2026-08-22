@@ -49,8 +49,10 @@ from .modules.identity import (
 )
 from .modules.knowledge import (
     KnowledgeActor,
+    ProviderKnowledgeManager,
     SystemKnowledgeArtifact,
     WikiService,
+    create_provider_knowledge_router,
     create_wiki_router,
 )
 from .modules.settings import SettingsManager, create_settings_router
@@ -103,6 +105,7 @@ def create_app(
     settings: SettingsManager | None = None,
     identity: IdentityService | None = None,
     knowledge: WikiService | None = None,
+    provider_knowledge: ProviderKnowledgeManager | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agent-Team-OS",
@@ -270,6 +273,14 @@ def create_app(
                 mutation_actor=resolve_knowledge_mutation_actor,
             )
         )
+        if provider_knowledge is not None:
+            app.include_router(
+                create_provider_knowledge_router(
+                    provider_knowledge,
+                    read_actor=resolve_knowledge_actor,
+                    mutation_actor=resolve_knowledge_mutation_actor,
+                )
+            )
 
     if evidence is not None:
 
