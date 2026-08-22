@@ -436,6 +436,15 @@ def combined_gate_status(
             code="RELEASE_GATE_EVIDENCE_HASH_INVALID",
             reason="门禁报告内容与证据哈希不一致。",
         )
+    if (
+        deterministic.pipeline_revision_id != live.pipeline_revision_id
+        or deterministic.pipeline_fingerprint != live.pipeline_fingerprint
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_PIPELINE_MISMATCH",
+            reason="确定性门禁与真实门禁执行的 Pipeline Revision 或图指纹不一致。",
+        )
     if any(
         report.status != "passed" or report.fail or report.warn or report.skipped
         for report in (deterministic, live)

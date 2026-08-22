@@ -442,6 +442,29 @@ def test_delivery_pins_an_explicit_pipeline_revision(tmp_path: Path) -> None:
             coordinator, pipeline_catalog=catalog, pipeline_runs=pipeline_runs
         )
     ) as client:
+        missing_pipeline = client.post(
+            "/v1/deliveries",
+            json={
+                "workspace_id": "backend-demo",
+                "user_request": "不得隐式绕过 Pipeline",
+            },
+        )
+        inactive_pipeline = client.post(
+            "/v1/deliveries",
+            json={
+                "workspace_id": "backend-demo",
+                "user_request": "不得执行未激活版本",
+                "pipeline_revision_id": (
+                    f"{revision.pipeline_id}:{revision.revision}"
+                ),
+            },
+        )
+        catalog.activate_revision(
+            revision.pipeline_id,
+            revision=revision.revision,
+            expected_version=created.pipeline.version,
+            activated_by="admin",
+        )
         response = client.post(
             "/v1/deliveries",
             json={
@@ -456,6 +479,10 @@ def test_delivery_pins_an_explicit_pipeline_revision(tmp_path: Path) -> None:
             f"/v1/deliveries/{response.json()['id']}/pipeline-run"
         )
 
+    assert missing_pipeline.status_code == 409
+    assert missing_pipeline.json()["code"] == "DELIVERY_PIPELINE_REVISION_REQUIRED"
+    assert inactive_pipeline.status_code == 409
+    assert inactive_pipeline.json()["code"] == "PIPELINE_REVISION_NOT_ACTIVE"
     assert response.status_code == 202, response.json()
     assert response.json()["pipeline_revision_id"] == "backend-delivery:1"
     assert response.json()["resolved_pipeline_sha256"] == "b" * 64

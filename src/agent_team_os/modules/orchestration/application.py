@@ -372,6 +372,18 @@ class PipelineCatalog:
                 repair="刷新流水线目录并选择仍然存在的不可变版本。",
             ) from error
 
+    def resolve_active_revision(self, reference: str) -> PipelineRevision:
+        revision = self.resolve_revision(reference)
+        pipeline = self.repository.get_pipeline(revision.pipeline_id)
+        if pipeline.active_revision != revision.revision:
+            raise ProductError(
+                code="PIPELINE_REVISION_NOT_ACTIVE",
+                title="流水线版本尚未激活",
+                detail=f"已发布版本 {reference} 不是该流水线当前的激活版本。",
+                repair="先审查并激活该版本，或选择当前已激活版本。",
+            )
+        return revision
+
     def get_draft(self, draft_id: str) -> PipelineDraft:
         return self.repository.get_draft(draft_id)
 

@@ -71,6 +71,28 @@ def test_combined_gate_rejects_revision_mismatch_and_tampered_evidence() -> None
     assert tampered.code == "RELEASE_GATE_EVIDENCE_HASH_INVALID"
 
 
+def test_combined_gate_rejects_pipeline_revision_or_graph_mismatch() -> None:
+    now = datetime.now(UTC)
+    deterministic = _gate_report("deterministic", now)
+    live = _gate_report("live", now)
+    different_revision = _rehash(
+        live.model_copy(update={"pipeline_revision_id": "backend-delivery:3"})
+    )
+    different_graph = _rehash(
+        live.model_copy(update={"pipeline_fingerprint": "f" * 64})
+    )
+
+    revision_status = combined_gate_status(
+        {"deterministic": deterministic, "live": different_revision}, now=now
+    )
+    graph_status = combined_gate_status(
+        {"deterministic": deterministic, "live": different_graph}, now=now
+    )
+
+    assert revision_status.code == "RELEASE_GATE_PIPELINE_MISMATCH"
+    assert graph_status.code == "RELEASE_GATE_PIPELINE_MISMATCH"
+
+
 def test_combined_gate_rejects_expired_or_untrusted_identity_reports() -> None:
     now = datetime.now(UTC)
     expired = _gate_report("deterministic", now - timedelta(hours=25))
@@ -168,3 +190,7 @@ def _report_evidence_for(report: GateReport) -> str:
     from agent_team_os.release import _report_evidence_sha256
 
     return _report_evidence_sha256(report)
+
+
+def _rehash(report: GateReport) -> GateReport:
+    return report.model_copy(update={"evidence_sha256": _report_evidence_for(report)})

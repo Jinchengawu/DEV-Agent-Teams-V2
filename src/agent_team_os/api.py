@@ -593,6 +593,17 @@ def create_app(
         require_permission(request, Permission.DELIVERY_CREATE)
         try:
             if (
+                pipeline_catalog is not None
+                and request_body.pipeline_revision_id is None
+                and request_body.journey_revision_id is None
+            ):
+                raise ProductError(
+                    code="DELIVERY_PIPELINE_REVISION_REQUIRED",
+                    title="必须选择已发布的流水线版本",
+                    detail="当前服务已启用 Pipeline GraphRun，新交付不得隐式回退到旧线性 Journey。",
+                    repair="刷新流水线列表，选择一个已激活的 Pipeline Revision 后重试。",
+                )
+            if (
                 request_body.pipeline_revision_id is not None
                 and request_body.journey_revision_id is not None
             ):
@@ -606,7 +617,9 @@ def create_app(
                 None
                 if pipeline_catalog is None
                 or request_body.pipeline_revision_id is None
-                else pipeline_catalog.resolve_revision(request_body.pipeline_revision_id)
+                else pipeline_catalog.resolve_active_revision(
+                    request_body.pipeline_revision_id
+                )
             )
             revision = None
             if control_plane is not None and pipeline_revision is None:
