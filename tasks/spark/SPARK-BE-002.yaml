@@ -2,7 +2,7 @@ id: SPARK-BE-002
 title: 实现版本化 Wiki 模块 HTTP Router
 model: gpt-5.3-codex-spark
 architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
-base_revision: bc3ab5f706bef95b4164201cb4d6dc78dd78c15c
+base_revision: 28bc8bc7a2ecc7e79c792d95bb723194e6a51033
 kind: backend-crud
 
 allowed_paths:
