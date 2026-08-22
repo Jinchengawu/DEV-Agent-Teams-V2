@@ -26,5 +26,5 @@ acceptance:
   - 新增组件测试，覆盖混合状态与空数组，不生成模拟证据或固定生产数据
 
 verification:
-  - node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
-  - pnpm exec vitest run src/features/evidence --reporter=verbose
+  - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
+  - cd console && pnpm exec vitest run src/features/evidence --reporter=verbose
