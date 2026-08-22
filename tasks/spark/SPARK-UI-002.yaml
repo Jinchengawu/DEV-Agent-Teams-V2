@@ -2,7 +2,7 @@ id: SPARK-UI-002
 title: 实现本地版本化 Wiki 三栏交互页面
 model: gpt-5.3-codex-spark
 architecture_revision: 62fee2a82532cab85c3fde75e3fec944649f74e1
-base_revision: 62fee2a82532cab85c3fde75e3fec944649f74e1
+base_revision: de0646889e5bce41b42d440ec834f13bdf135010
 kind: frontend-component
 
 allowed_paths:
