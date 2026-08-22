@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -37,13 +38,51 @@ ROOT = Path(__file__).parents[1]
 def _database(tmp_path: Path) -> tuple[Path, MigrationRunner]:
     database = tmp_path / "agent-team-os.sqlite"
     runner = MigrationRunner(database, ROOT / "migrations")
-    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
     return database, runner
 
 
 def test_migrations_are_idempotent_and_checksums_are_enforced(tmp_path: Path) -> None:
     database, runner = _database(tmp_path)
     assert runner.migrate() == ()
+
+
+def test_missing_legacy_journey_hash_is_audited_and_failed_closed(tmp_path: Path) -> None:
+    database, runner = _database(tmp_path)
+    original = json.dumps(
+        {
+            "id": "legacy-missing-journey",
+            "status": "planning",
+            "version": 1,
+            "created_at": "2026-08-20T00:00:00+00:00",
+            "updated_at": "2026-08-20T00:00:00+00:00",
+        }
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO deliveries(id,snapshot_json) VALUES(?,?)",
+            ("legacy-missing-journey", original),
+        )
+        connection.execute("DELETE FROM schema_migrations WHERE version=11")
+
+    assert runner.migrate() == (11,)
+    with sqlite3.connect(database) as connection:
+        repaired_json = connection.execute(
+            "SELECT snapshot_json FROM deliveries WHERE id='legacy-missing-journey'"
+        ).fetchone()[0]
+        audit = connection.execute(
+            """SELECT original_sha256,original_json,migration_action
+            FROM legacy_snapshot_audit WHERE aggregate_id='legacy-missing-journey'"""
+        ).fetchone()
+    repaired = json.loads(repaired_json)
+    assert repaired["resolved_journey_sha256"] is None
+    assert repaired["status"] == "failed"
+    assert repaired["error_code"] == "LEGACY_INCOMPLETE_EVIDENCE"
+    assert audit == (
+        hashlib.sha256(original.encode("utf-8")).hexdigest(),
+        original,
+        "normalize-missing-journey-sha256",
+    )
     copied = tmp_path / "migrations"
     copied.mkdir()
     for source in (ROOT / "migrations").glob("*.sql"):

@@ -57,6 +57,7 @@ class MigrationRunner:
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database, timeout=5)
+        connection.create_function("sha256", 1, _sql_sha256, deterministic=True)
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA busy_timeout=5000")
@@ -187,6 +188,10 @@ def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
     return connection.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
     ).fetchone() is not None
+
+
+def _sql_sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _incomplete_active_snapshot(snapshot: dict[str, object]) -> bool:
