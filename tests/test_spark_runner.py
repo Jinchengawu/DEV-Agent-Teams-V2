@@ -68,3 +68,16 @@ def test_verification_output_rejects_warnings_and_skips() -> None:
     assert _verification_output_violation("3 passed, 1 warning") == "warning"
     assert _verification_output_violation("2 passed, 1 skipped") == "skipped"
     assert _verification_output_violation("3 passed, 0 warnings, 0 skipped") is None
+
+
+def test_previous_spark_attempt_is_archived_before_retry(tmp_path: Path) -> None:
+    run_dir = tmp_path / ".agent-team-os" / "spark-runs" / "SPARK-TEST-001"
+    run_dir.mkdir(parents=True)
+    (run_dir / "result.json").write_text('{"status":"failed"}', encoding="utf-8")
+    (run_dir / "verification.json").write_text("[]", encoding="utf-8")
+
+    SparkRunner._archive_previous_attempt(run_dir)
+
+    assert not (run_dir / "result.json").exists()
+    assert (run_dir / "attempts" / "001" / "result.json").exists()
+    assert (run_dir / "attempts" / "001" / "verification.json").exists()

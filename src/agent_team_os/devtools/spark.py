@@ -24,6 +24,14 @@ DEPENDENCY_FILES = {
     "console/package.json",
     "console/pnpm-lock.yaml",
 }
+RUN_ARTIFACT_FILES = (
+    "invocation.json",
+    "codex-events.jsonl",
+    "last-message.txt",
+    "diff.patch",
+    "verification.json",
+    "result.json",
+)
 SECRET_PATTERN = re.compile(
     r"(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----|api[_-]?key\s*[:=]|"
     r"password\s*[:=]|token\s*[:=]\s*[A-Za-z0-9_\-]{16,}|sk-[A-Za-z0-9]{16,})"
@@ -100,6 +108,7 @@ class SparkRunner:
         task = self.load_task(task_id)
         run_dir = self.state_root / task.id
         run_dir.mkdir(parents=True, exist_ok=True)
+        self._archive_previous_attempt(run_dir)
         try:
             self._preflight(task)
             worktree = self._create_worktree(task)
@@ -191,6 +200,23 @@ class SparkRunner:
             )
         self._write_json(run_dir / "result.json", result.model_dump(mode="json"))
         return result
+
+    @staticmethod
+    def _archive_previous_attempt(run_dir: Path) -> None:
+        existing = [run_dir / name for name in RUN_ARTIFACT_FILES if (run_dir / name).exists()]
+        if not existing:
+            return
+        attempts = run_dir / "attempts"
+        attempts.mkdir(parents=True, exist_ok=True)
+        numbers = [
+            int(path.name)
+            for path in attempts.iterdir()
+            if path.is_dir() and path.name.isdigit()
+        ]
+        archive = attempts / f"{max(numbers, default=0) + 1:03d}"
+        archive.mkdir()
+        for path in existing:
+            path.replace(archive / path.name)
 
     def inspect(self, task_id: str) -> SparkResult:
         path = self.state_root / task_id / "result.json"
