@@ -25,6 +25,35 @@ Architecture ownership:
 
 V2 is a new project. The legacy DEV-Agent-Teams remains untouched and is not a source tree to copy.
 
+## V0.3 multi-Pipeline DAG/LOOP release candidate
+
+Implemented on top of the V0.2 control plane:
+
+- create and retain multiple independently configurable Pipelines;
+- edit semantic DAG dependencies and conditional edges with React Flow;
+- validate topology and product compatibility before publishing immutable revisions;
+- activate a selected revision and pin every new graph Delivery to its definition, binding snapshot
+  and SHA-256 fingerprint;
+- execute the authoritative ACWM GraphRun instead of translating the graph back into a fixed
+  Delivery sequence;
+- run independent ready AgentScope role Stages concurrently while serializing Git side effects;
+- execute code delivery inside a bounded repair LOOP with per-iteration and per-body-node evidence;
+- retain immutable candidate refs for every code attempt and compute the final base-to-candidate
+  Diff;
+- recover completed GraphRuns after restart and fail/cancel graph execution closed;
+- require the deterministic and live release gates to attest Pipeline Revision, graph fingerprint,
+  completed GraphRun, Candidate, Diff, verification and restart evidence.
+
+The built-in `backend-delivery` definition is now a schema-v4 DAG with a maximum-three-iteration
+code repair LOOP. Product compatibility requires PM, Project Admin and Backend capabilities plus
+exactly one plan Gate and one candidate Gate. Nested human Gates inside LOOP bodies are currently
+rejected explicitly.
+
+The ACWM v0.4 source commit used by this release candidate must be published before the dependency
+lock can move from the previous v0.3 revision. Until that release action is authorized, this branch
+is validated against the sibling ACWM v0.4 checkout and is not yet a reproducible fresh-clone
+release.
+
 ## V0.2 control-plane baseline
 
 Implemented:
@@ -32,7 +61,7 @@ Implemented:
 - preserve the V0.1 real Git delivery loop and its CAS apply guarantees;
 - register `hermes-acp`, `hermes-http`, and `codex-cli` execution instances without persisting secret values;
 - health-check instances and bind healthy, enabled instances to ACWM capabilities;
-- clone, reorder, validate, and publish linear ACWM Journeys as immutable revisions;
+- clone, reorder, validate, and publish ACWM Journeys as immutable revisions;
 - pin every new Delivery to a published Journey revision and frozen binding snapshot;
 - project Delivery state into a rebuildable six-column Board with legal commands only;
 - archive Journey, requirement, task, gate, candidate, verification, and receipt evidence;
@@ -40,9 +69,9 @@ Implemented:
 - expose a durable control event stream at `/v1/events/stream`;
 - serve a React/Vite control console with a persistent Operating Map.
 
-The control plane deliberately does not implement DAG workflows, RAG, embeddings, AgentScope-native
-Agent/Team management, shared long-term memory, multi-tenancy, cloud deployment, or user repository
-adapters. Those remain later milestones.
+The control plane deliberately does not implement RAG, embeddings, AgentScope-native Agent/Team
+management, shared long-term memory, multi-tenancy, cloud deployment, or user repository adapters.
+Those remain later milestones.
 
 V0.1 guarantees retained:
 
@@ -114,8 +143,9 @@ uv run --extra live agent-team-os gate --live
 uv run --extra live agent-team-os release
 ```
 
-Both JSON and Markdown reports include DEV/ACWM revisions, Candidate Revision, Diff SHA-256,
-verification exit code, identities and an evidence hash. The `release` command returns success only
+Both JSON and Markdown reports include DEV/ACWM revisions, Pipeline Revision, graph fingerprint,
+GraphRun identity/status, Candidate Revision, Diff SHA-256, verification exit code, identities and
+an evidence hash. The `release` command returns success only
 when both gates are clean and refer to the same DEV and ACWM revisions. The Settings page and
 `/v1/release-gates/latest` report `unknown` or `failed` when the newest evidence is missing, corrupt,
 older than 24 hours, hash-invalid, identity-invalid, incomplete, or revision-mismatched. The

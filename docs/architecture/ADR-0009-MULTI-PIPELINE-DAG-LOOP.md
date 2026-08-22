@@ -23,8 +23,9 @@ compiled Journey Graph and Capability binding snapshot.
 - A Pipeline Run records per-Node Runs, Attempts and Loop Iterations. Board and Operating Map are
   rebuildable projections of committed facts.
 - React Flow edges edit semantic dependencies. Canvas position remains presentation-only.
-- The existing `backend-delivery` Journey migrates to a one-path graph and retains Reject, Accept,
-  candidate verification and CAS apply guarantees.
+- The existing `backend-delivery` Journey migrates to a schema-v4 graph whose code-delivery Stage
+  is inside a bounded repair Loop, while retaining Reject, Accept, candidate verification and CAS
+  apply guarantees.
 - New Deliveries must select an active Published Pipeline Revision. There is no implicit default
   once migration is complete.
 
@@ -38,6 +39,7 @@ compiled Journey Graph and Capability binding snapshot.
 
 ## Consequences
 
-The current linear editor and hard-coded six-step Operating Map are transitional. They remain
-available only while the built-in Pipeline is migrated and must not be presented as the final
-orchestration capability.
+Independent ready AgentScope role-turn Stages may execute concurrently. Git-mutating code-delivery
+Stages remain serialized within one Delivery workspace so that Candidate and CAS evidence retain a
+single unambiguous ancestry. Nested human approval Gates inside a Loop are rejected until the
+product owns a durable nested-Gate record and recovery contract.
