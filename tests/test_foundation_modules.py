@@ -37,7 +37,7 @@ ROOT = Path(__file__).parents[1]
 def _database(tmp_path: Path) -> tuple[Path, MigrationRunner]:
     database = tmp_path / "agent-team-os.sqlite"
     runner = MigrationRunner(database, ROOT / "migrations")
-    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9)
+    assert runner.migrate() == (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
     return database, runner
 
 
