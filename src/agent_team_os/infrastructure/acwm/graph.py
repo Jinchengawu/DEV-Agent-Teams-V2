@@ -46,6 +46,7 @@ class ACWMPipelineGraphRuntime:
         *,
         command: str,
         node_id: str,
+        body_node_id: str | None = None,
         activated_conditions: tuple[str, ...] = (),
         exit_condition_met: bool | None = None,
     ) -> dict[str, object]:
@@ -65,6 +66,22 @@ class ACWMPipelineGraphRuntime:
                 raise ValueError("Loop completion requires exit_condition_met")
             updated = self._required(domain, "complete_loop_iteration")(
                 run, node_id, exit_condition_met=exit_condition_met
+            )
+        elif command in {"start-loop-body-node", "succeed-loop-body-node"}:
+            if body_node_id is None:
+                raise ValueError("Loop body transition requires body_node_id")
+            reducer_name = (
+                "start_loop_body_node"
+                if command == "start-loop-body-node"
+                else "succeed_loop_body_node"
+            )
+            keywords = (
+                {"activated_conditions": set(activated_conditions)}
+                if command == "succeed-loop-body-node"
+                else {}
+            )
+            updated = self._required(domain, reducer_name)(
+                run, node_id, body_node_id, **keywords
             )
         else:
             raise ValueError(f"Unsupported ACWM graph transition: {command}")

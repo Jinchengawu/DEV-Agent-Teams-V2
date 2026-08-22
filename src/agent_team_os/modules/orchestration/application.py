@@ -28,6 +28,8 @@ _COMMAND_EVENT_SUFFIX = {
     "succeed": "succeeded",
     "start-loop-iteration": "loop-iteration-started",
     "complete-loop-iteration": "loop-iteration-completed",
+    "start-loop-body-node": "loop-body-node-started",
+    "succeed-loop-body-node": "loop-body-node-succeeded",
 }
 
 
@@ -71,6 +73,7 @@ class PipelineRunLedger:
         command: str,
         node_id: str,
         expected_version: int,
+        body_node_id: str | None = None,
         activated_conditions: tuple[str, ...] = (),
         exit_condition_met: bool | None = None,
     ) -> PipelineRunRecord:
@@ -81,6 +84,7 @@ class PipelineRunLedger:
             current.snapshot,
             command=command,
             node_id=node_id,
+            body_node_id=body_node_id,
             activated_conditions=activated_conditions,
             exit_condition_met=exit_condition_met,
         )
@@ -96,7 +100,18 @@ class PipelineRunLedger:
         if not self.repository.compare_and_swap(
             current.version,
             updated,
-            self._event(updated, event_type, {"node_id": node_id}),
+            self._event(
+                updated,
+                event_type,
+                {
+                    "node_id": node_id,
+                    **(
+                        {"body_node_id": body_node_id}
+                        if body_node_id is not None
+                        else {}
+                    ),
+                },
+            ),
         ):
             latest = self.repository.get(run_id)
             self._raise_version_conflict(expected_version, latest.version)

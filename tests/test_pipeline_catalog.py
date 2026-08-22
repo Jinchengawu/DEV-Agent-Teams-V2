@@ -313,6 +313,7 @@ def test_delivery_pins_an_explicit_pipeline_revision(tmp_path: Path) -> None:
             *,
             command: str,
             node_id: str,
+            body_node_id: str | None = None,
             activated_conditions: tuple[str, ...] = (),
             exit_condition_met: bool | None = None,
         ) -> dict[str, object]:
