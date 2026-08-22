@@ -67,6 +67,19 @@ class DeterministicResolver:
         return self.provider
 
 
+class DeterministicActorResolver:
+    def __init__(self) -> None:
+        self.product_user_override: str | None = None
+
+    def resolve(
+        self, binding: ProviderBinding, actor: KnowledgeActor
+    ) -> ProviderActor:
+        return ProviderActor(
+            product_user_id=self.product_user_override or actor.user_id,
+            provider_user_id=f"feishu-{actor.user_id}",
+        )
+
+
 def _snapshot(revision: str, content: dict[str, object]) -> ProviderSnapshot:
     return ProviderSnapshot(
         source_id="doc-feishu",
@@ -86,6 +99,7 @@ def _manager(
     ProviderKnowledgeManager,
     SQLiteProviderKnowledgeRepository,
     DeterministicProvider,
+    DeterministicActorResolver,
     KnowledgeActor,
     KnowledgeActor,
     KnowledgeActor,
@@ -113,14 +127,16 @@ def _manager(
         ),
     )
     provider = DeterministicProvider(_snapshot("rev-1", {"title": "交付手册"}))
+    actor_resolver = DeterministicActorResolver()
     repository = SQLiteProviderKnowledgeRepository(database)
     manager = ProviderKnowledgeManager(
-        repository, DeterministicResolver(provider)
+        repository, DeterministicResolver(provider), actor_resolver
     )
     return (
         manager,
         repository,
         provider,
+        actor_resolver,
         KnowledgeActor(user_id=admin_user.id, role=admin_user.role),
         KnowledgeActor(user_id=editor_user.id, role=editor_user.role),
         KnowledgeActor(user_id=viewer_user.id, role=viewer_user.role),
@@ -142,7 +158,9 @@ def _create_binding(
 
 
 def test_binding_requires_reference_admin_and_redacts_event(tmp_path: Path) -> None:
-    manager, _repository, _provider, admin, editor, _viewer = _manager(tmp_path)
+    manager, _repository, _provider, _actor_resolver, admin, editor, _viewer = _manager(
+        tmp_path
+    )
     with pytest.raises(ValidationError):
         ProviderBindingCreate(
             provider_kind=KnowledgeProviderKind.FEISHU,
@@ -170,22 +188,20 @@ def test_binding_requires_reference_admin_and_redacts_event(tmp_path: Path) -> N
 
 
 def test_sync_reuses_revision_snapshot_and_records_new_content(tmp_path: Path) -> None:
-    manager, repository, provider, admin, editor, _viewer = _manager(tmp_path)
-    binding = _create_binding(manager, admin)
-    provider_actor = ProviderActor(
-        product_user_id=editor.user_id,
-        provider_user_id="feishu-user-editor",
+    manager, repository, provider, _actor_resolver, admin, editor, _viewer = _manager(
+        tmp_path
     )
+    binding = _create_binding(manager, admin)
 
-    first = manager.sync(editor, provider_actor, binding.id, "doc-feishu")
-    second = manager.sync(editor, provider_actor, binding.id, "doc-feishu")
+    first = manager.sync(editor, binding.id, "doc-feishu")
+    second = manager.sync(editor, binding.id, "doc-feishu")
     assert first.run.status == ProviderSyncStatus.SUCCEEDED
     assert first.snapshot is not None
     assert second.snapshot is not None
     assert second.snapshot.id == first.snapshot.id
 
     provider.snapshot = _snapshot("rev-2", {"title": "交付手册", "version": 2})
-    changed = manager.sync(editor, provider_actor, binding.id, "doc-feishu")
+    changed = manager.sync(editor, binding.id, "doc-feishu")
     assert changed.snapshot is not None
     assert changed.snapshot.id != first.snapshot.id
     assert changed.snapshot.content_sha256 != first.snapshot.content_sha256
@@ -204,17 +220,15 @@ def test_sync_reuses_revision_snapshot_and_records_new_content(tmp_path: Path) -
 
 
 def test_revision_conflict_unavailable_and_permission_fail_closed(tmp_path: Path) -> None:
-    manager, repository, provider, admin, editor, viewer = _manager(tmp_path)
-    binding = _create_binding(manager, admin)
-    editor_provider = ProviderActor(
-        product_user_id=editor.user_id,
-        provider_user_id="feishu-user-editor",
+    manager, repository, provider, actor_resolver, admin, editor, viewer = _manager(
+        tmp_path
     )
-    manager.sync(editor, editor_provider, binding.id, "doc-feishu")
+    binding = _create_binding(manager, admin)
+    manager.sync(editor, binding.id, "doc-feishu")
 
     provider.snapshot = _snapshot("rev-1", {"title": "被篡改内容"})
     with pytest.raises(ProductError) as conflict:
-        manager.sync(editor, editor_provider, binding.id, "doc-feishu")
+        manager.sync(editor, binding.id, "doc-feishu")
     assert conflict.value.code == "KNOWLEDGE_PROVIDER_REVISION_CONFLICT"
     assert repository.list_sync_runs(binding.id)[0].error_code == conflict.value.code
 
@@ -223,30 +237,17 @@ def test_revision_conflict_unavailable_and_permission_fail_closed(tmp_path: Path
         "provider access revoked",
         unavailable=True,
     )
-    unavailable = manager.sync(editor, editor_provider, binding.id, "doc-feishu")
+    unavailable = manager.sync(editor, binding.id, "doc-feishu")
     assert unavailable.run.status == ProviderSyncStatus.UNAVAILABLE
     assert unavailable.run.error_code == "FEISHU_PERMISSION_REVOKED"
     assert unavailable.snapshot is None
 
+    run_count_before_mismatch = len(repository.list_sync_runs(binding.id))
+    actor_resolver.product_user_override = admin.user_id
     with pytest.raises(ProductError) as actor_mismatch:
-        manager.sync(
-            editor,
-            ProviderActor(
-                product_user_id=admin.user_id,
-                provider_user_id="feishu-user-admin",
-            ),
-            binding.id,
-            "doc-feishu",
-        )
+        manager.sync(editor, binding.id, "doc-feishu")
     assert actor_mismatch.value.code == "KNOWLEDGE_PROVIDER_ACTOR_MISMATCH"
+    assert len(repository.list_sync_runs(binding.id)) == run_count_before_mismatch
     with pytest.raises(ProductError) as viewer_denied:
-        manager.sync(
-            viewer,
-            ProviderActor(
-                product_user_id=viewer.user_id,
-                provider_user_id="feishu-user-viewer",
-            ),
-            binding.id,
-            "doc-feishu",
-        )
+        manager.sync(viewer, binding.id, "doc-feishu")
     assert viewer_denied.value.code == "KNOWLEDGE_PROVIDER_PERMISSION_DENIED"

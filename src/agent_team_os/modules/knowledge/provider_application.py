@@ -9,7 +9,6 @@ from ...shared.ids import new_id
 from ...shared.permissions import Permission, Role, permits
 from .domain import KnowledgeActor
 from .provider_domain import (
-    ProviderActor,
     ProviderBinding,
     ProviderBindingCreate,
     ProviderSnapshotRecord,
@@ -19,6 +18,7 @@ from .provider_domain import (
 )
 from .provider_ports import (
     KnowledgeProviderResolver,
+    ProviderActorResolver,
     ProviderFailure,
     ProviderKnowledgeRepository,
 )
@@ -29,10 +29,12 @@ class ProviderKnowledgeManager:
         self,
         repository: ProviderKnowledgeRepository,
         resolver: KnowledgeProviderResolver,
+        actor_resolver: ProviderActorResolver,
         clock: Clock | None = None,
     ) -> None:
         self.repository = repository
         self.resolver = resolver
+        self.actor_resolver = actor_resolver
         self.clock = clock or SystemClock()
 
     def create_binding(
@@ -71,20 +73,11 @@ class ProviderKnowledgeManager:
     def sync(
         self,
         actor: KnowledgeActor,
-        provider_actor: ProviderActor,
         binding_id: str,
         source_id: str,
     ) -> ProviderSyncResult:
         if not permits(actor.role, Permission.WIKI_EDIT):
             raise _permission_denied()
-        if provider_actor.product_user_id != actor.user_id:
-            raise ProductError(
-                code="KNOWLEDGE_PROVIDER_ACTOR_MISMATCH",
-                title="外部身份不匹配",
-                detail="外部知识身份与当前产品账户不一致。",
-                repair="重新为当前账户完成飞书授权。",
-                status_code=403,
-            )
         binding = self.repository.get_binding(binding_id)
         if binding is None:
             raise ProductError(
@@ -100,6 +93,15 @@ class ProviderKnowledgeManager:
                 title="知识来源绑定已禁用",
                 detail="禁用的绑定不能发起新同步。",
                 repair="由管理员启用该绑定后重试。",
+            )
+        provider_actor = self.actor_resolver.resolve(binding, actor)
+        if provider_actor.product_user_id != actor.user_id:
+            raise ProductError(
+                code="KNOWLEDGE_PROVIDER_ACTOR_MISMATCH",
+                title="外部身份不匹配",
+                detail="外部知识身份与当前产品账户不一致。",
+                repair="重新为当前账户完成飞书授权。",
+                status_code=403,
             )
         started = self.clock.now()
         running = ProviderSyncRun(

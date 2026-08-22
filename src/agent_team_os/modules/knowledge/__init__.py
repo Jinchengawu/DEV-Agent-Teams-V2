@@ -34,6 +34,7 @@ from .provider_domain import (
 from .provider_ports import (
     KnowledgeProvider,
     KnowledgeProviderResolver,
+    ProviderActorResolver,
     ProviderFailure,
     ProviderKnowledgeRepository,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "KnowledgeActor",
     "KnowledgeProvider",
     "KnowledgeProviderResolver",
+    "ProviderActorResolver",
     "KnowledgeProviderKind",
     "PermissionGrant",
     "ProviderActor",

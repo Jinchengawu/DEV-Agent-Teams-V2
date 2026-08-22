@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .domain import KnowledgeActor
 from .provider_domain import (
     ProviderActor,
     ProviderBinding,
@@ -35,6 +36,12 @@ class KnowledgeProvider(Protocol):
 
 class KnowledgeProviderResolver(Protocol):
     def resolve(self, binding: ProviderBinding) -> KnowledgeProvider: ...
+
+
+class ProviderActorResolver(Protocol):
+    def resolve(
+        self, binding: ProviderBinding, actor: KnowledgeActor
+    ) -> ProviderActor: ...
 
 
 class ProviderKnowledgeRepository(Protocol):
