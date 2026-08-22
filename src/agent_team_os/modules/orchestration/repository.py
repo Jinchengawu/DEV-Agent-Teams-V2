@@ -116,7 +116,11 @@ class SQLitePipelineRepository:
         self, expected_version: int, updated: PipelineDraft
     ) -> bool:
         event = ProductEvent(
-            event_type="pipeline.draft-validated",
+            event_type=(
+                "pipeline.draft-updated"
+                if updated.validation_status == "unknown"
+                else "pipeline.draft-validated"
+            ),
             aggregate_type="pipeline",
             aggregate_id=updated.pipeline_id,
             aggregate_version=updated.version,
@@ -128,10 +132,15 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database, timeout=5) as connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
-                """UPDATE pipeline_drafts SET version=?,validation_status=?,
-                validation_errors_json=?,updated_at=?
+                """UPDATE pipeline_drafts SET name=?,definition_json=?,layout_json=?,
+                input_schema_json=?,version=?,validation_status=?,validation_errors_json=?,
+                updated_at=?
                 WHERE id=? AND version=?""",
                 (
+                    updated.name,
+                    _json(updated.definition),
+                    _json(updated.layout),
+                    _json(updated.input_schema),
                     updated.version,
                     updated.validation_status,
                     _json(updated.validation_errors),

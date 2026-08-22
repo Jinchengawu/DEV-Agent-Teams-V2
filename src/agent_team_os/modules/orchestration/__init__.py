@@ -4,6 +4,7 @@ from .domain import (
     Pipeline,
     PipelineCreate,
     PipelineDraft,
+    PipelineDraftPatch,
     PipelineRevision,
     PipelineWithDraft,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "PipelineCatalog",
     "PipelineCreate",
     "PipelineDraft",
+    "PipelineDraftPatch",
     "PipelineRevision",
     "PipelineWithDraft",
     "SQLitePipelineRepository",

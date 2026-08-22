@@ -5,7 +5,14 @@ from datetime import UTC, datetime
 
 from ...shared.errors import ProductError
 from ...shared.ids import new_id
-from .domain import Pipeline, PipelineCreate, PipelineDraft, PipelineRevision, PipelineWithDraft
+from .domain import (
+    Pipeline,
+    PipelineCreate,
+    PipelineDraft,
+    PipelineDraftPatch,
+    PipelineRevision,
+    PipelineWithDraft,
+)
 from .ports import CapabilityBindingResolver, JourneyGraphCompiler, PipelineRepository
 
 
@@ -74,6 +81,24 @@ class PipelineCatalog:
         if not self.repository.compare_and_swap_draft(draft.version, updated):
             latest = self.repository.get_draft(draft_id)
             self._raise_version_conflict(expected_version, latest.version)
+        return updated
+
+    def patch_draft(self, draft_id: str, request: PipelineDraftPatch) -> PipelineDraft:
+        draft = self.repository.get_draft(draft_id)
+        self._require_version(draft, request.expected_version)
+        changes = request.model_dump(exclude_none=True, exclude={"expected_version"})
+        updated = draft.model_copy(
+            update={
+                **changes,
+                "version": draft.version + 1,
+                "validation_status": "unknown",
+                "validation_errors": (),
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        if not self.repository.compare_and_swap_draft(draft.version, updated):
+            latest = self.repository.get_draft(draft_id)
+            self._raise_version_conflict(request.expected_version, latest.version)
         return updated
 
     def publish_draft(

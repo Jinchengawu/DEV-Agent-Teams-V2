@@ -8,6 +8,7 @@ from agent_team_os.modules.orchestration import (
     GraphCompilation,
     PipelineCatalog,
     PipelineCreate,
+    PipelineDraftPatch,
     SQLitePipelineRepository,
     create_pipeline_router,
 )
@@ -181,3 +182,39 @@ def test_catalog_activates_a_published_revision_with_pipeline_cas(tmp_path: Path
 
     assert activated.active_revision == 1
     assert activated.version == 2
+
+
+def test_catalog_updates_a_pipeline_draft_with_cas_and_invalidates_validation(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    created = catalog.create_pipeline(
+        PipelineCreate(
+            id="release-review",
+            name="发布审查",
+            definition={"id": "release-review", "version": "4.0.0", "nodes": [], "edges": []},
+        ),
+        created_by="admin",
+    )
+    validated = catalog.validate_draft(
+        created.draft.id, expected_version=created.draft.version
+    )
+
+    updated = catalog.patch_draft(
+        created.draft.id,
+        PipelineDraftPatch(
+            expected_version=validated.version,
+            definition={
+                "id": "release-review",
+                "version": "4.0.1",
+                "nodes": [{"kind": "stage", "id": "review"}],
+                "edges": [],
+            },
+            layout={"review": {"x": 40, "y": 80}},
+        ),
+    )
+
+    assert updated.version == validated.version + 1
+    assert updated.validation_status == "unknown"
+    assert updated.validation_errors == ()
+    assert updated.layout["review"] == {"x": 40, "y": 80}

@@ -10,6 +10,7 @@ from .domain import (
     Pipeline,
     PipelineCreate,
     PipelineDraft,
+    PipelineDraftPatch,
     PipelineRevision,
     PipelineWithDraft,
 )
@@ -51,6 +52,17 @@ def create_pipeline_router(
     def get_pipeline_draft(draft_id: str) -> PipelineDraft:
         try:
             return catalog.get_draft(draft_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="pipeline draft not found") from error
+
+    @router.patch("/v1/pipeline-drafts/{draft_id}", response_model=PipelineDraft)
+    def patch_pipeline_draft(
+        draft_id: str, request_body: PipelineDraftPatch, request: Request
+    ) -> PipelineDraft:
+        if authorize_edit is not None:
+            authorize_edit(request)
+        try:
+            return catalog.patch_draft(draft_id, request_body)
         except KeyError as error:
             raise HTTPException(status_code=404, detail="pipeline draft not found") from error
 

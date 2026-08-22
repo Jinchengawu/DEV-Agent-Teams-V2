@@ -72,6 +72,16 @@ class PipelineCreate(BaseModel):
     input_schema: dict[str, object] = Field(default_factory=dict)
 
 
+class PipelineDraftPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    definition: dict[str, object] | None = None
+    layout: dict[str, object] | None = None
+    input_schema: dict[str, object] | None = None
+
+
 class PipelineWithDraft(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
