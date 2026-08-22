@@ -5,6 +5,7 @@ import { artifactTypeLabel } from "../../i18n";
 import { request, type EvidenceRecord } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
+import { EvidenceSummary } from "./EvidenceSummary";
 
 const kinds = ["", "journey", "plan-gate", "candidate", "diff", "verification", "candidate-gate", "apply-receipt"];
 
@@ -24,10 +25,12 @@ export function EvidencePage() {
 
   if (evidence.isLoading) return <LoadingState label="正在读取不可变证据账本…"/>;
   if (evidence.error) return <ErrorState error={evidence.error} retry={() => evidence.refetch()}/>;
+  const records = evidence.data ?? [];
 
   return <div className="evidence-workbench">
     <section className="panel evidence-ledger">
       <div className="panel-head"><span>全局证据账本</span><small>只追加 · 内容寻址</small></div>
+      <EvidenceSummary records={records} />
       <div className="filter-bar"><Filter size={16}/><input aria-label="按交付筛选" placeholder="交付 ID" value={deliveryFilter} onChange={(event) => setDeliveryFilter(event.target.value)}/><select aria-label="按证据类型筛选" value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>{kinds.map((kind) => <option key={kind} value={kind}>{kind ? artifactTypeLabel(kind) : "全部类型"}</option>)}</select><select aria-label="按完整性筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">全部完整性</option><option value="verified">已验证</option><option value="invalid">无效</option><option value="unavailable">不可用</option></select></div>
       {filtered.length === 0 ? <EmptyState title="没有符合条件的真实证据" detail="清除筛选，或先完成交付阶段。系统不会补造缺失证据。"/> : <div className="ledger-table" role="table">{filtered.map((item) => <button key={item.id} className={selected?.id === item.id ? "selected" : ""} onClick={() => setSelected(item)}><StatusBadge value={item.status}/><span><b>{artifactTypeLabel(item.kind)}</b><small>{item.delivery_id} · {item.producer_identity}</small></span><code>{item.content_sha256?.slice(0, 16) ?? "无哈希"}</code></button>)}</div>}
     </section>
@@ -44,4 +47,3 @@ export function EvidencePage() {
     </section>
   </div>;
 }
-
