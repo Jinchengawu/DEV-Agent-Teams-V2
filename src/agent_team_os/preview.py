@@ -208,9 +208,6 @@ def ensure_console_built(project_root: Path) -> None:
     )
 
 
-app = build_preview_app()
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(prog="agent-team-os")
     subcommands = parser.add_subparsers(dest="command")
