@@ -25,6 +25,7 @@ live = [
 dev = [
   "httpx>=0.28,<1",
   "mypy>=1.17,<2",
+  "playwright>=1.55,<2",
   "pytest>=8.4,<9",
   "ruff>=0.12,<1",
 ]

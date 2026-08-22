@@ -5,9 +5,14 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import os
 import re
+import socket
 import subprocess
+import sys
 import tempfile
+import time
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -44,6 +49,7 @@ class GateReport(BaseModel):
     diff_sha256: str | None = None
     verification_exit_code: int | None = None
     evidence_sha256: str
+    browser_e2e: bool = False
     error: str | None = None
 
 
@@ -159,6 +165,10 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             recovered = restarted.get(completed.id)
             if recovered.apply_receipt is None:
                 raise RuntimeError("restart lost apply evidence")
+            browser_e2e = False
+            if not live:
+                _run_browser_gate(project_root, runtime)
+                browser_e2e = True
             if _git_status(project_root) != initial_status:
                 raise RuntimeError("release gate changed the DEV worktree")
             verification = accepted_candidate.verification
@@ -172,6 +182,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 candidate_revision=accepted_candidate.candidate.candidate_revision,
                 diff_sha256=accepted_candidate.candidate.diff_sha256,
                 verification_exit_code=(verification.exit_code if verification else None),
+                browser_e2e=browser_e2e,
             )
     except Exception as error:
         report = _report(
@@ -212,6 +223,7 @@ def write_report(report_dir: Path, report: GateReport) -> None:
         f"- Candidate: `{report.candidate_revision or 'n/a'}`",
         f"- Diff SHA-256: `{report.diff_sha256 or 'n/a'}`",
         f"- Evidence SHA-256: `{report.evidence_sha256}`",
+        f"- Browser E2E: `{report.browser_e2e}`",
     ]
     if report.error:
         lines.extend(("", f"Error: `{report.error}`"))
@@ -266,6 +278,72 @@ def _git_status(project_root: Path) -> str:
         text=True,
         check=True,
     ).stdout.strip()
+
+
+def _run_browser_gate(project_root: Path, runtime: Path) -> None:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    environment = {
+        **os.environ,
+        "AGENT_TEAM_OS_DATA_DIR": str(runtime / "browser"),
+    }
+    server = subprocess.Popen(
+        (
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "agent_team_os.gate_app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ),
+        cwd=project_root,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if server.poll() is not None:
+                stdout, stderr = server.communicate()
+                raise RuntimeError(f"browser gate server failed: {stdout}{stderr}")
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).close()
+                break
+            except Exception:
+                time.sleep(0.1)
+        else:
+            raise RuntimeError("browser gate server readiness timed out")
+        result = subprocess.run(
+            (
+                sys.executable,
+                str(project_root / "scripts" / "browser_e2e.py"),
+                "--url",
+                f"http://127.0.0.1:{port}",
+                "--screenshot",
+                str(runtime / "browser-completed.png"),
+            ),
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"browser E2E failed: {result.stdout}{result.stderr}")
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait()
 
 
 def _acwm_revision() -> str:
