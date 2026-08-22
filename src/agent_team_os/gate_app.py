@@ -15,6 +15,7 @@ from .git_sandbox import GitSandbox
 from .infrastructure.database import MigrationRunner
 from .journey import resolve_backend_delivery_fingerprint
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
+from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .release import DeterministicWorkspaceAgent
 from .testing import DeterministicPlanningService
@@ -48,6 +49,7 @@ def build_gate_app() -> FastAPI:
         control_plane=control_plane,
         evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
         settings=SettingsManager(SQLiteSettingsRepository(database)),
+        identity=IdentityService(SQLiteIdentityRepository(database)),
     )
     install_preview_ui(result, project_root / "console" / "dist")
     return result
