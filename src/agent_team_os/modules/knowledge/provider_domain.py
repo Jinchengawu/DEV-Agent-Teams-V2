@@ -86,10 +86,17 @@ class ProviderNode(BaseModel):
     external_id: str
     external_space_id: str
     parent_external_id: str | None = None
+    source_id: str | None = None
     title: str
     kind: ProviderNodeKind
     provider_revision: str | None = None
     updated_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def document_must_reference_fetchable_source(self) -> ProviderNode:
+        if self.kind == ProviderNodeKind.DOCUMENT and self.source_id is None:
+            raise ValueError("文档节点必须关联可抓取的内容源")
+        return self
 
 
 class ProviderSnapshot(BaseModel):
