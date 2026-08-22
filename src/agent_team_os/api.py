@@ -47,6 +47,7 @@ from .modules.identity import (
     create_identity_router,
     ensure_same_origin,
 )
+from .modules.knowledge import KnowledgeActor, WikiService, create_wiki_router
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
@@ -96,6 +97,7 @@ def create_app(
     evidence: EvidenceLedger | None = None,
     settings: SettingsManager | None = None,
     identity: IdentityService | None = None,
+    knowledge: WikiService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agent-Team-OS",
@@ -212,6 +214,26 @@ def create_app(
 
     if identity is not None:
         app.include_router(create_identity_router(identity))
+
+    if knowledge is not None:
+
+        def resolve_knowledge_actor(request: Request) -> KnowledgeActor:
+            actor = getattr(request.state, "identity_user", None)
+            if not isinstance(actor, User):
+                raise IdentityService.authentication_required()
+            return KnowledgeActor(user_id=actor.id, role=actor.role)
+
+        def resolve_knowledge_mutation_actor(request: Request) -> KnowledgeActor:
+            require_permission(request, Permission.WIKI_EDIT)
+            return resolve_knowledge_actor(request)
+
+        app.include_router(
+            create_wiki_router(
+                knowledge,
+                read_actor=resolve_knowledge_actor,
+                mutation_actor=resolve_knowledge_mutation_actor,
+            )
+        )
 
     if evidence is not None:
 
