@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib import import_module
 from pathlib import Path
 
 import uvicorn
@@ -26,11 +27,13 @@ from .git_delivery import (
     GitCodeExecutor,
 )
 from .git_sandbox import GitSandbox
+from .infrastructure.acwm import ACWMGraphCompiler, ControlPlaneBindingResolver
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
 from .journey import resolve_backend_delivery_fingerprint
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import SQLiteWikiRepository, WikiService
+from .modules.orchestration import PipelineCatalog, SQLitePipelineRepository
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
 from .release import combined_gate_status, run_gate
@@ -49,11 +52,24 @@ class CodexPreviewReadiness:
                 status="ready" if shutil.which("git") else "missing",
                 repair=None if shutil.which("git") else "Install Git and retry.",
             ),
+            DependencyCheck(
+                name="python:acwm-graph-runtime",
+                status="ready" if _has_acwm_graph_runtime() else "missing",
+                repair=(
+                    None
+                    if _has_acwm_graph_runtime()
+                    else "安装项目锁定的 ACWM v0.4 Graph Runtime 后重试。"
+                ),
+            ),
         )
         return ReadinessReport(
             status="ready" if all(check.status == "ready" for check in checks) else "not_ready",
             checks=checks,
         )
+
+
+def _has_acwm_graph_runtime() -> bool:
+    return hasattr(import_module("acwm.domain"), "compile_journey_graph")
 
 
 def build_preview_app() -> FastAPI:
@@ -111,6 +127,13 @@ def build_preview_app() -> FastAPI:
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
         knowledge=WikiService(SQLiteWikiRepository(database)),
+        pipeline_catalog=PipelineCatalog(
+            SQLitePipelineRepository(database),
+            graph_compiler=ACWMGraphCompiler(),
+            binding_resolver=ControlPlaneBindingResolver(
+                control_plane.get_binding, control_plane.get_instance
+            ),
+        ),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 

@@ -55,6 +55,7 @@ from .modules.knowledge import (
     create_provider_knowledge_router,
     create_wiki_router,
 )
+from .modules.orchestration import PipelineCatalog, create_pipeline_router
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
@@ -106,6 +107,7 @@ def create_app(
     identity: IdentityService | None = None,
     knowledge: WikiService | None = None,
     provider_knowledge: ProviderKnowledgeManager | None = None,
+    pipeline_catalog: PipelineCatalog | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agent-Team-OS",
@@ -217,6 +219,25 @@ def create_app(
             create_settings_router(
                 settings,
                 lambda request: require_permission(request, Permission.SETTINGS_EDIT),
+            )
+        )
+
+    if pipeline_catalog is not None:
+
+        def pipeline_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_pipeline_router(
+                pipeline_catalog,
+                actor_id=pipeline_actor_id,
+                authorize_edit=lambda request: require_permission(
+                    request, Permission.JOURNEY_EDIT
+                ),
+                authorize_publish=lambda request: require_permission(
+                    request, Permission.JOURNEY_PUBLISH
+                ),
             )
         )
 
