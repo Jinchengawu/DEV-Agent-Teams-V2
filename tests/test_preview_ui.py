@@ -31,3 +31,5 @@ def test_preview_home_exposes_the_delivery_control_surface() -> None:
     assert "E2E Gate PASS" not in response.text
     assert "'awaiting_plan_decision'" in response.text
     assert "'awaiting_candidate_decision'" in response.text
+    assert "ACWM Journey / Gate Subjects" in response.text
+    assert "/v1/release-gates/latest" in response.text

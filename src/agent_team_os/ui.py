@@ -122,6 +122,7 @@ _PAGE = r"""<!doctype html>
         </form>
         <div id="actions" class="btn-row" style="margin-top:14px"></div>
         <div id="notice" class="notice" role="alert"></div>
+        <div class="block"><h4>Release Gates</h4><pre id="release-status">正在加载…</pre></div>
         <div class="block"><h4>历史 Delivery</h4><pre id="history">正在加载…</pre></div>
       </article>
       <article class="card">
@@ -129,6 +130,7 @@ _PAGE = r"""<!doctype html>
         <div id="empty" class="empty"><div><div class="eyebrow">No active delivery</div><p>提交一个有边界的 Backend 需求，证据将在这里逐步出现。</p></div></div>
         <div id="evidence" class="evidence">
           <div class="identity"><div><span>规划身份</span><strong id="planning-id">—</strong></div><div><span>执行身份</span><strong id="execution-id">尚未执行</strong></div></div>
+          <div class="block"><h4>ACWM Journey / Gate Subjects</h4><pre id="gates"></pre></div>
           <div class="block"><h4>Requirement Artifact</h4><pre id="requirements"></pre></div>
           <div class="block"><h4>Task Contract</h4><pre id="task"></pre></div>
           <div id="candidate-block" class="block" hidden><h4>Candidate Change</h4><pre id="candidate"></pre></div>
@@ -162,6 +164,7 @@ _PAGE = r"""<!doctype html>
       if (delivery.status === 'failed') showError(`交付失败：${delivery.error_code || 'UNKNOWN'}。请修正需求或运行环境后创建新 Delivery。`);
       $('planning-id').textContent = delivery.planning_identity;
       $('execution-id').textContent = delivery.execution_identity || '尚未执行';
+      $('gates').textContent = pretty({resolved_journey_sha256:delivery.resolved_journey_sha256, plan_gate:delivery.plan_gate, candidate_gate:delivery.candidate_gate});
       $('requirements').textContent = pretty(delivery.requirements);
       $('task').textContent = pretty(delivery.task);
       [['candidate', delivery.candidate], ['verification', delivery.verification], ['receipt', delivery.apply_receipt]].forEach(([name, value]) => {
@@ -200,10 +203,20 @@ _PAGE = r"""<!doctype html>
         if (!delivery && rows.length) { delivery = rows[0]; render(); }
       } catch (_) {}
     }
+    async function loadReleaseStatus() {
+      try {
+        const response = await fetch('/v1/release-gates/latest');
+        if (!response.ok) return;
+        const report = await response.json();
+        $('release-status').textContent = `${report.combined.status.toUpperCase()} · ${report.combined.reason}`;
+      } catch (_) {}
+    }
     function cancelDelivery() { request(`/v1/deliveries/${delivery.id}/cancel`, {method:'POST', body:pretty({expected_version:delivery.version})}); }
     setInterval(refresh, 1000);
     setInterval(loadHistory, 5000);
+    setInterval(loadReleaseStatus, 5000);
     loadHistory();
+    loadReleaseStatus();
     $('reset').addEventListener('click', async () => {
       setBusy(true); $('notice').classList.remove('visible');
       try {
