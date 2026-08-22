@@ -374,6 +374,8 @@ adapters, Git apply policy, concurrency or recovery behavior. Run only the liste
         results: list[VerificationResult] = []
         logs: list[dict[str, object]] = []
         for index, command in enumerate(task.verification, start=1):
+            environment = {**os.environ, "CI": "1"}
+            environment.pop("VIRTUAL_ENV", None)
             completed = subprocess.run(
                 ["/bin/sh", "-lc", command],
                 cwd=worktree,
@@ -381,7 +383,7 @@ adapters, Git apply policy, concurrency or recovery behavior. Run only the liste
                 text=True,
                 timeout=600,
                 check=False,
-                env={**os.environ, "CI": "1"},
+                env=environment,
             )
             result = VerificationResult(
                 command=command,
@@ -400,6 +402,15 @@ adapters, Git apply policy, concurrency or recovery behavior. Run only the liste
             if completed.returncode != 0:
                 self._write_json(run_dir / "verification.json", logs)
                 raise SparkFailure("SPARK_VERIFICATION_FAILED", f"Command {index} failed")
+            violation = _verification_output_violation(
+                f"{completed.stdout}\n{completed.stderr}"
+            )
+            if violation is not None:
+                self._write_json(run_dir / "verification.json", logs)
+                raise SparkFailure(
+                    f"SPARK_VERIFICATION_{violation.upper()}",
+                    f"Command {index} reported {violation}",
+                )
         self._write_json(run_dir / "verification.json", logs)
         return tuple(results)
 
@@ -445,3 +456,17 @@ def _reports_architecture_block(message: str) -> bool:
             flags=re.IGNORECASE,
         )
     )
+
+
+def _verification_output_violation(output: str) -> str | None:
+    for line in output.splitlines():
+        normalized = line.strip().lower()
+        if re.search(r"\bwarn(?:ing|ings)?\b", normalized) and not re.search(
+            r"\b0\s+warnings?\b", normalized
+        ):
+            return "warning"
+        if re.search(r"\bskipped\b", normalized) and not re.search(
+            r"\b0\s+skipped\b", normalized
+        ):
+            return "skipped"
+    return None

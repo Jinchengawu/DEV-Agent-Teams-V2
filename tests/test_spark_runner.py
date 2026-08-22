@@ -10,6 +10,7 @@ from agent_team_os.devtools.spark import (
     SparkRunner,
     SparkTask,
     _reports_architecture_block,
+    _verification_output_violation,
 )
 
 
@@ -61,3 +62,9 @@ def test_architecture_block_requires_an_explicit_final_status() -> None:
     assert not _reports_architecture_block(
         "No block: blocked/ARCHITECTURE_DECISION_REQUIRED is not needed."
     )
+
+
+def test_verification_output_rejects_warnings_and_skips() -> None:
+    assert _verification_output_violation("3 passed, 1 warning") == "warning"
+    assert _verification_output_violation("2 passed, 1 skipped") == "skipped"
+    assert _verification_output_violation("3 passed, 0 warnings, 0 skipped") is None
