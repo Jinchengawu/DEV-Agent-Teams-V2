@@ -82,7 +82,7 @@ def main() -> None:
         page.get_by_text("Browser simulated Codex").wait_for()
 
         page.get_by_role("link", name="可视化编排").click()
-        page.get_by_role("button", name="克隆为草稿").click()
+        page.get_by_role("button", name="克隆为可编辑草稿", exact=True).click()
         page.get_by_role("button", name="ACWM 校验").click()
         page.get_by_text("草稿", exact=False).first.wait_for()
         page.get_by_role("button", name="发布不可变版本").click()
