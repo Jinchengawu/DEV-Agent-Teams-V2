@@ -131,6 +131,10 @@ class PipelineCatalog:
     def get_draft(self, draft_id: str) -> PipelineDraft:
         return self.repository.get_draft(draft_id)
 
+    def list_drafts(self, pipeline_id: str) -> tuple[PipelineDraft, ...]:
+        self.repository.get_pipeline(pipeline_id)
+        return self.repository.list_drafts(pipeline_id)
+
     def activate_revision(
         self,
         pipeline_id: str,

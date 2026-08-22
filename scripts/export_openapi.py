@@ -14,6 +14,7 @@ from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
 from agent_team_os.modules.knowledge import SQLiteWikiRepository, WikiService
+from agent_team_os.modules.orchestration import PipelineCatalog, SQLitePipelineRepository
 from agent_team_os.modules.settings import SettingsManager, SQLiteSettingsRepository
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
@@ -40,6 +41,7 @@ def main() -> None:
             settings=SettingsManager(SQLiteSettingsRepository(database)),
             identity=IdentityService(SQLiteIdentityRepository(database)),
             knowledge=WikiService(SQLiteWikiRepository(database)),
+            pipeline_catalog=PipelineCatalog(SQLitePipelineRepository(database)),
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

@@ -1,47 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { changeCapability, changeStageMode, createStep, parseSteps } from "./OrchestrationPage";
+import { canConnectGraph, changeCapability, changeStageMode, createGraphNode, parseDefinition } from "./OrchestrationPage";
 
-describe("线性 Journey 编辑控制器", () => {
-  it("创建稳定且不重复的角色、代码和审批节点", () => {
-    const role = createStep("role", []);
-    const secondRole = createStep("role", [role]);
-    const code = createStep("code", [role, secondRole]);
-    const gate = createStep("gate", [role, secondRole, code]);
-
-    expect(role).toMatchObject({ id: "role-1", kind: "stage", bindings: { actor: "hermes-pm" } });
-    expect(secondRole.id).toBe("role-2");
-    expect(code).toMatchObject({ id: "delivery-1", workflow_mode: "code-delivery", bindings: { developer: "codex-backend" } });
-    expect(gate).toMatchObject({ id: "approval-1", kind: "approval_gate", subject_kind: "delivery-plan" });
+describe("DAG 与 LOOP 流水线编辑控制器", () => {
+  it("创建 Stage、Gate 和有界 LOOP 节点", () => {
+    const role = createGraphNode("role", []);
+    const code = createGraphNode("code", [role]);
+    const gate = createGraphNode("gate", [role, code]);
+    const loop = createGraphNode("loop", [role, code, gate]);
+    expect(role).toMatchObject({ id: "stage-1", kind: "stage" });
+    expect(code).toMatchObject({ id: "code-1", bindings: { developer: "codex-backend" } });
+    expect(gate).toMatchObject({ id: "gate-1", kind: "approval_gate" });
+    expect(loop).toMatchObject({ id: "loop-1", kind: "loop", policy: { max_iterations: 3, on_exhausted: "fail" } });
   });
-
-  it("切换执行模式时重建正确的 ACWM 绑定槽位", () => {
-    const role = createStep("role", []);
-    if (role.kind !== "stage") throw new Error("测试需要角色阶段");
-    const code = changeStageMode(role, "code-delivery");
+  it("拒绝自环、重复边和会形成 DAG 环路的回边", () => {
+    const nodes = [createGraphNode("role", []), createGraphNode("code", [])];
+    expect(canConnectGraph(nodes, [], "stage-1", "stage-1")).toBe(false);
+    expect(canConnectGraph(nodes, [{ source: "stage-1", target: "code-1" }], "stage-1", "code-1")).toBe(false);
+    expect(canConnectGraph(nodes, [{ source: "stage-1", target: "code-1" }], "code-1", "stage-1")).toBe(false);
+  });
+  it("保留图的显式节点和语义边", () => {
+    const definition = parseDefinition({ id: "release", version: "4.0.0", nodes: [{ id: "plan", kind: "stage", workflow_mode: "agentscope.role-turn", bindings: { actor: "hermes-pm" } }, { id: "approve", kind: "approval_gate", subject_kind: "artifact" }], edges: [{ source: "plan", target: "approve", condition: "ready" }] });
+    expect(definition.nodes).toHaveLength(2);
+    expect(definition.edges).toEqual([{ source: "plan", target: "approve", condition: "ready" }]);
+  });
+  it("切换 Stage 模式时重建 Capability 绑定槽位", () => {
+    const node = createGraphNode("role", []);
+    if (node.kind !== "stage") throw new Error("测试需要 Stage");
+    const code = changeStageMode(node, "code-delivery");
     const admin = changeCapability(changeStageMode(code, "agentscope.role-turn"), "hermes-project-admin");
-
     expect(code.bindings).toEqual({ developer: "codex-backend" });
-    expect(code.output_validator).toBe("backend-candidate-v1");
     expect(admin.bindings).toEqual({ actor: "hermes-project-admin" });
-    expect(admin.output_validator).toBeUndefined();
-  });
-
-  it("保留 ACWM 发布定义中显式为空的输出校验器", () => {
-    const steps = parseSteps({
-      id: "backend-delivery",
-      version: "1.0.0",
-      steps: [
-        {
-          id: "requirements",
-          kind: "stage",
-          workflow_mode: "agentscope.role-turn",
-          bindings: { actor: "hermes-pm" },
-          output_validator: null,
-        },
-      ],
-    });
-
-    expect(steps).toHaveLength(1);
-    expect(steps[0]).toMatchObject({ id: "requirements", output_validator: null });
   });
 });

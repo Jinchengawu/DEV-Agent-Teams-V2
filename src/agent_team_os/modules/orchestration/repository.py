@@ -112,6 +112,22 @@ class SQLitePipelineRepository:
             values[field] = json.loads(str(values[field]))
         return PipelineDraft.model_validate(values)
 
+    def list_drafts(self, pipeline_id: str) -> tuple[PipelineDraft, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,pipeline_id,name,definition_json,layout_json,input_schema_json,
+                version,validation_status,validation_errors_json,created_by,created_at,updated_at
+                FROM pipeline_drafts WHERE pipeline_id=? ORDER BY updated_at DESC,id""",
+                (pipeline_id,),
+            ).fetchall()
+        drafts: list[PipelineDraft] = []
+        for row in rows:
+            values = dict(zip(_DRAFT_FIELDS, row, strict=True))
+            for field in ("definition", "layout", "input_schema", "validation_errors"):
+                values[field] = json.loads(str(values[field]))
+            drafts.append(PipelineDraft.model_validate(values))
+        return tuple(drafts)
+
     def compare_and_swap_draft(
         self, expected_version: int, updated: PipelineDraft
     ) -> bool:

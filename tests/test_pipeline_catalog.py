@@ -82,6 +82,7 @@ def test_catalog_creates_multiple_pipelines_with_independent_drafts(tmp_path: Pa
     assert review.draft.pipeline_id == "release-review"
     assert backend.draft.id != review.draft.id
     assert backend.pipeline.active_revision is None
+    assert catalog.list_drafts("backend-delivery") == (backend.draft,)
 
 
 def test_catalog_publishes_an_immutable_compiled_pipeline_revision(tmp_path: Path) -> None:

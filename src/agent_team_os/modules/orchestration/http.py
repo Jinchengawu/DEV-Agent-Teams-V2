@@ -55,6 +55,13 @@ def create_pipeline_router(
         except KeyError as error:
             raise HTTPException(status_code=404, detail="pipeline draft not found") from error
 
+    @router.get("/v1/pipelines/{pipeline_id}/drafts", response_model=list[PipelineDraft])
+    def list_pipeline_drafts(pipeline_id: str) -> tuple[PipelineDraft, ...]:
+        try:
+            return catalog.list_drafts(pipeline_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="pipeline not found") from error
+
     @router.patch("/v1/pipeline-drafts/{draft_id}", response_model=PipelineDraft)
     def patch_pipeline_draft(
         draft_id: str, request_body: PipelineDraftPatch, request: Request
