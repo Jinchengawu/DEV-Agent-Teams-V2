@@ -171,6 +171,14 @@ class ActiveDeliveryConflictError(DeliveryStateConflictError):
     pass
 
 
+class RuntimeBindingConflictError(DeliveryStateConflictError):
+    def __init__(self, capability_id: str, expected: str, actual: str | None) -> None:
+        super().__init__(capability_id)
+        self.capability_id = capability_id
+        self.expected = expected
+        self.actual = actual
+
+
 class DeliveryRepository(Protocol):
     def save(self, delivery: DeliveryRun) -> None: ...
 
@@ -328,6 +336,9 @@ class DeliveryCoordinator:
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
+        binding_snapshot = journey_binding_snapshot or {}
+        if journey_revision_id is not None:
+            self._validate_runtime_bindings(binding_snapshot)
         delivery = DeliveryRun(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -337,12 +348,37 @@ class DeliveryCoordinator:
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
             journey_revision_id=journey_revision_id,
-            journey_binding_snapshot=journey_binding_snapshot or {},
+            journey_binding_snapshot=binding_snapshot,
             resolved_journey_sha256=journey_hash,
         )
         self._repository.save(delivery)
         self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
+
+    def _validate_runtime_bindings(
+        self, snapshot: dict[str, dict[str, object]]
+    ) -> None:
+        expected_identities = {
+            "hermes-pm": self._planning.evidence_identity,
+            "hermes-project-admin": self._planning.evidence_identity,
+            "codex-backend": self._executor.evidence_identity,
+        }
+        for capability_id, expected_identity in expected_identities.items():
+            binding = snapshot.get(capability_id)
+            actual_identity = None if binding is None else binding.get("identity")
+            if (
+                binding is None
+                or not isinstance(binding.get("instance_id"), str)
+                or not binding["instance_id"]
+                or not isinstance(binding.get("instance_version"), int)
+                or not isinstance(binding.get("runtime_type"), str)
+                or actual_identity != expected_identity
+            ):
+                raise RuntimeBindingConflictError(
+                    capability_id,
+                    expected_identity,
+                    actual_identity if isinstance(actual_identity, str) else None,
+                )
 
     async def _plan_queued(self, delivery: DeliveryRun) -> None:
         planning = delivery.model_copy(

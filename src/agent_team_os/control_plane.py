@@ -353,7 +353,6 @@ class ControlPlaneService:
         updated = current.model_copy(
             update={
                 "health": health,
-                "version": current.version + 1,
                 "updated_at": datetime.now(UTC),
             }
         )
@@ -393,6 +392,17 @@ class ControlPlaneService:
         if value is None:
             raise KeyError(capability_id)
         return CapabilityBinding.model_validate_json(value)
+
+    def list_bindings(self) -> tuple[CapabilityBinding, ...]:
+        return tuple(
+            sorted(
+                (
+                    CapabilityBinding.model_validate_json(value)
+                    for value in self._list("capability-binding")
+                ),
+                key=lambda binding: binding.capability_id,
+            )
+        )
 
     def create_draft(self, request: JourneyDraftCreate) -> JourneyDraft:
         draft = JourneyDraft(id=str(uuid4()), **request.model_dump())

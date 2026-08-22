@@ -36,6 +36,7 @@ from .delivery import (
     DeliveryStateConflictError,
     DeliveryVersionConflictError,
     PlanningServiceError,
+    RuntimeBindingConflictError,
 )
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
@@ -378,6 +379,10 @@ def create_app(
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="binding not found") from error
 
+        @app.get("/v1/capability-bindings", response_model=list[CapabilityBinding])
+        def list_capability_bindings() -> tuple[CapabilityBinding, ...]:
+            return control_plane.list_bindings()
+
         @app.post("/v1/journey-drafts", response_model=JourneyDraft, status_code=201)
         def create_journey_draft(
             request_body: JourneyDraftCreate, request: Request
@@ -584,6 +589,16 @@ def create_app(
         except PlanningServiceError as error:
             raise HTTPException(
                 status_code=502, detail="planning service returned invalid output"
+            ) from error
+        except RuntimeBindingConflictError as error:
+            raise ProductError(
+                code="DELIVERY_RUNTIME_BINDING_MISMATCH",
+                title="运行实例与已发布绑定不匹配",
+                detail=(
+                    f"能力 {error.capability_id} 绑定身份为 "
+                    f"{error.actual or '未提供'}，当前运行时仅配置了 {error.expected}。"
+                ),
+                repair="重新绑定已接入的运行实例，并发布新的 Journey Revision。",
             ) from error
         except DeliveryStateConflictError as error:
             raise HTTPException(status_code=409, detail="active delivery conflict") from error
