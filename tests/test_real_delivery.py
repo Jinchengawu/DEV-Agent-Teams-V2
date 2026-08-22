@@ -19,6 +19,7 @@ class ScriptedWorkspaceAgent:
 
     async def run(self, *, instruction: str, workspace: Path) -> str:
         assert "AC-1" in instruction
+        assert "source change and a corresponding test change" in instruction
         (workspace / "src" / "health.py").write_text(
             'def health() -> dict[str, str]:\n    return {"status": "ok"}\n',
             encoding="utf-8",

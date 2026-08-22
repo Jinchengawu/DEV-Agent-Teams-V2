@@ -66,6 +66,8 @@ class GitCodeExecutor:
             f"Implement this approved Backend task:\n{task.instructions}\n\n"
             f"Acceptance IDs: {', '.join(task.acceptance_ids)}\n"
             f"You may modify only: {', '.join(policy.allowed_paths)}.\n"
+            "You must make at least one concrete source change and a corresponding test change. "
+            "Do not stop after analysis or return only an explanation. "
             "Do not install dependencies, change manifests, or run user-provided commands. "
             "Use only the Python standard library."
         )

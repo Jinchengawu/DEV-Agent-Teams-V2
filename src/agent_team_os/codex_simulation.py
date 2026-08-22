@@ -68,6 +68,7 @@ User request:
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
 Return raw JSON only with: title, instructions, acceptance_ids.
 Create exactly one bounded Backend task. Use only acceptance ids from the input.
+The instructions must require a non-empty source change and corresponding machine test change.
 Do not include permissions, commands, paths, system_policy, markdown or commentary.
 
 Approved requirements:

@@ -16,6 +16,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from acwm.config import CodexCLIConfig
 from pydantic import BaseModel, ConfigDict
 
 from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
@@ -92,7 +93,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             if live:
                 runner = ACWMCodexRoleRunner(workspace=project_root)
                 planning: PlanningService = CodexSimulatedHermesPlanning(runner)
-                code_agent = ACWMCodexWorkspaceAgent()
+                code_agent = ACWMCodexWorkspaceAgent(
+                    CodexCLIConfig(sandbox="workspace-write", timeout_seconds=300)
+                )
                 agent: WorkspaceAgent = code_agent
             else:
                 planning = DeterministicPlanningService()
