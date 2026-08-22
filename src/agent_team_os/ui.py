@@ -144,7 +144,7 @@ _PAGE = r"""<!doctype html>
     const $ = (id) => document.getElementById(id);
     const pretty = (value) => JSON.stringify(value, null, 2);
     const stageOrder = {queued:0, planning:1, awaiting_plan_decision:1, executing:2, verifying:3, awaiting_candidate_decision:4, applying:4, completed:5, rejected:5, failed:4, cancelled:5};
-    const activeStates = new Set(['queued','planning','executing','verifying','applying']);
+    const activeStates = new Set(['queued','planning','awaiting_plan_decision','executing','verifying','awaiting_candidate_decision','applying']);
     function setBusy(busy) { document.querySelectorAll('button').forEach((b) => b.disabled = busy); }
     function showError(message) { $('notice').textContent = message; $('notice').classList.add('visible'); }
     async function request(url, options) {
