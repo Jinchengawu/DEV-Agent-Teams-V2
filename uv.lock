@@ -426,7 +426,7 @@ wheels = [
 
 [[package]]
 name = "dev-agent-teams-v2"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-capability-workflow-matrix" },

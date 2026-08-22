@@ -43,7 +43,7 @@ _CHINESE_FALLBACK = """<!doctype html>
   </style>
 </head>
 <body><main>
-  <small>控制平面 · V0.2</small>
+  <small>控制平面 · V0.3</small>
   <h1>前端控制台尚未构建</h1>
   <p>请在 <code>console</code> 目录安装锁定依赖并执行生产构建，然后重新启动系统。</p>
   <p><a href="/docs">打开接口文档</a></p>

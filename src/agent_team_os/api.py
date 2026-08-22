@@ -120,7 +120,7 @@ def create_app(
         coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs)
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.2.1",
+        version="0.3.0",
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},

@@ -191,7 +191,7 @@ def ensure_console_built(project_root: Path) -> None:
     console = project_root / "console"
     pnpm = shutil.which("pnpm")
     if pnpm is None:
-        raise RuntimeError("pnpm is required to build the V0.2 console; install pnpm and retry")
+        raise RuntimeError("pnpm is required to build the V0.3 console; install pnpm and retry")
     if not (console / "node_modules").is_dir():
         subprocess.run(
             [pnpm, "install", "--frozen-lockfile"],
@@ -200,7 +200,7 @@ def ensure_console_built(project_root: Path) -> None:
         )
     node = shutil.which("node")
     if node is None:
-        raise RuntimeError("Node.js is required to build the V0.2 console")
+        raise RuntimeError("Node.js is required to build the V0.3 console")
     subprocess.run(
         [node, str(console / "node_modules" / "vite" / "bin" / "vite.js"), "build"],
         cwd=console,

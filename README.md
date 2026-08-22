@@ -120,7 +120,7 @@ AGENT_TEAM_OS_LIVE_CODEX=1 uv run pytest \
 
 The product uses Codex to simulate Hermes PM/Admin through AgentScope and ACWM. Code execution is a
 real Codex CLI workspace-write turn. The target is the built-in standard-library Python Backend Bare
-Repo under `.agent-team-os/workspaces`; user repositories are intentionally out of scope for V0.2.
+Repo under `.agent-team-os/workspaces`; user repositories are intentionally out of scope for V0.3.
 
 ```bash
 uv sync --extra dev --extra live

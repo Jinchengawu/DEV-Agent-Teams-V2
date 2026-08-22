@@ -1512,6 +1512,14 @@ export interface components {
             planning_identity: string;
             /** Execution Identity */
             execution_identity: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id?: string | null;
+            /** Pipeline Fingerprint */
+            pipeline_fingerprint?: string | null;
+            /** Pipeline Run Id */
+            pipeline_run_id?: string | null;
+            /** Pipeline Run Status */
+            pipeline_run_status?: string | null;
             /** Candidate Revision */
             candidate_revision?: string | null;
             /** Diff Sha256 */

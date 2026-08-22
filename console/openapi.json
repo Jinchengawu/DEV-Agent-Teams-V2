@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent-Team-OS",
-    "version": "0.2.1"
+    "version": "0.3.0"
   },
   "paths": {
     "/v1/readiness": {
@@ -6525,6 +6525,51 @@
           "execution_identity": {
             "type": "string",
             "title": "Execution Identity"
+          },
+          "pipeline_revision_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Revision Id"
+          },
+          "pipeline_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Fingerprint"
+          },
+          "pipeline_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Run Id"
+          },
+          "pipeline_run_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Run Status"
           },
           "candidate_revision": {
             "anyOf": [
