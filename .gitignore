@@ -8,4 +8,6 @@ __pycache__/
 dist/
 build/
 .env
-
+.agent-team-os/
+console/node_modules/
+console/dist/

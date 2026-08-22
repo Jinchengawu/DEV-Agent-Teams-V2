@@ -39,7 +39,9 @@ class DeterministicPlanningService:
 class DeterministicCodeExecutor:
     evidence_identity = "deterministic-test"
 
-    async def execute(self, task: TaskContract, workspace_id: str) -> CandidateChange:
+    async def execute(
+        self, task: TaskContract, workspace_id: str, delivery_id: str
+    ) -> CandidateChange:
         return CandidateChange(
             base_revision="base-revision",
             candidate_revision="candidate-revision",

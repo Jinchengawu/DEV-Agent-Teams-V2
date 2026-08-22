@@ -28,9 +28,7 @@ def test_v2_delivery_journey_uses_acwm_without_copying_its_control_plane() -> No
         "delivery",
     ]
     gate_subjects = [
-        step.subject_kind
-        for step in journey.steps
-        if isinstance(step, ApprovalGateDefinition)
+        step.subject_kind for step in journey.steps if isinstance(step, ApprovalGateDefinition)
     ]
     assert gate_subjects == [
         "delivery-plan",

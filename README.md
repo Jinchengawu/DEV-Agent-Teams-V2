@@ -25,9 +25,26 @@ Architecture ownership:
 
 V2 is a new project. The legacy DEV-Agent-Teams remains untouched and is not a source tree to copy.
 
-## Current baseline
+## V0.2 control-plane baseline
 
-Implemented in the first vertical slice:
+Implemented:
+
+- preserve the V0.1 real Git delivery loop and its CAS apply guarantees;
+- register `hermes-acp`, `hermes-http`, and `codex-cli` execution instances without persisting secret values;
+- health-check instances and bind healthy, enabled instances to ACWM capabilities;
+- clone, reorder, validate, and publish linear ACWM Journeys as immutable revisions;
+- pin every new Delivery to a published Journey revision and frozen binding snapshot;
+- project Delivery state into a rebuildable six-column Board with legal commands only;
+- archive Journey, requirement, task, gate, candidate, verification, and receipt evidence;
+- search traceable knowledge with SQLite FTS5, content hashes, and source links;
+- expose a durable control event stream at `/v1/events/stream`;
+- serve a React/Vite control console with a persistent Operating Map.
+
+The control plane deliberately does not implement DAG workflows, RAG, embeddings, AgentScope-native
+Agent/Team management, shared long-term memory, multi-tenancy, cloud deployment, or user repository
+adapters. Those remain later milestones.
+
+V0.1 guarantees retained:
 
 - create a Backend Delivery and stop at plan approval;
 - optimistic-version protection for decisions;
@@ -37,6 +54,15 @@ Implemented in the first vertical slice:
 - verify a candidate independently and require an exact atomic-apply receipt before completion;
 - fail-closed readiness for ACWM, AgentScope, Hermes credentials and Codex login;
 - pin ACWM v0.3 to commit `b79e671`.
+- resolve and fingerprint the authoritative ACWM `backend-delivery` Journey;
+- return `202` immediately and advance planning/execution/apply in background tasks;
+- bind both approvals to ACWM Gate Subject hashes and optimistic versions;
+- execute Codex with `workspace-write` in an isolated Git Worktree;
+- reject empty, out-of-scope, secret-bearing or test-failing candidates;
+- create immutable candidate refs, unified Diff hashes and fixed unittest evidence;
+- apply only with `git update-ref <candidate> <base>` compare-and-swap;
+- recover approval states after restart and fail interrupted execution closed;
+- expose Delivery history, cancellation, sandbox reset and release-gate reports.
 
 Until Hermes instances are configured, Codex may simulate the PM and Project Admin roles through an
 AgentScope role-turn and ACWM's Codex Capability Adapter. Such evidence is always identified as
@@ -51,7 +77,43 @@ uv run ruff check .
 uv run mypy
 uv build
 
+cd console
+node ./node_modules/typescript/bin/tsc --noEmit
+node ./node_modules/vitest/vitest.mjs run
+node ./node_modules/vite/bin/vite.js build
+
 # Explicit real-Codex smoke test (read-only planning; requires Codex login)
 AGENT_TEAM_OS_LIVE_CODEX=1 uv run pytest \
   tests/integration/test_live_codex_simulated_planning.py -q
 ```
+
+### Run the product
+
+The product uses Codex to simulate Hermes PM/Admin through AgentScope and ACWM. Code execution is a
+real Codex CLI workspace-write turn. The target is the built-in standard-library Python Backend Bare
+Repo under `.agent-team-os/workspaces`; user repositories are intentionally out of scope for V0.2.
+
+```bash
+uv sync --extra dev --extra live
+pnpm --dir console install --frozen-lockfile
+uv run --extra live agent-team-os demo
+```
+
+Open <http://127.0.0.1:8080/>. Data and immutable reports are stored under `.agent-team-os/`.
+
+### Release gates
+
+```bash
+# Real Git lifecycle with deterministic model boundaries
+uv run --extra live agent-team-os gate
+
+# Real Codex planning and real Codex code execution
+uv run --extra live agent-team-os gate --live
+
+# Run both gates; either failure returns a non-zero exit code
+uv run --extra live agent-team-os release
+```
+
+Both JSON and Markdown reports include DEV/ACWM revisions, Candidate Revision, Diff SHA-256,
+verification exit code, identities and an evidence hash. `/v1/release-gates/latest` reports
+`unknown` or `failed` when evidence is missing, older than 24 hours, dirty, or revision-mismatched.

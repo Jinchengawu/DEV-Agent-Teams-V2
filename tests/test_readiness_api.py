@@ -40,4 +40,3 @@ def test_readiness_fails_closed_with_a_repair_action() -> None:
             }
         ],
     }
-

@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import sqlite3
+from collections.abc import Coroutine
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import uuid4
 
+from acwm.domain import (
+    GateSnapshot,
+    GateStatus,
+    GateSubject,
+    StaleGateDecision,
+    decide_gate,
+    open_gate,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -28,7 +41,7 @@ class RequirementArtifact(ImmutableModel):
 
 class SystemPolicy(ImmutableModel):
     allowed_paths: tuple[str, ...] = ("src/**", "tests/**")
-    verification_commands: tuple[str, ...] = ("python -m pytest",)
+    verification_commands: tuple[str, ...] = ("python -m unittest discover -s tests -v",)
 
 
 class TaskContract(ImmutableModel):
@@ -43,6 +56,8 @@ class CandidateChange(ImmutableModel):
     candidate_revision: str
     diff_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     changed_files: tuple[str, ...]
+    candidate_ref: str = ""
+    unified_diff: str = ""
 
 
 class VerificationRun(ImmutableModel):
@@ -50,6 +65,8 @@ class VerificationRun(ImmutableModel):
     commands: tuple[str, ...]
     exit_code: int
     log_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    redacted_log: str = ""
+    acceptance_ids: tuple[str, ...] = ()
 
 
 class ApplyReceipt(ImmutableModel):
@@ -57,6 +74,16 @@ class ApplyReceipt(ImmutableModel):
     candidate_revision: str
     after_revision: str
     result: Literal["applied"]
+    recovered: bool = False
+
+
+class GateRecord(ImmutableModel):
+    gate_id: str
+    subject_kind: str
+    artifact_id: str
+    subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    revision: int
+    decision: Literal["approve", "reject"] | None = None
 
 
 class DeliveryRun(ImmutableModel):
@@ -64,13 +91,17 @@ class DeliveryRun(ImmutableModel):
     workspace_id: str
     user_request: str
     status: Literal[
+        "queued",
         "planning",
         "awaiting_plan_decision",
         "executing",
+        "verifying",
         "awaiting_candidate_decision",
+        "applying",
         "completed",
         "rejected",
         "failed",
+        "cancelled",
     ]
     version: int
     requirements: RequirementArtifact | None = None
@@ -78,6 +109,14 @@ class DeliveryRun(ImmutableModel):
     candidate: CandidateChange | None = None
     verification: VerificationRun | None = None
     apply_receipt: ApplyReceipt | None = None
+    plan_gate: GateRecord | None = None
+    candidate_gate: GateRecord | None = None
+    journey_revision_id: str | None = None
+    journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
+    resolved_journey_sha256: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
+    error_code: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     evidence_identity: str
     planning_identity: str
     execution_identity: str | None = None
@@ -94,7 +133,9 @@ class PlanningService(Protocol):
 class CodeExecutor(Protocol):
     evidence_identity: str
 
-    async def execute(self, task: TaskContract, workspace_id: str) -> CandidateChange: ...
+    async def execute(
+        self, task: TaskContract, workspace_id: str, delivery_id: str
+    ) -> CandidateChange: ...
 
 
 class PlanningServiceError(RuntimeError):
@@ -123,10 +164,16 @@ class DeliveryStateConflictError(RuntimeError):
     pass
 
 
+class ActiveDeliveryConflictError(DeliveryStateConflictError):
+    pass
+
+
 class DeliveryRepository(Protocol):
     def save(self, delivery: DeliveryRun) -> None: ...
 
     def get(self, delivery_id: str) -> DeliveryRun | None: ...
+
+    def list(self) -> tuple[DeliveryRun, ...]: ...
 
 
 class InMemoryDeliveryRepository:
@@ -138,6 +185,9 @@ class InMemoryDeliveryRepository:
 
     def get(self, delivery_id: str) -> DeliveryRun | None:
         return self._deliveries.get(delivery_id)
+
+    def list(self) -> tuple[DeliveryRun, ...]:
+        return tuple(self._deliveries.values())
 
 
 class SQLiteDeliveryRepository:
@@ -169,6 +219,13 @@ class SQLiteDeliveryRepository:
             ).fetchone()
         return None if row is None else DeliveryRun.model_validate_json(row[0])
 
+    def list(self) -> tuple[DeliveryRun, ...]:
+        with sqlite3.connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT snapshot_json FROM deliveries ORDER BY rowid DESC"
+            ).fetchall()
+        return tuple(DeliveryRun.model_validate_json(row[0]) for row in rows)
+
 
 class DeliveryCoordinator:
     """Own the product state transition; runtimes only provide bounded capabilities."""
@@ -181,16 +238,119 @@ class DeliveryCoordinator:
         verifier: CandidateVerifier | None = None,
         applier: CandidateApplier | None = None,
         repository: DeliveryRepository | None = None,
+        resolved_journey_sha256: str = "0" * 64,
     ) -> None:
         self._planning = planning
         self._executor = executor
         self._verifier = verifier
         self._applier = applier
         self._repository = repository or InMemoryDeliveryRepository()
+        self._resolved_journey_sha256 = resolved_journey_sha256
+        self._background: dict[str, asyncio.Task[None]] = {}
+
+    def enqueue(
+        self,
+        *,
+        workspace_id: str,
+        user_request: str,
+        journey_revision_id: str | None = None,
+        journey_binding_snapshot: dict[str, dict[str, object]] | None = None,
+        resolved_journey_sha256: str | None = None,
+    ) -> DeliveryRun:
+        self._ensure_workspace_available(workspace_id)
+        delivery = DeliveryRun(
+            id=str(uuid4()),
+            workspace_id=workspace_id,
+            user_request=user_request,
+            status="queued",
+            version=1,
+            evidence_identity=self._planning.evidence_identity,
+            planning_identity=self._planning.evidence_identity,
+            journey_revision_id=journey_revision_id,
+            journey_binding_snapshot=journey_binding_snapshot or {},
+            resolved_journey_sha256=(resolved_journey_sha256 or self._resolved_journey_sha256),
+        )
+        self._repository.save(delivery)
+        self._schedule(delivery.id, self._plan_queued(delivery))
+        return delivery
+
+    async def _plan_queued(self, delivery: DeliveryRun) -> None:
+        planning = delivery.model_copy(
+            update={"status": "planning", "updated_at": datetime.now(UTC)}
+        )
+        self._repository.save(planning)
+        try:
+            requirements = await self._planning.analyze(delivery.user_request)
+            task = await self._planning.plan(requirements)
+            subject_hash = _sha256({"requirements": requirements, "task": task})
+            gate = open_gate(
+                GateSnapshot(id="approve-plan", subject_kind="delivery-plan"),
+                subject=GateSubject(
+                    kind="delivery-plan",
+                    artifact_id="delivery-plan",
+                    sha256=subject_hash,
+                ),
+                revision=delivery.version,
+            )
+            self._repository.save(
+                planning.model_copy(
+                    update={
+                        "status": "awaiting_plan_decision",
+                        "requirements": requirements,
+                        "task": task,
+                        "plan_gate": _gate_record(gate),
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+        except Exception as error:
+            self._save_failed(planning, error, "PLANNING_FAILED")
+
+    def _schedule(self, delivery_id: str, coroutine: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(coroutine)
+        self._background[delivery_id] = task
+        task.add_done_callback(lambda _task: self._background.pop(delivery_id, None))
+
+    def _save_failed(self, delivery: DeliveryRun, error: Exception, fallback_code: str) -> None:
+        self._repository.save(
+            delivery.model_copy(
+                update={
+                    "status": "failed",
+                    "error_code": getattr(error, "code", fallback_code),
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+        )
+
+    def _ensure_workspace_available(self, workspace_id: str) -> None:
+        if workspace_id != "backend-demo":
+            raise DeliveryStateConflictError("only backend-demo is supported")
+        active = {
+            "queued",
+            "planning",
+            "awaiting_plan_decision",
+            "executing",
+            "verifying",
+            "awaiting_candidate_decision",
+            "applying",
+        }
+        if any(item.workspace_id == workspace_id and item.status in active for item in self.list()):
+            raise ActiveDeliveryConflictError(workspace_id)
 
     async def submit(self, *, workspace_id: str, user_request: str) -> DeliveryRun:
+        self._ensure_workspace_available(workspace_id)
         requirements = await self._planning.analyze(user_request)
         task = await self._planning.plan(requirements)
+        subject_hash = _sha256({"requirements": requirements, "task": task})
+        gate = open_gate(
+            GateSnapshot(id="approve-plan", subject_kind="delivery-plan"),
+            subject=GateSubject(
+                kind="delivery-plan",
+                artifact_id="delivery-plan",
+                sha256=subject_hash,
+            ),
+            revision=1,
+        )
         delivery = DeliveryRun(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -199,6 +359,8 @@ class DeliveryCoordinator:
             version=1,
             requirements=requirements,
             task=task,
+            plan_gate=_gate_record(gate),
+            resolved_journey_sha256=self._resolved_journey_sha256,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
         )
@@ -211,41 +373,199 @@ class DeliveryCoordinator:
             raise DeliveryNotFoundError(delivery_id)
         return delivery
 
+    def list(self) -> tuple[DeliveryRun, ...]:
+        return self._repository.list()
+
+    def start_plan_decision(
+        self,
+        delivery_id: str,
+        *,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        self._validate_gate_request(
+            delivery,
+            gate=delivery.plan_gate,
+            expected_status="awaiting_plan_decision",
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
+        self._schedule(
+            delivery_id,
+            self._run_plan_decision(
+                delivery_id,
+                decision,
+                expected_version,
+                expected_subject_sha256,
+            ),
+        )
+        return delivery
+
+    async def _run_plan_decision(
+        self,
+        delivery_id: str,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> None:
+        try:
+            await self.decide_plan(
+                delivery_id,
+                decision=decision,
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
+        except Exception as error:
+            self._save_failed(self.get(delivery_id), error, "EXECUTION_FAILED")
+
+    def start_candidate_decision(
+        self,
+        delivery_id: str,
+        *,
+        decision: Literal["accept", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        self._validate_gate_request(
+            delivery,
+            gate=delivery.candidate_gate,
+            expected_status="awaiting_candidate_decision",
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
+        self._schedule(
+            delivery_id,
+            self._run_candidate_decision(
+                delivery_id,
+                decision,
+                expected_version,
+                expected_subject_sha256,
+            ),
+        )
+        return delivery
+
+    async def _run_candidate_decision(
+        self,
+        delivery_id: str,
+        decision: Literal["accept", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> None:
+        try:
+            await self.decide_candidate(
+                delivery_id,
+                decision=decision,
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
+        except Exception as error:
+            self._save_failed(self.get(delivery_id), error, "APPLY_FAILED")
+
+    @staticmethod
+    def _validate_gate_request(
+        delivery: DeliveryRun,
+        *,
+        gate: GateRecord | None,
+        expected_status: str,
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> None:
+        if delivery.version != expected_version:
+            raise DeliveryVersionConflictError(delivery.id)
+        if (
+            delivery.status != expected_status
+            or gate is None
+            or gate.subject_sha256 != expected_subject_sha256
+        ):
+            raise DeliveryStateConflictError(delivery.id)
+
     async def decide_plan(
         self,
         delivery_id: str,
         *,
         decision: Literal["approve", "reject"],
         expected_version: int,
+        expected_subject_sha256: str,
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
+        if delivery.plan_gate is not None and delivery.plan_gate.decision is not None:
+            if delivery.plan_gate.decision == decision:
+                return delivery
+            raise DeliveryStateConflictError(delivery_id)
         if delivery.version != expected_version:
             raise DeliveryVersionConflictError(delivery_id)
-        if delivery.status != "awaiting_plan_decision" or delivery.task is None:
+        if (
+            delivery.status != "awaiting_plan_decision"
+            or delivery.task is None
+            or delivery.plan_gate is None
+        ):
             raise DeliveryStateConflictError(delivery_id)
+        decided_gate = _decide_gate(
+            delivery.plan_gate,
+            decision=decision,
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
         if decision == "reject":
             updated = delivery.model_copy(
-                update={"status": "rejected", "version": delivery.version + 1}
+                update={
+                    "status": "rejected",
+                    "version": delivery.version + 1,
+                    "plan_gate": decided_gate,
+                    "updated_at": datetime.now(UTC),
+                }
             )
         else:
-            candidate = await self._executor.execute(delivery.task, delivery.workspace_id)
+            executing = delivery.model_copy(
+                update={
+                    "status": "executing",
+                    "version": delivery.version + 1,
+                    "plan_gate": decided_gate,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._repository.save(executing)
+            candidate = await self._executor.execute(
+                delivery.task, delivery.workspace_id, delivery.id
+            )
+            verifying = executing.model_copy(
+                update={"status": "verifying", "updated_at": datetime.now(UTC)}
+            )
+            self._repository.save(verifying)
             verification = (
                 await self._verifier.verify(candidate, delivery.task, delivery.workspace_id)
                 if self._verifier is not None
                 else None
             )
-            updated = delivery.model_copy(
+            candidate_gate = None
+            if verification is None or verification.status == "passed":
+                candidate_hash = _sha256({"candidate": candidate, "verification": verification})
+                opened = open_gate(
+                    GateSnapshot(id="approve-candidate", subject_kind="candidate-change"),
+                    subject=GateSubject(
+                        kind="candidate-change",
+                        artifact_id=candidate.candidate_revision,
+                        sha256=candidate_hash,
+                    ),
+                    revision=executing.version,
+                )
+                candidate_gate = _gate_record(opened)
+            updated = executing.model_copy(
                 update={
                     "status": (
                         "failed"
                         if verification is not None and verification.status == "failed"
                         else "awaiting_candidate_decision"
                     ),
-                    "version": delivery.version + 1,
                     "candidate": candidate,
                     "verification": verification,
+                    "candidate_gate": candidate_gate,
                     "evidence_identity": self._executor.evidence_identity,
                     "execution_identity": self._executor.evidence_identity,
+                    "updated_at": datetime.now(UTC),
                 }
             )
         self._repository.save(updated)
@@ -257,21 +577,53 @@ class DeliveryCoordinator:
         *,
         decision: Literal["accept", "reject"],
         expected_version: int,
+        expected_subject_sha256: str,
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
+        gate_decision: Literal["approve", "reject"] = (
+            "approve" if decision == "accept" else "reject"
+        )
+        if delivery.candidate_gate is not None and delivery.candidate_gate.decision is not None:
+            if delivery.candidate_gate.decision == gate_decision:
+                return delivery
+            raise DeliveryStateConflictError(delivery_id)
         if delivery.version != expected_version:
             raise DeliveryVersionConflictError(delivery_id)
-        if delivery.status != "awaiting_candidate_decision" or delivery.candidate is None:
+        if (
+            delivery.status != "awaiting_candidate_decision"
+            or delivery.candidate is None
+            or delivery.candidate_gate is None
+        ):
             raise DeliveryStateConflictError(delivery_id)
+        decided_gate = _decide_gate(
+            delivery.candidate_gate,
+            decision=gate_decision,
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
         if decision == "reject":
             updated = delivery.model_copy(
-                update={"status": "rejected", "version": delivery.version + 1}
+                update={
+                    "status": "rejected",
+                    "version": delivery.version + 1,
+                    "candidate_gate": decided_gate,
+                    "updated_at": datetime.now(UTC),
+                }
             )
         else:
             if delivery.verification is None or delivery.verification.status != "passed":
                 raise DeliveryStateConflictError("candidate is not verified")
             if self._applier is None:
                 raise DeliveryStateConflictError("candidate applier is not configured")
+            applying = delivery.model_copy(
+                update={
+                    "status": "applying",
+                    "version": delivery.version + 1,
+                    "candidate_gate": decided_gate,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._repository.save(applying)
             receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
             if (
                 receipt.before_revision != delivery.candidate.base_revision
@@ -279,12 +631,123 @@ class DeliveryCoordinator:
                 or receipt.after_revision != delivery.candidate.candidate_revision
             ):
                 raise DeliveryStateConflictError("apply receipt does not match candidate")
-            updated = delivery.model_copy(
+            updated = applying.model_copy(
                 update={
                     "status": "completed",
-                    "version": delivery.version + 1,
                     "apply_receipt": receipt,
+                    "updated_at": datetime.now(UTC),
                 }
             )
         self._repository.save(updated)
         return updated
+
+    def cancel(self, delivery_id: str, *, expected_version: int) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        if delivery.version != expected_version:
+            raise DeliveryVersionConflictError(delivery_id)
+        if delivery.status in {"completed", "rejected", "failed", "cancelled"}:
+            raise DeliveryStateConflictError(delivery_id)
+        task = self._background.get(delivery_id)
+        if task is not None:
+            task.cancel()
+        updated = delivery.model_copy(
+            update={
+                "status": "cancelled",
+                "version": delivery.version + 1,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._repository.save(updated)
+        return updated
+
+    async def recover(self) -> None:
+        for delivery in self.list():
+            if delivery.status in {"planning", "executing", "verifying"}:
+                self._repository.save(
+                    delivery.model_copy(
+                        update={
+                            "status": "failed",
+                            "version": delivery.version + 1,
+                            "error_code": "PROCESS_INTERRUPTED",
+                            "updated_at": datetime.now(UTC),
+                        }
+                    )
+                )
+            elif delivery.status == "applying" and delivery.candidate is not None:
+                if self._applier is None:
+                    self._save_failed(
+                        delivery,
+                        DeliveryStateConflictError("candidate applier is missing"),
+                        "APPLY_RECOVERY_FAILED",
+                    )
+                    continue
+                try:
+                    receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
+                    self._repository.save(
+                        delivery.model_copy(
+                            update={
+                                "status": "completed",
+                                "apply_receipt": receipt.model_copy(update={"recovered": True}),
+                                "updated_at": datetime.now(UTC),
+                            }
+                        )
+                    )
+                except Exception as error:
+                    self._save_failed(delivery, error, "APPLY_RECOVERY_FAILED")
+
+
+def _sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=lambda item: item.model_dump(mode="json"),
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _gate_record(
+    gate: GateSnapshot, decision: Literal["approve", "reject"] | None = None
+) -> GateRecord:
+    if gate.subject is None:
+        raise DeliveryStateConflictError("gate has no subject")
+    return GateRecord(
+        gate_id=gate.id,
+        subject_kind=gate.subject.kind,
+        artifact_id=gate.subject.artifact_id,
+        subject_sha256=gate.subject.sha256,
+        revision=gate.revision,
+        decision=decision,
+    )
+
+
+def _decide_gate(
+    record: GateRecord,
+    *,
+    decision: Literal["approve", "reject"],
+    expected_version: int,
+    expected_subject_sha256: str,
+) -> GateRecord:
+    snapshot = GateSnapshot(
+        id=record.gate_id,
+        subject_kind=record.subject_kind,
+        status=GateStatus.OPEN,
+        revision=record.revision,
+        subject=GateSubject(
+            kind=record.subject_kind,
+            artifact_id=record.artifact_id,
+            sha256=record.subject_sha256,
+        ),
+        plan_hash=record.subject_sha256,
+    )
+    try:
+        decided = decide_gate(
+            snapshot,
+            decision=decision,
+            expected_revision=expected_version,
+            expected_subject_hash=expected_subject_sha256,
+        )
+    except StaleGateDecision as error:
+        raise DeliveryVersionConflictError(record.gate_id) from error
+    return _gate_record(decided, decision)
