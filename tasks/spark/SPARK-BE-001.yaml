@@ -2,7 +2,7 @@ id: SPARK-BE-001
 title: 实现 AppSettings 模块化 HTTP Router
 model: gpt-5.3-codex-spark
 architecture_revision: f37f6036c6298d755111c2318d4de1c15276ee10
-base_revision: a01e91f95ecf8ad1959b79563ceae2954daa7b03
+base_revision: bc3b8a8199318a66a4dae6d53620a12bd42a4ab6
 kind: backend-crud
 
 allowed_paths:
@@ -30,8 +30,11 @@ acceptance:
   - Router 只做 HTTP 输入输出映射并调用 SettingsManager，不复制 CAS、硬限制或错误决策
   - 从 settings 包导出 create_settings_router；本任务不修改中央 api.py，集成由主架构线程完成
   - 新增公共接口测试，覆盖 GET、PATCH 成功和过期 expected_version 的 ProductError 传播
+  - 接口测试使用 httpx ASGITransport，不使用会产生 StarletteDeprecationWarning 的 TestClient
+  - 全部验证输出必须 WARN=0 且 skipped=0
   - 不新增依赖，不修改密码、权限、迁移、公共合同或其他模块
 
 verification:
+  - uv run --extra dev ruff check src/agent_team_os/modules/settings/http.py src/agent_team_os/modules/settings/__init__.py tests/test_settings_http.py
   - uv run --extra dev pytest tests/test_settings_http.py -q
   - uv run --extra dev mypy src
