@@ -47,7 +47,12 @@ from .modules.identity import (
     create_identity_router,
     ensure_same_origin,
 )
-from .modules.knowledge import KnowledgeActor, WikiService, create_wiki_router
+from .modules.knowledge import (
+    KnowledgeActor,
+    SystemKnowledgeArtifact,
+    WikiService,
+    create_wiki_router,
+)
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, latest_reports
@@ -221,7 +226,38 @@ def create_app(
             actor = getattr(request.state, "identity_user", None)
             if not isinstance(actor, User):
                 raise IdentityService.authentication_required()
-            return KnowledgeActor(user_id=actor.id, role=actor.role)
+            knowledge_actor = KnowledgeActor(user_id=actor.id, role=actor.role)
+            labels = {
+                "requirement": "需求",
+                "task": "任务",
+                "candidate": "候选变更",
+                "verification": "机器验证",
+                "plan-gate": "计划审批",
+                "candidate-gate": "候选审批",
+                "apply-receipt": "应用回执",
+            }
+            artifacts: list[SystemKnowledgeArtifact] = []
+            for delivery in coordinator.list():
+                values = (
+                    ("requirement", delivery.requirements),
+                    ("task", delivery.task),
+                    ("candidate", delivery.candidate),
+                    ("verification", delivery.verification),
+                    ("plan-gate", delivery.plan_gate),
+                    ("candidate-gate", delivery.candidate_gate),
+                    ("apply-receipt", delivery.apply_receipt),
+                )
+                artifacts.extend(
+                    SystemKnowledgeArtifact(
+                        source_id=f"{delivery.id}:{artifact_kind}",
+                        title=f"{delivery.user_request} · {labels[artifact_kind]}",
+                        content=artifact.model_dump(mode="json"),
+                    )
+                    for artifact_kind, artifact in values
+                    if artifact is not None
+                )
+            knowledge.sync_system_artifacts(knowledge_actor, tuple(artifacts))
+            return knowledge_actor
 
         def resolve_knowledge_mutation_actor(request: Request) -> KnowledgeActor:
             require_permission(request, Permission.WIKI_EDIT)

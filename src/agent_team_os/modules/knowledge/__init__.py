@@ -12,6 +12,7 @@ from .domain import (
     RevisionRestoreRequest,
     Space,
     SpaceCreate,
+    SystemKnowledgeArtifact,
     WikiAccess,
 )
 from .http import create_wiki_router
@@ -55,6 +56,7 @@ __all__ = [
     "SQLiteWikiRepository",
     "Space",
     "SpaceCreate",
+    "SystemKnowledgeArtifact",
     "WikiAccess",
     "WikiService",
     "create_wiki_router",

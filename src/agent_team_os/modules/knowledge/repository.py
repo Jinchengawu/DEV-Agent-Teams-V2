@@ -111,6 +111,14 @@ class SQLiteWikiRepository:
             ).fetchone()
         return None if row is None else self._document(row)
 
+    def get_document_by_source(self, source_kind: str, source_id: str) -> Document | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM wiki_documents WHERE source_kind=? AND source_id=?",
+                (source_kind, source_id),
+            ).fetchone()
+        return None if row is None else self._document(row)
+
     def list_documents(self, space_id: str | None = None) -> tuple[Document, ...]:
         with self._connect() as connection:
             if space_id is None:
