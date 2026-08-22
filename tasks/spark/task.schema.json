@@ -8,7 +8,7 @@
   "properties": {
     "id": {"type": "string", "pattern": "^SPARK-[A-Z0-9-]+$"},
     "title": {"type": "string", "minLength": 1},
-    "model": {"const": "gpt-5.3-codex-spark"},
+    "model": {"enum": ["gpt-5.3-codex-spark", "gpt-5.6-sol"]},
     "architecture_revision": {"type": "string", "minLength": 1},
     "base_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "kind": {"enum": ["frontend-component", "backend-crud", "test-expansion", "localization"]},
@@ -19,4 +19,3 @@
     "verification": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
   }
 }
-

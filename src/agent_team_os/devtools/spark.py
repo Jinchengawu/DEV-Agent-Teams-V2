@@ -15,6 +15,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SPARK_MODEL = "gpt-5.3-codex-spark"
+SOL_MODEL = "gpt-5.6-sol"
+SUPPORTED_WORKER_MODELS = frozenset({SPARK_MODEL, SOL_MODEL})
 METADATA_PATHS = ("tasks/spark/**", "reviews/spark/**")
 DEPENDENCY_FILES = {
     "pyproject.toml",
@@ -43,7 +45,7 @@ class SparkTask(BaseModel):
 
     id: str = Field(pattern=r"^SPARK-[A-Z0-9-]+$")
     title: str = Field(min_length=1)
-    model: Literal["gpt-5.3-codex-spark"]
+    model: Literal["gpt-5.3-codex-spark", "gpt-5.6-sol"]
     architecture_revision: str = Field(min_length=1)
     base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     kind: Literal["frontend-component", "backend-crud", "test-expansion", "localization"]
@@ -118,7 +120,7 @@ class SparkRunner:
             result = SparkResult(
                 task_id=task.id,
                 status="blocked" if error.code == "ARCHITECTURE_DECISION_REQUIRED" else "failed",
-                model=SPARK_MODEL,
+                model=task.model,
                 base_revision=task.base_revision,
                 error_code=error.code,
                 detail=error.detail,
@@ -127,10 +129,10 @@ class SparkRunner:
             result = SparkResult(
                 task_id=task.id,
                 status="failed",
-                model=SPARK_MODEL,
+                model=task.model,
                 base_revision=task.base_revision,
                 error_code="SPARK_TIMEOUT",
-                detail="Codex Spark exceeded the 900 second development limit",
+                detail=f"Codex worker {task.model} exceeded the 900 second development limit",
             )
         self._write_json(run_dir / "result.json", result.model_dump(mode="json"))
         return result
@@ -166,7 +168,7 @@ class SparkRunner:
                 status="blocked"
                 if error.code == "ARCHITECTURE_DECISION_REQUIRED"
                 else "failed",
-                model=SPARK_MODEL,
+                model=task.model,
                 base_revision=task.base_revision,
                 error_code=error.code,
                 detail=error.detail,
@@ -175,10 +177,10 @@ class SparkRunner:
             result = SparkResult(
                 task_id=task.id,
                 status="failed",
-                model=SPARK_MODEL,
+                model=task.model,
                 base_revision=task.base_revision,
                 error_code="SPARK_TIMEOUT",
-                detail="Codex Spark exceeded the 900 second repair limit",
+                detail=f"Codex worker {task.model} exceeded the 900 second repair limit",
             )
         self._write_json(run_dir / "result.json", result.model_dump(mode="json"))
         return result
@@ -249,8 +251,11 @@ class SparkRunner:
             self._git(self.root, "branch", "-D", branch)
 
     def _preflight(self, task: SparkTask) -> None:
-        if task.model != SPARK_MODEL:
-            raise SparkFailure("SPARK_MODEL_MISMATCH", "Model fallback is forbidden")
+        if task.model not in SUPPORTED_WORKER_MODELS:
+            raise SparkFailure(
+                "SPARK_MODEL_MISMATCH",
+                f"Unsupported implementation model {task.model}; model fallback is forbidden",
+            )
         if not shutil.which("codex"):
             raise SparkFailure("SPARK_MODEL_UNAVAILABLE", "Codex CLI is not installed")
         self._ensure_clean_main()
@@ -321,7 +326,7 @@ class SparkRunner:
     ) -> None:
         invocation = {
             "task_id": task.id,
-            "model": SPARK_MODEL,
+            "model": task.model,
             "base_revision": task.base_revision,
             "worktree": str(worktree),
             "sandbox": "workspace-write",
@@ -335,7 +340,7 @@ class SparkRunner:
             "codex",
             "exec",
             "--model",
-            SPARK_MODEL,
+            task.model,
             "--sandbox",
             "workspace-write",
             "--ephemeral",
@@ -385,7 +390,7 @@ class SparkRunner:
         return SparkResult(
             task_id=task.id,
             status="candidate",
-            model=SPARK_MODEL,
+            model=task.model,
             base_revision=task.base_revision,
             candidate_revision=candidate,
             changed_files=tuple(changed_files),
@@ -417,9 +422,10 @@ adapters, Git apply policy, concurrency or recovery behavior. Run only the liste
 
     def _repair_prompt(self, task: SparkTask, verification_log: str) -> str:
         return f"""Repair the existing implementation for this decision-complete task.
-You are still the exact Spark worker in the same isolated Worktree. Make only the smallest
-changes required to pass machine verification. Do not change architecture, contracts,
-dependencies or allowed scope. Run every verification command before the final response.
+You are still the exact manifest-selected Codex worker in the same isolated Worktree.
+Make only the smallest changes required to pass machine verification.
+Do not change architecture, contracts, dependencies or allowed scope.
+Run every verification command before the final response.
 
 Task manifest:
 {json.dumps(task.model_dump(mode="json"), ensure_ascii=False, indent=2)}
@@ -450,10 +456,11 @@ blocked/ARCHITECTURE_DECISION_REQUIRED. Do not commit, merge or push.
         ]
         if messages and _reports_architecture_block(messages[-1]):
             raise SparkFailure(
-                "ARCHITECTURE_DECISION_REQUIRED", "Spark reported a missing architecture decision"
+                "ARCHITECTURE_DECISION_REQUIRED",
+                f"Codex worker {task.model} reported a missing architecture decision",
             )
         invocation = json.loads((self.state_root / task.id / "invocation.json").read_text())
-        if invocation.get("model") != SPARK_MODEL:
+        if invocation.get("model") != task.model:
             raise SparkFailure("SPARK_IDENTITY_UNVERIFIED", "Invocation model identity changed")
 
     def _changed_files(self, worktree: Path) -> list[str]:

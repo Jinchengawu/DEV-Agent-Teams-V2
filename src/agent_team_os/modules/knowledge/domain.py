@@ -131,3 +131,11 @@ class PermissionGrant(BaseModel):
     resource_id: str
     user_id: str
     access: WikiAccess
+
+
+class SystemKnowledgeArtifact(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_id: str = Field(min_length=1, max_length=320)
+    title: str = Field(min_length=1, max_length=240)
+    content: JsonValue

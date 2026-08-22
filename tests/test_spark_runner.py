@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agent_team_os.devtools.spark import (
+    SOL_MODEL,
     SPARK_MODEL,
     SparkFailure,
     SparkRunner,
@@ -33,11 +34,33 @@ def task(**overrides: object) -> SparkTask:
     return SparkTask.model_validate(payload)
 
 
-def test_manifest_rejects_model_fallback_and_unsafe_paths() -> None:
+def test_manifest_accepts_explicit_supported_models_and_rejects_fallback() -> None:
+    assert task(model=SPARK_MODEL).model == SPARK_MODEL
+    assert task(model=SOL_MODEL).model == SOL_MODEL
     with pytest.raises(ValueError):
         task(model="gpt-5.3-codex")
+
+
+def test_manifest_rejects_unsafe_paths() -> None:
     with pytest.raises(ValueError):
         task(allowed_paths=["../outside/**"])
+
+
+def test_invocation_identity_must_match_manifest_model(tmp_path: Path) -> None:
+    runner = SparkRunner(tmp_path)
+    manifest = task(model=SOL_MODEL)
+    run_dir = tmp_path / ".agent-team-os" / "spark-runs" / manifest.id
+    run_dir.mkdir(parents=True)
+    (run_dir / "invocation.json").write_text(
+        '{"model":"gpt-5.3-codex-spark"}', encoding="utf-8"
+    )
+    events = tmp_path / "events.jsonl"
+    events.write_text('{"type":"turn.completed"}\n', encoding="utf-8")
+
+    with pytest.raises(SparkFailure) as failure:
+        runner._verify_event_stream(events, manifest)
+
+    assert failure.value.code == "SPARK_IDENTITY_UNVERIFIED"
 
 
 def test_scope_gate_rejects_dependency_and_architecture_changes(tmp_path: Path) -> None:

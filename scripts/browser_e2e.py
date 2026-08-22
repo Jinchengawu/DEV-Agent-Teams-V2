@@ -103,7 +103,13 @@ def main() -> None:
         page.get_by_role("link", name="证据").click()
         page.get_by_text("应用回执", exact=True).first.wait_for()
         page.get_by_role("link", name="知识中心").click()
-        page.get_by_label("搜索知识").fill("health")
+        try:
+            page.get_by_label("全文搜索").fill("health", timeout=15_000)
+        except Exception as error:
+            body = page.locator("body").inner_text()
+            raise AssertionError(
+                f"知识页未进入可交互状态：{body}\n控制台：{console_errors}"
+            ) from error
         page.get_by_text("需求", exact=False).first.wait_for(timeout=15_000)
         page.reload()
         page.wait_for_load_state("networkidle")

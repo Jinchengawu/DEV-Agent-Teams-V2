@@ -1,0 +1,52 @@
+id: SPARK-UI-002
+title: 实现本地版本化 Wiki 三栏交互页面
+model: gpt-5.3-codex-spark
+architecture_revision: 62fee2a82532cab85c3fde75e3fec944649f74e1
+base_revision: de0646889e5bce41b42d440ec834f13bdf135010
+kind: frontend-component
+
+allowed_paths:
+  - console/src/features/knowledge/KnowledgePage.tsx
+  - console/src/features/knowledge/KnowledgePage.test.tsx
+  - console/src/styles.css
+
+forbidden_paths:
+  - migrations/**
+  - src/**
+  - console/src/shared/api/generated/**
+  - console/src/shared/api/client.ts
+  - console/src/features/identity/**
+  - console/pnpm-lock.yaml
+  - console/package.json
+
+contracts:
+  - GET/POST /v1/wiki/spaces
+  - GET/POST /v1/wiki/documents
+  - GET/PATCH /v1/wiki/documents/{document_id}
+  - GET /v1/wiki/documents/{document_id}/revisions
+  - GET /v1/wiki/documents/{document_id}/revisions/{revision}
+  - POST /v1/wiki/documents/{document_id}/revisions/{revision}/restore
+  - GET/POST /v1/wiki/documents/{document_id}/comments
+  - PATCH /v1/wiki/comments/{comment_id}
+  - GET /v1/wiki/search
+  - Space/Document/Revision/Comment@v1 from generated OpenAPI
+
+acceptance:
+  - 完全移除 KnowledgePage 对旧 /v1/knowledge/* 接口和 KnowledgeDocument 类型的使用
+  - 所有 API 类型只能从 shared/api/generated/schema 引用，不手写传输合同
+  - 左栏展示真实知识空间、当前空间文档、全文搜索和可用的创建空间命令
+  - 中栏选中文档后必须根据 current_revision 请求真实 Revision，展示正文、修订号和内容 SHA-256
+  - 右栏提供创建文档、使用 expected_version 编辑标题与 Markdown 正文、版本列表、恢复历史版本、评论列表和添加评论
+  - 页面不自行修改版本号；每个修改成功后重新读取后端状态
+  - "内容使用 JSON {format: markdown, text: string} 传输；未知 JSON 以格式化只读内容展示"
+  - 只有真实 request 成功后才显示成功状态，禁止模拟文档、固定哈希或假评论
+  - 完整实现 Loading、Empty、Error、Conflict 和 Ready 中文状态；409 必须提示刷新后重试
+  - 所有可见文本使用中文；协议 ID、Revision 和 SHA-256 放入中文上下文
+  - 所有启用按钮必须连接真实 Command，不能使用 alert、console.log 或纯装饰交互
+  - 不得导入其他 Feature 内部实现，不得新增依赖或 JSX 内联 style
+  - 新增测试覆盖真实接口路径、选择文档后加载 Revision、空状态与 409 中文冲突提示
+  - 测试使用已有 Vitest、Testing Library 与 vi.stubGlobal 能力，禁止引入新测试库或 jest-dom 专用断言
+
+verification:
+  - cd console && node --max-old-space-size=384 ./node_modules/typescript/bin/tsc --noEmit
+  - cd console && pnpm exec vitest run src/features/knowledge --reporter=verbose --maxWorkers=1

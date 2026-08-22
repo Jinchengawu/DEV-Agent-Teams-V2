@@ -26,7 +26,7 @@ def _imports(path: Path) -> set[str]:
 
 
 def test_domain_modules_do_not_import_frameworks_or_infrastructure() -> None:
-    domain_files = sorted((ROOT / "src" / "agent_team_os" / "modules").glob("*/domain.py"))
+    domain_files = sorted((ROOT / "src" / "agent_team_os" / "modules").glob("**/*domain.py"))
     assert domain_files, "at least one golden domain module must exist"
     for path in domain_files:
         forbidden = _imports(path) & DOMAIN_FORBIDDEN
