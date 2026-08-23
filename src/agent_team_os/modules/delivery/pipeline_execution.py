@@ -23,6 +23,8 @@ from ...delivery import (
     _pipeline_node,
     _sha256,
 )
+from ...shared.hashes import sha256_json
+from ..agents import AgentRun, AgentRunLedger, ArtifactEnvelope
 from ..orchestration import PipelineCatalog, PipelineRevision, PipelineRunLedger
 
 
@@ -43,6 +45,7 @@ class PipelineExecutionModule:
         repository: DeliveryRepository,
         catalog: PipelineCatalog,
         runs: PipelineRunLedger,
+        agent_runs: AgentRunLedger | None = None,
     ) -> None:
         self._planning = planning
         self._executor = executor
@@ -51,6 +54,7 @@ class PipelineExecutionModule:
         self._repository = repository
         self._catalog = catalog
         self._runs = runs
+        self._agent_runs = agent_runs
 
     def start(self, delivery: DeliveryRun) -> None:
         revision = self._revision(delivery)
@@ -355,9 +359,39 @@ class PipelineExecutionModule:
             run.id, command="start", node_id=node_id, expected_version=run.version
         )
         delivery = self._get(delivery_id)
-        capabilities = self._capabilities(node)
-        activated: tuple[str, ...]
-        if "hermes-pm" in capabilities:
+        workflow_mode = str(node.get("workflow_mode", ""))
+        agent_run = self._start_agent_run(delivery, f"{node_id}.{self._slot(node)}")
+        try:
+            if workflow_mode == "agentscope.role-turn":
+                activated, artifact = await self._execute_role_projection(delivery, node)
+            elif workflow_mode == "code-delivery":
+                activated = await self._execute_code(delivery)
+                current = self._get(delivery.id)
+                artifact = current.candidate
+            else:
+                raise DeliveryStateConflictError(
+                    f"pipeline stage {node_id} has unsupported Workflow Mode"
+                )
+        except Exception:
+            self._finish_agent_run(agent_run, "failed")
+            raise
+        self._finish_agent_run(agent_run, "succeeded", artifact)
+        run = self._runs.get_for_delivery(delivery_id)
+        self._runs.transition(
+            run.id,
+            command="succeed",
+            node_id=node_id,
+            expected_version=run.version,
+            activated_conditions=activated,
+        )
+
+    async def _execute_role_projection(
+        self, delivery: DeliveryRun, node: dict[str, object]
+    ) -> tuple[tuple[str, ...], object]:
+        projection = node.get("output_validator")
+        if projection == "requirement-artifact-v1" or (
+            projection is None and delivery.requirements is None
+        ):
             requirements = await self._planning.analyze(delivery.user_request)
             self._repository.save(
                 delivery.model_copy(
@@ -368,11 +402,11 @@ class PipelineExecutionModule:
                     }
                 )
             )
-            activated = ("requirements-ready",)
-        elif "hermes-project-admin" in capabilities:
+            return ("requirements-ready",), requirements
+        if projection == "task-contract-v1" or projection is None:
             if delivery.requirements is None:
                 raise DeliveryStateConflictError(
-                    "project admin stage requires RequirementArtifact"
+                    "task projection requires RequirementArtifact"
                 )
             task = await self._planning.plan(delivery.requirements)
             self._repository.save(
@@ -384,21 +418,8 @@ class PipelineExecutionModule:
                     }
                 )
             )
-            activated = ("task-ready", "planning-complete")
-        elif "codex-backend" in capabilities:
-            activated = await self._execute_code(delivery)
-        else:
-            raise DeliveryStateConflictError(
-                f"pipeline stage {node_id} has no supported capability binding"
-            )
-        run = self._runs.get_for_delivery(delivery_id)
-        self._runs.transition(
-            run.id,
-            command="succeed",
-            node_id=node_id,
-            expected_version=run.version,
-            activated_conditions=activated,
-        )
+            return ("task-ready", "planning-complete"), task
+        raise DeliveryStateConflictError(f"unsupported Artifact projection: {projection}")
 
     async def _execute_code(self, delivery: DeliveryRun) -> tuple[str, ...]:
         if delivery.task is None:
@@ -549,7 +570,9 @@ class PipelineExecutionModule:
                         expected_version=run.version,
                     )
                     emitted.update(
-                        await self._execute_loop_capability(delivery_id, body_node)
+                        await self._execute_loop_capability(
+                            delivery_id, node_id, body_node_id, body_node
+                        )
                     )
                     run = self._runs.get_for_delivery(delivery_id)
                     self._runs.transition(
@@ -586,23 +609,31 @@ class PipelineExecutionModule:
                 return
 
     async def _execute_loop_capability(
-        self, delivery_id: str, node: dict[str, object]
+        self,
+        delivery_id: str,
+        loop_node_id: str,
+        body_node_id: str,
+        node: dict[str, object],
     ) -> tuple[str, ...]:
         delivery = self._get(delivery_id)
-        capabilities = self._capabilities(node)
-        if "hermes-pm" in capabilities:
-            requirements = await self._planning.analyze(delivery.user_request)
-            self._repository.save(delivery.model_copy(update={"requirements": requirements}))
-            return ("requirements-ready",)
-        if "hermes-project-admin" in capabilities and delivery.requirements is not None:
-            task = await self._planning.plan(delivery.requirements)
-            self._repository.save(delivery.model_copy(update={"task": task}))
-            return ("task-ready", "planning-complete")
-        if "codex-backend" in capabilities:
-            return await self._execute_code_loop_attempt(delivery)
-        raise DeliveryStateConflictError(
-            "LOOP body has no supported capability binding"
-        )
+        binding_site = f"{loop_node_id}/{body_node_id}.{self._slot(node)}"
+        agent_run = self._start_agent_run(delivery, binding_site)
+        try:
+            workflow_mode = str(node.get("workflow_mode", ""))
+            if workflow_mode == "agentscope.role-turn":
+                activated, artifact = await self._execute_role_projection(delivery, node)
+            elif workflow_mode == "code-delivery":
+                activated = await self._execute_code_loop_attempt(delivery)
+                artifact = self._get(delivery.id).candidate
+            else:
+                raise DeliveryStateConflictError(
+                    "LOOP body has unsupported Workflow Mode"
+                )
+        except Exception:
+            self._finish_agent_run(agent_run, "failed")
+            raise
+        self._finish_agent_run(agent_run, "succeeded", artifact)
+        return activated
 
     async def _execute_code_loop_attempt(
         self, delivery: DeliveryRun
@@ -663,9 +694,76 @@ class PipelineExecutionModule:
         return delivery
 
     @staticmethod
-    def _capabilities(node: dict[str, object]) -> set[object]:
+    def _slot(node: dict[str, object]) -> str:
         bindings = node.get("bindings")
-        return set(bindings.values()) if isinstance(bindings, dict) else set()
+        if not isinstance(bindings, dict) or len(bindings) != 1:
+            raise DeliveryStateConflictError(
+                "executable Stage requires exactly one binding slot"
+            )
+        return str(next(iter(bindings)))
+
+    def _start_agent_run(
+        self, delivery: DeliveryRun, binding_site: str
+    ) -> AgentRun | None:
+        if self._agent_runs is None:
+            return None
+        revision = self._revision(delivery)
+        snapshot = revision.resolved_provider_bindings.get(binding_site)
+        if snapshot is None:
+            if revision.binding_model == "legacy-v0":
+                return None
+            raise DeliveryStateConflictError(
+                f"resolved Provider binding missing for {binding_site}"
+            )
+        binding = snapshot.get("binding")
+        deployment = snapshot.get("deployment")
+        if not isinstance(binding, dict) or not isinstance(deployment, dict):
+            raise DeliveryStateConflictError(
+                f"resolved Provider binding is invalid for {binding_site}"
+            )
+        binding_hash = binding.get("binding_fingerprint")
+        if not isinstance(binding_hash, str):
+            raise DeliveryStateConflictError(
+                f"resolved Provider binding hash is missing for {binding_site}"
+            )
+        return self._agent_runs.start(
+            delivery_id=delivery.id,
+            pipeline_revision_id=delivery.pipeline_revision_id or "",
+            binding_site=binding_site,
+            resolved_binding_hash=binding_hash,
+            deployment_snapshot=deployment,
+            runtime_identity=(
+                str(snapshot["runtime_identity"])
+                if snapshot.get("runtime_identity") is not None
+                else None
+            ),
+        )
+
+    def _finish_agent_run(
+        self, run: AgentRun | None, status: str, artifact: object | None = None
+    ) -> None:
+        if run is None or self._agent_runs is None:
+            return
+        artifacts: tuple[ArtifactEnvelope, ...] = ()
+        if artifact is not None:
+            content = (
+                artifact.model_dump(mode="json")
+                if hasattr(artifact, "model_dump")
+                else {"value": str(artifact)}
+            )
+            contract_id = {
+                "RequirementArtifact": "requirement-artifact-v1",
+                "TaskContract": "task-contract-v1",
+                "CandidateChange": "candidate-change-v1",
+            }.get(type(artifact).__name__, "agent-output-v1")
+            artifacts = (
+                ArtifactEnvelope(
+                    contract_id=contract_id,
+                    content=content,
+                    sha256=sha256_json(content),
+                ),
+            )
+        self._agent_runs.finish(run, status=status, artifacts=artifacts)
 
     def _exit_condition_met(self, delivery_id: str, exit_condition: str) -> bool:
         delivery = self._get(delivery_id)

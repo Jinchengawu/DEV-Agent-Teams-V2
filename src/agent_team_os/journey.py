@@ -46,7 +46,11 @@ def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition
             "agentscope.role-turn": AgentScopeRoleTurnAdapter(),
             "code-delivery": CodeDeliveryWorkflowAdapter(),
         },
-        validators={"backend-candidate-v1": _ResolutionOnlyValidator()},
+        validators={
+            "requirement-artifact-v1": _ResolutionOnlyValidator(),
+            "task-contract-v1": _ResolutionOnlyValidator(),
+            "backend-candidate-v1": _ResolutionOnlyValidator(),
+        },
     )
     resolved = workflows.resolve_journey(definition)
     encoded = json.dumps(

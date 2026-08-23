@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dev-agent-teams-v2"
-version = "0.3.0"
+version = "0.3.1"
 description = "Agent-Team-OS delivery service built on ACWM, AgentScope, Hermes and Codex."
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-agent-capability-workflow-matrix = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git", rev = "8ccbdaa6c84563e62abd910af958bb8d5a53c711" }
+agent-capability-workflow-matrix = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git", rev = "65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d" }
 
 [project.optional-dependencies]
 live = [

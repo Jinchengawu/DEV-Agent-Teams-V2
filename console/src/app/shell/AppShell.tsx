@@ -18,7 +18,7 @@ export function AppShell() {
   const current = sections.find((section) => location.pathname.startsWith(section.path)) ?? sections[0];
   return <div className="app-shell">
     <aside className="main-sidebar">
-      <div className="brand"><span className="brand-mark"><Boxes size={20}/></span><div><b>Agent-Team-OS</b><small>交付控制平面 · V0.3.0</small></div></div>
+      <div className="brand"><span className="brand-mark"><Boxes size={20}/></span><div><b>Agent-Team-OS</b><small>交付控制平面 · V0.3.1</small></div></div>
       <nav>{sections.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
       <div className="system-state"><span className="pulse"/>{user.display_name}<small>{roleLabel(user.role)} · {user.username}</small><button className="text-button" onClick={logout} disabled={loggingOut}>{loggingOut ? "正在退出…" : "退出登录"}</button></div>
     </aside>

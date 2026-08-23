@@ -8,6 +8,7 @@ import {
   createGraphNode,
   parseDefinition,
   removeLoopBodyNode,
+  isDeploymentSelectable,
   setEdgeCondition,
 } from "./OrchestrationPage";
 
@@ -73,5 +74,16 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     expect(withGate.nodes).toHaveLength(2);
     expect(removed.nodes).toHaveLength(1);
     expect(removed.edges).toEqual([]);
+  });
+  it("只有 Profile 与 Provider 同时声明 Capability 时才允许分配", () => {
+    const deployment = {
+      enabled: true,
+      qualification_status: "qualified",
+      provider_id: "codex-cli-provider",
+      capability_requirements: [{ id: "frontend.implementation", version: ">=1,<2" }],
+    } as Parameters<typeof isDeploymentSelectable>[0];
+    const providers = new Set(["codex-cli-provider"]);
+    expect(isDeploymentSelectable(deployment, providers, "frontend.implementation")).toBe(true);
+    expect(isDeploymentSelectable(deployment, providers, "hermes-pm")).toBe(false);
   });
 });

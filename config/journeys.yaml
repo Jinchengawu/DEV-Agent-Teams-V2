@@ -8,10 +8,12 @@ journeys:
         id: requirements
         workflow_mode: agentscope.role-turn
         bindings: {actor: hermes-pm}
+        output_validator: requirement-artifact-v1
       - kind: stage
         id: tasking
         workflow_mode: agentscope.role-turn
         bindings: {actor: hermes-project-admin}
+        output_validator: task-contract-v1
       - kind: approval_gate
         id: approve-plan
         subject_kind: delivery-plan

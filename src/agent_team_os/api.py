@@ -38,8 +38,13 @@ from .delivery import (
     RuntimeBindingConflictError,
 )
 from .modules.agents import (
+    AgentDeploymentCatalog,
     AgentProfileCatalog,
+    AgentRun,
+    AgentRunLedger,
+    ProviderManifestCatalog,
     RuntimeAdapterDescriptor,
+    create_agent_deployment_router,
     create_agent_profile_router,
 )
 from .modules.board import BoardProjector, WorkItem
@@ -121,9 +126,12 @@ def create_app(
     pipeline_catalog: PipelineCatalog | None = None,
     pipeline_runs: PipelineRunLedger | None = None,
     agent_profiles: AgentProfileCatalog | None = None,
+    agent_deployments: AgentDeploymentCatalog | None = None,
+    provider_manifests: ProviderManifestCatalog | None = None,
+    agent_runs: AgentRunLedger | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
-        coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs)
+        coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs, agent_runs)
     app = FastAPI(
         title="Agent-Team-OS",
         version="0.3.1",
@@ -200,6 +208,33 @@ def create_app(
                 ),
             )
         )
+
+    if agent_deployments is not None and provider_manifests is not None:
+
+        def agent_deployment_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_agent_deployment_router(
+                agent_deployments,
+                provider_manifests,
+                actor_id=agent_deployment_actor_id,
+                authorize_manage=lambda request: require_permission(
+                    request, Permission.AGENT_DEPLOYMENT_MANAGE
+                ),
+            )
+        )
+
+    if agent_runs is not None:
+
+        @app.get(
+            "/v1/deliveries/{delivery_id}/agent-runs",
+            response_model=list[AgentRun],
+        )
+        def list_delivery_agent_runs(delivery_id: str) -> tuple[AgentRun, ...]:
+            coordinator.get(delivery_id)
+            return agent_runs.list(delivery_id)
 
     @app.exception_handler(ProductError)
     async def product_error_handler(_request: Request, error: ProductError) -> JSONResponse:
@@ -695,6 +730,11 @@ def create_app(
                     pipeline_revision.binding_snapshot
                     if pipeline_revision is not None
                     else None if revision is None else revision.binding_snapshot
+                ),
+                resolved_provider_bindings=(
+                    pipeline_revision.resolved_provider_bindings
+                    if pipeline_revision is not None
+                    else None
                 ),
                 resolved_journey_sha256=(
                     pipeline_revision.fingerprint

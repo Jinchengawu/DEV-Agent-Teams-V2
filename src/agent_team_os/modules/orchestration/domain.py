@@ -32,6 +32,7 @@ class PipelineDraft(BaseModel):
     definition: dict[str, object]
     layout: dict[str, object] = Field(default_factory=dict)
     input_schema: dict[str, object] = Field(default_factory=dict)
+    agent_assignments: dict[str, str] = Field(default_factory=dict)
     version: int = Field(default=1, ge=1)
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
     validation_errors: tuple[str, ...] = ()
@@ -48,6 +49,8 @@ class PipelineRevision(BaseModel):
     definition: dict[str, object]
     compiled_graph: dict[str, object]
     binding_snapshot: dict[str, dict[str, object]]
+    binding_model: Literal["legacy-v0", "provider-v1"] = "legacy-v0"
+    resolved_provider_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     published_by: str
     published_at: datetime = Field(default_factory=utc_now)
@@ -84,6 +87,7 @@ class PipelineCreate(BaseModel):
     definition: dict[str, object]
     layout: dict[str, object] = Field(default_factory=dict)
     input_schema: dict[str, object] = Field(default_factory=dict)
+    agent_assignments: dict[str, str] = Field(default_factory=dict)
 
 
 class PipelineDraftPatch(BaseModel):
@@ -94,6 +98,7 @@ class PipelineDraftPatch(BaseModel):
     definition: dict[str, object] | None = None
     layout: dict[str, object] | None = None
     input_schema: dict[str, object] | None = None
+    agent_assignments: dict[str, str] | None = None
 
 
 class PipelineWithDraft(BaseModel):

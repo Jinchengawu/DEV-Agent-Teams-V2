@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
+from typing import Literal
 
 from ...shared.errors import ProductError
 from ...shared.events import ProductEvent
@@ -22,6 +23,7 @@ from .ports import (
     PipelineGraphRuntime,
     PipelineRepository,
     PipelineRunRepository,
+    ProviderBindingResolver,
 )
 
 _COMMAND_EVENT_SUFFIX = {
@@ -169,11 +171,13 @@ class PipelineCatalog:
         *,
         graph_compiler: JourneyGraphCompiler | None = None,
         binding_resolver: CapabilityBindingResolver | None = None,
+        provider_binding_resolver: ProviderBindingResolver | None = None,
         definition_policy: PipelineDefinitionPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_compiler = graph_compiler
         self.binding_resolver = binding_resolver
+        self.provider_binding_resolver = provider_binding_resolver
         self.definition_policy = definition_policy
 
     def create_pipeline(
@@ -192,6 +196,7 @@ class PipelineCatalog:
             definition=request.definition,
             layout=request.layout,
             input_schema=request.input_schema,
+            agent_assignments=request.agent_assignments,
             created_by=created_by,
         )
         try:
@@ -243,6 +248,7 @@ class PipelineCatalog:
                         definition=request.definition,
                         layout=request.layout,
                         input_schema=request.input_schema,
+                        agent_assignments=request.agent_assignments,
                     ),
                 )
         validated = self.validate_draft(
@@ -279,6 +285,13 @@ class PipelineCatalog:
             errors = (str(error),)
         if self.definition_policy is not None:
             errors = (*errors, *self.definition_policy.validate(draft.definition))
+        if self.provider_binding_resolver is not None:
+            try:
+                self.provider_binding_resolver.snapshot(
+                    draft.definition, draft.agent_assignments
+                )
+            except ValueError as error:
+                errors = (*errors, str(error))
         updated = draft.model_copy(
             update={
                 "version": draft.version + 1,
@@ -322,14 +335,28 @@ class PipelineCatalog:
                 detail="当前草稿不能发布为不可变版本。",
                 repair="先执行 ACWM 图校验并修复全部错误。",
             )
-        if self.graph_compiler is None or self.binding_resolver is None:
+        if self.graph_compiler is None:
             raise RuntimeError("Pipeline publication adapters are not configured")
         compilation = self.graph_compiler.compile(draft.definition)
-        bindings = self.binding_resolver.snapshot(compilation.capability_ids)
+        binding_model: Literal["legacy-v0", "provider-v1"]
+        if self.provider_binding_resolver is not None:
+            resolved_provider_bindings = self.provider_binding_resolver.snapshot(
+                draft.definition, draft.agent_assignments
+            )
+            bindings: dict[str, dict[str, object]] = {}
+            binding_model = "provider-v1"
+        elif self.binding_resolver is not None:
+            bindings = self.binding_resolver.snapshot(compilation.capability_ids)
+            resolved_provider_bindings = {}
+            binding_model = "legacy-v0"
+        else:
+            raise RuntimeError("Pipeline publication binding adapter is not configured")
         return self.repository.publish(
             draft,
             compiled_graph=compilation.graph,
             binding_snapshot=bindings,
+            binding_model=binding_model,
+            resolved_provider_bindings=resolved_provider_bindings,
             fingerprint=compilation.fingerprint,
             published_by=published_by,
         )

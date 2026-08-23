@@ -4,6 +4,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from ...shared.events import ProductEvent
 from .domain import Pipeline, PipelineDraft, PipelineRevision, PipelineRunRecord
@@ -41,9 +42,10 @@ class SQLitePipelineRepository:
             )
             connection.execute(
                 """INSERT INTO pipeline_drafts(
-                id,pipeline_id,name,definition_json,layout_json,input_schema_json,version,
+                id,pipeline_id,name,definition_json,layout_json,input_schema_json,
+                agent_assignments_json,version,
                 validation_status,validation_errors_json,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     draft.id,
                     draft.pipeline_id,
@@ -51,6 +53,7 @@ class SQLitePipelineRepository:
                     _json(draft.definition),
                     _json(draft.layout),
                     _json(draft.input_schema),
+                    _json(draft.agent_assignments),
                     draft.version,
                     draft.validation_status,
                     _json(draft.validation_errors),
@@ -102,14 +105,17 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database) as connection:
             row = connection.execute(
                 """SELECT id,pipeline_id,name,definition_json,layout_json,input_schema_json,
-                version,validation_status,validation_errors_json,created_by,created_at,updated_at
+                agent_assignments_json,version,validation_status,validation_errors_json,
+                created_by,created_at,updated_at
                 FROM pipeline_drafts WHERE id=?""",
                 (draft_id,),
             ).fetchone()
         if row is None:
             raise KeyError(draft_id)
         values = dict(zip(_DRAFT_FIELDS, row, strict=True))
-        for field in ("definition", "layout", "input_schema", "validation_errors"):
+        for field in (
+            "definition", "layout", "input_schema", "agent_assignments", "validation_errors"
+        ):
             values[field] = json.loads(str(values[field]))
         return PipelineDraft.model_validate(values)
 
@@ -117,14 +123,17 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database) as connection:
             rows = connection.execute(
                 """SELECT id,pipeline_id,name,definition_json,layout_json,input_schema_json,
-                version,validation_status,validation_errors_json,created_by,created_at,updated_at
+                agent_assignments_json,version,validation_status,validation_errors_json,
+                created_by,created_at,updated_at
                 FROM pipeline_drafts WHERE pipeline_id=? ORDER BY updated_at DESC,id""",
                 (pipeline_id,),
             ).fetchall()
         drafts: list[PipelineDraft] = []
         for row in rows:
             values = dict(zip(_DRAFT_FIELDS, row, strict=True))
-            for field in ("definition", "layout", "input_schema", "validation_errors"):
+            for field in (
+                "definition", "layout", "input_schema", "agent_assignments", "validation_errors"
+            ):
                 values[field] = json.loads(str(values[field]))
             drafts.append(PipelineDraft.model_validate(values))
         return tuple(drafts)
@@ -150,7 +159,8 @@ class SQLitePipelineRepository:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 """UPDATE pipeline_drafts SET name=?,definition_json=?,layout_json=?,
-                input_schema_json=?,version=?,validation_status=?,validation_errors_json=?,
+                input_schema_json=?,agent_assignments_json=?,version=?,validation_status=?,
+                validation_errors_json=?,
                 updated_at=?
                 WHERE id=? AND version=?""",
                 (
@@ -158,6 +168,7 @@ class SQLitePipelineRepository:
                     _json(updated.definition),
                     _json(updated.layout),
                     _json(updated.input_schema),
+                    _json(updated.agent_assignments),
                     updated.version,
                     updated.validation_status,
                     _json(updated.validation_errors),
@@ -179,6 +190,8 @@ class SQLitePipelineRepository:
         *,
         compiled_graph: dict[str, object],
         binding_snapshot: dict[str, dict[str, object]],
+        binding_model: Literal["legacy-v0", "provider-v1"],
+        resolved_provider_bindings: dict[str, dict[str, object]],
         fingerprint: str,
         published_by: str,
     ) -> PipelineRevision:
@@ -201,19 +214,24 @@ class SQLitePipelineRepository:
                 definition=draft.definition,
                 compiled_graph=compiled_graph,
                 binding_snapshot=binding_snapshot,
+                binding_model=binding_model,
+                resolved_provider_bindings=resolved_provider_bindings,
                 fingerprint=fingerprint,
                 published_by=published_by,
             )
             connection.execute(
                 """INSERT INTO pipeline_revisions(
                 pipeline_id,revision,definition_json,compiled_graph_json,binding_snapshot_json,
-                fingerprint,published_by,published_at) VALUES(?,?,?,?,?,?,?,?)""",
+                binding_model,resolved_provider_bindings_json,fingerprint,published_by,published_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (
                     revision.pipeline_id,
                     revision.revision,
                     _json(revision.definition),
                     _json(revision.compiled_graph),
                     _json(revision.binding_snapshot),
+                    revision.binding_model,
+                    _json(revision.resolved_provider_bindings),
                     revision.fingerprint,
                     revision.published_by,
                     revision.published_at.isoformat(),
@@ -238,14 +256,17 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database) as connection:
             row = connection.execute(
                 """SELECT pipeline_id,revision,definition_json,compiled_graph_json,
-                binding_snapshot_json,fingerprint,published_by,published_at
+                binding_snapshot_json,binding_model,resolved_provider_bindings_json,
+                fingerprint,published_by,published_at
                 FROM pipeline_revisions WHERE pipeline_id=? AND revision=?""",
                 (pipeline_id, revision),
             ).fetchone()
         if row is None:
             raise KeyError(f"{pipeline_id}:{revision}")
         values = dict(zip(_REVISION_FIELDS, row, strict=True))
-        for field in ("definition", "compiled_graph", "binding_snapshot"):
+        for field in (
+            "definition", "compiled_graph", "binding_snapshot", "resolved_provider_bindings"
+        ):
             values[field] = json.loads(str(values[field]))
         return PipelineRevision.model_validate(values)
 
@@ -398,6 +419,7 @@ _DRAFT_FIELDS = (
     "definition",
     "layout",
     "input_schema",
+    "agent_assignments",
     "version",
     "validation_status",
     "validation_errors",
@@ -411,6 +433,8 @@ _REVISION_FIELDS = (
     "definition",
     "compiled_graph",
     "binding_snapshot",
+    "binding_model",
+    "resolved_provider_bindings",
     "fingerprint",
     "published_by",
     "published_at",

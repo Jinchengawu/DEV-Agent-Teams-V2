@@ -18,9 +18,8 @@ const instances = [
     health: { status: "ready", identity: "codex-cli", latency_ms: 4, error_code: null, checked_at: now }, created_at: now, updated_at: now,
   },
 ];
-const bindings = [
-  { capability_id: "codex-backend", instance_id: "codex-1", instance_version: 2, version: 3, updated_at: now },
-];
+const providers = [{ id: "codex-cli-provider", revision: "1", fingerprint: "a".repeat(64), runtime_types: ["codex-cli"], capabilities: [{ id: "codex-backend", version: "1.0.0" }], workflow_modes: ["code-delivery"], required_features: [], input_contracts: [], output_contracts: [], permission_requirements: [] }];
+const deployments = [{ id: "backend-codex", name: "后端 Codex 部署", profile_id: "backend-engineer", profile_revision: 1, profile_sha256: "b".repeat(64), capability_requirements: [{ id: "codex-backend", version: ">=1,<2" }], instance_id: "codex-1", instance_version: 2, adapter_id: "codex-cli", adapter_version: "1", provider_id: "codex-cli-provider", provider_revision: "1", provider_fingerprint: "a".repeat(64), isolation_mode: "shared", policy_snapshot: {}, qualification_status: "qualified", qualification_errors: [], enabled: true, version: 3, created_by: "admin", created_at: now, updated_at: now }];
 
 type FetchCall = { url: string; method: string; body?: string };
 const calls: FetchCall[] = [];
@@ -56,10 +55,9 @@ beforeEach(() => {
       });
     }
     if (call.url === "/v1/agent-profiles/frontend-engineer/draft" && call.method === "GET") return response({ profile_id: profileSpec.id, spec: profileSpec, version: 2, validation_status: "valid", validation_errors: [], updated_by: "admin", updated_at: now });
-    if (call.url === "/v1/capability-bindings" && call.method === "GET") return response(bindings);
-    if (call.url === "/v1/capability-bindings/codex-backend" && call.method === "PUT") {
-      return response({ ...bindings[0], instance_id: "codex-2", instance_version: 4, version: 4 });
-    }
+    if (call.url === "/v1/provider-manifests" && call.method === "GET") return response(providers);
+    if (call.url === "/v1/agent-deployments" && call.method === "GET") return response(deployments);
+    if (call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST") return response({ ...deployments[0], version: 4 });
     return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
   });
 });
@@ -71,25 +69,26 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><AgentsPage/></QueryClientProvider>);
 }
 
-describe("智能体实例与能力绑定", () => {
-  test("读取真实实例和绑定快照", async () => {
+describe("智能体角色、部署与运行实例", () => {
+  test("读取真实实例和 Deployment 快照", async () => {
     renderPage();
     await screen.findByRole("heading", { name: "Codex 主执行器" });
-    expect(screen.getByText("能力绑定")).toBeTruthy();
-    expect(calls.some((call) => call.url === "/v1/capability-bindings")).toBe(true);
+    await screen.findByRole("heading", { name: "后端 Codex 部署" });
+    expect(screen.getByText("Agent 部署")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "后端 Codex 部署" })).toBeTruthy();
+    expect(calls.some((call) => call.url === "/v1/agent-deployments")).toBe(true);
   });
 
-  test("保存绑定时携带当前 CAS 版本", async () => {
+  test("资格检查携带 Deployment 当前 CAS 版本", async () => {
     renderPage();
-    const card = (await screen.findByRole("heading", { name: "后端代码交付" })).closest("article");
+    const card = (await screen.findByRole("heading", { name: "后端 Codex 部署" })).closest("article");
     expect(card).not.toBeNull();
     const controls = within(card!);
-    await userEvent.selectOptions(controls.getByRole("combobox", { name: "为 后端代码交付 选择实例" }), "codex-2");
-    await userEvent.click(controls.getByRole("button", { name: "保存能力绑定" }));
+    await userEvent.click(controls.getByRole("button", { name: "资格检查" }));
 
-    await waitFor(() => expect(calls.some((call) => call.url === "/v1/capability-bindings/codex-backend" && call.method === "PUT")).toBe(true));
-    const saved = calls.find((call) => call.url === "/v1/capability-bindings/codex-backend" && call.method === "PUT");
-    expect(JSON.parse(saved?.body ?? "{}")).toEqual({ instance_id: "codex-2", expected_version: 3 });
+    await waitFor(() => expect(calls.some((call) => call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST")).toBe(true));
+    const checked = calls.find((call) => call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST");
+    expect(JSON.parse(checked?.body ?? "{}")).toEqual({ expected_version: 3 });
   });
 
   test("Hermes 实例必须显式填写连接端点，不能使用硬编码地址", async () => {

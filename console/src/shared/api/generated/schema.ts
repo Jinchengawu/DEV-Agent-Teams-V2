@@ -142,6 +142,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/provider-manifests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Provider Manifests */
+        get: operations["list_provider_manifests_v1_provider_manifests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/provider-manifests/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Provider Manifest */
+        get: operations["get_provider_manifest_v1_provider_manifests__provider_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-deployments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deployments */
+        get: operations["list_deployments_v1_agent_deployments_get"];
+        put?: never;
+        /** Create Deployment */
+        post: operations["create_deployment_v1_agent_deployments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-deployments/{deployment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deployment */
+        get: operations["get_deployment_v1_agent_deployments__deployment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Deployment */
+        patch: operations["patch_deployment_v1_agent_deployments__deployment_id__patch"];
+        trace?: never;
+    };
+    "/v1/agent-deployments/{deployment_id}/qualify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Qualify Deployment */
+        post: operations["qualify_deployment_v1_agent_deployments__deployment_id__qualify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-deployments/{deployment_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Deployment */
+        post: operations["enable_deployment_v1_agent_deployments__deployment_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/agent-deployments/{deployment_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Deployment */
+        post: operations["disable_deployment_v1_agent_deployments__deployment_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/deliveries/{delivery_id}/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Delivery Agent Runs */
+        get: operations["list_delivery_agent_runs_v1_deliveries__delivery_id__agent_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/readiness": {
         parameters: {
             query?: never;
@@ -1160,6 +1298,112 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** AgentDeployment */
+        AgentDeployment: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /** Profile Sha256 */
+            profile_sha256: string;
+            /** Capability Requirements */
+            capability_requirements: components["schemas"]["AgentCapabilityRequirement"][];
+            /** Instance Id */
+            instance_id: string;
+            /** Instance Version */
+            instance_version: number;
+            /** Adapter Id */
+            adapter_id: string;
+            /** Adapter Version */
+            adapter_version: string;
+            /** Provider Id */
+            provider_id: string;
+            /** Provider Revision */
+            provider_revision: string;
+            /** Provider Fingerprint */
+            provider_fingerprint: string;
+            /**
+             * Isolation Mode
+             * @enum {string}
+             */
+            isolation_mode: "shared" | "dedicated";
+            /** Policy Snapshot */
+            policy_snapshot: {
+                [key: string]: string;
+            };
+            /**
+             * Qualification Status
+             * @default unknown
+             * @enum {string}
+             */
+            qualification_status: "unknown" | "qualified" | "failed";
+            /**
+             * Qualification Errors
+             * @default []
+             */
+            qualification_errors: string[];
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** AgentDeploymentCreate */
+        AgentDeploymentCreate: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Profile Id */
+            profile_id: string;
+            /** Profile Revision */
+            profile_revision: number;
+            /** Instance Id */
+            instance_id: string;
+            /** Provider Id */
+            provider_id: string;
+        };
+        /** AgentDeploymentPatch */
+        AgentDeploymentPatch: {
+            /** Expected Version */
+            expected_version: number;
+            /** Name */
+            name?: string | null;
+            /** Profile Id */
+            profile_id?: string | null;
+            /** Profile Revision */
+            profile_revision?: number | null;
+            /** Instance Id */
+            instance_id?: string | null;
+            /** Provider Id */
+            provider_id?: string | null;
+        };
+        /** AgentDeploymentVersionRequest */
+        AgentDeploymentVersionRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
         /** AgentInstance */
         AgentInstance: {
             /** Id */
@@ -1402,6 +1646,44 @@ export interface components {
             profile: components["schemas"]["AgentProfile"];
             draft: components["schemas"]["AgentProfileDraft"];
         };
+        /** AgentRun */
+        AgentRun: {
+            /** Id */
+            id?: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Binding Site */
+            binding_site: string;
+            /** Resolved Binding Hash */
+            resolved_binding_hash: string;
+            /** Deployment Snapshot */
+            deployment_snapshot: {
+                [key: string]: unknown;
+            };
+            /** Attempt Id */
+            attempt_id: string;
+            /** Runtime Identity */
+            runtime_identity?: string | null;
+            /** Status */
+            status: string;
+            /**
+             * Artifact Envelopes
+             * @default []
+             */
+            artifact_envelopes: components["schemas"]["ArtifactEnvelope"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
         /** AgentSpecExport */
         AgentSpecExport: {
             /**
@@ -1511,6 +1793,19 @@ export interface components {
              * @default false
              */
             recovered: boolean;
+        };
+        /** ArtifactEnvelope */
+        ArtifactEnvelope: {
+            /** Id */
+            id?: string;
+            /** Contract Id */
+            contract_id: string;
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
         };
         /** BindingRequest */
         BindingRequest: {
@@ -1691,6 +1986,12 @@ export interface components {
             journey_revision_id?: string | null;
             /** Journey Binding Snapshot */
             journey_binding_snapshot?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Resolved Provider Bindings */
+            resolved_provider_bindings?: {
                 [key: string]: {
                     [key: string]: unknown;
                 };
@@ -2144,6 +2445,10 @@ export interface components {
             input_schema?: {
                 [key: string]: unknown;
             };
+            /** Agent Assignments */
+            agent_assignments?: {
+                [key: string]: string;
+            };
         };
         /** PipelineDraft */
         PipelineDraft: {
@@ -2164,6 +2469,10 @@ export interface components {
             /** Input Schema */
             input_schema?: {
                 [key: string]: unknown;
+            };
+            /** Agent Assignments */
+            agent_assignments?: {
+                [key: string]: string;
             };
             /**
              * Version
@@ -2212,6 +2521,10 @@ export interface components {
             input_schema?: {
                 [key: string]: unknown;
             } | null;
+            /** Agent Assignments */
+            agent_assignments?: {
+                [key: string]: string;
+            } | null;
         };
         /** PipelineRevision */
         PipelineRevision: {
@@ -2229,6 +2542,18 @@ export interface components {
             };
             /** Binding Snapshot */
             binding_snapshot: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /**
+             * Binding Model
+             * @default legacy-v0
+             * @enum {string}
+             */
+            binding_model: "legacy-v0" | "provider-v1";
+            /** Resolved Provider Bindings */
+            resolved_provider_bindings?: {
                 [key: string]: {
                     [key: string]: unknown;
                 };
@@ -2327,6 +2652,44 @@ export interface components {
              * Format: date-time
              */
             occurred_at?: string;
+        };
+        /** ProviderManifestView */
+        ProviderManifestView: {
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: string;
+            /** Fingerprint */
+            fingerprint: string;
+            /** Runtime Types */
+            runtime_types: string[];
+            /** Capabilities */
+            capabilities: {
+                [key: string]: string;
+            }[];
+            /** Workflow Modes */
+            workflow_modes: string[];
+            /** Required Features */
+            required_features: string[];
+            /**
+             * Input Contracts
+             * @default []
+             */
+            input_contracts: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Output Contracts
+             * @default []
+             */
+            output_contracts: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Permission Requirements
+             * @default []
+             */
+            permission_requirements: string[];
         };
         /** RequirementArtifact */
         RequirementArtifact: {
@@ -3159,6 +3522,600 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentSpecExport"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_provider_manifests_v1_provider_manifests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderManifestView"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_provider_manifest_v1_provider_manifests__provider_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderManifestView"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_deployments_v1_agent_deployments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_deployment_v1_agent_deployments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDeploymentCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_deployment_v1_agent_deployments__deployment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    patch_deployment_v1_agent_deployments__deployment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDeploymentPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    qualify_deployment_v1_agent_deployments__deployment_id__qualify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDeploymentVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    enable_deployment_v1_agent_deployments__deployment_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDeploymentVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    disable_deployment_v1_agent_deployments__deployment_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deployment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDeploymentVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_delivery_agent_runs_v1_deliveries__delivery_id__agent_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRun"][];
                 };
             };
             /** @description 目标资源不存在 */

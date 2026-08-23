@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Literal, Protocol
 
 from ...shared.events import ProductEvent
 from .domain import (
@@ -19,6 +19,14 @@ class JourneyGraphCompiler(Protocol):
 class CapabilityBindingResolver(Protocol):
     def snapshot(
         self, capability_ids: tuple[str, ...]
+    ) -> dict[str, dict[str, object]]: ...
+
+
+class ProviderBindingResolver(Protocol):
+    def snapshot(
+        self,
+        definition: dict[str, object],
+        assignments: dict[str, str],
     ) -> dict[str, dict[str, object]]: ...
 
 
@@ -78,6 +86,8 @@ class PipelineRepository(Protocol):
         *,
         compiled_graph: dict[str, object],
         binding_snapshot: dict[str, dict[str, object]],
+        binding_model: Literal["legacy-v0", "provider-v1"],
+        resolved_provider_bindings: dict[str, dict[str, object]],
         fingerprint: str,
         published_by: str,
     ) -> PipelineRevision: ...

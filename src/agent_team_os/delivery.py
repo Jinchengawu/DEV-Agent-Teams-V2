@@ -16,12 +16,14 @@ from acwm.domain import (
     GateSnapshot,
     GateStatus,
     GateSubject,
+    ResolvedProviderBinding,
     StaleGateDecision,
     decide_gate,
     open_gate,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+from .modules.agents import AgentRunLedger
 from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
@@ -120,6 +122,7 @@ class DeliveryRun(ImmutableModel):
     resolved_pipeline_sha256: Sha256 | None = None
     journey_revision_id: str | None = None
     journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
+    resolved_provider_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
     resolved_journey_sha256: Sha256 | None
     error_code: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -367,7 +370,10 @@ class DeliveryCoordinator:
         self._pipeline_execution: PipelineExecution | None = None
 
     def configure_pipeline_runtime(
-        self, catalog: PipelineCatalog, runs: PipelineRunLedger
+        self,
+        catalog: PipelineCatalog,
+        runs: PipelineRunLedger,
+        agent_runs: AgentRunLedger | None = None,
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
         from .modules.delivery import PipelineExecutionModule
@@ -380,6 +386,7 @@ class DeliveryCoordinator:
             repository=self._repository,
             catalog=catalog,
             runs=runs,
+            agent_runs=agent_runs,
         )
 
     def enqueue(
@@ -391,19 +398,24 @@ class DeliveryCoordinator:
         pipeline_revision_id: str | None = None,
         pipeline_run_id: str | None = None,
         journey_binding_snapshot: dict[str, dict[str, object]] | None = None,
+        resolved_provider_bindings: dict[str, dict[str, object]] | None = None,
         resolved_journey_sha256: str | None = None,
         resolved_pipeline_sha256: str | None = None,
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
         binding_snapshot = journey_binding_snapshot or {}
+        provider_bindings = resolved_provider_bindings or {}
         resolved_pipeline_run_id = (
             pipeline_run_id
             if pipeline_revision_id is None or pipeline_run_id is not None
             else str(uuid4())
         )
         if journey_revision_id is not None or pipeline_revision_id is not None:
-            self._validate_runtime_bindings(binding_snapshot)
+            if provider_bindings:
+                self._validate_provider_bindings(provider_bindings)
+            else:
+                self._validate_runtime_bindings(binding_snapshot)
         delivery = DeliveryRun(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -421,6 +433,7 @@ class DeliveryCoordinator:
             ),
             journey_revision_id=journey_revision_id,
             journey_binding_snapshot=binding_snapshot,
+            resolved_provider_bindings=provider_bindings,
             resolved_journey_sha256=journey_hash,
         )
         self._repository.save(delivery)
@@ -482,6 +495,25 @@ class DeliveryCoordinator:
                     capability_id,
                     expected_identity,
                     actual_identity if isinstance(actual_identity, str) else None,
+                )
+
+    def _validate_provider_bindings(
+        self, snapshot: dict[str, dict[str, object]]
+    ) -> None:
+        for site, value in snapshot.items():
+            binding = value.get("binding")
+            deployment = value.get("deployment")
+            if not isinstance(binding, dict) or not isinstance(deployment, dict):
+                raise RuntimeBindingConflictError(site, "resolved-provider-binding", None)
+            try:
+                resolved = ResolvedProviderBinding.model_validate(binding)
+            except ValueError as error:
+                raise RuntimeBindingConflictError(
+                    site, "valid-resolved-provider-binding", None
+                ) from error
+            if not resolved.verify() or not deployment.get("enabled"):
+                raise RuntimeBindingConflictError(
+                    site, "verified-enabled-provider-binding", None
                 )
 
     async def _plan_queued(self, delivery: DeliveryRun) -> None:
