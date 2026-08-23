@@ -25,7 +25,7 @@ export function AgentsPage() {
   const [runtime, setRuntime] = useState<RuntimeType>("codex-cli");
   const [credentialRef, setCredentialRef] = useState("");
   const create = useMutation({
-    mutationFn: () => request<Instance>("/v1/agent-instances", { method: "POST", body: JSON.stringify({ name, runtime_type: runtime, connection: runtime === "codex-cli" ? { command: "codex" } : { endpoint: "http://127.0.0.1:9000" }, credential_ref: credentialRef || null, features: runtime === "codex-cli" ? ["cwd-binding", "workspace-write", "structured-output"] : ["role-turn", "structured-output"] }) }),
+    mutationFn: () => request<Instance>("/v1/agent-instances", { method: "POST", body: JSON.stringify({ name, runtime_type: runtime, connection: runtime === "codex-cli" ? { command: "codex" } : { endpoint: "http://127.0.0.1:9000" }, credential_ref: credentialRef || null }) }),
     onSuccess: async () => { setName(""); setCredentialRef(""); await client.invalidateQueries({ queryKey: ["agents"] }); },
   });
   const health = useMutation({ mutationFn: (id: string) => request<Instance>(`/v1/agent-instances/${id}/health-check`, { method: "POST" }), onSuccess: () => client.invalidateQueries({ queryKey: ["agents"] }) });
@@ -64,6 +64,6 @@ function CapabilityBindingEditor({ capability, binding, instances, pending, onBi
 
 function isCompatible(capabilityId: string, instance: Instance) {
   if (!instance.enabled || instance.health?.status !== "ready") return false;
-  if (capabilityId === "codex-backend") return instance.runtime_type === "codex-cli" && instance.features.includes("cwd-binding");
-  return instance.features.includes("structured-output") || instance.features.includes("text-final");
+  if (capabilityId === "codex-backend") return instance.runtime_type === "codex-cli" && instance.features.includes("workspace.cwd_binding");
+  return instance.features.includes("io.text.final");
 }

@@ -11,6 +11,7 @@ from agent_team_os.api import create_app
 from agent_team_os.control_plane import ControlPlaneService
 from agent_team_os.delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from agent_team_os.infrastructure.database import MigrationRunner
+from agent_team_os.modules.agents import AgentProfileCatalog, SQLiteAgentProfileRepository
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
 from agent_team_os.modules.knowledge import SQLiteWikiRepository, WikiService
@@ -42,6 +43,7 @@ def main() -> None:
             identity=IdentityService(SQLiteIdentityRepository(database)),
             knowledge=WikiService(SQLiteWikiRepository(database)),
             pipeline_catalog=PipelineCatalog(SQLitePipelineRepository(database)),
+            agent_profiles=AgentProfileCatalog(SQLiteAgentProfileRepository(database)),
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

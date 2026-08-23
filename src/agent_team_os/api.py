@@ -37,6 +37,11 @@ from .delivery import (
     PlanningServiceError,
     RuntimeBindingConflictError,
 )
+from .modules.agents import (
+    AgentProfileCatalog,
+    RuntimeAdapterDescriptor,
+    create_agent_profile_router,
+)
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
 from .modules.identity import (
@@ -115,12 +120,13 @@ def create_app(
     provider_knowledge: ProviderKnowledgeManager | None = None,
     pipeline_catalog: PipelineCatalog | None = None,
     pipeline_runs: PipelineRunLedger | None = None,
+    agent_profiles: AgentProfileCatalog | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
         coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs)
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.3.0",
+        version="0.3.1",
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},
@@ -175,6 +181,25 @@ def create_app(
 
     def get_coordinator() -> DeliveryCoordinator:
         return coordinator
+
+    if agent_profiles is not None:
+
+        def agent_profile_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_agent_profile_router(
+                agent_profiles,
+                actor_id=agent_profile_actor_id,
+                authorize_edit=lambda request: require_permission(
+                    request, Permission.AGENT_PROFILE_EDIT
+                ),
+                authorize_publish=lambda request: require_permission(
+                    request, Permission.AGENT_PROFILE_PUBLISH
+                ),
+            )
+        )
 
     @app.exception_handler(ProductError)
     async def product_error_handler(_request: Request, error: ProductError) -> JSONResponse:
@@ -350,6 +375,10 @@ def create_app(
                 raise HTTPException(status_code=404, detail="evidence not found") from error
 
     if control_plane is not None:
+
+        @app.get("/v1/runtime-adapters", response_model=list[RuntimeAdapterDescriptor])
+        def list_runtime_adapters() -> tuple[RuntimeAdapterDescriptor, ...]:
+            return control_plane.list_runtime_adapters()
 
         @app.post("/v1/agent-instances", response_model=AgentInstance, status_code=201)
         def create_agent_instance(

@@ -39,6 +39,7 @@ from .journey import (
     load_backend_delivery_definition,
     resolve_backend_delivery_fingerprint,
 )
+from .modules.agents import AgentProfileCatalog, SQLiteAgentProfileRepository
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
@@ -185,6 +186,7 @@ def build_preview_app() -> FastAPI:
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
         ),
+        agent_profiles=AgentProfileCatalog(SQLiteAgentProfileRepository(database)),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 

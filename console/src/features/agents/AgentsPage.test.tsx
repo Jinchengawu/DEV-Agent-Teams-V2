@@ -9,12 +9,12 @@ const now = "2026-08-23T00:00:00Z";
 const instances = [
   {
     id: "codex-1", name: "Codex 主执行器", runtime_type: "codex-cli", connection: { command: "codex" }, credential_ref: null,
-    features: ["cwd-binding", "workspace-write", "structured-output"], enabled: true, version: 2,
+    features: ["io.text.final", "workspace.cwd_binding"], enabled: true, version: 2,
     health: { status: "ready", identity: "codex-cli", latency_ms: 3, error_code: null, checked_at: now }, created_at: now, updated_at: now,
   },
   {
     id: "codex-2", name: "Codex 候选执行器", runtime_type: "codex-cli", connection: { command: "codex" }, credential_ref: null,
-    features: ["cwd-binding", "workspace-write", "structured-output"], enabled: true, version: 4,
+    features: ["io.text.final", "workspace.cwd_binding"], enabled: true, version: 4,
     health: { status: "ready", identity: "codex-cli", latency_ms: 4, error_code: null, checked_at: now }, created_at: now, updated_at: now,
   },
 ];
