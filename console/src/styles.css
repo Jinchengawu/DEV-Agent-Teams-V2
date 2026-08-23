@@ -48,3 +48,4 @@
 .comment-item p{margin:0;white-space:pre-wrap}
 .comment-meta{color:var(--muted);font-size:9px}
 .comment-item small{color:var(--blue);font-size:8px}
+.profiles-panel{grid-column:1/-1}.profile-workbench{display:grid;grid-template-columns:minmax(260px,.65fr) 1.35fr;gap:14px}.profile-list{display:grid;align-content:start;gap:7px}.profile-list>button{text-align:left;display:grid;gap:5px;padding:11px;background:#091722;border:1px solid var(--line);color:var(--ink)}.profile-list>button.selected{border-color:var(--blue);background:#102536}.profile-list small{color:var(--muted)}.profile-editor textarea{min-height:74px}@media(max-width:900px){.profile-workbench{grid-template-columns:1fr}}

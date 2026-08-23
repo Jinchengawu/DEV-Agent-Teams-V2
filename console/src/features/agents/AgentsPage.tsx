@@ -6,6 +6,7 @@ import { request } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { identityLabel, runtimeTypeLabel } from "../../i18n";
+import { AgentProfilesPanel } from "./AgentProfilesPanel";
 
 type Instance = components["schemas"]["AgentInstance"];
 type RuntimeType = Instance["runtime_type"];
@@ -41,6 +42,7 @@ export function AgentsPage() {
   const currentBindings = bindings.data ?? [];
 
   return <div className="agents-layout">
+    <AgentProfilesPanel/>
     <section className="panel"><div className="panel-head"><span>运行实例</span><small>{registered.length} 个已注册</small></div><div className="instance-grid">{registered.map((item) => {
       const currentHealth = item.health ?? { status: "unknown" as const };
       return <article key={item.id}><div className="instance-icon"><Bot size={20}/></div><div className="instance-main"><div><span className="eyebrow">{runtimeTypeLabel(item.runtime_type)}</span><h3>{item.name}</h3></div><StatusBadge value={item.enabled ? currentHealth.status : "cancelled"}/><dl><dt>运行身份</dt><dd>{identityLabel(currentHealth.identity ?? undefined)}</dd><dt>能力特征</dt><dd>{item.features.join(" · ") || "未声明"}</dd><dt>配置版本</dt><dd>{item.version}</dd><dt>凭据</dt><dd>{item.credential_ref || "不需要凭据引用"}</dd></dl><div className="row-actions"><button onClick={() => health.mutate(item.id)}><Activity size={14}/>健康检查</button><button onClick={() => toggle.mutate(item)}>{item.enabled ? "禁用新运行" : "重新启用"}</button></div></div></article>;
