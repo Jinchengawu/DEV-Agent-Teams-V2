@@ -1,4 +1,5 @@
 from .application import AgentProfileCatalog
+from .bootstrap import ensure_builtin_agent_deployments
 from .deployment_application import AgentDeploymentCatalog
 from .deployment_domain import (
     AgentDeployment,
@@ -61,4 +62,5 @@ __all__ = [
     "RuntimeAdapterCatalog",
     "RuntimeAdapterDescriptor",
     "create_agent_profile_router",
+    "ensure_builtin_agent_deployments",
 ]

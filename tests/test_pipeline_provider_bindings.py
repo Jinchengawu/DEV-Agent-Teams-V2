@@ -18,6 +18,7 @@ from agent_team_os.modules.agents import (
     ProviderManifestCatalog,
     SQLiteAgentDeploymentRepository,
     SQLiteAgentProfileRepository,
+    ensure_builtin_agent_deployments,
 )
 from agent_team_os.modules.delivery import BackendDeliveryPipelinePolicy
 from agent_team_os.modules.orchestration import (
@@ -27,7 +28,6 @@ from agent_team_os.modules.orchestration import (
     SQLitePipelineRepository,
     SQLitePipelineRunRepository,
 )
-from agent_team_os.preview import _ensure_builtin_agent_deployments
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
 
@@ -45,7 +45,7 @@ def _catalog(tmp_path: Path) -> tuple[PipelineCatalog, dict[str, str]]:
     deployments = AgentDeploymentCatalog(
         SQLiteAgentDeploymentRepository(database), profiles, instances, providers
     )
-    assignments = _ensure_builtin_agent_deployments(profiles, deployments)
+    assignments = ensure_builtin_agent_deployments(profiles, deployments)
     return (
         PipelineCatalog(
             SQLitePipelineRepository(database),

@@ -15,12 +15,22 @@ from .git_sandbox import GitSandbox
 from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
+    AgentDeploymentBindingResolver,
     ControlPlaneBindingResolver,
 )
 from .infrastructure.database import MigrationRunner
 from .journey import (
     load_backend_delivery_definition,
     resolve_backend_delivery_fingerprint,
+)
+from .modules.agents import (
+    AgentDeploymentCatalog,
+    AgentProfileCatalog,
+    AgentRunLedger,
+    ProviderManifestCatalog,
+    SQLiteAgentDeploymentRepository,
+    SQLiteAgentProfileRepository,
+    ensure_builtin_agent_deployments,
 )
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
@@ -80,11 +90,25 @@ def build_gate_app() -> FastAPI:
         planning_identity="deterministic-test",
         execution_identity="deterministic-model-boundary",
     )
+    agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
+    provider_manifests = ProviderManifestCatalog()
+    agent_deployments = AgentDeploymentCatalog(
+        SQLiteAgentDeploymentRepository(database),
+        agent_profiles,
+        control_plane,
+        provider_manifests,
+    )
+    builtin_assignments = ensure_builtin_agent_deployments(
+        agent_profiles, agent_deployments
+    )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
         graph_compiler=ACWMGraphCompiler(),
         binding_resolver=ControlPlaneBindingResolver(
             control_plane.get_binding, control_plane.get_instance
+        ),
+        provider_binding_resolver=AgentDeploymentBindingResolver(
+            agent_deployments, provider_manifests
         ),
         definition_policy=BackendDeliveryPipelinePolicy(),
     )
@@ -94,6 +118,7 @@ def build_gate_app() -> FastAPI:
             name="内置后端交付闭环",
             description="需求、计划审批、代码交付、候选审批与原子应用",
             definition=load_backend_delivery_definition(project_root / "config"),
+            agent_assignments=builtin_assignments,
         ),
         actor_id="system",
     )
@@ -108,6 +133,10 @@ def build_gate_app() -> FastAPI:
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
         ),
+        agent_profiles=agent_profiles,
+        agent_deployments=agent_deployments,
+        provider_manifests=provider_manifests,
+        agent_runs=AgentRunLedger(database),
     )
     install_preview_ui(result, project_root / "console" / "dist")
     return result
