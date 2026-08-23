@@ -99,7 +99,10 @@ def build_gate_app() -> FastAPI:
         provider_manifests,
     )
     builtin_assignments = ensure_builtin_agent_deployments(
-        agent_profiles, agent_deployments
+        agent_profiles,
+        agent_deployments,
+        planning_instance_id="builtin:deterministic-test",
+        execution_instance_id="builtin:deterministic-model-boundary",
     )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),

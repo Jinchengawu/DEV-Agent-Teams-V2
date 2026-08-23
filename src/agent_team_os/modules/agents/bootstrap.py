@@ -11,6 +11,9 @@ from .domain import AgentProfileCreate, AgentProfileSpec
 def ensure_builtin_agent_deployments(
     profiles: AgentProfileCatalog,
     deployments: AgentDeploymentCatalog,
+    *,
+    planning_instance_id: str = "builtin:codex-simulated-hermes",
+    execution_instance_id: str = "builtin:codex-cli",
 ) -> dict[str, str]:
     """Create immutable built-ins and return canonical Pipeline assignments."""
     policies = {
@@ -25,14 +28,14 @@ def ensure_builtin_agent_deployments(
             "builtin-planning-agent",
             "内置规划 Agent",
             ("hermes-pm", "hermes-project-admin"),
-            "builtin:codex-simulated-hermes",
+            planning_instance_id,
             "builtin-planning-deployment",
         ),
         (
             "builtin-backend-agent",
             "内置后端交付 Agent",
             ("codex-backend",),
-            "builtin:codex-cli",
+            execution_instance_id,
             "builtin-backend-deployment",
         ),
     )
