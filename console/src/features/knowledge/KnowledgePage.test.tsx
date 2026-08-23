@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { KnowledgePage } from "./KnowledgePage";
@@ -111,6 +111,74 @@ describe("知识空间三栏页", () => {
       ).toBeGreaterThan(0),
     );
     await screen.findByText(/内容 SHA-256/);
+  });
+
+  test("创建文档后在列表重新验证前保持选中并读取当前修订", async () => {
+    const createdDocument: Doc = {
+      id: "doc-2",
+      space_id: "space-1",
+      title: "新建协议文档",
+      current_revision: 1,
+      version: 1,
+    };
+    const createdRevision: Revision = {
+      document_id: "doc-2",
+      revision: 1,
+      content: { format: "markdown", text: "# 新建内容" },
+      content_sha256: "b".repeat(64),
+      created_at: "2026-08-03T00:00:00Z",
+    };
+    const createdComment: Comment = {
+      id: "comment-2",
+      document_id: "doc-2",
+      body: "待处理评论",
+      author_id: "ops",
+      resolved: false,
+      version: 1,
+      created_at: "2026-08-03T00:00:00Z",
+      updated_at: "2026-08-03T00:00:00Z",
+    };
+    let documentListRequestCount = 0;
+    let resolveRevalidation!: (response: Response) => void;
+    const pendingRevalidation = new Promise<Response>((resolve) => {
+      resolveRevalidation = resolve;
+    });
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      fetchCalls.push({ url, method });
+
+      if (url === "/v1/wiki/documents?space_id=space-1") {
+        documentListRequestCount += 1;
+        return documentListRequestCount === 1 ? jsonResponse(documents) : pendingRevalidation;
+      }
+      if (url === "/v1/wiki/documents" && method === "POST") return jsonResponse(createdDocument);
+      if (url === "/v1/wiki/documents/doc-2/revisions/1") return jsonResponse(createdRevision);
+      if (url === "/v1/wiki/documents/doc-2/revisions") return jsonResponse([createdRevision]);
+      if (url === "/v1/wiki/documents/doc-2/comments") return jsonResponse([createdComment]);
+      return route(url, method);
+    });
+
+    const view = renderKnowledge();
+    const page = within(view.container);
+    await page.findByRole("button", { name: "文档 设计说明文档" });
+    await userEvent.type(page.getByPlaceholderText("文档标题"), createdDocument.title);
+    await userEvent.type(page.getByPlaceholderText("使用 Markdown 正文"), "# 新建内容");
+    await userEvent.click(page.getByRole("button", { name: "创建文档" }));
+
+    const createdDocumentButton = await page.findByRole("button", { name: `文档 ${createdDocument.title}` });
+    expect(createdDocumentButton.className).toContain("selected");
+    await waitFor(() =>
+      expect(fetchCalls.some((call) => call.url === "/v1/wiki/documents/doc-2/revisions/1")).toBe(true),
+    );
+    await page.findByRole("heading", { name: createdDocument.title });
+    await page.findByText("修订 1");
+    await page.findByText(/\u5904\u7406\u72b6\u6001 \u672a\u89e3\u6790/);
+    expect(page.queryByText(/resolved/)).toBeNull();
+
+    resolveRevalidation(jsonResponse(documents));
   });
 
   test("空状态展示可见中文提示", async () => {

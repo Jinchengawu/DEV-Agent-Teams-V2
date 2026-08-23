@@ -1,8 +1,8 @@
 id: SPARK-UI-003
 title: 修复 Wiki 新建选中态与中文协议文案
-model: gpt-5.3-codex-spark
+model: gpt-5.6-sol
 architecture_revision: 62fee2a82532cab85c3fde75e3fec944649f74e1
-base_revision: 0c13b5cf39330b76938ba2e65d28d4598757c3ed
+base_revision: 9f1ba186cd6c2f7db3d3256064e7f217a57fc61f
 kind: frontend-component
 
 allowed_paths:

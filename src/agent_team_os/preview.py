@@ -33,7 +33,7 @@ from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import SQLiteWikiRepository, WikiService
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
-from .release import run_gate
+from .release import combined_gate_status, run_gate
 from .ui import install_preview_ui
 
 
@@ -176,7 +176,13 @@ def main() -> None:
                 )
                 reports.append(report)
                 print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False))
-            return 0 if all(report.status == "passed" for report in reports) else 1
+            if command == "release":
+                combined = combined_gate_status(
+                    {report.kind: report for report in reports}
+                )
+                print(json.dumps(combined.model_dump(mode="json"), ensure_ascii=False))
+                return 0 if combined.status == "passed" else 1
+            return 0 if reports[0].status == "passed" else 1
 
         raise SystemExit(asyncio.run(execute_gates()))
     readiness = CodexPreviewReadiness().inspect()

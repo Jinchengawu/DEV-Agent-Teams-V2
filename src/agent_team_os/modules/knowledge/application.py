@@ -98,41 +98,20 @@ class WikiService:
     ) -> tuple[Document, ...]:
         if not artifacts:
             return ()
-        space = self.repository.get_space(self.SYSTEM_SPACE_ID)
-        if space is None:
-            now = self.clock.now()
-            space = self.repository.create_space(
-                Space(
-                    id=self.SYSTEM_SPACE_ID,
-                    name="交付证据归档",
-                    description="由交付闭环自动生成的不可人工覆盖知识。",
-                    version=1,
-                    created_by=actor.user_id,
-                    created_at=now,
-                    updated_at=now,
-                )
+        now = self.clock.now()
+        space = self.repository.ensure_system_space(
+            Space(
+                id=self.SYSTEM_SPACE_ID,
+                name="交付证据归档",
+                description="由交付闭环自动生成的不可人工覆盖知识。",
+                version=1,
+                created_by=actor.user_id,
+                created_at=now,
+                updated_at=now,
             )
+        )
         synced: list[Document] = []
         for artifact in artifacts:
-            existing = self.repository.get_document_by_source(
-                "delivery-evidence", artifact.source_id
-            )
-            if existing is not None:
-                revision = self.repository.get_revision(
-                    existing.id, existing.current_revision
-                )
-                if revision is None or revision.content_sha256 != sha256_json(
-                    artifact.content
-                ):
-                    raise ProductError(
-                        code="WIKI_SYSTEM_SOURCE_CONFLICT",
-                        title="系统知识来源冲突",
-                        detail="同一交付产物标识对应了不同内容。",
-                        repair="检查交付审计链，不要覆盖已归档证据。",
-                        status_code=409,
-                    )
-                synced.append(existing)
-                continue
             now = self.clock.now()
             document = Document(
                 id=new_id(),
@@ -147,7 +126,22 @@ class WikiService:
                 updated_at=now,
             )
             revision = self._revision(document, 1, artifact.content, actor.user_id)
-            synced.append(self.repository.create_document(document, revision))
+            persisted = self.repository.ensure_system_document(document, revision)
+            persisted_revision = self.repository.get_revision(
+                persisted.id, persisted.current_revision
+            )
+            if (
+                persisted_revision is None
+                or persisted_revision.content_sha256 != revision.content_sha256
+            ):
+                raise ProductError(
+                    code="WIKI_SYSTEM_SOURCE_CONFLICT",
+                    title="系统知识来源冲突",
+                    detail="同一交付产物标识对应了不同内容。",
+                    repair="检查交付审计链，不要覆盖已归档证据。",
+                    status_code=409,
+                )
+            synced.append(persisted)
         return tuple(synced)
 
     def list_documents(

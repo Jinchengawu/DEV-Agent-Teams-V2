@@ -3,7 +3,6 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -36,6 +35,7 @@ from .delivery import (
     DeliveryStateConflictError,
     DeliveryVersionConflictError,
     PlanningServiceError,
+    RuntimeBindingConflictError,
 )
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
@@ -49,13 +49,15 @@ from .modules.identity import (
 )
 from .modules.knowledge import (
     KnowledgeActor,
+    ProviderKnowledgeManager,
     SystemKnowledgeArtifact,
     WikiService,
+    create_provider_knowledge_router,
     create_wiki_router,
 )
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
-from .release import GateReport, latest_reports
+from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
 from .shared.errors import ProblemDetail, ProductError
 from .shared.events import ProductEvent
 from .shared.ids import new_id
@@ -103,6 +105,7 @@ def create_app(
     settings: SettingsManager | None = None,
     identity: IdentityService | None = None,
     knowledge: WikiService | None = None,
+    provider_knowledge: ProviderKnowledgeManager | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Agent-Team-OS",
@@ -270,6 +273,14 @@ def create_app(
                 mutation_actor=resolve_knowledge_mutation_actor,
             )
         )
+        if provider_knowledge is not None:
+            app.include_router(
+                create_provider_knowledge_router(
+                    provider_knowledge,
+                    read_actor=resolve_knowledge_actor,
+                    mutation_actor=resolve_knowledge_mutation_actor,
+                )
+            )
 
     if evidence is not None:
 
@@ -366,6 +377,10 @@ def create_app(
                 return control_plane.get_binding(capability_id)
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="binding not found") from error
+
+        @app.get("/v1/capability-bindings", response_model=list[CapabilityBinding])
+        def list_capability_bindings() -> tuple[CapabilityBinding, ...]:
+            return control_plane.list_bindings()
 
         @app.post("/v1/journey-drafts", response_model=JourneyDraft, status_code=201)
         def create_journey_draft(
@@ -574,6 +589,16 @@ def create_app(
             raise HTTPException(
                 status_code=502, detail="planning service returned invalid output"
             ) from error
+        except RuntimeBindingConflictError as error:
+            raise ProductError(
+                code="DELIVERY_RUNTIME_BINDING_MISMATCH",
+                title="运行实例与已发布绑定不匹配",
+                detail=(
+                    f"能力 {error.capability_id} 绑定身份为 "
+                    f"{error.actual or '未提供'}，当前运行时仅配置了 {error.expected}。"
+                ),
+                repair="重新绑定已接入的运行实例，并发布新的 Journey Revision。",
+            ) from error
         except DeliveryStateConflictError as error:
             raise HTTPException(status_code=409, detail="active delivery conflict") from error
 
@@ -670,8 +695,8 @@ def create_app(
         except (DeliveryVersionConflictError, DeliveryStateConflictError) as error:
             raise HTTPException(status_code=409, detail="delivery conflict") from error
 
-    @app.get("/v1/release-gates/latest")
-    def get_latest_release_gates() -> dict[str, object]:
+    @app.get("/v1/release-gates/latest", response_model=LatestGateReports)
+    def get_latest_release_gates() -> LatestGateReports:
         found: dict[str, GateReport | None] = (
             latest_reports(reports)
             if reports is not None
@@ -680,7 +705,7 @@ def create_app(
                 "live": None,
             }
         )
-        return {**found, "combined": _combined_gate_status(found)}
+        return LatestGateReports(**found, combined=combined_gate_status(found))
 
     @app.get("/v1/release-gates/history", response_model=list[GateReport])
     def get_release_gate_history() -> list[GateReport]:
@@ -749,25 +774,3 @@ def _http_problem(status_code: int) -> tuple[str, str, str, str]:
             "刷新页面并检查运行状态后重试。",
         ),
     )
-
-
-def _combined_gate_status(found: dict[str, GateReport | None]) -> dict[str, str]:
-    deterministic = found["deterministic"]
-    live = found["live"]
-    if deterministic is None or live is None:
-        return {"status": "unknown", "reason": "gate report missing"}
-    if datetime.now(UTC) - deterministic.created_at > timedelta(hours=24) or datetime.now(
-        UTC
-    ) - live.created_at > timedelta(hours=24):
-        return {"status": "unknown", "reason": "gate report expired"}
-    if (
-        deterministic.dev_revision != live.dev_revision
-        or deterministic.acwm_revision != live.acwm_revision
-    ):
-        return {"status": "failed", "reason": "revision mismatch"}
-    if any(
-        report.status != "passed" or report.fail or report.warn or report.skipped
-        for report in (deterministic, live)
-    ):
-        return {"status": "failed", "reason": "gate evidence is not clean"}
-    return {"status": "passed", "reason": "both release gates passed"}

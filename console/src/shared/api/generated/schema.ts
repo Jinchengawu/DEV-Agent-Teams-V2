@@ -454,6 +454,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/capability-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Capability Bindings */
+        get: operations["list_capability_bindings_v1_capability_bindings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/journey-drafts": {
         parameters: {
             query?: never;
@@ -1075,6 +1092,18 @@ export interface components {
              */
             updated_at?: string;
         };
+        /** CombinedGateStatus */
+        CombinedGateStatus: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unknown" | "failed" | "passed";
+            /** Code */
+            code: string;
+            /** Reason */
+            reason: string;
+        };
         /** Comment */
         Comment: {
             /** Id */
@@ -1286,10 +1315,16 @@ export interface components {
         };
         /** GateReport */
         GateReport: {
-            /** Kind */
-            kind: string;
-            /** Status */
-            status: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "deterministic" | "live";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed";
             /** Fail */
             fail: number;
             /** Warn */
@@ -1322,6 +1357,11 @@ export interface components {
              * @default false
              */
             browser_e2e: boolean;
+            /**
+             * Browser Restart Recovery
+             * @default false
+             */
+            browser_restart_recovery: boolean;
             /** Error */
             error?: string | null;
         };
@@ -1482,6 +1522,12 @@ export interface components {
             media_type: "text/plain" | "text/markdown" | "application/json";
             /** Content */
             content: string;
+        };
+        /** LatestGateReports */
+        LatestGateReports: {
+            deterministic: components["schemas"]["GateReport"] | null;
+            live: components["schemas"]["GateReport"] | null;
+            combined: components["schemas"]["CombinedGateStatus"];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -3818,6 +3864,62 @@ export interface operations {
             };
         };
     };
+    list_capability_bindings_v1_capability_bindings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapabilityBinding"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_journey_drafts_v1_journey_drafts_get: {
         parameters: {
             query?: never;
@@ -5126,9 +5228,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["LatestGateReports"];
                 };
             };
             /** @description 目标资源不存在 */

@@ -115,5 +115,8 @@ uv run --extra live agent-team-os release
 ```
 
 Both JSON and Markdown reports include DEV/ACWM revisions, Candidate Revision, Diff SHA-256,
-verification exit code, identities and an evidence hash. `/v1/release-gates/latest` reports
-`unknown` or `failed` when evidence is missing, older than 24 hours, dirty, or revision-mismatched.
+verification exit code, identities and an evidence hash. The `release` command returns success only
+when both gates are clean and refer to the same DEV and ACWM revisions. The Settings page and
+`/v1/release-gates/latest` report `unknown` or `failed` when the newest evidence is missing, corrupt,
+older than 24 hours, hash-invalid, identity-invalid, incomplete, or revision-mismatched. The
+deterministic report must also prove the full browser loop and process-restart recovery.

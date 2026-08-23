@@ -21,6 +21,12 @@ receipt. A successful label is never evidence by itself.
 - **Work Item**: a rebuildable Board projection of a Delivery. It never owns Delivery state.
 - **Wiki Document**: user-authored, versioned knowledge. It is distinct from immutable delivery
   evidence even when both are searchable.
+- **Knowledge Provider Binding**: a versioned local link to one external collaborative knowledge
+  space. It stores provider identifiers and credential references, never credential values.
+- **Provider Snapshot**: an immutable, normalized and content-addressed local observation of one
+  external knowledge document at a recorded Provider Revision.
+- **Provider Sync Run**: the auditable command result that links a Binding, source, Provider
+  Revision, Snapshot hash and stable failure state.
 - **Agent Instance**: a deployable Hermes or Codex runtime registration containing references to
   credentials, never credential values.
 
@@ -41,4 +47,3 @@ receipt. A successful label is never evidence by itself.
 - A Board move expresses a command; it cannot write a terminal state directly.
 - Published Journey Revisions and Evidence Records are immutable.
 - Secrets are represented only by environment or system credential references.
-

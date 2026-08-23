@@ -1,0 +1,20 @@
+{
+  "task_id": "SPARK-UI-003",
+  "base_revision": "9f1ba186cd6c2f7db3d3256064e7f217a57fc61f",
+  "candidate_revision": "70d1ece553fc25e2df4e815acff3db5638900d5a",
+  "model": "gpt-5.6-sol",
+  "changed_files": [
+    "console/src/features/knowledge/KnowledgePage.test.tsx",
+    "console/src/features/knowledge/KnowledgePage.tsx"
+  ],
+  "verification": {
+    "task_gate": "2 commands passed, 5 knowledge tests passed, 0 warning, 0 skipped",
+    "full_frontend": "13 tests passed with one Worker, TypeScript passed, production build passed"
+  },
+  "review_observations": [
+    "The project default 300 MB full-test command was terminated with exit 137 before reporting assertions; the identical full suite passed at a 512 MB Node memory limit."
+  ],
+  "architecture_deviations": [],
+  "decision": "accept",
+  "reason": "创建成功先将真实后端 Document 写入精确 Query Cache，再切换选中态和触发重新验证；新增测试冻结旧列表请求并证明新文档仍被选中且开始读取真实 Revision。候选仅修改两个允许文件，未改变公共合同、依赖、样式或领域规则，用户可见协议词已补全中文上下文。"
+}

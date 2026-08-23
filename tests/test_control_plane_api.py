@@ -76,7 +76,7 @@ def test_agent_instance_updates_use_cas_and_disabled_instances_cannot_be_bound(
         healthy = client.post(f"/v1/agent-instances/{instance['id']}/health-check").json()
         stale = client.patch(
             f"/v1/agent-instances/{instance['id']}",
-            json={"expected_version": 1, "enabled": False},
+            json={"expected_version": 2, "enabled": False},
         )
         disabled = client.patch(
             f"/v1/agent-instances/{instance['id']}",
@@ -88,6 +88,7 @@ def test_agent_instance_updates_use_cas_and_disabled_instances_cannot_be_bound(
         )
 
     assert stale.status_code == 409
+    assert healthy["version"] == instance["version"]
     assert disabled.status_code == 200
     assert disabled.json()["enabled"] is False
     assert disabled.json()["version"] == healthy["version"] + 1
@@ -120,6 +121,12 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
             },
             {
                 "kind": "stage",
+                "id": "tasking",
+                "workflow_mode": "agentscope.role-turn",
+                "bindings": {"actor": "hermes-project-admin"},
+            },
+            {
+                "kind": "stage",
                 "id": "delivery",
                 "workflow_mode": "code-delivery",
                 "bindings": {"developer": "codex-backend"},
@@ -149,6 +156,12 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
             )
             assert bound.status_code == 200
 
+        admin_bound = client.put(
+            "/v1/capability-bindings/hermes-project-admin",
+            json={"instance_id": instances["hermes-pm"], "expected_version": 0},
+        )
+        assert admin_bound.status_code == 200
+
         draft = client.post(
             "/v1/journey-drafts",
             json={"name": "Backend delivery", "definition": definition, "layout": {}},
@@ -162,6 +175,15 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
         revision = client.get("/v1/journeys/backend-delivery/revisions/1")
         drafts = client.get("/v1/journey-drafts")
         journeys = client.get("/v1/journeys")
+        bindings = client.get("/v1/capability-bindings")
+        incompatible_delivery = client.post(
+            "/v1/deliveries",
+            json={
+                "workspace_id": "backend-demo",
+                "user_request": "Must use a configured runtime adapter",
+                "journey_revision_id": "backend-delivery:1",
+            },
+        )
         executor = next(
             item
             for item in client.get("/v1/agent-instances").json()
@@ -191,6 +213,16 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
     assert revision.json() == published.json()
     assert drafts.json()[0]["id"] == draft["id"]
     assert journeys.json()[0]["journey_id"] == "backend-delivery"
+    assert [item["capability_id"] for item in bindings.json()] == [
+        "codex-backend",
+        "hermes-pm",
+        "hermes-project-admin",
+    ]
+    assert incompatible_delivery.status_code == 409
+    assert (
+        incompatible_delivery.json()["code"]
+        == "DELIVERY_RUNTIME_BINDING_MISMATCH"
+    )
     assert blocked_delivery.status_code == 409
 
 
@@ -201,8 +233,8 @@ def test_delivery_pins_the_requested_published_journey_revision(tmp_path: Path) 
         config_root=Path(__file__).parents[1] / "config",
     )
     revision = service.import_builtin_journey(
-        planning_identity="codex-simulated-hermes",
-        execution_identity="codex-cli",
+        planning_identity="deterministic-test",
+        execution_identity="deterministic-test",
     )
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(), executor=DeterministicCodeExecutor()
@@ -227,7 +259,10 @@ def test_delivery_pins_the_requested_published_journey_revision(tmp_path: Path) 
 
     assert created.status_code == 202
     assert created.json()["journey_revision_id"] == "backend-delivery:1"
-    assert created.json()["journey_binding_snapshot"]["codex-backend"]["identity"] == "codex-cli"
+    assert (
+        created.json()["journey_binding_snapshot"]["codex-backend"]["identity"]
+        == "deterministic-test"
+    )
     assert created.json()["resolved_journey_sha256"] == revision.fingerprint
     assert missing.status_code == 404
 

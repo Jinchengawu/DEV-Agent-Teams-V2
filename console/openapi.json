@@ -2536,6 +2536,68 @@
         }
       }
     },
+    "/v1/capability-bindings": {
+      "get": {
+        "summary": "List Capability Bindings",
+        "operationId": "list_capability_bindings_v1_capability_bindings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CapabilityBinding"
+                  },
+                  "type": "array",
+                  "title": "Response List Capability Bindings V1 Capability Bindings Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/journey-drafts": {
       "get": {
         "summary": "List Journey Drafts",
@@ -4084,9 +4146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Get Latest Release Gates V1 Release Gates Latest Get"
+                  "$ref": "#/components/schemas/LatestGateReports"
                 }
               }
             }
@@ -4851,6 +4911,35 @@
         ],
         "title": "CapabilityBinding"
       },
+      "CombinedGateStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "failed",
+              "passed"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "reason"
+        ],
+        "title": "CombinedGateStatus"
+      },
       "Comment": {
         "properties": {
           "id": {
@@ -5530,10 +5619,18 @@
         "properties": {
           "kind": {
             "type": "string",
+            "enum": [
+              "deterministic",
+              "live"
+            ],
             "title": "Kind"
           },
           "status": {
             "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
             "title": "Status"
           },
           "fail": {
@@ -5555,6 +5652,7 @@
           },
           "dev_revision": {
             "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
             "title": "Dev Revision"
           },
           "acwm_revision": {
@@ -5572,7 +5670,8 @@
           "candidate_revision": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
               },
               {
                 "type": "null"
@@ -5583,7 +5682,8 @@
           "diff_sha256": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
               },
               {
                 "type": "null"
@@ -5604,11 +5704,17 @@
           },
           "evidence_sha256": {
             "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
             "title": "Evidence Sha256"
           },
           "browser_e2e": {
             "type": "boolean",
             "title": "Browser E2E",
+            "default": false
+          },
+          "browser_restart_recovery": {
+            "type": "boolean",
+            "title": "Browser Restart Recovery",
             "default": false
           },
           "error": {
@@ -5978,6 +6084,41 @@
           "content"
         ],
         "title": "KnowledgeDocumentCreate"
+      },
+      "LatestGateReports": {
+        "properties": {
+          "deterministic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "combined": {
+            "$ref": "#/components/schemas/CombinedGateStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "deterministic",
+          "live",
+          "combined"
+        ],
+        "title": "LatestGateReports"
       },
       "LoginRequest": {
         "properties": {

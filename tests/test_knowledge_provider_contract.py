@@ -31,6 +31,7 @@ class DeterministicProvider:
             ProviderNode(
                 external_id=f"doc-{actor.provider_user_id}",
                 external_space_id=external_space_id,
+                source_id=f"source-{actor.provider_user_id}",
                 title="可验证文档",
                 kind=ProviderNodeKind.DOCUMENT,
                 provider_revision="rev-1",
@@ -54,7 +55,8 @@ def _exercise_provider(provider: KnowledgeProvider) -> ProviderSnapshot:
     actor = ProviderActor(product_user_id="user-1", provider_user_id="feishu-user-1")
     space = provider.list_spaces(actor)[0]
     node = provider.list_nodes(actor, space.external_id)[0]
-    return provider.fetch_snapshot(actor, node.external_id)
+    assert node.source_id is not None
+    return provider.fetch_snapshot(actor, node.source_id)
 
 
 def test_provider_port_preserves_external_identity_and_verified_snapshot() -> None:
@@ -124,7 +126,9 @@ def test_sync_terminal_states_require_traceable_evidence() -> None:
         source_id="doc-1",
         status=ProviderSyncStatus.SUCCEEDED,
         provider_revision="rev-1",
+        snapshot_id="snapshot-1",
         snapshot_sha256="a" * 64,
+        started_at=completed_at,
         completed_at=completed_at,
     )
     assert succeeded.completed_at == completed_at

@@ -64,6 +64,7 @@ class ProviderBinding(BaseModel):
     credential_ref: str
     enabled: bool
     version: int = Field(ge=1)
+    created_by: str
     created_at: datetime
     updated_at: datetime
 
@@ -85,10 +86,17 @@ class ProviderNode(BaseModel):
     external_id: str
     external_space_id: str
     parent_external_id: str | None = None
+    source_id: str | None = None
     title: str
     kind: ProviderNodeKind
     provider_revision: str | None = None
     updated_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def document_must_reference_fetchable_source(self) -> ProviderNode:
+        if self.kind == ProviderNodeKind.DOCUMENT and self.source_id is None:
+            raise ValueError("文档节点必须关联可抓取的内容源")
+        return self
 
 
 class ProviderSnapshot(BaseModel):
@@ -111,6 +119,15 @@ class ProviderSnapshot(BaseModel):
         return self
 
 
+class ProviderSnapshotRecord(ProviderSnapshot):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    binding_id: str
+    fetched_by_product_user_id: str
+    fetched_by_provider_user_id: str
+
+
 class ProviderSyncRun(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -119,6 +136,7 @@ class ProviderSyncRun(BaseModel):
     source_id: str
     status: ProviderSyncStatus
     provider_revision: str | None = None
+    snapshot_id: str | None = None
     snapshot_sha256: Sha256 | None = None
     error_code: str | None = None
     started_at: datetime | None = None
@@ -128,6 +146,7 @@ class ProviderSyncRun(BaseModel):
     def terminal_state_must_have_consistent_evidence(self) -> ProviderSyncRun:
         if self.status == ProviderSyncStatus.SUCCEEDED and (
             self.snapshot_sha256 is None
+            or self.snapshot_id is None
             or self.provider_revision is None
             or self.error_code is not None
         ):
@@ -142,4 +161,19 @@ class ProviderSyncRun(BaseModel):
             ProviderSyncStatus.UNAVAILABLE,
         } and self.completed_at is None:
             raise ValueError("终态同步必须记录完成时间")
+        if self.status != ProviderSyncStatus.QUEUED and self.started_at is None:
+            raise ValueError("已启动同步必须记录开始时间")
+        return self
+
+
+class ProviderSyncResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run: ProviderSyncRun
+    snapshot: ProviderSnapshotRecord | None = None
+
+    @model_validator(mode="after")
+    def successful_result_must_include_snapshot(self) -> ProviderSyncResult:
+        if (self.run.status == ProviderSyncStatus.SUCCEEDED) != (self.snapshot is not None):
+            raise ValueError("同步成功状态与快照必须一致")
         return self

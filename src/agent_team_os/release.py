@@ -13,11 +13,12 @@ import sys
 import tempfile
 import time
 import urllib.request
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 from acwm.config import CodexCLIConfig
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
 from .delivery import DeliveryCoordinator, PlanningService, SQLiteDeliveryRepository
@@ -36,22 +37,39 @@ from .testing import DeterministicPlanningService
 class GateReport(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: str
-    status: str
+    kind: Literal["deterministic", "live"]
+    status: Literal["passed", "failed"]
     fail: int
     warn: int
     skipped: int
     created_at: datetime
-    dev_revision: str
+    dev_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     acwm_revision: str
     planning_identity: str
     execution_identity: str
-    candidate_revision: str | None = None
-    diff_sha256: str | None = None
+    candidate_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    diff_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     verification_exit_code: int | None = None
-    evidence_sha256: str
+    evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     browser_e2e: bool = False
+    browser_restart_recovery: bool = False
     error: str | None = None
+
+
+class CombinedGateStatus(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["unknown", "failed", "passed"]
+    code: str
+    reason: str
+
+
+class LatestGateReports(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    deterministic: GateReport | None
+    live: GateReport | None
+    combined: CombinedGateStatus
 
 
 class DeterministicWorkspaceAgent:
@@ -184,9 +202,11 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             if recovered.apply_receipt is None:
                 raise RuntimeError("restart lost apply evidence")
             browser_e2e = False
+            browser_restart_recovery = False
             if not live:
                 _run_browser_gate(project_root, runtime)
                 browser_e2e = True
+                browser_restart_recovery = True
             if _git_status(project_root) != initial_status:
                 raise RuntimeError("release gate changed the DEV worktree")
             verification = accepted_candidate.verification
@@ -201,6 +221,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 diff_sha256=accepted_candidate.candidate.diff_sha256,
                 verification_exit_code=(verification.exit_code if verification else None),
                 browser_e2e=browser_e2e,
+                browser_restart_recovery=browser_restart_recovery,
             )
     except Exception as error:
         report = _report(
@@ -242,6 +263,7 @@ def write_report(report_dir: Path, report: GateReport) -> None:
         f"- Diff SHA-256: `{report.diff_sha256 or 'n/a'}`",
         f"- Evidence SHA-256: `{report.evidence_sha256}`",
         f"- Browser E2E: `{report.browser_e2e}`",
+        f"- Browser Restart Recovery: `{report.browser_restart_recovery}`",
     ]
     if report.error:
         lines.extend(("", f"Error: `{report.error}`"))
@@ -254,28 +276,133 @@ def latest_reports(report_dir: Path) -> dict[str, GateReport | None]:
         return result
     for kind in result:
         paths = sorted(report_dir.glob(f"*-{kind}.json"), reverse=True)
-        for path in paths:
+        if paths:
             try:
-                result[kind] = GateReport.model_validate_json(path.read_text(encoding="utf-8"))
-                break
+                result[kind] = GateReport.model_validate_json(
+                    paths[0].read_text(encoding="utf-8")
+                )
             except Exception:
-                continue
+                result[kind] = None
     return result
+
+
+def combined_gate_status(
+    found: dict[str, GateReport | None], *, now: datetime | None = None
+) -> CombinedGateStatus:
+    deterministic = found.get("deterministic")
+    live = found.get("live")
+    if deterministic is None or live is None:
+        return CombinedGateStatus(
+            status="unknown",
+            code="RELEASE_GATE_REPORT_MISSING_OR_INVALID",
+            reason="双门禁报告缺失或最新报告无法解析。",
+        )
+    current = now or datetime.now(UTC)
+    if any(report.created_at > current + timedelta(minutes=5) for report in (deterministic, live)):
+        return CombinedGateStatus(
+            status="unknown",
+            code="RELEASE_GATE_REPORT_FROM_FUTURE",
+            reason="门禁报告时间晚于当前系统时间，无法确认时效性。",
+        )
+    if any(current - report.created_at > timedelta(hours=24) for report in (deterministic, live)):
+        return CombinedGateStatus(
+            status="unknown",
+            code="RELEASE_GATE_REPORT_EXPIRED",
+            reason="至少一份门禁报告已超过 24 小时。",
+        )
+    if (
+        deterministic.dev_revision != live.dev_revision
+        or deterministic.acwm_revision != live.acwm_revision
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_REVISION_MISMATCH",
+            reason="确定性门禁与真实门禁不是同一代码和 ACWM Revision。",
+        )
+    if deterministic.kind != "deterministic" or live.kind != "live":
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_KIND_INVALID",
+            reason="门禁报告类型与报告槽位不一致。",
+        )
+    if not all(_report_evidence_is_valid(report) for report in (deterministic, live)):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_EVIDENCE_HASH_INVALID",
+            reason="门禁报告内容与证据哈希不一致。",
+        )
+    if any(
+        report.status != "passed" or report.fail or report.warn or report.skipped
+        for report in (deterministic, live)
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_NOT_CLEAN",
+            reason="门禁存在失败、警告或跳过项。",
+        )
+    if any(
+        report.candidate_revision is None
+        or report.diff_sha256 is None
+        or report.verification_exit_code != 0
+        for report in (deterministic, live)
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_DELIVERY_EVIDENCE_INCOMPLETE",
+            reason="门禁缺少候选 Revision、Diff 哈希或成功的机器测试证据。",
+        )
+    if (
+        deterministic.planning_identity != "deterministic-test"
+        or deterministic.execution_identity != "deterministic-model-boundary"
+        or not deterministic.browser_e2e
+        or not deterministic.browser_restart_recovery
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_DETERMINISTIC_IDENTITY_INVALID",
+            reason="确定性门禁身份或浏览器重启恢复证据不完整。",
+        )
+    if (
+        live.planning_identity != "codex-simulated-hermes"
+        or live.execution_identity != "codex-cli"
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_LIVE_IDENTITY_INVALID",
+            reason="真实门禁没有明确记录 Codex 规划与代码执行身份。",
+        )
+    return CombinedGateStatus(
+        status="passed",
+        code="RELEASE_GATE_PASSED",
+        reason="同一 Revision 的确定性门禁与真实 Codex 门禁均已通过。",
+    )
 
 
 def _report(**values: object) -> GateReport:
     failed = 1 if values.get("error") else 0
-    payload = {
-        **values,
-        "status": "failed" if failed else "passed",
-        "fail": failed,
-        "warn": 0,
-        "skipped": 0,
-    }
-    evidence = hashlib.sha256(
+    report = GateReport.model_validate(
+        {
+            **values,
+            "status": "failed" if failed else "passed",
+            "fail": failed,
+            "warn": 0,
+            "skipped": 0,
+            "evidence_sha256": "0" * 64,
+        }
+    )
+    evidence = _report_evidence_sha256(report)
+    return report.model_copy(update={"evidence_sha256": evidence})
+
+
+def _report_evidence_is_valid(report: GateReport) -> bool:
+    return report.evidence_sha256 == _report_evidence_sha256(report)
+
+
+def _report_evidence_sha256(report: GateReport) -> str:
+    payload = report.model_dump(exclude={"evidence_sha256"})
+    return hashlib.sha256(
         json.dumps(payload, default=str, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    return GateReport.model_validate({**payload, "evidence_sha256": evidence})
 
 
 def _git_revision(project_root: Path) -> str:
@@ -306,6 +433,37 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
         **os.environ,
         "AGENT_TEAM_OS_DATA_DIR": str(runtime / "browser"),
     }
+    state = runtime / "browser-state.json"
+    checkpoint = runtime / "browser-checkpoint.json"
+    server = _start_browser_gate_server(project_root, environment, port)
+    try:
+        _run_browser_phase(
+            project_root,
+            port,
+            phase="execute",
+            state=state,
+            checkpoint=checkpoint,
+        )
+    finally:
+        _stop_browser_gate_server(server)
+
+    restarted = _start_browser_gate_server(project_root, environment, port)
+    try:
+        _run_browser_phase(
+            project_root,
+            port,
+            phase="recover",
+            state=state,
+            checkpoint=checkpoint,
+            screenshot=runtime / "browser-completed.png",
+        )
+    finally:
+        _stop_browser_gate_server(restarted)
+
+
+def _start_browser_gate_server(
+    project_root: Path, environment: dict[str, str], port: int
+) -> subprocess.Popen[str]:
     server = subprocess.Popen(
         (
             sys.executable,
@@ -325,48 +483,66 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            if server.poll() is not None:
-                stdout, stderr = server.communicate()
-                raise RuntimeError(f"browser gate server failed: {stdout}{stderr}")
-            try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).close()
-                break
-            except Exception:
-                time.sleep(0.1)
-        else:
-            raise RuntimeError("browser gate server readiness timed out")
-        result = subprocess.run(
-            (
-                sys.executable,
-                str(project_root / "scripts" / "browser_e2e.py"),
-                "--url",
-                f"http://127.0.0.1:{port}",
-                "--screenshot",
-                str(runtime / "browser-completed.png"),
-            ),
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-        if result.returncode != 0:
-            server.terminate()
-            server_stdout, server_stderr = server.communicate(timeout=5)
-            raise RuntimeError(
-                "browser E2E failed: "
-                f"{result.stdout}{result.stderr}\nGate server:\n{server_stdout}{server_stderr}"
-            )
-    finally:
-        server.terminate()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if server.poll() is not None:
+            stdout, stderr = server.communicate()
+            raise RuntimeError(f"browser gate server failed: {stdout}{stderr}")
         try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait()
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1).close()
+            return server
+        except Exception:
+            time.sleep(0.1)
+    _stop_browser_gate_server(server)
+    raise RuntimeError("browser gate server readiness timed out")
+
+
+def _run_browser_phase(
+    project_root: Path,
+    port: int,
+    *,
+    phase: str,
+    state: Path,
+    checkpoint: Path,
+    screenshot: Path | None = None,
+) -> None:
+    command = [
+        sys.executable,
+        str(project_root / "scripts" / "browser_e2e.py"),
+        "--url",
+        f"http://127.0.0.1:{port}",
+        "--phase",
+        phase,
+        "--state",
+        str(state),
+        "--checkpoint",
+        str(checkpoint),
+    ]
+    if screenshot is not None:
+        command.extend(("--screenshot", str(screenshot)))
+    result = subprocess.run(
+        command,
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        timeout=240,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"browser E2E {phase} phase failed: {result.stdout}{result.stderr}"
+        )
+
+
+def _stop_browser_gate_server(server: subprocess.Popen[str]) -> None:
+    if server.poll() is not None:
+        return
+    server.terminate()
+    try:
+        server.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait()
 
 
 def _acwm_revision() -> str:
