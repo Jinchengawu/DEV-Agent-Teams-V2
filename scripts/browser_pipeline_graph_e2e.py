@@ -75,6 +75,7 @@ def _authenticate(page: Page, url: str) -> None:
 
 def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="可视化编排", exact=True).click()
+    page.get_by_label("流水线 ID").wait_for(timeout=30_000)
     page.get_by_label("流水线 ID").fill("browser-dag-loop")
     page.get_by_label("流水线名称").fill("浏览器 DAG LOOP 验收")
     with page.expect_response(
@@ -93,6 +94,15 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         has_text="stage-2"
     ).click()
     page.get_by_label("Capability").fill("hermes-project-admin")
+    page.get_by_label("Agent Deployment stage-2.actor").select_option(
+        "builtin-planning-deployment"
+    )
+    page.locator(".flow > .react-flow .react-flow__node").filter(
+        has_text="stage-1"
+    ).click()
+    page.get_by_label("Agent Deployment stage-1.actor").select_option(
+        "builtin-planning-deployment"
+    )
     _add_dependency(page, "主图", "stage-1", "stage-2")
     _add_dependency(page, "主图", "stage-2", "gate-1")
     _add_dependency(page, "主图", "gate-1", "loop-1", "approved")
@@ -106,6 +116,18 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.locator(".loop-body-editor").get_by_role(
         "button", name="角色 Stage"
     ).click()
+    page.locator(".loop-body-editor .react-flow__node").filter(
+        has_text="loop-1-work"
+    ).click()
+    page.get_by_label(
+        "Agent Deployment loop-1/loop-1-work.developer"
+    ).select_option("builtin-backend-deployment")
+    page.locator(".loop-body-editor .react-flow__node").filter(
+        has_text="stage-1"
+    ).click()
+    page.get_by_label("Agent Deployment loop-1/stage-1.actor").select_option(
+        "builtin-planning-deployment"
+    )
     _add_dependency(page, "循环体", "loop-1-work", "stage-1")
 
     with page.expect_response(
