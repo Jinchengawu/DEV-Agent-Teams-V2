@@ -8,8 +8,8 @@ resolution-markers = [
 
 [[package]]
 name = "agent-capability-workflow-matrix"
-version = "0.3.0"
-source = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=b79e671814d3a6ac03b5ee50ac7011d50a37a1aa#b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" }
+version = "0.4.0"
+source = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=c15c2cbc0ef94e9e95c3e30c7edb6507bc68def4#c15c2cbc0ef94e9e95c3e30c7edb6507bc68def4" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -453,7 +453,7 @@ live = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-capability-workflow-matrix", git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" },
+    { name = "agent-capability-workflow-matrix", git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=c15c2cbc0ef94e9e95c3e30c7edb6507bc68def4" },
     { name = "agent-client-protocol", marker = "extra == 'live'", specifier = "==0.9.0" },
     { name = "agentscope", marker = "extra == 'live'", specifier = "==2.0.6" },
     { name = "fastapi", specifier = ">=0.116,<1" },

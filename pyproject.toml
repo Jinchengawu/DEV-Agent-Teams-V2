@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Agent-Team-OS delivery service built on ACWM, AgentScope, Hermes and Codex."
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  "agent-capability-workflow-matrix==0.3.0",
+  "agent-capability-workflow-matrix==0.4.0",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "pydantic>=2.11,<3",
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-agent-capability-workflow-matrix = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git", rev = "b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" }
+agent-capability-workflow-matrix = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git", rev = "c15c2cbc0ef94e9e95c3e30c7edb6507bc68def4" }
 
 [project.optional-dependencies]
 live = [

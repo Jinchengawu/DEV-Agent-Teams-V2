@@ -1,37 +1,38 @@
-from __future__ import annotations
-
-import os
-import subprocess
 import sys
-from pathlib import Path
+
+import pytest
+from pytest import MonkeyPatch
+
+from agent_team_os.preview import main
+from agent_team_os.readiness import DependencyCheck, ReadinessReport
 
 
-def test_demo_checks_framework_lock_before_building_preview_app(tmp_path: Path) -> None:
-    project_root = Path(__file__).parents[1]
-    environment = {
-        **os.environ,
-        "AGENT_TEAM_OS_DATA_DIR": str(tmp_path / "runtime"),
-    }
-    environment.pop("PYTHONPATH", None)
-    command = (
-        "from agent_team_os.preview import main; "
-        "import sys; "
-        "sys.argv=['agent-team-os','demo']; "
-        "main()"
+def test_demo_checks_framework_lock_before_building_preview_app(
+    monkeypatch: MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = ReadinessReport(
+        status="not_ready",
+        checks=(
+            DependencyCheck(
+                name="python:acwm-revision",
+                status="failed",
+                repair="安装锁定 ACWM Revision。",
+            ),
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["agent-team-os", "demo"])
+    monkeypatch.setattr(
+        "agent_team_os.preview.CodexPreviewReadiness.inspect", lambda _self: report
+    )
+    monkeypatch.setattr(
+        "agent_team_os.preview.build_preview_app",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("Preview App must not be built before readiness")
+        ),
     )
 
-    result = subprocess.run(
-        (sys.executable, "-c", command),
-        cwd=project_root,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
-    )
+    with pytest.raises(SystemExit) as stopped:
+        main()
 
-    assert result.returncode == 2
-    assert '"name":"python:acwm-revision"' in result.stdout.replace(" ", "")
-    assert '"status":"failed"' in result.stdout.replace(" ", "")
-    assert "Traceback" not in result.stderr
-    assert not (tmp_path / "runtime" / "agent-team-os.sqlite").exists()
+    assert stopped.value.code == 2
+    assert '"name": "python:acwm-revision"' in capsys.readouterr().out

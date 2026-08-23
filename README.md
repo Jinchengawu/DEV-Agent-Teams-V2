@@ -49,10 +49,9 @@ code repair LOOP. Product compatibility requires PM, Project Admin and Backend c
 exactly one plan Gate and one candidate Gate. Nested human Gates inside LOOP bodies are currently
 rejected explicitly.
 
-The ACWM v0.4 source commit used by this release candidate must be published before the dependency
-lock can move from the previous v0.3 revision. Until that release action is authorized, this branch
-is validated against the sibling ACWM v0.4 checkout and is not yet a reproducible fresh-clone
-release.
+The ACWM v0.4 runtime is fixed to the published commit `c15c2cb` in both `pyproject.toml` and
+`uv.lock`. Demo readiness independently checks the imported source against
+`config/framework-lock.json` and fails closed on revision drift.
 
 ## V0.2 control-plane baseline
 
