@@ -85,7 +85,10 @@ class AgentProfileCatalog:
         return self.repository.list_profiles()
 
     def get_draft(self, profile_id: str) -> AgentProfileDraft:
-        return self.repository.get_draft(profile_id)
+        try:
+            return self.repository.get_draft(profile_id)
+        except KeyError as error:
+            raise self._profile_not_found(profile_id) from error
 
     def patch_draft(
         self, profile_id: str, request: AgentProfileDraftPatch, *, actor_id: str
@@ -97,7 +100,7 @@ class AgentProfileCatalog:
                 detail="草稿中的角色 ID 必须与 URL 中的角色 ID 一致。",
                 repair="保留原角色 ID；如需新 ID，请创建新的角色。",
             )
-        current = self.repository.get_draft(profile_id)
+        current = self.get_draft(profile_id)
         self._require_version(current, request.expected_version)
         updated = current.model_copy(
             update={
@@ -111,14 +114,14 @@ class AgentProfileCatalog:
         )
         if not self.repository.compare_and_swap_draft(current.version, updated):
             self._raise_version_conflict(
-                request.expected_version, self.repository.get_draft(profile_id).version
+                request.expected_version, self.get_draft(profile_id).version
             )
         return updated
 
     def validate_draft(
         self, profile_id: str, *, expected_version: int, actor_id: str
     ) -> AgentProfileDraft:
-        current = self.repository.get_draft(profile_id)
+        current = self.get_draft(profile_id)
         self._require_version(current, expected_version)
         updated = current.model_copy(
             update={
@@ -131,14 +134,14 @@ class AgentProfileCatalog:
         )
         if not self.repository.compare_and_swap_draft(current.version, updated):
             self._raise_version_conflict(
-                expected_version, self.repository.get_draft(profile_id).version
+                expected_version, self.get_draft(profile_id).version
             )
         return updated
 
     def publish(
         self, profile_id: str, *, expected_version: int, actor_id: str
     ) -> AgentProfileRevision:
-        draft = self.repository.get_draft(profile_id)
+        draft = self.get_draft(profile_id)
         self._require_version(draft, expected_version)
         if draft.validation_status != "valid":
             raise ProductError(
@@ -160,11 +163,23 @@ class AgentProfileCatalog:
         return self.repository.publish(draft, revision)
 
     def list_revisions(self, profile_id: str) -> tuple[AgentProfileRevision, ...]:
-        self.repository.get_profile(profile_id)
+        try:
+            self.repository.get_profile(profile_id)
+        except KeyError as error:
+            raise self._profile_not_found(profile_id) from error
         return self.repository.list_revisions(profile_id)
 
     def get_revision(self, profile_id: str, revision: int) -> AgentProfileRevision:
-        return self.repository.get_revision(profile_id, revision)
+        try:
+            return self.repository.get_revision(profile_id, revision)
+        except KeyError as error:
+            raise ProductError(
+                code="AGENT_PROFILE_REVISION_NOT_FOUND",
+                title="智能体角色版本不存在",
+                detail=f"角色 {profile_id} 没有 Revision {revision}。",
+                repair="刷新 Revision 列表后重新选择。",
+                status_code=404,
+            ) from error
 
     def export_revision(
         self, profile_id: str, revision: int, *, format: Literal["json", "yaml"]
@@ -201,6 +216,16 @@ class AgentProfileCatalog:
             repair="刷新角色详情后重新提交。",
             expected_version=expected,
             actual_version=actual,
+        )
+
+    @staticmethod
+    def _profile_not_found(profile_id: str) -> ProductError:
+        return ProductError(
+            code="AGENT_PROFILE_NOT_FOUND",
+            title="智能体角色不存在",
+            detail=f"没有找到角色 {profile_id}。",
+            repair="刷新角色列表后重新选择。",
+            status_code=404,
         )
 
 

@@ -78,6 +78,23 @@ def test_agent_profile_draft_uses_cas_and_publishes_immutable_revision(
     assert revisions.json() == [published.json()]
 
 
+def test_missing_agent_profile_and_revision_return_stable_problem_detail(
+    tmp_path: Path,
+) -> None:
+    with _client(tmp_path) as client:
+        missing_draft = client.get("/v1/agent-profiles/missing/draft")
+        created = client.post("/v1/agent-profiles", json={"spec": _spec()})
+        missing_revision = client.get(
+            "/v1/agent-profiles/frontend-engineer/revisions/99"
+        )
+
+    assert created.status_code == 201
+    assert missing_draft.status_code == 404
+    assert missing_draft.json()["code"] == "AGENT_PROFILE_NOT_FOUND"
+    assert missing_revision.status_code == 404
+    assert missing_revision.json()["code"] == "AGENT_PROFILE_REVISION_NOT_FOUND"
+
+
 def test_agent_spec_json_and_yaml_import_are_canonically_equivalent(tmp_path: Path) -> None:
     yaml_content = """\
 schema_version: "1"
