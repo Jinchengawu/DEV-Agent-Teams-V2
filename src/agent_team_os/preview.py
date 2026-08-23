@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
     ControlPlaneBindingResolver,
+    PipelineBindingResolutionError,
 )
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
 from .journey import (
@@ -57,6 +59,8 @@ from .readiness import (
 )
 from .release import combined_gate_status, run_gate
 from .ui import install_preview_ui
+
+_logger = logging.getLogger(__name__)
 
 
 class CodexPreviewReadiness:
@@ -92,6 +96,17 @@ class CodexPreviewReadiness:
 
 def _has_acwm_graph_runtime() -> bool:
     return hasattr(import_module("acwm.domain"), "compile_journey_graph")
+
+
+def _ensure_builtin_pipeline_for_preview(
+    catalog: PipelineCatalog, request: PipelineCreate
+) -> object | None:
+    """Keep the repair UI online when product-owned bindings need attention."""
+    try:
+        return catalog.ensure_builtin_pipeline(request, actor_id="system")
+    except PipelineBindingResolutionError as error:
+        _logger.warning("Built-in Pipeline requires binding repair: %s", error)
+        return None
 
 
 def build_preview_app() -> FastAPI:
@@ -147,14 +162,14 @@ def build_preview_app() -> FastAPI:
         ),
         definition_policy=BackendDeliveryPipelinePolicy(),
     )
-    pipeline_catalog.ensure_builtin_pipeline(
+    _ensure_builtin_pipeline_for_preview(
+        pipeline_catalog,
         PipelineCreate(
             id="backend-delivery",
             name="内置后端交付闭环",
             description="需求、计划审批、代码交付、候选审批与原子应用",
             definition=load_backend_delivery_definition(project_root / "config"),
         ),
-        actor_id="system",
     )
     app = create_app(
         coordinator,

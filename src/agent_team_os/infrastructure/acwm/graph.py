@@ -9,6 +9,10 @@ from typing import Any, Protocol, cast
 from ...modules.orchestration import GraphCompilation
 
 
+class PipelineBindingResolutionError(ValueError):
+    """A published graph cannot snapshot its product-owned runtime bindings."""
+
+
 class ACWMGraphCompiler:
     def compile(self, definition: dict[str, object]) -> GraphCompilation:
         domain = import_module("acwm.domain")
@@ -133,12 +137,26 @@ class ControlPlaneBindingResolver:
     ) -> dict[str, dict[str, object]]:
         snapshot: dict[str, dict[str, object]] = {}
         for capability_id in capability_ids:
-            binding = cast(BindingRecord, self.get_binding(capability_id))
-            instance = cast(InstanceRecord, self.get_instance(binding.instance_id))
+            try:
+                binding = cast(BindingRecord, self.get_binding(capability_id))
+            except KeyError as error:
+                raise PipelineBindingResolutionError(
+                    f"Capability {capability_id} has no binding"
+                ) from error
+            try:
+                instance = cast(InstanceRecord, self.get_instance(binding.instance_id))
+            except KeyError as error:
+                raise PipelineBindingResolutionError(
+                    f"Capability {capability_id} references a missing instance"
+                ) from error
             if not instance.enabled or instance.health.status != "ready":
-                raise ValueError(f"Capability {capability_id} is not bound to a ready instance")
+                raise PipelineBindingResolutionError(
+                    f"Capability {capability_id} is not bound to a ready instance"
+                )
             if binding.instance_version != instance.version:
-                raise ValueError(f"Capability {capability_id} binding is stale")
+                raise PipelineBindingResolutionError(
+                    f"Capability {capability_id} binding is stale"
+                )
             snapshot[capability_id] = {
                 "instance_id": instance.id,
                 "instance_version": instance.version,
