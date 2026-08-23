@@ -1538,6 +1538,21 @@ export interface components {
              * @default false
              */
             browser_restart_recovery: boolean;
+            /**
+             * Browser Multi Pipeline E2E
+             * @default false
+             */
+            browser_multi_pipeline_e2e: boolean;
+            /**
+             * Browser Verified Evidence Count
+             * @default 0
+             */
+            browser_verified_evidence_count: number;
+            /**
+             * Browser Candidate Matches Main
+             * @default false
+             */
+            browser_candidate_matches_main: boolean;
             /** Error */
             error?: string | null;
         };

@@ -169,17 +169,39 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     )
     completed = page.context.request.get(f"{url}/v1/deliveries/{delivery['id']}")
     assert completed.ok, completed.text()
+    completed_payload = completed.json()
+    candidate = completed_payload.get("candidate")
+    receipt = completed_payload.get("apply_receipt")
+    assert candidate and receipt, completed_payload
+    candidate_matches_main = (
+        receipt["candidate_revision"]
+        == receipt["after_revision"]
+        == candidate["candidate_revision"]
+    )
+    assert candidate_matches_main, completed_payload
     graph = page.context.request.get(
         f"{url}/v1/deliveries/{delivery['id']}/pipeline-run"
     )
     assert graph.ok, graph.text()
     graph_payload = graph.json()
     assert graph_payload["status"] == "completed", graph_payload
+    page.get_by_role("link", name="证据", exact=True).click()
+    page.get_by_text("全局证据账本", exact=True).wait_for(timeout=30_000)
+    page.get_by_label("按交付筛选").fill(delivery["id"])
+    page.get_by_label("按完整性筛选").select_option("verified")
+    page.wait_for_timeout(300)
+    verified_evidence_count = page.locator(".ledger-table button").count()
+    assert verified_evidence_count >= 7, verified_evidence_count
     return {
         "delivery_id": delivery["id"],
         "pipeline_run_id": delivery["pipeline_run_id"],
         "pipeline_revision_id": delivery["pipeline_revision_id"],
         "pipeline_fingerprint": published["fingerprint"],
+        "browser_evidence": {
+            "multi_pipeline_e2e": True,
+            "verified_evidence_count": verified_evidence_count,
+            "candidate_matches_main": candidate_matches_main,
+        },
     }
 
 
@@ -204,6 +226,13 @@ def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None
     assert graph_payload["graph_fingerprint"] == checkpoint["pipeline_fingerprint"]
     page.get_by_role("link", name="交付", exact=True).click()
     page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
+    page.get_by_role("link", name="证据", exact=True).click()
+    page.get_by_label("按交付筛选").fill(checkpoint["delivery_id"])
+    page.get_by_label("按完整性筛选").select_option("verified")
+    page.wait_for_timeout(300)
+    assert page.locator(".ledger-table button").count() == checkpoint[
+        "browser_evidence"
+    ]["verified_evidence_count"]
 
 
 def _add_dependency(

@@ -79,6 +79,9 @@ class GateReport(BaseModel):
     evidence_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     browser_e2e: bool = False
     browser_restart_recovery: bool = False
+    browser_multi_pipeline_e2e: bool = False
+    browser_verified_evidence_count: int = Field(default=0, ge=0)
+    browser_candidate_matches_main: bool = False
     error: str | None = None
 
 
@@ -96,6 +99,14 @@ class LatestGateReports(BaseModel):
     deterministic: GateReport | None
     live: GateReport | None
     combined: CombinedGateStatus
+
+
+class BrowserGateEvidence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    multi_pipeline_e2e: Literal[True]
+    verified_evidence_count: int = Field(ge=7)
+    candidate_matches_main: Literal[True]
 
 
 class DeterministicWorkspaceAgent:
@@ -297,10 +308,20 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 raise RuntimeError("restart lost completed ACWM GraphRun")
             browser_e2e = False
             browser_restart_recovery = False
+            browser_multi_pipeline_e2e = False
+            browser_verified_evidence_count = 0
+            browser_candidate_matches_main = False
             if not live:
-                _run_browser_gate(project_root, runtime)
+                browser_evidence = _run_browser_gate(project_root, runtime)
                 browser_e2e = True
                 browser_restart_recovery = True
+                browser_multi_pipeline_e2e = browser_evidence.multi_pipeline_e2e
+                browser_verified_evidence_count = (
+                    browser_evidence.verified_evidence_count
+                )
+                browser_candidate_matches_main = (
+                    browser_evidence.candidate_matches_main
+                )
             if _git_status(project_root) != initial_status:
                 raise RuntimeError("release gate changed the DEV worktree")
             verification = accepted_candidate.verification
@@ -322,6 +343,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 verification_exit_code=(verification.exit_code if verification else None),
                 browser_e2e=browser_e2e,
                 browser_restart_recovery=browser_restart_recovery,
+                browser_multi_pipeline_e2e=browser_multi_pipeline_e2e,
+                browser_verified_evidence_count=browser_verified_evidence_count,
+                browser_candidate_matches_main=browser_candidate_matches_main,
             )
     except Exception as error:
         report = _report(
@@ -368,6 +392,9 @@ def write_report(report_dir: Path, report: GateReport) -> None:
         f"- Evidence SHA-256: `{report.evidence_sha256}`",
         f"- Browser E2E: `{report.browser_e2e}`",
         f"- Browser Restart Recovery: `{report.browser_restart_recovery}`",
+        f"- Browser Multi-Pipeline E2E: `{report.browser_multi_pipeline_e2e}`",
+        f"- Browser Verified Evidence: `{report.browser_verified_evidence_count}`",
+        f"- Browser Main Equals Candidate: `{report.browser_candidate_matches_main}`",
     ]
     if report.error:
         lines.extend(("", f"Error: `{report.error}`"))
@@ -480,6 +507,16 @@ def combined_gate_status(
             reason="确定性门禁身份或浏览器重启恢复证据不完整。",
         )
     if (
+        not deterministic.browser_multi_pipeline_e2e
+        or deterministic.browser_verified_evidence_count < 7
+        or not deterministic.browser_candidate_matches_main
+    ):
+        return CombinedGateStatus(
+            status="failed",
+            code="RELEASE_GATE_BROWSER_EVIDENCE_INCOMPLETE",
+            reason="浏览器门禁未证明多流水线、已验证证据和 Main=Candidate。",
+        )
+    if (
         live.planning_identity != "codex-simulated-hermes"
         or live.execution_identity != "codex-cli"
     ):
@@ -570,7 +607,7 @@ def _git_status(project_root: Path) -> str:
     ).stdout.strip()
 
 
-def _run_browser_gate(project_root: Path, runtime: Path) -> None:
+def _run_browser_gate(project_root: Path, runtime: Path) -> BrowserGateEvidence:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -605,6 +642,8 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> None:
         )
     finally:
         _stop_browser_gate_server(restarted)
+    payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+    return BrowserGateEvidence.model_validate(payload["browser_evidence"])
 
 
 def _start_browser_gate_server(

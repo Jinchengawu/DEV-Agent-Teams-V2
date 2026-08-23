@@ -6621,6 +6621,22 @@
             "title": "Browser Restart Recovery",
             "default": false
           },
+          "browser_multi_pipeline_e2e": {
+            "type": "boolean",
+            "title": "Browser Multi Pipeline E2E",
+            "default": false
+          },
+          "browser_verified_evidence_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Browser Verified Evidence Count",
+            "default": 0
+          },
+          "browser_candidate_matches_main": {
+            "type": "boolean",
+            "title": "Browser Candidate Matches Main",
+            "default": false
+          },
           "error": {
             "anyOf": [
               {
