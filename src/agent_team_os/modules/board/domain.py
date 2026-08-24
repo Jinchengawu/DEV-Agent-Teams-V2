@@ -22,6 +22,7 @@ class WorkItem(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
+    project_id: str = "legacy-default"
     delivery_id: str
     title: str
     column: BoardColumn
@@ -67,10 +68,17 @@ class BoardProjector:
         "verifying": ("cancel",),
     }
 
-    def rebuild(self, events: tuple[ProductEvent, ...]) -> BoardProjection:
+    def rebuild(
+        self, events: tuple[ProductEvent, ...], project_id: str | None = None
+    ) -> BoardProjection:
         latest: dict[str, ProductEvent] = {}
         for event in sorted(
-            (item for item in events if item.aggregate_type == "delivery"),
+            (
+                item
+                for item in events
+                if item.aggregate_type == "delivery"
+                and (project_id is None or item.project_id == project_id)
+            ),
             key=lambda item: (item.aggregate_id, item.aggregate_version),
         ):
             previous = latest.get(event.aggregate_id)
@@ -84,6 +92,8 @@ class BoardProjector:
             items.append(
                 WorkItem(
                     id=delivery_id,
+                    project_id=event.project_id
+                    or str(event.payload.get("project_id") or "legacy-default"),
                     delivery_id=delivery_id,
                     title=str(event.payload.get("title") or delivery_id),
                     column=self._columns.get(status, "failed-cancelled"),
@@ -112,4 +122,3 @@ class BoardProjector:
             items=tuple(items),
             projection_sha256=hashlib.sha256(encoded).hexdigest(),
         )
-

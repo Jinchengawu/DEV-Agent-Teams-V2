@@ -10,6 +10,7 @@ class Role(StrEnum):
 
 
 class Permission(StrEnum):
+    PROJECT_MANAGE = "projects:manage"
     DELIVERY_CREATE = "delivery:create"
     PLAN_DECIDE = "delivery:plan-decide"
     CANDIDATE_APPLY = "delivery:candidate-apply"

@@ -3,6 +3,7 @@ import { resolveDropCommand } from "./BoardPage";
 
 const item = {
   id: "delivery-1",
+  project_id: "pj1",
   delivery_id: "delivery-1",
   title: "健康检查",
   column: "plan-approval" as const,

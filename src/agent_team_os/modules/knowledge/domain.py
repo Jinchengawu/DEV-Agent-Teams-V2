@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from ...shared.hashes import Sha256
 from ...shared.permissions import Role
@@ -28,6 +28,8 @@ class Space(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
+    scope_kind: str = "project"
+    project_id: str | None = "legacy-default"
     name: str
     description: str
     version: int = Field(ge=1)
@@ -41,6 +43,16 @@ class SpaceCreate(BaseModel):
 
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2_000)
+    scope_kind: str = Field(default="project", pattern=r"^(project|global)$")
+    project_id: str | None = "legacy-default"
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> SpaceCreate:
+        if self.scope_kind == "project" and self.project_id is None:
+            raise ValueError("project knowledge space requires project_id")
+        if self.scope_kind == "global" and self.project_id is not None:
+            raise ValueError("global knowledge space cannot reference a project")
+        return self
 
 
 class Document(BaseModel):

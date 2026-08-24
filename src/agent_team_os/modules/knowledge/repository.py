@@ -24,8 +24,8 @@ class SQLiteWikiRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -34,6 +34,8 @@ class SQLiteWikiRepository:
                     space.created_by,
                     space.created_at.isoformat(),
                     space.updated_at.isoformat(),
+                    space.scope_kind,
+                    space.project_id,
                 ),
             )
             self._append_event(
@@ -43,6 +45,7 @@ class SQLiteWikiRepository:
                     aggregate_type="wiki-space",
                     aggregate_id=space.id,
                     aggregate_version=space.version,
+                    project_id=space.project_id,
                     payload={"name": space.name},
                     occurred_at=space.updated_at,
                 ),
@@ -61,8 +64,8 @@ class SQLiteWikiRepository:
                 return self._space(existing)
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -71,6 +74,8 @@ class SQLiteWikiRepository:
                     space.created_by,
                     space.created_at.isoformat(),
                     space.updated_at.isoformat(),
+                    space.scope_kind,
+                    space.project_id,
                 ),
             )
             self._append_event(
@@ -80,6 +85,7 @@ class SQLiteWikiRepository:
                     aggregate_type="wiki-space",
                     aggregate_id=space.id,
                     aggregate_version=space.version,
+                    project_id=space.project_id,
                     payload={"name": space.name},
                     occurred_at=space.updated_at,
                 ),
@@ -89,16 +95,12 @@ class SQLiteWikiRepository:
 
     def get_space(self, space_id: str) -> Space | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM wiki_spaces WHERE id=?", (space_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM wiki_spaces WHERE id=?", (space_id,)).fetchone()
         return None if row is None else self._space(row)
 
     def list_spaces(self) -> tuple[Space, ...]:
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM wiki_spaces ORDER BY name,id"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM wiki_spaces ORDER BY name,id").fetchall()
         return tuple(self._space(row) for row in rows)
 
     def create_document(self, document: Document, revision: Revision) -> Document:
@@ -141,9 +143,7 @@ class SQLiteWikiRepository:
             connection.commit()
         return document
 
-    def ensure_system_document(
-        self, document: Document, revision: Revision
-    ) -> Document:
+    def ensure_system_document(self, document: Document, revision: Revision) -> Document:
         if document.source_id is None:
             raise ValueError("System document requires a source ID")
         with self._connect() as connection:
@@ -215,8 +215,7 @@ class SQLiteWikiRepository:
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    "SELECT * FROM wiki_documents WHERE space_id=? "
-                    "ORDER BY updated_at DESC,id",
+                    "SELECT * FROM wiki_documents WHERE space_id=? ORDER BY updated_at DESC,id",
                     (space_id,),
                 ).fetchall()
         return tuple(self._document(row) for row in rows)
@@ -459,6 +458,8 @@ class SQLiteWikiRepository:
     def _space(row: sqlite3.Row) -> Space:
         return Space(
             id=str(row["id"]),
+            scope_kind=str(row["scope_kind"]),
+            project_id=None if row["project_id"] is None else str(row["project_id"]),
             name=str(row["name"]),
             description=str(row["description"]),
             version=int(row["version"]),
@@ -513,14 +514,15 @@ class SQLiteWikiRepository:
     def _append_event(connection: sqlite3.Connection, event: ProductEvent) -> None:
         connection.execute(
             """INSERT INTO product_events(
-            event_id,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,occurred_at)
-            VALUES(?,?,?,?,?,?,?)""",
+            event_id,event_type,aggregate_type,aggregate_id,aggregate_version,project_id,payload_json,occurred_at)
+            VALUES(?,?,?,?,?,?,?,?)""",
             (
                 event.id,
                 event.event_type,
                 event.aggregate_type,
                 event.aggregate_id,
                 event.aggregate_version,
+                event.project_id,
                 json.dumps(event.payload, ensure_ascii=False, separators=(",", ":")),
                 event.occurred_at.isoformat(),
             ),

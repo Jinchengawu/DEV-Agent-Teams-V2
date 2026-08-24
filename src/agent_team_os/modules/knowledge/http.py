@@ -29,9 +29,13 @@ def create_wiki_router(
     router = APIRouter()
 
     @router.get("/v1/wiki/spaces", response_model=tuple[Space, ...])
-    def list_spaces(request: Request) -> tuple[Space, ...]:
+    def list_spaces(
+        request: Request, project_id: str | None = None, include_global: bool = True
+    ) -> tuple[Space, ...]:
         actor = read_actor(request)
-        return service.list_spaces(actor)
+        if project_id is None and include_global:
+            return service.list_spaces(actor)
+        return service.list_spaces(actor, project_id, include_global)
 
     @router.post("/v1/wiki/spaces", response_model=Space, status_code=201)
     def create_space(request_body: SpaceCreate, request: Request) -> Space:
@@ -55,9 +59,7 @@ def create_wiki_router(
         "/v1/wiki/documents/{document_id}/revisions/{revision}",
         response_model=Revision,
     )
-    def get_revision(
-        document_id: str, revision: int, request: Request
-    ) -> Revision:
+    def get_revision(document_id: str, revision: int, request: Request) -> Revision:
         actor = read_actor(request)
         return service.get_revision(actor, document_id, revision)
 
@@ -72,9 +74,7 @@ def create_wiki_router(
         request: Request,
     ) -> Document:
         actor = mutation_actor(request)
-        return service.restore_revision(
-            actor, document_id, revision, request_body.expected_version
-        )
+        return service.restore_revision(actor, document_id, revision, request_body.expected_version)
 
     @router.get("/v1/wiki/documents/{document_id}/revisions", response_model=tuple[Revision, ...])
     def list_revisions(document_id: str, request: Request) -> tuple[Revision, ...]:
@@ -87,9 +87,7 @@ def create_wiki_router(
         return service.get_document(actor, document_id)
 
     @router.patch("/v1/wiki/documents/{document_id}", response_model=Document)
-    def patch_document(
-        document_id: str, request_body: DocumentPatch, request: Request
-    ) -> Document:
+    def patch_document(document_id: str, request_body: DocumentPatch, request: Request) -> Document:
         actor = mutation_actor(request)
         return service.patch_document(actor, document_id, request_body)
 
@@ -106,16 +104,12 @@ def create_wiki_router(
         response_model=Comment,
         status_code=201,
     )
-    def create_comment(
-        document_id: str, request_body: CommentCreate, request: Request
-    ) -> Comment:
+    def create_comment(document_id: str, request_body: CommentCreate, request: Request) -> Comment:
         actor = mutation_actor(request)
         return service.add_comment(actor, document_id, request_body)
 
     @router.patch("/v1/wiki/comments/{comment_id}", response_model=Comment)
-    def patch_comment(
-        comment_id: str, request_body: CommentPatch, request: Request
-    ) -> Comment:
+    def patch_comment(comment_id: str, request_body: CommentPatch, request: Request) -> Comment:
         actor = mutation_actor(request)
         return service.patch_comment(actor, comment_id, request_body)
 

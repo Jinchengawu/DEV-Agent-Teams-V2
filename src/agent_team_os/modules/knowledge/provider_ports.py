@@ -39,9 +39,7 @@ class KnowledgeProviderResolver(Protocol):
 
 
 class ProviderActorResolver(Protocol):
-    def resolve(
-        self, binding: ProviderBinding, actor: KnowledgeActor
-    ) -> ProviderActor: ...
+    def resolve(self, binding: ProviderBinding, actor: KnowledgeActor) -> ProviderActor: ...
 
 
 class ProviderKnowledgeRepository(Protocol):

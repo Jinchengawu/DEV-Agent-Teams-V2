@@ -37,7 +37,7 @@ const jsonResponse = (body: unknown, status = 200) =>
   });
 
 const route = (url: string, method: string) => {
-  if (url === "/v1/wiki/spaces") return jsonResponse(spaces);
+  if (url.startsWith("/v1/wiki/spaces?")) return jsonResponse(spaces);
   if (url.startsWith("/v1/wiki/search")) return jsonResponse(documents);
   if (url === "/v1/wiki/documents?space_id=space-1") return jsonResponse(documents);
   if (url === "/v1/wiki/documents/doc-1/revisions/1") return jsonResponse(revision);
@@ -92,7 +92,7 @@ afterEach(() => {
 describe("知识空间三栏页", () => {
   test("使用真实 /v1/wiki 接口读取空间与文档", async () => {
     renderKnowledge();
-    await waitFor(() => expect(fetchCalls.some((call) => call.url === "/v1/wiki/spaces")).toBe(true));
+    await waitFor(() => expect(fetchCalls.some((call) => call.url.startsWith("/v1/wiki/spaces?project_id=legacy-default"))).toBe(true));
     await waitFor(() => expect(fetchCalls.some((call) => call.url.includes("/v1/wiki/documents"))).toBe(true));
     expect(fetchCalls.every((call) => !call.url.includes("/v1/knowledge/"))).toBe(true);
   });

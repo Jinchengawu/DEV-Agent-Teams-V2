@@ -4,6 +4,7 @@ import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, 
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
+import { useProjectId } from "../projects/api";
 
 type Space = components["schemas"]["Space"];
 type Document = components["schemas"]["Document"];
@@ -14,6 +15,7 @@ type DocumentCreate = components["schemas"]["DocumentCreate"];
 type DocumentPatch = components["schemas"]["DocumentPatch"];
 type CommentCreate = components["schemas"]["CommentCreate"];
 type RevisionRestoreRequest = components["schemas"]["RevisionRestoreRequest"];
+type KnowledgeSearchHit = components["schemas"]["KnowledgeSearchHit"];
 
 type MarkdownPayload = {
   format: "markdown";
@@ -53,7 +55,15 @@ function isConflictError(error: unknown): error is ApiProblem {
   return error instanceof ApiProblem && error.status === 409;
 }
 
+function sourceKindLabel(value: string) {
+  if (value === "wiki") return "Wiki 文档";
+  if (value === "evidence") return "不可变证据";
+  if (value === "provider-snapshot") return "外部来源快照";
+  return `来源 ${value}`;
+}
+
 export function KnowledgePage() {
+  const projectId = useProjectId();
   const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
@@ -71,9 +81,15 @@ export function KnowledgePage() {
   const [commentText, setCommentText] = useState("");
 
   const spaces = useQuery({
-    queryKey: ["wiki-spaces"],
-    queryFn: () => request<Space[]>("/v1/wiki/spaces"),
+    queryKey: ["wiki-spaces", projectId],
+    queryFn: () => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true`),
   });
+
+  useEffect(() => {
+    setSelectedSpaceId("");
+    setSelectedDocumentId(undefined);
+    setSearch("");
+  }, [projectId]);
 
   useEffect(() => {
     if (!selectedSpaceId && spaces.data?.length) {
@@ -82,19 +98,22 @@ export function KnowledgePage() {
   }, [spaces.data, selectedSpaceId]);
 
   const listDocumentsPath = useMemo(() => {
-    if (search.trim()) {
-      return `/v1/wiki/search?q=${encodeURIComponent(search.trim())}`;
-    }
     if (!selectedSpaceId) {
       return "";
     }
     return `/v1/wiki/documents?space_id=${encodeURIComponent(selectedSpaceId)}`;
-  }, [search, selectedSpaceId]);
+  }, [selectedSpaceId]);
 
   const documents = useQuery({
-    queryKey: ["wiki-documents", selectedSpaceId, search],
+    queryKey: ["wiki-documents", projectId, selectedSpaceId],
     enabled: spaces.isSuccess && Boolean(listDocumentsPath),
     queryFn: () => request<Document[]>(listDocumentsPath),
+  });
+
+  const unifiedSearch = useQuery({
+    queryKey: ["knowledge-search", projectId, search],
+    enabled: Boolean(search.trim()),
+    queryFn: () => request<KnowledgeSearchHit[]>(`/v1/knowledge/search?project_id=${encodeURIComponent(projectId)}&include_global=true&q=${encodeURIComponent(search.trim())}`),
   });
 
   const selectedDocument = useMemo(
@@ -136,7 +155,7 @@ export function KnowledgePage() {
       setNewSpaceName("");
       setNewSpaceDescription("");
       setSelectedSpaceId(space.id);
-      await client.invalidateQueries({ queryKey: ["wiki-spaces"] });
+      await client.invalidateQueries({ queryKey: ["wiki-spaces", projectId] });
     },
   });
 
@@ -149,7 +168,7 @@ export function KnowledgePage() {
     onSuccess: async (document) => {
       setNewDocumentTitle("");
       setNewDocumentContent("");
-      client.setQueryData<Document[]>(["wiki-documents", selectedSpaceId, search], (current) => [
+      client.setQueryData<Document[]>(["wiki-documents", projectId, selectedSpaceId], (current) => [
         document,
         ...(current ?? []).filter((item) => item.id !== document.id),
       ]);
@@ -281,6 +300,8 @@ export function KnowledgePage() {
             createSpace.mutate({
               name: newSpaceName.trim(),
               description: newSpaceDescription.trim(),
+              scope_kind: "project",
+              project_id: projectId,
             } as SpaceCreate)
           }
         >
@@ -294,9 +315,14 @@ export function KnowledgePage() {
             aria-label="全文搜索"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="全量搜索文档标题与正文"
+            placeholder="搜索项目 Wiki、全局 Wiki、证据与外部快照"
           />
         </label>
+
+        {search.trim() && <div className="knowledge-search-results">
+          <div className="panel-head"><span>统一来源检索</span><small>保留各来源权威语义</small></div>
+          {unifiedSearch.isLoading ? <LoadingState label="正在检索多来源知识…"/> : unifiedSearch.error ? <ErrorState error={unifiedSearch.error} retry={() => unifiedSearch.refetch()}/> : unifiedSearch.data?.length ? unifiedSearch.data.map((hit) => <a key={`${hit.source_kind}:${hit.source_id}`} href={hit.source_link || undefined} className="knowledge-search-hit"><b>{hit.title}</b><span>{sourceKindLabel(hit.source_kind)} · 修订 {hit.revision}</span><small>{hit.content_sha256?.slice(0, 16) ?? "无内容哈希"}</small></a>) : <EmptyState title="没有匹配的来源" detail="系统不会为缺失知识或证据生成模拟结果。"/>}
+        </div>}
 
         <div className="panel-head"><span>当前空间文档</span><small>{selectedSpaceId || "未选择空间"}</small></div>
         <div className="document-list" role="list" aria-label="当前空间文档列表">

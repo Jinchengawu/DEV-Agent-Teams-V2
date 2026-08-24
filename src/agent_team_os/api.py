@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -35,6 +35,7 @@ from .delivery import (
     DeliveryStateConflictError,
     DeliveryVersionConflictError,
     PlanningServiceError,
+    ProjectExecutionSnapshot,
     RuntimeBindingConflictError,
 )
 from .modules.agents import (
@@ -59,8 +60,9 @@ from .modules.identity import (
 )
 from .modules.knowledge import (
     KnowledgeActor,
+    KnowledgeSearchHit,
+    KnowledgeSearchIndex,
     ProviderKnowledgeManager,
-    SystemKnowledgeArtifact,
     WikiService,
     create_provider_knowledge_router,
     create_wiki_router,
@@ -71,6 +73,7 @@ from .modules.orchestration import (
     PipelineRunRecord,
     create_pipeline_router,
 )
+from .modules.projects import ProjectCatalog, create_project_router
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
@@ -83,10 +86,17 @@ from .shared.permissions import Permission
 class DeliveryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    workspace_id: str = Field(min_length=1)
+    project_id: str | None = Field(default=None, min_length=1)
+    workspace_id: str | None = Field(default=None, min_length=1)
     user_request: str = Field(min_length=1, max_length=20_000)
     journey_revision_id: str | None = None
     pipeline_revision_id: str | None = None
+
+    @model_validator(mode="after")
+    def project_or_legacy_workspace(self) -> "DeliveryRequest":
+        if self.project_id is not None and self.workspace_id is not None:
+            raise ValueError("workspace_id cannot be combined with project_id")
+        return self
 
 
 class PlanDecisionRequest(BaseModel):
@@ -129,6 +139,8 @@ def create_app(
     agent_deployments: AgentDeploymentCatalog | None = None,
     provider_manifests: ProviderManifestCatalog | None = None,
     agent_runs: AgentRunLedger | None = None,
+    projects: ProjectCatalog | None = None,
+    knowledge_search: KnowledgeSearchIndex | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
         coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs, agent_runs)
@@ -154,9 +166,7 @@ def create_app(
         identity.require(actor, permission)
 
     @app.middleware("http")
-    async def identity_guard(
-        request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def identity_guard(request: Request, call_next: RequestResponseEndpoint) -> Response:
         public_paths = {
             "/v1/readiness",
             "/v1/auth/bootstrap-status",
@@ -175,9 +185,7 @@ def create_app(
                 actor = identity.authenticate(bearer)
             else:
                 ensure_same_origin(request)
-                actor = identity.authenticate_mutation(
-                    bearer, request.headers.get(CSRF_HEADER)
-                )
+                actor = identity.authenticate_mutation(bearer, request.headers.get(CSRF_HEADER))
             request.state.identity_user = actor
         except ProductError as error:
             return JSONResponse(
@@ -189,6 +197,22 @@ def create_app(
 
     def get_coordinator() -> DeliveryCoordinator:
         return coordinator
+
+    if projects is not None:
+
+        def project_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_project_router(
+                projects,
+                actor_id=project_actor_id,
+                authorize_manage=lambda request: require_permission(
+                    request, Permission.PROJECT_MANAGE
+                ),
+            )
+        )
 
     if agent_profiles is not None:
 
@@ -301,9 +325,7 @@ def create_app(
             create_pipeline_router(
                 pipeline_catalog,
                 actor_id=pipeline_actor_id,
-                authorize_edit=lambda request: require_permission(
-                    request, Permission.JOURNEY_EDIT
-                ),
+                authorize_edit=lambda request: require_permission(request, Permission.JOURNEY_EDIT),
                 authorize_publish=lambda request: require_permission(
                     request, Permission.JOURNEY_PUBLISH
                 ),
@@ -320,36 +342,6 @@ def create_app(
             if not isinstance(actor, User):
                 raise IdentityService.authentication_required()
             knowledge_actor = KnowledgeActor(user_id=actor.id, role=actor.role)
-            labels = {
-                "requirement": "需求",
-                "task": "任务",
-                "candidate": "候选变更",
-                "verification": "机器验证",
-                "plan-gate": "计划审批",
-                "candidate-gate": "候选审批",
-                "apply-receipt": "应用回执",
-            }
-            artifacts: list[SystemKnowledgeArtifact] = []
-            for delivery in coordinator.list():
-                values = (
-                    ("requirement", delivery.requirements),
-                    ("task", delivery.task),
-                    ("candidate", delivery.candidate),
-                    ("verification", delivery.verification),
-                    ("plan-gate", delivery.plan_gate),
-                    ("candidate-gate", delivery.candidate_gate),
-                    ("apply-receipt", delivery.apply_receipt),
-                )
-                artifacts.extend(
-                    SystemKnowledgeArtifact(
-                        source_id=f"{delivery.id}:{artifact_kind}",
-                        title=f"{delivery.user_request} · {labels[artifact_kind]}",
-                        content=artifact.model_dump(mode="json"),
-                    )
-                    for artifact_kind, artifact in values
-                    if artifact is not None
-                )
-            knowledge.sync_system_artifacts(knowledge_actor, tuple(artifacts))
             return knowledge_actor
 
         def resolve_knowledge_mutation_actor(request: Request) -> KnowledgeActor:
@@ -376,13 +368,14 @@ def create_app(
 
         @app.get("/v1/evidence", response_model=list[EvidenceRecord])
         def list_evidence(
+            project_id: str | None = None,
             delivery_id: str | None = None,
             kind: EvidenceKind | None = None,
             evidence_status: EvidenceStatus | None = None,
         ) -> tuple[EvidenceRecord, ...]:
             for delivery in coordinator.list():
                 evidence.sync_delivery(delivery.model_dump(mode="json"))
-            records = evidence.list(delivery_id)
+            records = evidence.list(delivery_id, project_id)
             return tuple(
                 item
                 for item in records
@@ -390,9 +383,7 @@ def create_app(
                 and (evidence_status is None or item.status == evidence_status)
             )
 
-        @app.get(
-            "/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord]
-        )
+        @app.get("/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord])
         def get_delivery_evidence(delivery_id: str) -> tuple[EvidenceRecord, ...]:
             try:
                 delivery = coordinator.get(delivery_id)
@@ -442,9 +433,7 @@ def create_app(
             "/v1/agent-instances/{instance_id}/health-check",
             response_model=AgentInstance,
         )
-        async def health_check_agent_instance(
-            instance_id: str, request: Request
-        ) -> AgentInstance:
+        async def health_check_agent_instance(instance_id: str, request: Request) -> AgentInstance:
             require_permission(request, Permission.AGENT_MANAGE)
             try:
                 return await control_plane.check_instance(instance_id)
@@ -543,13 +532,13 @@ def create_app(
             return control_plane.list_journeys()
 
         @app.get("/v1/board", response_model=list[WorkItem])
-        def get_board() -> tuple[WorkItem, ...]:
+        def get_board(project_id: str | None = None) -> tuple[WorkItem, ...]:
             events = tuple(
                 event
                 for delivery in coordinator.list()
                 for event in coordinator.events(delivery.id)
             )
-            return BoardProjector().rebuild(events).items
+            return BoardProjector().rebuild(events, project_id).items
 
         @app.post(
             "/v1/work-items/{work_item_id}/command",
@@ -575,9 +564,7 @@ def create_app(
                     return coordinator.start_plan_decision(
                         work_item_id,
                         decision=(
-                            "approve"
-                            if request_body.command == "approve-plan"
-                            else "reject"
+                            "approve" if request_body.command == "approve-plan" else "reject"
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.plan_gate.subject_sha256,
@@ -588,9 +575,7 @@ def create_app(
                     return coordinator.start_candidate_decision(
                         work_item_id,
                         decision=(
-                            "accept"
-                            if request_body.command == "accept-candidate"
-                            else "reject"
+                            "accept" if request_body.command == "accept-candidate" else "reject"
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.candidate_gate.subject_sha256,
@@ -613,8 +598,9 @@ def create_app(
 
         @app.get("/v1/knowledge/documents", response_model=list[KnowledgeDocument])
         def list_knowledge_documents() -> tuple[KnowledgeDocument, ...]:
-            for delivery in coordinator.list():
-                control_plane.sync_delivery_documents(delivery)
+            if projects is None:
+                for delivery in coordinator.list():
+                    control_plane.sync_delivery_documents(delivery)
             return control_plane.list_documents()
 
         @app.get("/v1/knowledge/documents/{document_id}", response_model=KnowledgeDocument)
@@ -624,11 +610,13 @@ def create_app(
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="document not found") from error
 
-        @app.get("/v1/knowledge/search", response_model=list[KnowledgeDocument])
-        def search_knowledge(q: str) -> tuple[KnowledgeDocument, ...]:
-            for delivery in coordinator.list():
-                control_plane.sync_delivery_documents(delivery)
-            return control_plane.search_documents(q)
+        if knowledge_search is None:
+
+            @app.get("/v1/knowledge/search", response_model=list[KnowledgeDocument])
+            def search_knowledge(q: str) -> tuple[KnowledgeDocument, ...]:
+                for delivery in coordinator.list():
+                    control_plane.sync_delivery_documents(delivery)
+                return control_plane.search_documents(q)
 
         @app.get("/v1/events/stream", include_in_schema=True)
         async def stream_events(after: int = 0) -> StreamingResponse:
@@ -648,6 +636,14 @@ def create_app(
 
             return StreamingResponse(events(), media_type="text/event-stream")
 
+    if knowledge_search is not None:
+
+        @app.get("/v1/knowledge/search", response_model=list[KnowledgeSearchHit])
+        def search_project_knowledge(
+            project_id: str, q: str = "", include_global: bool = True
+        ) -> tuple[KnowledgeSearchHit, ...]:
+            return knowledge_search.search(project_id, q, include_global=include_global)
+
     @app.post("/v1/deliveries", response_model=DeliveryRun, status_code=status.HTTP_202_ACCEPTED)
     async def create_delivery(
         request_body: DeliveryRequest,
@@ -655,10 +651,31 @@ def create_app(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         require_permission(request, Permission.DELIVERY_CREATE)
+        delivery_id = new_id()
+        project_context = None
         try:
             if (
+                projects is not None
+                and request_body.project_id is None
+                and request_body.workspace_id != "backend-demo"
+            ):
+                raise ProductError(
+                    code="DELIVERY_PROJECT_REQUIRED",
+                    title="新交付必须选择项目",
+                    detail="任意 Workspace ID 已被项目治理替代。",
+                    repair="选择项目后重新创建交付。",
+                    status_code=422,
+                )
+            effective_project_id = request_body.project_id or "legacy-default"
+            effective_pipeline_revision_id = request_body.pipeline_revision_id
+            if projects is not None:
+                project_context = projects.prepare_delivery(
+                    effective_project_id, delivery_id, effective_pipeline_revision_id
+                )
+                effective_pipeline_revision_id = project_context.pipeline_revision_id
+            if (
                 pipeline_catalog is not None
-                and request_body.pipeline_revision_id is None
+                and effective_pipeline_revision_id is None
                 and request_body.journey_revision_id is None
             ):
                 raise ProductError(
@@ -668,7 +685,7 @@ def create_app(
                     repair="刷新流水线列表，选择一个已激活的 Pipeline Revision 后重试。",
                 )
             if (
-                request_body.pipeline_revision_id is not None
+                effective_pipeline_revision_id is not None
                 and request_body.journey_revision_id is not None
             ):
                 raise ProductError(
@@ -679,12 +696,23 @@ def create_app(
                 )
             pipeline_revision = (
                 None
-                if pipeline_catalog is None
-                or request_body.pipeline_revision_id is None
-                else pipeline_catalog.resolve_active_revision(
-                    request_body.pipeline_revision_id
-                )
+                if pipeline_catalog is None or effective_pipeline_revision_id is None
+                else pipeline_catalog.resolve_active_revision(effective_pipeline_revision_id)
             )
+            if pipeline_revision is not None and project_context is not None:
+                assigned: set[str] = set()
+                for value in pipeline_revision.resolved_provider_bindings.values():
+                    deployment = value.get("deployment")
+                    if isinstance(deployment, dict) and deployment.get("id"):
+                        assigned.add(str(deployment["id"]))
+                forbidden = sorted(assigned - set(project_context.deployment_ids))
+                if forbidden:
+                    raise ProductError(
+                        code="PROJECT_DEPLOYMENT_NOT_ALLOWED",
+                        title="项目未授权流水线使用的智能体部署",
+                        detail="未授权部署：" + "、".join(forbidden),
+                        repair="在项目智能体授权中启用这些 Deployment 后重试。",
+                    )
             revision = None
             if control_plane is not None and pipeline_revision is None:
                 try:
@@ -700,9 +728,7 @@ def create_app(
                 except ValueError as error:
                     raise HTTPException(status_code=409, detail=str(error)) from error
             pipeline_run_id = (
-                new_id()
-                if pipeline_revision is not None and pipeline_runs is not None
-                else None
+                new_id() if pipeline_revision is not None and pipeline_runs is not None else None
             )
             if pipeline_revision is not None and pipeline_runs is None:
                 raise ProductError(
@@ -712,15 +738,19 @@ def create_app(
                     repair="修复运行账本配置后重新启动交付。",
                 )
             delivery = service.enqueue(
-                workspace_id=request_body.workspace_id,
+                delivery_id=delivery_id,
+                project_id=effective_project_id,
+                workspace_id=(project_context.workspace_id if project_context else "backend-demo"),
+                project_execution_snapshot=(
+                    None
+                    if project_context is None
+                    else ProjectExecutionSnapshot.model_validate(project_context.model_dump())
+                ),
                 user_request=request_body.user_request,
                 pipeline_revision_id=(
                     None
                     if pipeline_revision is None
-                    else (
-                        f"{pipeline_revision.pipeline_id}:"
-                        f"{pipeline_revision.revision}"
-                    )
+                    else (f"{pipeline_revision.pipeline_id}:{pipeline_revision.revision}")
                 ),
                 pipeline_run_id=pipeline_run_id,
                 journey_revision_id=(
@@ -729,7 +759,9 @@ def create_app(
                 journey_binding_snapshot=(
                     pipeline_revision.binding_snapshot
                     if pipeline_revision is not None
-                    else None if revision is None else revision.binding_snapshot
+                    else None
+                    if revision is None
+                    else revision.binding_snapshot
                 ),
                 resolved_provider_bindings=(
                     pipeline_revision.resolved_provider_bindings
@@ -739,7 +771,9 @@ def create_app(
                 resolved_journey_sha256=(
                     pipeline_revision.fingerprint
                     if pipeline_revision is not None
-                    else None if revision is None else revision.fingerprint
+                    else None
+                    if revision is None
+                    else revision.fingerprint
                 ),
                 resolved_pipeline_sha256=(
                     None if pipeline_revision is None else pipeline_revision.fingerprint
@@ -762,6 +796,10 @@ def create_app(
             ) from error
         except DeliveryStateConflictError as error:
             raise HTTPException(status_code=409, detail="active delivery conflict") from error
+        except Exception:
+            if projects is not None and project_context is not None:
+                projects.release_delivery(project_context.project_id, delivery_id)
+            raise
 
     @app.post(
         "/v1/deliveries/{delivery_id}/plan-decision",
@@ -833,8 +871,11 @@ def create_app(
     @app.get("/v1/deliveries", response_model=list[DeliveryRun])
     def list_deliveries(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
+        project_id: str | None = None,
     ) -> tuple[DeliveryRun, ...]:
-        return service.list()
+        return tuple(
+            item for item in service.list() if project_id is None or item.project_id == project_id
+        )
 
     @app.post(
         "/v1/deliveries/{delivery_id}/candidate-decision",

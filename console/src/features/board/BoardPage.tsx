@@ -8,6 +8,7 @@ import { request } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { commandLabel } from "../../i18n";
+import { useProjectId } from "../projects/api";
 
 type WorkItem = components["schemas"]["WorkItem"];
 type BoardColumn = WorkItem["column"];
@@ -37,15 +38,16 @@ export function resolveDropCommand(item: WorkItem, target: BoardColumn): WorkCom
 type PendingDrop = { item: WorkItem; target: BoardColumn; command: WorkCommand };
 
 export function BoardPage() {
+  const projectId = useProjectId();
   const client = useQueryClient();
-  const board = useQuery({ queryKey: ["board"], queryFn: () => request<WorkItem[]>("/v1/board"), refetchInterval: 1500 });
+  const board = useQuery({ queryKey: ["board", projectId], queryFn: () => request<WorkItem[]>(`/v1/board?project_id=${encodeURIComponent(projectId)}`), refetchInterval: 1500 });
   const [active, setActive] = useState<WorkItem>();
   const [pending, setPending] = useState<PendingDrop>();
   const [notice, setNotice] = useState<string>();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor));
   const command = useMutation({
     mutationFn: ({ item, command: value }: { item: WorkItem; command: WorkCommand }) => request<WorkItem>(`/v1/work-items/${item.id}/command`, { method: "POST", body: JSON.stringify({ command: value, expected_version: item.version }) }),
-    onSuccess: async () => { setPending(undefined); await Promise.all([client.invalidateQueries({ queryKey: ["board"] }), client.invalidateQueries({ queryKey: ["deliveries"] })]); },
+    onSuccess: async () => { setPending(undefined); await Promise.all([client.invalidateQueries({ queryKey: ["board", projectId] }), client.invalidateQueries({ queryKey: ["deliveries", projectId] })]); },
   });
   const grouped = useMemo(() => Object.fromEntries(columns.map((column) => [column.id, (board.data ?? []).filter((item) => item.column === column.id)])) as Record<BoardColumn, WorkItem[]>, [board.data]);
 
@@ -67,7 +69,7 @@ export function BoardPage() {
   };
 
   return <>
-    <div className="board-toolbar"><div><span className="eyebrow">事件投影</span><b>拖动卡片只发出合法命令</b></div><span>卡片不会被界面直接改成“完成”</span></div>
+    <div className="board-toolbar"><div><span className="eyebrow">项目事件投影 · {projectId}</span><b>拖动卡片只发出合法命令</b></div><span>卡片不会被界面直接改成“完成”</span></div>
     {notice && <div className="conflict-banner"><b>非法状态跳转已回弹</b><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice(undefined)}><X size={15}/></button></div>}
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={({ active: drag }: DragStartEvent) => setActive(board.data?.find((item) => item.id === drag.id))} onDragEnd={onDragEnd} onDragCancel={() => setActive(undefined)}>
       <section className="board interactive-board">{columns.map((column) => <BoardLane key={column.id} {...column} items={grouped[column.id]}/>)}</section>

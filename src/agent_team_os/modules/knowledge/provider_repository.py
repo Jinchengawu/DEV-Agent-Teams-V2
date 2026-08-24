@@ -196,10 +196,14 @@ class SQLiteProviderKnowledgeRepository:
         return snapshot
 
     def fail_sync(self, run: ProviderSyncRun) -> None:
-        if run.status not in {
-            ProviderSyncStatus.FAILED,
-            ProviderSyncStatus.UNAVAILABLE,
-        } or run.completed_at is None:
+        if (
+            run.status
+            not in {
+                ProviderSyncStatus.FAILED,
+                ProviderSyncStatus.UNAVAILABLE,
+            }
+            or run.completed_at is None
+        ):
             raise ValueError("Only a failed Provider Sync Run may be finalized")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")

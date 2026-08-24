@@ -38,8 +38,22 @@ class WorkspaceAgent(Protocol):
     async def run(self, *, instruction: str, workspace: Path) -> str: ...
 
 
+class WorkspaceSandboxResolver(Protocol):
+    def for_workspace(self, workspace_id: str) -> GitSandbox: ...
+
+
+def _sandbox_for(source: GitSandbox | WorkspaceSandboxResolver, workspace_id: str) -> GitSandbox:
+    if isinstance(source, GitSandbox):
+        if workspace_id != "backend-demo":
+            raise ValueError("only the built-in backend-demo workspace is supported")
+        return source
+    return source.for_workspace(workspace_id)
+
+
 class GitCodeExecutor:
-    def __init__(self, sandbox: GitSandbox, agent: WorkspaceAgent) -> None:
+    def __init__(
+        self, sandbox: GitSandbox | WorkspaceSandboxResolver, agent: WorkspaceAgent
+    ) -> None:
         self._sandbox = sandbox
         self._agent = agent
         self.evidence_identity = agent.evidence_identity
@@ -47,10 +61,9 @@ class GitCodeExecutor:
     async def execute(
         self, task: TaskContract, workspace_id: str, delivery_id: str
     ) -> CandidateChange:
-        if workspace_id != "backend-demo":
-            raise ValueError("only the built-in backend-demo workspace is supported")
-        base_revision = self._sandbox.main_revision()
-        worktree = self._sandbox.create_worktree(delivery_id, base_revision)
+        sandbox = _sandbox_for(self._sandbox, workspace_id)
+        base_revision = sandbox.main_revision()
+        worktree = sandbox.create_worktree(delivery_id, base_revision)
         policy = SandboxPolicy(
             allowed_paths=task.system_policy.allowed_paths,
             verification_command=(
@@ -73,7 +86,7 @@ class GitCodeExecutor:
             "Use only the Python standard library."
         )
         await self._agent.run(instruction=instruction, workspace=worktree)
-        return self._sandbox.create_candidate(
+        return sandbox.create_candidate(
             delivery_id=delivery_id,
             base_revision=base_revision,
             policy=policy,
@@ -81,28 +94,25 @@ class GitCodeExecutor:
 
 
 class GitCandidateVerifier:
-    def __init__(self, sandbox: GitSandbox) -> None:
+    def __init__(self, sandbox: GitSandbox | WorkspaceSandboxResolver) -> None:
         self._sandbox = sandbox
 
     async def verify(
         self, candidate: CandidateChange, task: TaskContract, workspace_id: str
     ) -> VerificationRun:
-        if workspace_id != "backend-demo":
-            raise ValueError("only the built-in backend-demo workspace is supported")
+        sandbox = _sandbox_for(self._sandbox, workspace_id)
         policy = SandboxPolicy(allowed_paths=task.system_policy.allowed_paths)
-        return self._sandbox.verify_candidate(
+        return sandbox.verify_candidate(
             candidate, policy=policy, acceptance_ids=task.acceptance_ids
         )
 
 
 class GitCandidateApplier:
-    def __init__(self, sandbox: GitSandbox) -> None:
+    def __init__(self, sandbox: GitSandbox | WorkspaceSandboxResolver) -> None:
         self._sandbox = sandbox
 
     async def apply(self, candidate: CandidateChange, workspace_id: str) -> ApplyReceipt:
-        if workspace_id != "backend-demo":
-            raise ValueError("only the built-in backend-demo workspace is supported")
-        return self._sandbox.apply_candidate(candidate)
+        return _sandbox_for(self._sandbox, workspace_id).apply_candidate(candidate)
 
 
 class ACWMCodexWorkspaceAgent:
@@ -111,9 +121,7 @@ class ACWMCodexWorkspaceAgent:
     evidence_identity = "codex-cli"
 
     def __init__(self, config: CodexCLIConfig | None = None) -> None:
-        self._config = config or CodexCLIConfig(
-            sandbox="workspace-write", timeout_seconds=180
-        )
+        self._config = config or CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
         self._adapter = CodexCLICapabilityAdapter(self._config)
         self._workflow = CodeDeliveryWorkflowAdapter()
 
