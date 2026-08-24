@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import importlib.metadata
+import json
 import os
 import shutil
 import subprocess
+from importlib import import_module
 from importlib.util import find_spec
+from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ImmutableModel(BaseModel):
@@ -28,6 +32,72 @@ class ReadinessReport(ImmutableModel):
 
 class ReadinessProbe(Protocol):
     def inspect(self) -> ReadinessReport: ...
+
+
+class FrameworkRevision(ImmutableModel):
+    version: str
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+
+
+class FrameworkLock(ImmutableModel):
+    acwm: FrameworkRevision
+
+
+def inspect_acwm_revision_lock(
+    lock_path: Path, *, actual_revision: str | None = None
+) -> DependencyCheck:
+    try:
+        locked = FrameworkLock.model_validate_json(lock_path.read_text(encoding="utf-8"))
+        actual = actual_revision or imported_acwm_revision()
+    except Exception:
+        return DependencyCheck(
+            name="python:acwm-revision",
+            status="failed",
+            repair="修复 config/framework-lock.json 并安装其指定的 ACWM Revision。",
+        )
+    matches = actual == locked.acwm.revision
+    return DependencyCheck(
+        name="python:acwm-revision",
+        status="ready" if matches else "failed",
+        repair=(
+            None
+            if matches
+            else (
+                f"当前 ACWM {actual} 与锁定 Revision "
+                f"{locked.acwm.revision} 不一致；重新执行锁定依赖安装。"
+            )
+        ),
+    )
+
+
+def imported_acwm_revision() -> str:
+    package_file = getattr(import_module("acwm"), "__file__", None)
+    if isinstance(package_file, str):
+        resolved_package = Path(package_file).resolve()
+        for parent in resolved_package.parents:
+            source_package = parent / "src" / "acwm"
+            if (
+                (parent / ".git").exists()
+                and resolved_package.is_relative_to(source_package.resolve())
+            ):
+                result = subprocess.run(
+                    ("git", "rev-parse", "HEAD"),
+                    cwd=parent,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    return result.stdout.strip()
+    direct_url = importlib.metadata.distribution(
+        "agent-capability-workflow-matrix"
+    ).read_text("direct_url.json")
+    if direct_url:
+        data = json.loads(direct_url)
+        commit = data.get("vcs_info", {}).get("commit_id")
+        if commit:
+            return str(commit)
+    return importlib.metadata.version("agent-capability-workflow-matrix")
 
 
 class RuntimeReadiness:

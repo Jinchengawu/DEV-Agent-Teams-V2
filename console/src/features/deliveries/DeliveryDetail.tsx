@@ -4,9 +4,11 @@ import type { Delivery, EvidenceRecord, ProductEvent } from "../../entities/deli
 import { ConflictState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import type { DeliveryDecision } from "./api";
+import type { PipelineRun } from "./api";
 
 type Props = {
   delivery: Delivery;
+  pipelineRun?: PipelineRun;
   events: ProductEvent[];
   evidence: EvidenceRecord[];
   decisionPending: boolean;
@@ -14,16 +16,19 @@ type Props = {
   onDecision: (decision: DeliveryDecision) => void;
 };
 
-export function DeliveryDetail({ delivery, events, evidence, decisionPending, decisionError, onDecision }: Props) {
+export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisionPending, decisionError, onDecision }: Props) {
   const verified = evidence.filter((item) => item.status === "verified");
+  const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   return <div className="delivery-detail">
     <section className="detail-hero">
-      <div><span className="eyebrow">交付 {delivery.id.slice(0, 8)}</span><h2>{delivery.user_request}</h2><p>旅程 {delivery.journey_revision_id ?? "未绑定发布版本"} · 聚合版本 {delivery.version}</p></div>
+      <div><span className="eyebrow">交付 {delivery.id.slice(0, 8)}</span><h2>{delivery.user_request}</h2><p>流水线 {delivery.pipeline_revision_id ?? delivery.journey_revision_id ?? "未绑定发布版本"} · 聚合版本 {delivery.version}</p></div>
       <StatusBadge value={delivery.status}/>
     </section>
 
     <ConflictState error={decisionError}/>
     {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>请根据失败代码修正需求或运行依赖，再创建新的交付。失败运行不会污染沙箱主分支。</span></div></div>}
+
+    {pipelineRun && <section className="panel pipeline-run-ledger"><div className="panel-head"><span>ACWM DAG 运行账本</span><small>GraphRun V{pipelineRun.version} · {pipelineRun.status}</small></div><div className="pipeline-run-meta"><span>不可变图指纹</span><code>{pipelineRun.graph_fingerprint}</code></div><div className="pipeline-node-projections">{graphNodes.map((node) => <article key={node.node_id}><i data-status={node.status}/><b>{node.node_id}</b><StatusBadge value={node.status}/><small>尝试 {node.attempt}</small></article>)}</div></section>}
 
     <div className="detail-grid">
       <section className="panel artifact-panel">
@@ -57,6 +62,19 @@ export function DeliveryDetail({ delivery, events, evidence, decisionPending, de
       </section>
     </div>
   </div>;
+}
+
+type GraphNodeProjection = { node_id: string; status: string; attempt: number };
+
+function graphNodeProjections(snapshot: Record<string, unknown>): GraphNodeProjection[] {
+  const nodes = snapshot.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes.flatMap((node) => {
+    if (typeof node !== "object" || node === null) return [];
+    const value = node as Record<string, unknown>;
+    if (typeof value.node_id !== "string" || typeof value.status !== "string") return [];
+    return [{ node_id: value.node_id, status: value.status, attempt: typeof value.attempt === "number" ? value.attempt : 0 }];
+  });
 }
 
 function GateSubject({ label, sha, revision }: { label: string; sha: string; revision: number }) {

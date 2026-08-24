@@ -21,11 +21,13 @@ const deterministic = {
   kind: "deterministic", status: "passed", fail: 0, warn: 0, skipped: 0, created_at: now,
   dev_revision: "a".repeat(40), acwm_revision: "b".repeat(40), planning_identity: "deterministic-test",
   execution_identity: "deterministic-model-boundary", candidate_revision: "c".repeat(40), diff_sha256: "d".repeat(64),
-  verification_exit_code: 0, evidence_sha256: "e".repeat(64), browser_e2e: true, browser_restart_recovery: true, error: null,
+  verification_exit_code: 0, evidence_sha256: "e".repeat(64), browser_e2e: true, browser_restart_recovery: true,
+  browser_multi_pipeline_e2e: true, browser_verified_evidence_count: 7, browser_candidate_matches_main: true, error: null,
 };
 const live = {
   ...deterministic, kind: "live", planning_identity: "codex-simulated-hermes", execution_identity: "codex-cli",
-  browser_e2e: false, browser_restart_recovery: false,
+  browser_e2e: false, browser_restart_recovery: false, browser_multi_pipeline_e2e: false,
+  browser_verified_evidence_count: 0, browser_candidate_matches_main: false,
 };
 
 const calls: string[] = [];
@@ -62,6 +64,7 @@ describe("设置页发布双门禁", () => {
     expect(screen.getByText("deterministic-model-boundary")).toBeTruthy();
     expect(screen.getByText("codex-cli")).toBeTruthy();
     expect(screen.getByText("浏览器闭环 已执行 · 进程重启恢复 已验证")).toBeTruthy();
+    expect(screen.getByText("多流水线闭环 已验证 · 已验证证据 7 条 · Main 精确等于 Candidate")).toBeTruthy();
   });
 
   test("刷新报告按钮重新请求真实只读接口", async () => {

@@ -67,7 +67,28 @@ function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: La
 
 function GateReportCard({ title, report }: { title: string; report: GateReport | null }) {
   if (!report) return <article className="gate-report missing"><div><span className="eyebrow">{title}</span><StatusBadge value="unknown"/></div><h3>缺少可解析报告</h3><p>运行发布命令生成新的 JSON 与 Markdown 证据。</p></article>;
-  return <article className="gate-report"><div><span className="eyebrow">{title}</span><StatusBadge value={report.status}/></div><h3>{report.kind === "live" ? "真实 Codex 规划与执行" : "确定性模型边界与浏览器闭环"}</h3><dl><dt>生成时间</dt><dd>{formatReportTime(report.created_at)}</dd><dt>DEV Revision</dt><dd><code>{report.dev_revision}</code></dd><dt>ACWM Revision</dt><dd><code>{report.acwm_revision}</code></dd><dt>规划身份</dt><dd>{report.planning_identity}</dd><dt>执行身份</dt><dd>{report.execution_identity}</dd><dt>失败 / 警告 / 跳过</dt><dd>{report.fail} / {report.warn} / {report.skipped}</dd><dt>证据哈希</dt><dd><code>{report.evidence_sha256}</code></dd></dl>{report.kind === "deterministic" && <p className={report.browser_e2e && report.browser_restart_recovery ? "gate-proof verified" : "gate-proof invalid"}>浏览器闭环 {report.browser_e2e ? "已执行" : "缺失"} · 进程重启恢复 {report.browser_restart_recovery ? "已验证" : "缺失"}</p>}</article>;
+  const browserEvidenceVerified = report.browser_e2e
+    && report.browser_restart_recovery
+    && report.browser_multi_pipeline_e2e
+    && report.browser_verified_evidence_count >= 7
+    && report.browser_candidate_matches_main;
+  return <article className="gate-report">
+    <div><span className="eyebrow">{title}</span><StatusBadge value={report.status}/></div>
+    <h3>{report.kind === "live" ? "真实 Codex 规划与执行" : "确定性模型边界与浏览器闭环"}</h3>
+    <dl>
+      <dt>生成时间</dt><dd>{formatReportTime(report.created_at)}</dd>
+      <dt>DEV Revision</dt><dd><code>{report.dev_revision}</code></dd>
+      <dt>ACWM Revision</dt><dd><code>{report.acwm_revision}</code></dd>
+      <dt>规划身份</dt><dd>{report.planning_identity}</dd>
+      <dt>执行身份</dt><dd>{report.execution_identity}</dd>
+      <dt>失败 / 警告 / 跳过</dt><dd>{report.fail} / {report.warn} / {report.skipped}</dd>
+      <dt>证据哈希</dt><dd><code>{report.evidence_sha256}</code></dd>
+    </dl>
+    {report.kind === "deterministic" && <div className={browserEvidenceVerified ? "gate-proof verified" : "gate-proof invalid"}>
+      <p>浏览器闭环 {report.browser_e2e ? "已执行" : "缺失"} · 进程重启恢复 {report.browser_restart_recovery ? "已验证" : "缺失"}</p>
+      <p>多流水线闭环 {report.browser_multi_pipeline_e2e ? "已验证" : "缺失"} · 已验证证据 {report.browser_verified_evidence_count} 条 · Main {report.browser_candidate_matches_main ? "精确等于 Candidate" : "未证明等于 Candidate"}</p>
+    </div>}
+  </article>;
 }
 
 function releaseVerdictLabel(status: LatestGateReports["combined"]["status"]) {

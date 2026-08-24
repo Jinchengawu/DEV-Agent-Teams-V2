@@ -8,8 +8,8 @@ resolution-markers = [
 
 [[package]]
 name = "agent-capability-workflow-matrix"
-version = "0.3.0"
-source = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=b79e671814d3a6ac03b5ee50ac7011d50a37a1aa#b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" }
+version = "0.5.0"
+source = { git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d#65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -426,13 +426,14 @@ wheels = [
 
 [[package]]
 name = "dev-agent-teams-v2"
-version = "0.2.1"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "agent-capability-workflow-matrix" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -453,7 +454,7 @@ live = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-capability-workflow-matrix", git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=b79e671814d3a6ac03b5ee50ac7011d50a37a1aa" },
+    { name = "agent-capability-workflow-matrix", git = "https://github.com/Jinchengawu/Agent-Capability-Workflow-Matrix.git?rev=65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d" },
     { name = "agent-client-protocol", marker = "extra == 'live'", specifier = "==0.9.0" },
     { name = "agentscope", marker = "extra == 'live'", specifier = "==2.0.6" },
     { name = "fastapi", specifier = ">=0.116,<1" },
@@ -463,6 +464,7 @@ requires-dist = [
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.55,<2" },
     { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4,<9" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6,<7" },

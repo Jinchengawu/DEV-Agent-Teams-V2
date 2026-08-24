@@ -9,19 +9,22 @@ import sqlite3
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from acwm.domain import (
     GateSnapshot,
     GateStatus,
     GateSubject,
+    ResolvedProviderBinding,
     StaleGateDecision,
     decide_gate,
     open_gate,
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+from .modules.agents import AgentRunLedger
+from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
 
@@ -114,8 +117,12 @@ class DeliveryRun(ImmutableModel):
     apply_receipt: ApplyReceipt | None = None
     plan_gate: GateRecord | None = None
     candidate_gate: GateRecord | None = None
+    pipeline_run_id: str | None = None
+    pipeline_revision_id: str | None = None
+    resolved_pipeline_sha256: Sha256 | None = None
     journey_revision_id: str | None = None
     journey_binding_snapshot: dict[str, dict[str, object]] = Field(default_factory=dict)
+    resolved_provider_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
     resolved_journey_sha256: Sha256 | None
     error_code: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -171,6 +178,10 @@ class ActiveDeliveryConflictError(DeliveryStateConflictError):
     pass
 
 
+class ProcessInterruptedError(RuntimeError):
+    code = "PROCESS_INTERRUPTED"
+
+
 class RuntimeBindingConflictError(DeliveryStateConflictError):
     def __init__(self, capability_id: str, expected: str, actual: str | None) -> None:
         super().__init__(capability_id)
@@ -187,6 +198,38 @@ class DeliveryRepository(Protocol):
     def list(self) -> tuple[DeliveryRun, ...]: ...
 
     def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]: ...
+
+
+class PipelineExecution(Protocol):
+    """Small product interface for the deep Pipeline execution module."""
+
+    def start(self, delivery: DeliveryRun) -> None: ...
+
+    async def advance(self, delivery_id: str) -> None: ...
+
+    async def decide_plan(
+        self,
+        delivery: DeliveryRun,
+        *,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun: ...
+
+    async def decide_candidate(
+        self,
+        delivery: DeliveryRun,
+        *,
+        decision: Literal["accept", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun: ...
+
+    def cancel(self, delivery: DeliveryRun) -> None: ...
+
+    def fail(self, delivery_id: str, error: Exception) -> None: ...
+
+    async def recover_applying(self, delivery: DeliveryRun) -> None: ...
 
 
 class InMemoryDeliveryRepository:
@@ -324,6 +367,27 @@ class DeliveryCoordinator:
             else Sha256.validate(resolved_journey_sha256)
         )
         self._background: dict[str, asyncio.Task[None]] = {}
+        self._pipeline_execution: PipelineExecution | None = None
+
+    def configure_pipeline_runtime(
+        self,
+        catalog: PipelineCatalog,
+        runs: PipelineRunLedger,
+        agent_runs: AgentRunLedger | None = None,
+    ) -> None:
+        """Attach the product governance layer to the ACWM GraphRun ledger."""
+        from .modules.delivery import PipelineExecutionModule
+
+        self._pipeline_execution = PipelineExecutionModule(
+            planning=self._planning,
+            executor=self._executor,
+            verifier=self._verifier,
+            applier=self._applier,
+            repository=self._repository,
+            catalog=catalog,
+            runs=runs,
+            agent_runs=agent_runs,
+        )
 
     def enqueue(
         self,
@@ -331,14 +395,27 @@ class DeliveryCoordinator:
         workspace_id: str,
         user_request: str,
         journey_revision_id: str | None = None,
+        pipeline_revision_id: str | None = None,
+        pipeline_run_id: str | None = None,
         journey_binding_snapshot: dict[str, dict[str, object]] | None = None,
+        resolved_provider_bindings: dict[str, dict[str, object]] | None = None,
         resolved_journey_sha256: str | None = None,
+        resolved_pipeline_sha256: str | None = None,
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
         binding_snapshot = journey_binding_snapshot or {}
-        if journey_revision_id is not None:
-            self._validate_runtime_bindings(binding_snapshot)
+        provider_bindings = resolved_provider_bindings or {}
+        resolved_pipeline_run_id = (
+            pipeline_run_id
+            if pipeline_revision_id is None or pipeline_run_id is not None
+            else str(uuid4())
+        )
+        if journey_revision_id is not None or pipeline_revision_id is not None:
+            if provider_bindings:
+                self._validate_provider_bindings(provider_bindings)
+            else:
+                self._validate_runtime_bindings(binding_snapshot)
         delivery = DeliveryRun(
             id=str(uuid4()),
             workspace_id=workspace_id,
@@ -347,13 +424,46 @@ class DeliveryCoordinator:
             version=1,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
+            pipeline_run_id=resolved_pipeline_run_id,
+            pipeline_revision_id=pipeline_revision_id,
+            resolved_pipeline_sha256=(
+                None
+                if resolved_pipeline_sha256 is None
+                else Sha256.validate(resolved_pipeline_sha256)
+            ),
             journey_revision_id=journey_revision_id,
             journey_binding_snapshot=binding_snapshot,
+            resolved_provider_bindings=provider_bindings,
             resolved_journey_sha256=journey_hash,
         )
         self._repository.save(delivery)
-        self._schedule(delivery.id, self._plan_queued(delivery))
+        if pipeline_revision_id is not None:
+            if self._pipeline_execution is None:
+                return self.fail_initialization(
+                    delivery.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE"
+                )
+            self._pipeline_execution.start(delivery)
+            self._schedule(
+                delivery.id, self._pipeline_execution.advance(delivery.id)
+            )
+        else:
+            self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
+
+    def fail_initialization(self, delivery_id: str, error_code: str) -> DeliveryRun:
+        task = self._background.pop(delivery_id, None)
+        if task is not None:
+            task.cancel()
+        delivery = self.get(delivery_id)
+        failed = delivery.model_copy(
+            update={
+                "status": "failed",
+                "error_code": error_code,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._repository.save(failed)
+        return failed
 
     def _validate_runtime_bindings(
         self, snapshot: dict[str, dict[str, object]]
@@ -363,12 +473,19 @@ class DeliveryCoordinator:
             "hermes-project-admin": self._planning.evidence_identity,
             "codex-backend": self._executor.evidence_identity,
         }
-        for capability_id, expected_identity in expected_identities.items():
-            binding = snapshot.get(capability_id)
-            actual_identity = None if binding is None else binding.get("identity")
+        if not snapshot:
+            raise RuntimeBindingConflictError(
+                "pipeline-capabilities", "published-binding-snapshot", None
+            )
+        for capability_id, binding in snapshot.items():
+            expected_identity = expected_identities.get(capability_id)
+            actual_identity = binding.get("identity")
+            if expected_identity is None:
+                raise RuntimeBindingConflictError(
+                    capability_id, "registered-capability-adapter", None
+                )
             if (
-                binding is None
-                or not isinstance(binding.get("instance_id"), str)
+                not isinstance(binding.get("instance_id"), str)
                 or not binding["instance_id"]
                 or not isinstance(binding.get("instance_version"), int)
                 or not isinstance(binding.get("runtime_type"), str)
@@ -378,6 +495,25 @@ class DeliveryCoordinator:
                     capability_id,
                     expected_identity,
                     actual_identity if isinstance(actual_identity, str) else None,
+                )
+
+    def _validate_provider_bindings(
+        self, snapshot: dict[str, dict[str, object]]
+    ) -> None:
+        for site, value in snapshot.items():
+            binding = value.get("binding")
+            deployment = value.get("deployment")
+            if not isinstance(binding, dict) or not isinstance(deployment, dict):
+                raise RuntimeBindingConflictError(site, "resolved-provider-binding", None)
+            try:
+                resolved = ResolvedProviderBinding.model_validate(binding)
+            except ValueError as error:
+                raise RuntimeBindingConflictError(
+                    site, "valid-resolved-provider-binding", None
+                ) from error
+            if not resolved.verify() or not deployment.get("enabled"):
+                raise RuntimeBindingConflictError(
+                    site, "verified-enabled-provider-binding", None
                 )
 
     async def _plan_queued(self, delivery: DeliveryRun) -> None:
@@ -610,6 +746,15 @@ class DeliveryCoordinator:
         expected_subject_sha256: str,
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
+        if delivery.pipeline_revision_id is not None:
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            return await self._pipeline_execution.decide_plan(
+                delivery,
+                decision=decision,
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
         if delivery.plan_gate is not None and delivery.plan_gate.decision is not None:
             if delivery.plan_gate.decision == decision:
                 return delivery
@@ -699,6 +844,15 @@ class DeliveryCoordinator:
         expected_subject_sha256: str,
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
+        if delivery.pipeline_revision_id is not None:
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            return await self._pipeline_execution.decide_candidate(
+                delivery,
+                decision=decision,
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
         gate_decision: Literal["approve", "reject"] = (
             "approve" if decision == "accept" else "reject"
         )
@@ -776,23 +930,54 @@ class DeliveryCoordinator:
                 "updated_at": datetime.now(UTC),
             }
         )
+        if delivery.pipeline_revision_id is not None:
+            if self._pipeline_execution is None:
+                raise DeliveryStateConflictError("pipeline runtime is unavailable")
+            self._pipeline_execution.cancel(delivery)
         self._repository.save(updated)
         return updated
 
     async def recover(self) -> None:
         for delivery in self.list():
             if delivery.status in {"planning", "executing", "verifying"}:
-                self._repository.save(
-                    delivery.model_copy(
-                        update={
-                            "status": "failed",
-                            "version": delivery.version + 1,
-                            "error_code": "PROCESS_INTERRUPTED",
-                            "updated_at": datetime.now(UTC),
-                        }
+                if delivery.pipeline_revision_id is not None:
+                    if self._pipeline_execution is None:
+                        raise DeliveryStateConflictError(
+                            "pipeline runtime is unavailable"
+                        )
+                    self._pipeline_execution.fail(
+                        delivery.id,
+                        ProcessInterruptedError("pipeline node was interrupted"),
                     )
-                )
+                else:
+                    self._repository.save(
+                        delivery.model_copy(
+                            update={
+                                "status": "failed",
+                                "version": delivery.version + 1,
+                                "error_code": "PROCESS_INTERRUPTED",
+                                "updated_at": datetime.now(UTC),
+                            }
+                        )
+                    )
             elif delivery.status == "applying" and delivery.candidate is not None:
+                if delivery.pipeline_revision_id is not None:
+                    if self._pipeline_execution is None:
+                        self._save_failed(
+                            delivery,
+                            DeliveryStateConflictError(
+                                "pipeline runtime is unavailable"
+                            ),
+                            "APPLY_RECOVERY_FAILED",
+                        )
+                        continue
+                    try:
+                        await self._pipeline_execution.recover_applying(delivery)
+                    except Exception as error:
+                        self._save_failed(
+                            delivery, error, "APPLY_RECOVERY_FAILED"
+                        )
+                    continue
                 if self._applier is None:
                     self._save_failed(
                         delivery,
@@ -806,7 +991,9 @@ class DeliveryCoordinator:
                         delivery.model_copy(
                             update={
                                 "status": "completed",
-                                "apply_receipt": receipt.model_copy(update={"recovered": True}),
+                                "apply_receipt": receipt.model_copy(
+                                    update={"recovered": True}
+                                ),
                                 "updated_at": datetime.now(UTC),
                             }
                         )
@@ -824,6 +1011,26 @@ def _sha256(value: object) -> str:
         default=lambda item: item.model_dump(mode="json"),
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _pipeline_node(
+    definition: dict[str, object], node_id: str
+) -> dict[str, object]:
+    nodes = definition.get("nodes") or definition.get("steps") or []
+    if not isinstance(nodes, list | tuple):
+        raise DeliveryStateConflictError("pipeline node collection is invalid")
+    for node in nodes:
+        if isinstance(node, dict) and node.get("id") == node_id:
+            return node
+    raise DeliveryStateConflictError(f"pipeline node not found: {node_id}")
+
+
+def _pipeline_items(value: object) -> tuple[dict[str, object], ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(
+        cast(dict[str, object], item) for item in value if isinstance(item, dict)
+    )
 
 
 def _delivery_event(delivery: DeliveryRun) -> ProductEvent:

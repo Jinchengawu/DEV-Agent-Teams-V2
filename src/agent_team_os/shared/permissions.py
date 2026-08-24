@@ -16,6 +16,12 @@ class Permission(StrEnum):
     JOURNEY_PUBLISH = "journey:publish"
     JOURNEY_EDIT = "journey:edit"
     AGENT_MANAGE = "agents:manage"
+    AGENT_PROFILE_EDIT = "agent-profile:edit"
+    AGENT_PROFILE_PUBLISH = "agent-profile:publish"
+    AGENT_INSTANCE_MANAGE = "agent-instance:manage"
+    AGENT_DEPLOYMENT_MANAGE = "agent-deployment:manage"
+    CAPABILITY_EDIT = "capability:edit"
+    CAPABILITY_PUBLISH = "capability:publish"
     EVIDENCE_VERIFY = "evidence:verify"
     WIKI_EDIT = "wiki:edit"
     SETTINGS_EDIT = "settings:edit"
@@ -30,6 +36,8 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.DELIVERY_CREATE,
             Permission.PLAN_DECIDE,
             Permission.JOURNEY_EDIT,
+            Permission.AGENT_PROFILE_EDIT,
+            Permission.CAPABILITY_EDIT,
             Permission.WIKI_EDIT,
         }
     ),

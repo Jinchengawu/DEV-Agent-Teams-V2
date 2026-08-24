@@ -37,6 +37,16 @@ from .delivery import (
     PlanningServiceError,
     RuntimeBindingConflictError,
 )
+from .modules.agents import (
+    AgentDeploymentCatalog,
+    AgentProfileCatalog,
+    AgentRun,
+    AgentRunLedger,
+    ProviderManifestCatalog,
+    RuntimeAdapterDescriptor,
+    create_agent_deployment_router,
+    create_agent_profile_router,
+)
 from .modules.board import BoardProjector, WorkItem
 from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
 from .modules.identity import (
@@ -55,6 +65,12 @@ from .modules.knowledge import (
     create_provider_knowledge_router,
     create_wiki_router,
 )
+from .modules.orchestration import (
+    PipelineCatalog,
+    PipelineRunLedger,
+    PipelineRunRecord,
+    create_pipeline_router,
+)
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
@@ -70,6 +86,7 @@ class DeliveryRequest(BaseModel):
     workspace_id: str = Field(min_length=1)
     user_request: str = Field(min_length=1, max_length=20_000)
     journey_revision_id: str | None = None
+    pipeline_revision_id: str | None = None
 
 
 class PlanDecisionRequest(BaseModel):
@@ -106,10 +123,18 @@ def create_app(
     identity: IdentityService | None = None,
     knowledge: WikiService | None = None,
     provider_knowledge: ProviderKnowledgeManager | None = None,
+    pipeline_catalog: PipelineCatalog | None = None,
+    pipeline_runs: PipelineRunLedger | None = None,
+    agent_profiles: AgentProfileCatalog | None = None,
+    agent_deployments: AgentDeploymentCatalog | None = None,
+    provider_manifests: ProviderManifestCatalog | None = None,
+    agent_runs: AgentRunLedger | None = None,
 ) -> FastAPI:
+    if pipeline_catalog is not None and pipeline_runs is not None:
+        coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs, agent_runs)
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.2.1",
+        version="0.3.1",
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},
@@ -165,6 +190,52 @@ def create_app(
     def get_coordinator() -> DeliveryCoordinator:
         return coordinator
 
+    if agent_profiles is not None:
+
+        def agent_profile_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_agent_profile_router(
+                agent_profiles,
+                actor_id=agent_profile_actor_id,
+                authorize_edit=lambda request: require_permission(
+                    request, Permission.AGENT_PROFILE_EDIT
+                ),
+                authorize_publish=lambda request: require_permission(
+                    request, Permission.AGENT_PROFILE_PUBLISH
+                ),
+            )
+        )
+
+    if agent_deployments is not None and provider_manifests is not None:
+
+        def agent_deployment_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_agent_deployment_router(
+                agent_deployments,
+                provider_manifests,
+                actor_id=agent_deployment_actor_id,
+                authorize_manage=lambda request: require_permission(
+                    request, Permission.AGENT_DEPLOYMENT_MANAGE
+                ),
+            )
+        )
+
+    if agent_runs is not None:
+
+        @app.get(
+            "/v1/deliveries/{delivery_id}/agent-runs",
+            response_model=list[AgentRun],
+        )
+        def list_delivery_agent_runs(delivery_id: str) -> tuple[AgentRun, ...]:
+            coordinator.get(delivery_id)
+            return agent_runs.list(delivery_id)
+
     @app.exception_handler(ProductError)
     async def product_error_handler(_request: Request, error: ProductError) -> JSONResponse:
         return JSONResponse(
@@ -217,6 +288,25 @@ def create_app(
             create_settings_router(
                 settings,
                 lambda request: require_permission(request, Permission.SETTINGS_EDIT),
+            )
+        )
+
+    if pipeline_catalog is not None:
+
+        def pipeline_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_pipeline_router(
+                pipeline_catalog,
+                actor_id=pipeline_actor_id,
+                authorize_edit=lambda request: require_permission(
+                    request, Permission.JOURNEY_EDIT
+                ),
+                authorize_publish=lambda request: require_permission(
+                    request, Permission.JOURNEY_PUBLISH
+                ),
             )
         )
 
@@ -320,6 +410,10 @@ def create_app(
                 raise HTTPException(status_code=404, detail="evidence not found") from error
 
     if control_plane is not None:
+
+        @app.get("/v1/runtime-adapters", response_model=list[RuntimeAdapterDescriptor])
+        def list_runtime_adapters() -> tuple[RuntimeAdapterDescriptor, ...]:
+            return control_plane.list_runtime_adapters()
 
         @app.post("/v1/agent-instances", response_model=AgentInstance, status_code=201)
         def create_agent_instance(
@@ -562,8 +656,37 @@ def create_app(
     ) -> DeliveryRun:
         require_permission(request, Permission.DELIVERY_CREATE)
         try:
+            if (
+                pipeline_catalog is not None
+                and request_body.pipeline_revision_id is None
+                and request_body.journey_revision_id is None
+            ):
+                raise ProductError(
+                    code="DELIVERY_PIPELINE_REVISION_REQUIRED",
+                    title="必须选择已发布的流水线版本",
+                    detail="当前服务已启用 Pipeline GraphRun，新交付不得隐式回退到旧线性 Journey。",
+                    repair="刷新流水线列表，选择一个已激活的 Pipeline Revision 后重试。",
+                )
+            if (
+                request_body.pipeline_revision_id is not None
+                and request_body.journey_revision_id is not None
+            ):
+                raise ProductError(
+                    code="DELIVERY_RUNTIME_REFERENCE_CONFLICT",
+                    title="运行版本引用冲突",
+                    detail="一次交付不能同时选择 Pipeline Revision 与旧 Journey Revision。",
+                    repair="保留 Pipeline Revision，移除旧 Journey Revision 后重试。",
+                )
+            pipeline_revision = (
+                None
+                if pipeline_catalog is None
+                or request_body.pipeline_revision_id is None
+                else pipeline_catalog.resolve_active_revision(
+                    request_body.pipeline_revision_id
+                )
+            )
             revision = None
-            if control_plane is not None:
+            if control_plane is not None and pipeline_revision is None:
                 try:
                     revision = control_plane.resolve_revision(request_body.journey_revision_id)
                     control_plane.ensure_revision_available(revision)
@@ -576,15 +699,53 @@ def create_app(
                         ) from error
                 except ValueError as error:
                     raise HTTPException(status_code=409, detail=str(error)) from error
-            return service.enqueue(
+            pipeline_run_id = (
+                new_id()
+                if pipeline_revision is not None and pipeline_runs is not None
+                else None
+            )
+            if pipeline_revision is not None and pipeline_runs is None:
+                raise ProductError(
+                    code="PIPELINE_RUN_LEDGER_UNAVAILABLE",
+                    title="流水线运行账本未就绪",
+                    detail="当前服务无法持久化 ACWM GraphRun。",
+                    repair="修复运行账本配置后重新启动交付。",
+                )
+            delivery = service.enqueue(
                 workspace_id=request_body.workspace_id,
                 user_request=request_body.user_request,
+                pipeline_revision_id=(
+                    None
+                    if pipeline_revision is None
+                    else (
+                        f"{pipeline_revision.pipeline_id}:"
+                        f"{pipeline_revision.revision}"
+                    )
+                ),
+                pipeline_run_id=pipeline_run_id,
                 journey_revision_id=(
                     None if revision is None else f"{revision.journey_id}:{revision.revision}"
                 ),
-                journey_binding_snapshot=(None if revision is None else revision.binding_snapshot),
-                resolved_journey_sha256=(None if revision is None else revision.fingerprint),
+                journey_binding_snapshot=(
+                    pipeline_revision.binding_snapshot
+                    if pipeline_revision is not None
+                    else None if revision is None else revision.binding_snapshot
+                ),
+                resolved_provider_bindings=(
+                    pipeline_revision.resolved_provider_bindings
+                    if pipeline_revision is not None
+                    else None
+                ),
+                resolved_journey_sha256=(
+                    pipeline_revision.fingerprint
+                    if pipeline_revision is not None
+                    else None if revision is None else revision.fingerprint
+                ),
+                resolved_pipeline_sha256=(
+                    None if pipeline_revision is None else pipeline_revision.fingerprint
+                ),
             )
+            return delivery
         except PlanningServiceError as error:
             raise HTTPException(
                 status_code=502, detail="planning service returned invalid output"
@@ -637,6 +798,27 @@ def create_app(
             return service.get(delivery_id)
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
+
+    @app.get(
+        "/v1/deliveries/{delivery_id}/pipeline-run",
+        response_model=PipelineRunRecord,
+    )
+    def get_delivery_pipeline_run(delivery_id: str) -> PipelineRunRecord:
+        if pipeline_runs is None:
+            raise HTTPException(status_code=404, detail="pipeline run ledger not configured")
+        try:
+            return pipeline_runs.get_for_delivery(delivery_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="pipeline run not found") from error
+
+    @app.get("/v1/pipeline-runs/{run_id}", response_model=PipelineRunRecord)
+    def get_pipeline_run(run_id: str) -> PipelineRunRecord:
+        if pipeline_runs is None:
+            raise HTTPException(status_code=404, detail="pipeline run ledger not configured")
+        try:
+            return pipeline_runs.get(run_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail="pipeline run not found") from error
 
     @app.get("/v1/deliveries/{delivery_id}/events", response_model=list[ProductEvent])
     def get_delivery_events(

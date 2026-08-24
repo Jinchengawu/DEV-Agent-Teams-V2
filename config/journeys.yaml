@@ -1,26 +1,41 @@
-schema_version: "3"
+schema_version: "4"
 
 journeys:
   - id: backend-delivery
-    version: "1.0.0"
-    steps:
+    version: "4.0.0"
+    nodes:
       - kind: stage
         id: requirements
         workflow_mode: agentscope.role-turn
         bindings: {actor: hermes-pm}
+        output_validator: requirement-artifact-v1
       - kind: stage
         id: tasking
         workflow_mode: agentscope.role-turn
         bindings: {actor: hermes-project-admin}
+        output_validator: task-contract-v1
       - kind: approval_gate
         id: approve-plan
         subject_kind: delivery-plan
-      - kind: stage
-        id: delivery
-        workflow_mode: code-delivery
-        bindings: {developer: codex-backend}
-        output_validator: backend-candidate-v1
+      - kind: loop
+        id: code-repair
+        policy:
+          exit_condition: machine-tests-passed
+          max_iterations: 3
+          timeout_seconds: 540
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: delivery
+            workflow_mode: code-delivery
+            bindings: {developer: codex-backend}
+            output_validator: backend-candidate-v1
+        edges: []
       - kind: approval_gate
         id: approve-candidate
         subject_kind: candidate-change
-
+    edges:
+      - {source: requirements, target: tasking}
+      - {source: tasking, target: approve-plan}
+      - {source: approve-plan, target: code-repair, condition: plan-approved}
+      - {source: code-repair, target: approve-candidate}

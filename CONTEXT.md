@@ -10,6 +10,12 @@ receipt. A successful label is never evidence by itself.
   terminal failure/rejection.
 - **Journey Revision**: the immutable ACWM definition and Capability binding snapshot selected for
   a Delivery.
+- **Pipeline**: a product-managed identity with Draft, immutable Published Revisions, activation,
+  permissions and an input contract. Each Published Revision references one compiled ACWM Journey
+  Graph.
+- **Pipeline Run**: one durable execution of a Published Pipeline Revision. It projects ACWM Node
+  Runs, Attempts and Loop Iterations while product state retains approvals, evidence and final side
+  effects.
 - **Gate**: an ACWM approval decision bound to one Artifact hash and optimistic Revision.
 - **Candidate**: an immutable Git commit created from a recorded Base Revision.
 - **Evidence Record**: an append-only product fact that references immutable content, its source,
@@ -29,10 +35,20 @@ receipt. A successful label is never evidence by itself.
   Revision, Snapshot hash and stable failure state.
 - **Agent Instance**: a deployable Hermes or Codex runtime registration containing references to
   credentials, never credential values.
+- **Agent Profile**: a globally reusable, versioned logical role containing instructions,
+  Capability requirements and policy references. It contains no endpoint, credential, trusted
+  runtime Feature, workspace path or Pipeline assignment.
+- **Agent Deployment**: an environment-local qualification of one immutable Agent Profile
+  Revision against a Runtime Instance, ACWM Provider Manifest and effective policy snapshots.
+- **Runtime Adapter**: an installed ACWM Adapter Manifest inspected by the product. Its Features
+  are runtime truth and cannot be submitted by the browser.
+- **Agent Assignment**: one Pipeline Stage binding site mapped to a qualified Deployment. Published
+  Pipeline Revisions freeze the resulting ACWM Resolved Provider Binding.
 
 ## Ownership
 
-- ACWM owns cross-Stage Journey, Capability/Workflow resolution, Handoff, and global Gates.
+- ACWM owns cross-Stage Journey, Capability/Workflow/Provider/Artifact compatibility, immutable
+  Resolved Provider Bindings, Handoff, and global Gates.
 - AgentScope owns Stage-local messages, sessions, memory, and role composition.
 - Hermes owns PM and Project Admin role intelligence.
 - Codex owns controlled code execution in an isolated workspace.
@@ -46,4 +62,10 @@ receipt. A successful label is never evidence by itself.
 - Reject never changes Main; Accept succeeds only when Main equals the reviewed Candidate.
 - A Board move expresses a command; it cannot write a terminal state directly.
 - Published Journey Revisions and Evidence Records are immutable.
+- Published Pipeline Revisions pin the compiled Journey Graph, Capability bindings, policies and
+  graph fingerprint; a running Pipeline never silently resolves a newer definition.
+- The outer Journey Graph is acyclic. Repetition is allowed only through an explicit bounded Loop
+  Node with auditable iterations and a deterministic exhaustion outcome.
 - Secrets are represented only by environment or system credential references.
+- Runtime Features come only from installed ACWM Adapter Manifests and health probes; stored
+  historical self-reported Features are never trusted for new qualification.

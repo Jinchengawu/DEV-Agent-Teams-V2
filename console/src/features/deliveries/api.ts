@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, type Delivery, type EvidenceRecord, type ProductEvent } from "../../shared/api/client";
+import type { components } from "../../shared/api/generated/schema";
+
+type Pipeline = components["schemas"]["Pipeline"];
+export type PipelineRun = components["schemas"]["PipelineRunRecord"];
 
 export const deliveryKeys = {
   all: ["deliveries"] as const,
@@ -24,10 +28,23 @@ export function useDeliveryEvidence(id?: string) {
   return useQuery({ queryKey: deliveryKeys.evidence(id ?? ""), queryFn: () => request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`), enabled: Boolean(id), refetchInterval: 1000 });
 }
 
+export function useDeliveryPipelineRun(deliveryId?: string, runId?: string | null) {
+  return useQuery({
+    queryKey: ["pipeline-runs", runId ?? "", deliveryId ?? ""],
+    queryFn: () => request<PipelineRun>(`/v1/deliveries/${deliveryId}/pipeline-run`),
+    enabled: Boolean(deliveryId && runId),
+    refetchInterval: 1000,
+  });
+}
+
+export function useDeliveryPipelines() {
+  return useQuery({ queryKey: ["pipelines", "delivery-selector"], queryFn: () => request<Pipeline[]>("/v1/pipelines") });
+}
+
 export function useCreateDelivery(onCreated: (id: string) => void) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (userRequest: string) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ workspace_id: "backend-demo", user_request: userRequest }) }),
+    mutationFn: ({ userRequest, pipelineRevisionId }: { userRequest: string; pipelineRevisionId?: string }) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ workspace_id: "backend-demo", user_request: userRequest, pipeline_revision_id: pipelineRevisionId }) }),
     onSuccess: async (delivery) => { await client.invalidateQueries({ queryKey: deliveryKeys.all }); onCreated(delivery.id); },
   });
 }

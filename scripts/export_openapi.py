@@ -11,9 +11,18 @@ from agent_team_os.api import create_app
 from agent_team_os.control_plane import ControlPlaneService
 from agent_team_os.delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from agent_team_os.infrastructure.database import MigrationRunner
+from agent_team_os.modules.agents import (
+    AgentDeploymentCatalog,
+    AgentProfileCatalog,
+    AgentRunLedger,
+    ProviderManifestCatalog,
+    SQLiteAgentDeploymentRepository,
+    SQLiteAgentProfileRepository,
+)
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
 from agent_team_os.modules.knowledge import SQLiteWikiRepository, WikiService
+from agent_team_os.modules.orchestration import PipelineCatalog, SQLitePipelineRepository
 from agent_team_os.modules.settings import SettingsManager, SQLiteSettingsRepository
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
@@ -33,6 +42,8 @@ def main() -> None:
             resolved_journey_sha256="a" * 64,
         )
         control_plane = ControlPlaneService(database, config_root=project_root / "config")
+        agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
+        providers = ProviderManifestCatalog()
         app = create_app(
             coordinator,
             control_plane=control_plane,
@@ -40,6 +51,16 @@ def main() -> None:
             settings=SettingsManager(SQLiteSettingsRepository(database)),
             identity=IdentityService(SQLiteIdentityRepository(database)),
             knowledge=WikiService(SQLiteWikiRepository(database)),
+            pipeline_catalog=PipelineCatalog(SQLitePipelineRepository(database)),
+            agent_profiles=agent_profiles,
+            agent_deployments=AgentDeploymentCatalog(
+                SQLiteAgentDeploymentRepository(database),
+                agent_profiles,
+                control_plane,
+                providers,
+            ),
+            provider_manifests=providers,
+            agent_runs=AgentRunLedger(database),
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

@@ -31,7 +31,6 @@ def test_agent_instance_is_registered_without_persisting_secret_values(
                 "runtime_type": "hermes-http",
                 "connection": {"endpoint": "http://127.0.0.1:9001"},
                 "credential_ref": "env:HERMES_API_KEY",
-                "features": ["text-final", "remote-stop"],
             },
         )
         health = client.post(f"/v1/agent-instances/{created.json()['id']}/health-check")
@@ -95,6 +94,42 @@ def test_agent_instance_updates_use_cas_and_disabled_instances_cannot_be_bound(
     assert binding.status_code == 409
 
 
+def test_runtime_features_come_only_from_installed_acwm_adapter_manifest(
+    tmp_path: Path,
+) -> None:
+    service = ControlPlaneService(tmp_path / "control.sqlite", probe=ReadyProbe())
+    coordinator = DeliveryCoordinator(
+        planning=DeterministicPlanningService(), executor=DeterministicCodeExecutor()
+    )
+    with TestClient(create_app(coordinator, control_plane=service)) as client:
+        adapters = client.get("/v1/runtime-adapters")
+        forged = client.post(
+            "/v1/agent-instances",
+            json={
+                "name": "伪造特征实例",
+                "runtime_type": "codex-cli",
+                "connection": {"command": "codex"},
+                "features": ["arbitrary-root-access"],
+            },
+        )
+        created = client.post(
+            "/v1/agent-instances",
+            json={
+                "name": "可信 Codex 实例",
+                "runtime_type": "codex-cli",
+                "connection": {"command": "codex"},
+            },
+        )
+
+    codex = next(item for item in adapters.json() if item["id"] == "codex.cli")
+    assert adapters.status_code == 200
+    assert codex["available"] is True
+    assert "workspace.cwd_binding" in codex["features"]
+    assert forged.status_code == 422
+    assert created.json()["features"] == codex["features"]
+    assert created.json()["features_source"] == "installed-acwm-adapter-manifest"
+
+
 def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path) -> None:
     service = ControlPlaneService(
         tmp_path / "control.sqlite",
@@ -145,7 +180,6 @@ def test_healthy_capability_bindings_publish_an_immutable_journey(tmp_path: Path
                     "name": capability,
                     "runtime_type": runtime,
                     "connection": {"endpoint": "http://127.0.0.1:9001"},
-                    "features": ["text-final", "cwd-binding", "remote-stop"],
                 },
             ).json()
             client.post(f"/v1/agent-instances/{item['id']}/health-check")

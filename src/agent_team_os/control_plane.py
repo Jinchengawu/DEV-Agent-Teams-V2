@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .delivery import DeliveryRun
 from .journey import resolve_journey_fingerprint
+from .modules.agents import RuntimeAdapterCatalog, RuntimeAdapterDescriptor
 
 
 class ImmutableModel(BaseModel):
@@ -42,6 +43,9 @@ class AgentInstance(ImmutableModel):
     connection: dict[str, str]
     credential_ref: str | None = None
     features: tuple[str, ...] = ()
+    adapter_id: str | None = None
+    adapter_version: str | None = None
+    features_source: Literal["installed-acwm-adapter-manifest"] | None = None
     enabled: bool = True
     version: int = 1
     health: HealthResult = Field(default_factory=lambda: HealthResult(status="unknown"))
@@ -73,7 +77,6 @@ class AgentInstanceCreate(BaseModel):
     runtime_type: Literal["hermes-acp", "hermes-http", "codex-cli"]
     connection: dict[str, str]
     credential_ref: str | None = None
-    features: tuple[str, ...] = ()
 
     @field_validator("connection")
     @classmethod
@@ -93,7 +96,6 @@ class AgentInstancePatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     connection: dict[str, str] | None = None
     credential_ref: str | None = None
-    features: tuple[str, ...] | None = None
     enabled: bool | None = None
 
     @field_validator("connection")
@@ -283,11 +285,13 @@ class ControlPlaneService:
         *,
         probe: InstanceHealthProbe | None = None,
         config_root: Path | None = None,
+        adapter_catalog: RuntimeAdapterCatalog | None = None,
     ) -> None:
         self.database = database
         self.database.parent.mkdir(parents=True, exist_ok=True)
         self._probe = probe or SystemHealthProbe()
         self._config_root = config_root
+        self._adapter_catalog = adapter_catalog or RuntimeAdapterCatalog()
         with sqlite3.connect(database) as connection:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS control_records(
@@ -308,20 +312,43 @@ class ControlPlaneService:
             )
 
     def create_instance(self, request: AgentInstanceCreate) -> AgentInstance:
-        instance = AgentInstance(id=str(uuid4()), **request.model_dump())
+        adapter = self._adapter_catalog.for_runtime(request.runtime_type)
+        instance = AgentInstance(
+            id=str(uuid4()),
+            **request.model_dump(),
+            features=adapter.features,
+            adapter_id=adapter.id,
+            adapter_version=adapter.version,
+            features_source=adapter.features_source,
+        )
         self._save("agent-instance", instance.id, instance.model_dump_json())
         return instance
 
     def list_instances(self) -> tuple[AgentInstance, ...]:
         return tuple(
-            AgentInstance.model_validate_json(value) for value in self._list("agent-instance")
+            self._with_trusted_adapter(AgentInstance.model_validate_json(value))
+            for value in self._list("agent-instance")
         )
 
     def get_instance(self, instance_id: str) -> AgentInstance:
         value = self._get("agent-instance", instance_id)
         if value is None:
             raise KeyError(instance_id)
-        return AgentInstance.model_validate_json(value)
+        return self._with_trusted_adapter(AgentInstance.model_validate_json(value))
+
+    def list_runtime_adapters(self) -> tuple[RuntimeAdapterDescriptor, ...]:
+        return self._adapter_catalog.list()
+
+    def _with_trusted_adapter(self, instance: AgentInstance) -> AgentInstance:
+        adapter = self._adapter_catalog.for_runtime(instance.runtime_type)
+        return instance.model_copy(
+            update={
+                "features": adapter.features,
+                "adapter_id": adapter.id,
+                "adapter_version": adapter.version,
+                "features_source": adapter.features_source,
+            }
+        )
 
     def patch_instance(self, instance_id: str, request: AgentInstancePatch) -> AgentInstance:
         current = self.get_instance(instance_id)
@@ -365,10 +392,10 @@ class ControlPlaneService:
             raise ValueError("instance must be enabled and healthy")
         if capability_id == "codex-backend" and instance.runtime_type != "codex-cli":
             raise ValueError("codex-backend requires a codex-cli instance")
-        if capability_id == "codex-backend" and "cwd-binding" not in instance.features:
+        if capability_id == "codex-backend" and "workspace.cwd_binding" not in instance.features:
             raise ValueError("codex-backend requires the cwd-binding feature")
         if capability_id.startswith("hermes-") and not (
-            {"text-final", "structured-output"} & set(instance.features)
+            {"io.text.final"} & set(instance.features)
         ):
             raise ValueError(f"{capability_id} requires structured text output")
         current_json = self._get("capability-binding", capability_id)
@@ -584,7 +611,6 @@ class ControlPlaneService:
                 ),
                 runtime_type="codex-cli",
                 connection={"command": "codex"},
-                features=("cwd-binding", "workspace-write", "structured-output"),
                 health=HealthResult(status="ready", identity=identity, latency_ms=0),
             )
             self._save("agent-instance", instance.id, instance.model_dump_json())

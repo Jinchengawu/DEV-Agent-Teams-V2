@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib import import_module
 from pathlib import Path
 
 import uvicorn
@@ -26,15 +28,49 @@ from .git_delivery import (
     GitCodeExecutor,
 )
 from .git_sandbox import GitSandbox
+from .infrastructure.acwm import (
+    ACWMGraphCompiler,
+    ACWMPipelineGraphRuntime,
+    AgentDeploymentBindingResolver,
+    ControlPlaneBindingResolver,
+    PipelineBindingResolutionError,
+)
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
-from .journey import resolve_backend_delivery_fingerprint
+from .journey import (
+    load_backend_delivery_definition,
+    resolve_backend_delivery_fingerprint,
+)
+from .modules.agents import (
+    AgentDeploymentCatalog,
+    AgentProfileCatalog,
+    AgentRunLedger,
+    ProviderManifestCatalog,
+    SQLiteAgentDeploymentRepository,
+    SQLiteAgentProfileRepository,
+    ensure_builtin_agent_deployments,
+)
+from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import SQLiteWikiRepository, WikiService
+from .modules.orchestration import (
+    PipelineCatalog,
+    PipelineCreate,
+    PipelineRunLedger,
+    SQLitePipelineRepository,
+    SQLitePipelineRunRepository,
+)
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
-from .readiness import DependencyCheck, ReadinessReport, RuntimeReadiness
+from .readiness import (
+    DependencyCheck,
+    ReadinessReport,
+    RuntimeReadiness,
+    inspect_acwm_revision_lock,
+)
 from .release import combined_gate_status, run_gate
 from .ui import install_preview_ui
+
+_logger = logging.getLogger(__name__)
 
 
 class CodexPreviewReadiness:
@@ -49,11 +85,38 @@ class CodexPreviewReadiness:
                 status="ready" if shutil.which("git") else "missing",
                 repair=None if shutil.which("git") else "Install Git and retry.",
             ),
+            DependencyCheck(
+                name="python:acwm-graph-runtime",
+                status="ready" if _has_acwm_graph_runtime() else "missing",
+                repair=(
+                    None
+                    if _has_acwm_graph_runtime()
+                    else "安装项目锁定的 ACWM v0.4 Graph Runtime 后重试。"
+                ),
+            ),
+            inspect_acwm_revision_lock(
+                Path(__file__).parents[2] / "config" / "framework-lock.json"
+            ),
         )
         return ReadinessReport(
             status="ready" if all(check.status == "ready" for check in checks) else "not_ready",
             checks=checks,
         )
+
+
+def _has_acwm_graph_runtime() -> bool:
+    return hasattr(import_module("acwm.domain"), "compile_journey_graph")
+
+
+def _ensure_builtin_pipeline_for_preview(
+    catalog: PipelineCatalog, request: PipelineCreate
+) -> object | None:
+    """Keep the repair UI online when product-owned bindings need attention."""
+    try:
+        return catalog.ensure_builtin_pipeline(request, actor_id="system")
+    except PipelineBindingResolutionError as error:
+        _logger.warning("Built-in Pipeline requires binding repair: %s", error)
+        return None
 
 
 def build_preview_app() -> FastAPI:
@@ -101,6 +164,38 @@ def build_preview_app() -> FastAPI:
         planning_identity="codex-simulated-hermes",
         execution_identity="codex-cli",
     )
+    agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
+    provider_manifests = ProviderManifestCatalog()
+    agent_deployments = AgentDeploymentCatalog(
+        SQLiteAgentDeploymentRepository(database),
+        agent_profiles,
+        control_plane,
+        provider_manifests,
+    )
+    builtin_assignments = ensure_builtin_agent_deployments(
+        agent_profiles, agent_deployments
+    )
+    pipeline_catalog = PipelineCatalog(
+        SQLitePipelineRepository(database),
+        graph_compiler=ACWMGraphCompiler(),
+        binding_resolver=ControlPlaneBindingResolver(
+            control_plane.get_binding, control_plane.get_instance
+        ),
+        provider_binding_resolver=AgentDeploymentBindingResolver(
+            agent_deployments, provider_manifests
+        ),
+        definition_policy=BackendDeliveryPipelinePolicy(),
+    )
+    _ensure_builtin_pipeline_for_preview(
+        pipeline_catalog,
+        PipelineCreate(
+            id="backend-delivery",
+            name="内置后端交付闭环",
+            description="需求、计划审批、代码交付、候选审批与原子应用",
+            definition=load_backend_delivery_definition(project_root / "config"),
+            agent_assignments=builtin_assignments,
+        ),
+    )
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
@@ -111,6 +206,14 @@ def build_preview_app() -> FastAPI:
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
         knowledge=WikiService(SQLiteWikiRepository(database)),
+        pipeline_catalog=pipeline_catalog,
+        pipeline_runs=PipelineRunLedger(
+            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+        ),
+        agent_profiles=agent_profiles,
+        agent_deployments=agent_deployments,
+        provider_manifests=provider_manifests,
+        agent_runs=AgentRunLedger(database),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
@@ -132,7 +235,7 @@ def ensure_console_built(project_root: Path) -> None:
     console = project_root / "console"
     pnpm = shutil.which("pnpm")
     if pnpm is None:
-        raise RuntimeError("pnpm is required to build the V0.2 console; install pnpm and retry")
+        raise RuntimeError("pnpm is required to build the V0.3 console; install pnpm and retry")
     if not (console / "node_modules").is_dir():
         subprocess.run(
             [pnpm, "install", "--frozen-lockfile"],
@@ -141,15 +244,12 @@ def ensure_console_built(project_root: Path) -> None:
         )
     node = shutil.which("node")
     if node is None:
-        raise RuntimeError("Node.js is required to build the V0.2 console")
+        raise RuntimeError("Node.js is required to build the V0.3 console")
     subprocess.run(
         [node, str(console / "node_modules" / "vite" / "bin" / "vite.js"), "build"],
         cwd=console,
         check=True,
     )
-
-
-app = build_preview_app()
 
 
 def main() -> None:
