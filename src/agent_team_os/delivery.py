@@ -584,8 +584,8 @@ class DeliveryCoordinator:
         )
 
     def _ensure_workspace_available(self, workspace_id: str) -> None:
-        if workspace_id != "backend-demo":
-            raise DeliveryStateConflictError("only backend-demo is supported")
+        if workspace_id != "backend-demo" and not workspace_id.startswith("project:"):
+            raise DeliveryStateConflictError("unknown product workspace reference")
         active = {
             "queued",
             "planning",
