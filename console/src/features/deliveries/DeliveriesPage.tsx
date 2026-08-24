@@ -4,23 +4,38 @@ import { useNavigate } from "react-router-dom";
 import { statusLabel } from "../../i18n";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
+import { projectPath, useProject, useProjectId } from "../projects/api";
 import { useCreateDelivery, useDeliveries, useDeliveryPipelines } from "./api";
 
 const defaultRequest = "增加一个 GET /health 接口，返回服务状态和版本号，并补充机器测试。";
 
 export function DeliveriesPage() {
   const navigate = useNavigate();
-  const deliveries = useDeliveries();
+  const projectId = useProjectId();
+  const project = useProject(projectId);
+  const deliveries = useDeliveries(projectId);
   const pipelines = useDeliveryPipelines();
   const activePipelines = useMemo(
-    () => pipelines.data?.filter((pipeline) => pipeline.active_revision !== null) ?? [],
-    [pipelines.data],
+    () => project.data?.pipeline_bindings
+      .filter((binding) => binding.enabled)
+      .map((binding) => ({
+        id: binding.pipeline_id,
+        name: pipelines.data?.find((pipeline) => pipeline.id === binding.pipeline_id)?.name ?? binding.pipeline_id,
+        active_revision: binding.pipeline_revision,
+      })) ?? [],
+    [pipelines.data, project.data?.pipeline_bindings],
   );
   const [requestText, setRequestText] = useState(defaultRequest);
   const [pipelineRevisionId, setPipelineRevisionId] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [problem, setProblem] = useState("");
-  const create = useCreateDelivery((id) => navigate(`/deliveries/${id}`));
+  const create = useCreateDelivery(projectId, (id) => navigate(projectPath(projectId, `deliveries/${id}`)));
+
+  useEffect(() => {
+    setPipelineRevisionId("");
+    setReviewing(false);
+    setProblem("");
+  }, [projectId]);
 
   useEffect(() => {
     if (!pipelineRevisionId && activePipelines[0]?.active_revision) {
@@ -52,9 +67,12 @@ export function DeliveriesPage() {
     String(right.updated_at ?? right.created_at ?? "").localeCompare(String(left.updated_at ?? left.created_at ?? "")),
   );
 
+  if (project.isLoading) return <LoadingState label="正在读取项目执行边界…"/>;
+  if (project.error) return <ErrorState error={project.error} retry={() => project.refetch()}/>;
+
   return <div className="delivery-home">
     <section className="page-heading delivery-home-heading">
-      <p className="eyebrow">交付工作台 · 真实控制面</p>
+      <p className="eyebrow">{project.data?.project.name ?? projectId} · 真实控制面</p>
       <h2>从一句交付目标，进入可审批的工程流程。</h2>
       <p>描述边界、选择已发布 Pipeline，然后在同一工作面跟进计划、验证、候选与不可变证据。</p>
     </section>
@@ -75,8 +93,8 @@ export function DeliveriesPage() {
 
         <div className="composer-config">
           <label className="field"><span>执行 Pipeline</span><select id="delivery-pipeline" value={pipelineRevisionId} onChange={(event) => { setPipelineRevisionId(event.target.value); setReviewing(false); setProblem(""); }}><option value="">请选择已激活版本</option>{activePipelines.map((pipeline) => <option key={pipeline.id} value={`${pipeline.id}:${pipeline.active_revision}`}>{pipeline.name} · R{pipeline.active_revision}</option>)}</select></label>
-          <div className="readonly-field"><span>工作区</span><b>内置后端沙箱</b><small>隔离执行，主分支写入受 CAS 保护</small></div>
-          <div className="readonly-field"><span>Agent 绑定</span><b>随 Pipeline Revision 冻结</b><small>界面不覆盖已发布 Deployment 资格</small></div>
+          <div className="readonly-field"><span>项目工作区</span><b>{project.data?.workspace.workspace_id ?? projectId}</b><small>独立 Git Main，候选应用受 CAS 保护</small></div>
+          <div className="readonly-field"><span>Agent 授权</span><b>{project.data?.deployment_access.filter((access) => access.enabled).length ?? 0} 个 Deployment</b><small>创建时与 Pipeline Revision 一并冻结</small></div>
         </div>
 
         {pipelines.error && <ErrorState error={pipelines.error} retry={() => pipelines.refetch()}/>}
@@ -99,7 +117,7 @@ export function DeliveriesPage() {
         {deliveries.isLoading && <LoadingState label="正在读取真实交付历史…"/>}
         {deliveries.error && <ErrorState error={deliveries.error} retry={() => deliveries.refetch()}/>}
         {deliveries.isSuccess && recent.length === 0 && <EmptyState title="当前还没有交付运行" detail="上方确认一个边界清晰的目标后，系统才会创建真实运行。"/>}
-        {recent.map((delivery) => <button key={delivery.id} className="run-row" type="button" onClick={() => navigate(`/deliveries/${delivery.id}`)}>
+        {recent.map((delivery) => <button key={delivery.id} className="run-row" type="button" onClick={() => navigate(projectPath(projectId, `deliveries/${delivery.id}`))}>
           <time dateTime={delivery.updated_at ?? delivery.created_at}>{formatRunTime(delivery.updated_at ?? delivery.created_at)}</time>
           <span><strong>{delivery.user_request}</strong><small>{runSummary(delivery.status)} · {delivery.id.slice(0, 8)} · v{delivery.version}</small></span>
           <StatusBadge value={delivery.status}/>

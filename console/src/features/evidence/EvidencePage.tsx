@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, Filter, ShieldCheck } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { artifactTypeLabel, statusLabel } from "../../i18n";
@@ -7,10 +7,12 @@ import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/Asyn
 import { Inspector, type InspectorTab } from "../../shared/ui/Inspector";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { EvidenceSummary } from "./EvidenceSummary";
+import { assertProjectScope, useProjectId } from "../projects/api";
 
 const kinds = ["", "journey", "plan-gate", "candidate", "diff", "verification", "candidate-gate", "apply-receipt"];
 
 export function EvidencePage() {
+  const projectId = useProjectId();
   const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("");
@@ -19,14 +21,19 @@ export function EvidencePage() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [copyLabel, setCopyLabel] = useState("复制内容哈希");
   const closeInspector = useCallback(() => { setInspectorOpen(false); setCopyLabel("复制内容哈希"); }, []);
-  const evidence = useQuery({ queryKey: ["evidence"], queryFn: () => request<EvidenceRecord[]>("/v1/evidence"), refetchInterval: 2500 });
+  const evidence = useQuery({ queryKey: ["evidence", projectId], queryFn: async ({ signal }) => assertProjectScope(projectId, await request<EvidenceRecord[]>(`/v1/evidence?project_id=${encodeURIComponent(projectId)}`, { signal }), "证据账本"), refetchInterval: 2500 });
   const verify = useMutation({
     mutationFn: (id: string) => request<EvidenceRecord>(`/v1/evidence/${id}/verify`, { method: "POST" }),
     onSuccess: async (record) => {
       setSelected(record);
-      await client.invalidateQueries({ queryKey: ["evidence"] });
+      await client.invalidateQueries({ queryKey: ["evidence", projectId] });
     },
   });
+  useEffect(() => {
+    setSelected(undefined);
+    setInspectorOpen(false);
+    setSearch("");
+  }, [projectId]);
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (evidence.data ?? []).filter((item) =>
@@ -57,7 +64,7 @@ export function EvidencePage() {
   };
 
   const tabs: InspectorTab[] = selected ? [
-    { id: "summary", label: "摘要", content: <><h3>来源与生产身份</h3><dl className="definition-list"><dt>交付</dt><dd>{selected.delivery_id}</dd><dt>类型</dt><dd>{artifactTypeLabel(selected.kind)}</dd><dt>来源</dt><dd>{selected.source_kind} / {selected.source_id}</dd><dt>生产身份</dt><dd>{selected.producer_identity}</dd><dt>创建时间</dt><dd>{formatDateTime(selected.created_at)}</dd><dt>SHA-256</dt><dd><code>{selected.content_sha256 ?? "未生成"}</code></dd></dl></> },
+    { id: "summary", label: "摘要", content: <><h3>来源与生产身份</h3><dl className="definition-list"><dt>项目</dt><dd>{selected.project_id}</dd><dt>交付</dt><dd>{selected.delivery_id}</dd><dt>类型</dt><dd>{artifactTypeLabel(selected.kind)}</dd><dt>来源</dt><dd>{selected.source_kind} / {selected.source_id}</dd><dt>生产身份</dt><dd>{selected.producer_identity}</dd><dt>创建时间</dt><dd>{formatDateTime(selected.created_at)}</dd><dt>SHA-256</dt><dd><code>{selected.content_sha256 ?? "未生成"}</code></dd></dl></> },
     { id: "payload", label: "载荷", content: <><h3>结构化载荷</h3><pre className="code-block">{JSON.stringify(selected.payload ?? {}, null, 2)}</pre></> },
     { id: "verification", label: "验证", content: <><h3>完整性：{statusLabel(selected.status)}</h3><dl className="definition-list"><dt>验证时间</dt><dd>{formatDateTime(selected.verified_at ?? undefined)}</dd><dt>验证错误</dt><dd>{selected.verification_error ?? "无"}</dd></dl>{verify.error && <ErrorState error={verify.error}/>}</> },
   ] : [];

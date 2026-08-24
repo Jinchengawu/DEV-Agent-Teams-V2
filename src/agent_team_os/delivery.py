@@ -92,9 +92,20 @@ class GateRecord(ImmutableModel):
     decision: Literal["approve", "reject"] | None = None
 
 
+class ProjectExecutionSnapshot(ImmutableModel):
+    project_id: str
+    project_version: int = Field(ge=1)
+    workspace_id: str
+    repository_ref: str
+    pipeline_revision_id: str
+    deployment_ids: tuple[str, ...] = ()
+
+
 class DeliveryRun(ImmutableModel):
     id: str
+    project_id: str = "legacy-default"
     workspace_id: str
+    project_execution_snapshot: ProjectExecutionSnapshot | None = None
     user_request: str
     status: Literal[
         "queued",
@@ -263,7 +274,8 @@ class SQLiteDeliveryRepository:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS deliveries(
                 id TEXT PRIMARY KEY,
-                snapshot_json TEXT NOT NULL
+                snapshot_json TEXT NOT NULL,
+                project_id TEXT
                 )"""
             )
             connection.execute(
@@ -274,36 +286,49 @@ class SQLiteDeliveryRepository:
                 aggregate_type TEXT NOT NULL,
                 aggregate_id TEXT NOT NULL,
                 aggregate_version INTEGER NOT NULL,
+                project_id TEXT,
                 payload_json TEXT NOT NULL,
                 occurred_at TEXT NOT NULL)"""
             )
 
     def save(self, delivery: DeliveryRun) -> None:
         with sqlite3.connect(self.path) as connection:
-            previous = connection.execute(
-                "SELECT snapshot_json FROM deliveries WHERE id=?", (delivery.id,)
-            ).fetchone()
+            self.save_on(connection, delivery)
+
+    def save_on(self, connection: sqlite3.Connection, delivery: DeliveryRun) -> None:
+        """Persist aggregate and event on a caller-owned UnitOfWork."""
+        project_snapshot = delivery.project_execution_snapshot
+        if project_snapshot is not None and (
+            project_snapshot.project_id != delivery.project_id
+            or project_snapshot.workspace_id != delivery.workspace_id
+        ):
+            raise ValueError("delivery project index does not match execution snapshot")
+        previous = connection.execute(
+            "SELECT snapshot_json FROM deliveries WHERE id=?", (delivery.id,)
+        ).fetchone()
+        connection.execute(
+            """INSERT INTO deliveries(id,snapshot_json,project_id) VALUES(?,?,?)
+            ON CONFLICT(id) DO UPDATE SET snapshot_json=excluded.snapshot_json,
+            project_id=excluded.project_id""",
+            (delivery.id, delivery.model_dump_json(), delivery.project_id),
+        )
+        if previous is None or previous[0] != delivery.model_dump_json():
+            event = _delivery_event(delivery)
             connection.execute(
-                """INSERT INTO deliveries(id, snapshot_json) VALUES(?, ?)
-                ON CONFLICT(id) DO UPDATE SET snapshot_json=excluded.snapshot_json""",
-                (delivery.id, delivery.model_dump_json()),
+                """INSERT INTO product_events(
+                event_id,event_type,aggregate_type,aggregate_id,aggregate_version,
+                project_id,payload_json,occurred_at) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    event.id,
+                    event.event_type,
+                    event.aggregate_type,
+                    event.aggregate_id,
+                    event.aggregate_version,
+                    event.project_id,
+                    json.dumps(event.payload, ensure_ascii=False, separators=(",", ":")),
+                    event.occurred_at.isoformat(),
+                ),
             )
-            if previous is None or previous[0] != delivery.model_dump_json():
-                event = _delivery_event(delivery)
-                connection.execute(
-                    """INSERT INTO product_events(
-                    event_id,event_type,aggregate_type,aggregate_id,aggregate_version,
-                    payload_json,occurred_at) VALUES(?,?,?,?,?,?,?)""",
-                    (
-                        event.id,
-                        event.event_type,
-                        event.aggregate_type,
-                        event.aggregate_id,
-                        event.aggregate_version,
-                        json.dumps(event.payload, ensure_ascii=False, separators=(",", ":")),
-                        event.occurred_at.isoformat(),
-                    ),
-                )
 
     def get(self, delivery_id: str) -> DeliveryRun | None:
         with sqlite3.connect(self.path) as connection:
@@ -323,7 +348,7 @@ class SQLiteDeliveryRepository:
         with sqlite3.connect(self.path) as connection:
             rows = connection.execute(
                 """SELECT event_id,event_type,aggregate_type,aggregate_id,
-                aggregate_version,payload_json,occurred_at FROM product_events
+                aggregate_version,project_id,payload_json,occurred_at FROM product_events
                 WHERE aggregate_type='delivery' AND aggregate_id=? ORDER BY sequence""",
                 (delivery_id,),
             ).fetchall()
@@ -335,8 +360,9 @@ class SQLiteDeliveryRepository:
                     "aggregate_type": row[2],
                     "aggregate_id": row[3],
                     "aggregate_version": row[4],
-                    "payload": json.loads(row[5]),
-                    "occurred_at": row[6],
+                    "project_id": row[5],
+                    "payload": json.loads(row[6]),
+                    "occurred_at": row[7],
                 }
             )
             for row in rows
@@ -362,9 +388,7 @@ class DeliveryCoordinator:
         self._applier = applier
         self._repository = repository or InMemoryDeliveryRepository()
         self._resolved_journey_sha256 = (
-            None
-            if resolved_journey_sha256 is None
-            else Sha256.validate(resolved_journey_sha256)
+            None if resolved_journey_sha256 is None else Sha256.validate(resolved_journey_sha256)
         )
         self._background: dict[str, asyncio.Task[None]] = {}
         self._pipeline_execution: PipelineExecution | None = None
@@ -394,6 +418,9 @@ class DeliveryCoordinator:
         *,
         workspace_id: str,
         user_request: str,
+        project_id: str = "legacy-default",
+        project_execution_snapshot: ProjectExecutionSnapshot | None = None,
+        delivery_id: str | None = None,
         journey_revision_id: str | None = None,
         pipeline_revision_id: str | None = None,
         pipeline_run_id: str | None = None,
@@ -417,8 +444,10 @@ class DeliveryCoordinator:
             else:
                 self._validate_runtime_bindings(binding_snapshot)
         delivery = DeliveryRun(
-            id=str(uuid4()),
+            id=delivery_id or str(uuid4()),
+            project_id=project_id,
             workspace_id=workspace_id,
+            project_execution_snapshot=project_execution_snapshot,
             user_request=user_request,
             status="queued",
             version=1,
@@ -439,13 +468,9 @@ class DeliveryCoordinator:
         self._repository.save(delivery)
         if pipeline_revision_id is not None:
             if self._pipeline_execution is None:
-                return self.fail_initialization(
-                    delivery.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE"
-                )
+                return self.fail_initialization(delivery.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE")
             self._pipeline_execution.start(delivery)
-            self._schedule(
-                delivery.id, self._pipeline_execution.advance(delivery.id)
-            )
+            self._schedule(delivery.id, self._pipeline_execution.advance(delivery.id))
         else:
             self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
@@ -465,9 +490,7 @@ class DeliveryCoordinator:
         self._repository.save(failed)
         return failed
 
-    def _validate_runtime_bindings(
-        self, snapshot: dict[str, dict[str, object]]
-    ) -> None:
+    def _validate_runtime_bindings(self, snapshot: dict[str, dict[str, object]]) -> None:
         expected_identities = {
             "hermes-pm": self._planning.evidence_identity,
             "hermes-project-admin": self._planning.evidence_identity,
@@ -497,9 +520,7 @@ class DeliveryCoordinator:
                     actual_identity if isinstance(actual_identity, str) else None,
                 )
 
-    def _validate_provider_bindings(
-        self, snapshot: dict[str, dict[str, object]]
-    ) -> None:
+    def _validate_provider_bindings(self, snapshot: dict[str, dict[str, object]]) -> None:
         for site, value in snapshot.items():
             binding = value.get("binding")
             deployment = value.get("deployment")
@@ -512,9 +533,7 @@ class DeliveryCoordinator:
                     site, "valid-resolved-provider-binding", None
                 ) from error
             if not resolved.verify() or not deployment.get("enabled"):
-                raise RuntimeBindingConflictError(
-                    site, "verified-enabled-provider-binding", None
-                )
+                raise RuntimeBindingConflictError(site, "verified-enabled-provider-binding", None)
 
     async def _plan_queued(self, delivery: DeliveryRun) -> None:
         planning = delivery.model_copy(
@@ -952,9 +971,7 @@ class DeliveryCoordinator:
             if delivery.status in {"planning", "executing", "verifying"}:
                 if delivery.pipeline_revision_id is not None:
                     if self._pipeline_execution is None:
-                        raise DeliveryStateConflictError(
-                            "pipeline runtime is unavailable"
-                        )
+                        raise DeliveryStateConflictError("pipeline runtime is unavailable")
                     self._pipeline_execution.fail(
                         delivery.id,
                         ProcessInterruptedError("pipeline node was interrupted"),
@@ -975,18 +992,14 @@ class DeliveryCoordinator:
                     if self._pipeline_execution is None:
                         self._save_failed(
                             delivery,
-                            DeliveryStateConflictError(
-                                "pipeline runtime is unavailable"
-                            ),
+                            DeliveryStateConflictError("pipeline runtime is unavailable"),
                             "APPLY_RECOVERY_FAILED",
                         )
                         continue
                     try:
                         await self._pipeline_execution.recover_applying(delivery)
                     except Exception as error:
-                        self._save_failed(
-                            delivery, error, "APPLY_RECOVERY_FAILED"
-                        )
+                        self._save_failed(delivery, error, "APPLY_RECOVERY_FAILED")
                     continue
                 if self._applier is None:
                     self._save_failed(
@@ -1001,9 +1014,7 @@ class DeliveryCoordinator:
                         delivery.model_copy(
                             update={
                                 "status": "completed",
-                                "apply_receipt": receipt.model_copy(
-                                    update={"recovered": True}
-                                ),
+                                "apply_receipt": receipt.model_copy(update={"recovered": True}),
                                 "updated_at": datetime.now(UTC),
                             }
                         )
@@ -1023,9 +1034,7 @@ def _sha256(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _pipeline_node(
-    definition: dict[str, object], node_id: str
-) -> dict[str, object]:
+def _pipeline_node(definition: dict[str, object], node_id: str) -> dict[str, object]:
     nodes = definition.get("nodes") or definition.get("steps") or []
     if not isinstance(nodes, list | tuple):
         raise DeliveryStateConflictError("pipeline node collection is invalid")
@@ -1038,9 +1047,7 @@ def _pipeline_node(
 def _pipeline_items(value: object) -> tuple[dict[str, object], ...]:
     if not isinstance(value, list | tuple):
         return ()
-    return tuple(
-        cast(dict[str, object], item) for item in value if isinstance(item, dict)
-    )
+    return tuple(cast(dict[str, object], item) for item in value if isinstance(item, dict))
 
 
 def _delivery_event(delivery: DeliveryRun) -> ProductEvent:
@@ -1049,12 +1056,12 @@ def _delivery_event(delivery: DeliveryRun) -> ProductEvent:
         aggregate_type="delivery",
         aggregate_id=delivery.id,
         aggregate_version=delivery.version,
+        project_id=delivery.project_id,
         payload={
+            "project_id": delivery.project_id,
             "status": delivery.status,
             "title": delivery.task.title if delivery.task else delivery.user_request,
-            "acceptance_ids": (
-                list(delivery.task.acceptance_ids) if delivery.task else []
-            ),
+            "acceptance_ids": (list(delivery.task.acceptance_ids) if delivery.task else []),
             "error_code": delivery.error_code,
             "planning_identity": delivery.planning_identity,
             "execution_identity": delivery.execution_identity,

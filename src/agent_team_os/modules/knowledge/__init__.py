@@ -41,6 +41,7 @@ from .provider_ports import (
 )
 from .provider_repository import SQLiteProviderKnowledgeRepository
 from .repository import SQLiteWikiRepository
+from .search import KnowledgeSearchHit, KnowledgeSearchIndex
 
 __all__ = [
     "Comment",
@@ -80,5 +81,7 @@ __all__ = [
     "WikiAccess",
     "WikiService",
     "create_wiki_router",
+    "KnowledgeSearchHit",
+    "KnowledgeSearchIndex",
     "create_provider_knowledge_router",
 ]

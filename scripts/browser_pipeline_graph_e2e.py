@@ -159,6 +159,27 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         page.get_by_role("button", name=f"激活 R{published['revision']}").click()
     assert activated_response.value.json()["active_revision"] == published["revision"]
 
+    project_id = f"browser-dag-project-{secrets.token_hex(4)}"
+    page.get_by_role("link", name="项目", exact=True).click()
+    page.get_by_placeholder("例如：pj1").fill(project_id)
+    page.get_by_placeholder("例如：客户门户后端").fill("浏览器 DAG LOOP 项目")
+    page.get_by_label("默认流水线").select_option(
+        f"{published['pipeline_id']}:{published['revision']}"
+    )
+    deployment_checks = page.locator(".project-create input[type=checkbox]")
+    deployment_checks.first.wait_for()
+    for index in range(deployment_checks.count()):
+        deployment_checks.nth(index).check()
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+        and response.url.endswith("/v1/projects")
+    ) as project_response:
+        page.get_by_role("button", name="创建并初始化独立工作区").click()
+    project = project_response.value.json()
+    assert project_response.value.status == 201, project_response.value.text()
+    assert project["project"]["lifecycle_status"] == "active", project
+    assert project["workspace"]["workspace_id"] == f"project:{project_id}", project
+
     page.get_by_role("link", name="交付工作台", exact=True).click()
     page.get_by_label("执行 Pipeline").select_option(
         f"{published['pipeline_id']}:{published['revision']}"
@@ -174,6 +195,8 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         page.get_by_role("button", name="确认并启动").click()
     assert delivery_response.value.status == 202, delivery_response.value.text()
     delivery = delivery_response.value.json()
+    assert delivery["project_id"] == project_id, delivery
+    assert delivery["project_execution_snapshot"]["project_id"] == project_id, delivery
     assert delivery["pipeline_revision_id"] == (
         f"{published['pipeline_id']}:{published['revision']}"
     )
@@ -241,6 +264,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         "pipeline_run_id": delivery["pipeline_run_id"],
         "pipeline_revision_id": delivery["pipeline_revision_id"],
         "pipeline_fingerprint": published["fingerprint"],
+        "project_id": project_id,
         "browser_evidence": {
             "multi_pipeline_e2e": True,
             "verified_evidence_count": verified_evidence_count,
@@ -264,11 +288,14 @@ def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None
     graph_payload = graph.json()
     assert graph_payload["status"] == "completed", graph_payload
     assert graph_payload["graph_fingerprint"] == checkpoint["pipeline_fingerprint"]
-    page.goto(f"{url}/deliveries/{checkpoint['delivery_id']}")
+    page.goto(
+        f"{url}/projects/{checkpoint['project_id']}/deliveries/{checkpoint['delivery_id']}"
+    )
     page.wait_for_load_state("networkidle")
     page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for(timeout=30_000)
     page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
-    page.get_by_role("link", name="证据", exact=True).click()
+    page.goto(f"{url}/projects/{checkpoint['project_id']}/evidence")
+    page.wait_for_load_state("networkidle")
     page.get_by_label("按交付、证据或哈希筛选").fill(checkpoint["delivery_id"])
     page.get_by_label("按完整性筛选").select_option("verified")
     page.wait_for_timeout(300)

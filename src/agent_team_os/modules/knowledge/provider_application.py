@@ -72,9 +72,7 @@ class ProviderKnowledgeManager:
             raise _permission_denied()
         return self.repository.list_bindings()
 
-    def list_nodes(
-        self, actor: KnowledgeActor, binding_id: str
-    ) -> tuple[ProviderNode, ...]:
+    def list_nodes(self, actor: KnowledgeActor, binding_id: str) -> tuple[ProviderNode, ...]:
         binding = self._enabled_binding(binding_id)
         provider_actor = self._provider_actor(binding, actor)
         try:
@@ -138,9 +136,7 @@ class ProviderKnowledgeManager:
             return ProviderSyncResult(run=completed, snapshot=persisted)
         except ProviderFailure as error:
             status = (
-                ProviderSyncStatus.UNAVAILABLE
-                if error.unavailable
-                else ProviderSyncStatus.FAILED
+                ProviderSyncStatus.UNAVAILABLE if error.unavailable else ProviderSyncStatus.FAILED
             )
             failed = _failed_run(running, error.code, self.clock.now(), status)
             self.repository.fail_sync(failed)
@@ -175,9 +171,7 @@ class ProviderKnowledgeManager:
             )
         return binding
 
-    def _provider_actor(
-        self, binding: ProviderBinding, actor: KnowledgeActor
-    ) -> ProviderActor:
+    def _provider_actor(self, binding: ProviderBinding, actor: KnowledgeActor) -> ProviderActor:
         provider_actor = self.actor_resolver.resolve(binding, actor)
         if provider_actor.product_user_id != actor.user_id:
             raise ProductError(

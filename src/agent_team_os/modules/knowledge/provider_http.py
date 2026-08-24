@@ -28,9 +28,7 @@ class ProviderKnowledgeService(Protocol):
 
     def list_bindings(self, actor: KnowledgeActor) -> tuple[ProviderBinding, ...]: ...
 
-    def list_nodes(
-        self, actor: KnowledgeActor, binding_id: str
-    ) -> tuple[ProviderNode, ...]: ...
+    def list_nodes(self, actor: KnowledgeActor, binding_id: str) -> tuple[ProviderNode, ...]: ...
 
     def sync(
         self, actor: KnowledgeActor, binding_id: str, source_id: str
@@ -56,9 +54,7 @@ def create_provider_knowledge_router(
         response_model=ProviderBinding,
         status_code=201,
     )
-    def create_binding(
-        request_body: ProviderBindingCreate, request: Request
-    ) -> ProviderBinding:
+    def create_binding(request_body: ProviderBindingCreate, request: Request) -> ProviderBinding:
         return service.create_binding(mutation_actor(request), request_body)
 
     @router.get(
@@ -75,8 +71,6 @@ def create_provider_knowledge_router(
     def sync_binding(
         binding_id: str, request_body: ProviderSyncRequest, request: Request
     ) -> ProviderSyncResult:
-        return service.sync(
-            mutation_actor(request), binding_id, request_body.source_id
-        )
+        return service.sync(mutation_actor(request), binding_id, request_body.source_id)
 
     return router

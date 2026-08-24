@@ -7,10 +7,10 @@ import { EvidenceSummary } from "./EvidenceSummary";
 describe("证据账本摘要", () => {
   it("按已验证、无效、不可用混合统计真实状态", () => {
     const records: EvidenceRecord[] = [
-      { id: "e-1", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-1", producer_identity: "a", status: "verified", content_sha256: "sha", verified_at: null, payload: {}, },
-      { id: "e-2", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-2", producer_identity: "a", status: "invalid", content_sha256: "sha", verified_at: null, payload: {}, },
-      { id: "e-3", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-3", producer_identity: "a", status: "unavailable", content_sha256: "sha", verified_at: null, payload: {}, },
-      { id: "e-4", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-4", producer_identity: "a", status: "verified", content_sha256: "sha", verified_at: null, payload: {}, },
+      { id: "e-1", project_id: "pj1", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-1", producer_identity: "a", status: "verified", content_sha256: "sha", verified_at: null, payload: {}, },
+      { id: "e-2", project_id: "pj1", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-2", producer_identity: "a", status: "invalid", content_sha256: "sha", verified_at: null, payload: {}, },
+      { id: "e-3", project_id: "pj1", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-3", producer_identity: "a", status: "unavailable", content_sha256: "sha", verified_at: null, payload: {}, },
+      { id: "e-4", project_id: "pj1", delivery_id: "d-1", kind: "journey", source_kind: "backend", source_id: "s-4", producer_identity: "a", status: "verified", content_sha256: "sha", verified_at: null, payload: {}, },
     ];
 
     const { container } = render(<EvidenceSummary records={records} />);

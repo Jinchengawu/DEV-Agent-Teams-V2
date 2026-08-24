@@ -3,12 +3,14 @@ import { Link, useParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { DeliveryDetail } from "./DeliveryDetail";
 import { useDelivery, useDeliveryDecision, useDeliveryEvents, useDeliveryEvidence, useDeliveryPipelineRun } from "./api";
+import { projectPath, useProjectId } from "../projects/api";
 
 export function DeliveryRunPage() {
   const { deliveryId } = useParams<{ deliveryId: string }>();
-  const delivery = useDelivery(deliveryId);
-  const events = useDeliveryEvents(deliveryId);
-  const evidence = useDeliveryEvidence(deliveryId);
+  const projectId = useProjectId();
+  const delivery = useDelivery(deliveryId, projectId);
+  const events = useDeliveryEvents(deliveryId, projectId);
+  const evidence = useDeliveryEvidence(deliveryId, projectId);
   const pipelineRun = useDeliveryPipelineRun(deliveryId, delivery.data?.pipeline_run_id);
   const decision = useDeliveryDecision();
 
@@ -18,7 +20,7 @@ export function DeliveryRunPage() {
   if (!delivery.data) return <ErrorState error={new Error("交付接口未返回可显示的运行。")}/>;
 
   return <div className="delivery-run-page">
-    <Link className="back-link" to="/deliveries"><ArrowLeft size={16}/>返回交付工作台</Link>
+    <Link className="back-link" to={projectPath(projectId, "deliveries")}><ArrowLeft size={16}/>返回交付工作台</Link>
     <DeliveryDetail
       delivery={delivery.data}
       pipelineRun={pipelineRun.data}

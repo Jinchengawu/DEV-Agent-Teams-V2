@@ -10,6 +10,7 @@ const hash = "a".repeat(64);
 function delivery(): Delivery {
   return {
     id: "delivery-1",
+    project_id: "pj1",
     workspace_id: "backend-demo",
     user_request: "增加健康检查接口",
     status: "awaiting_plan_decision",

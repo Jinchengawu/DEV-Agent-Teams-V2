@@ -120,10 +120,9 @@ class LegacyDatabaseImporter:
     ) -> None:
         if not _table_exists(legacy, "deliveries"):
             return
-        for delivery_id, snapshot_json in legacy.execute(
-            "SELECT id,snapshot_json FROM deliveries"
-        ):
+        for delivery_id, snapshot_json in legacy.execute("SELECT id,snapshot_json FROM deliveries"):
             snapshot = json.loads(snapshot_json)
+            snapshot["project_id"] = "legacy-default"
             action = "copied"
             if snapshot.get("resolved_journey_sha256") == "0" * 64:
                 snapshot["resolved_journey_sha256"] = None
@@ -147,8 +146,13 @@ class LegacyDatabaseImporter:
                 ),
             )
             target.execute(
-                "INSERT OR IGNORE INTO deliveries(id,snapshot_json) VALUES(?,?)",
-                (delivery_id, json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))),
+                """INSERT OR IGNORE INTO deliveries(id,snapshot_json,project_id)
+                VALUES(?,?,?)""",
+                (
+                    delivery_id,
+                    json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
+                    "legacy-default",
+                ),
             )
 
     @staticmethod
@@ -185,9 +189,12 @@ def _statements(sql: str) -> tuple[str, ...]:
 
 
 def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
-    return connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-    ).fetchone() is not None
+    return (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        ).fetchone()
+        is not None
+    )
 
 
 def _sql_sha256(value: str) -> str:
