@@ -194,6 +194,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         and response.url.endswith("/v1/deliveries")
     ) as delivery_response:
         page.get_by_role("button", name="按所选流水线启动闭环").click()
+    assert delivery_response.value.status == 202, delivery_response.value.text()
     delivery = delivery_response.value.json()
     assert delivery["project_id"] == project_id, delivery
     assert delivery["project_execution_snapshot"]["project_id"] == project_id, delivery
