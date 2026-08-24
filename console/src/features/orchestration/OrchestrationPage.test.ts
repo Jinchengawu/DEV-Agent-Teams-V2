@@ -6,6 +6,7 @@ import {
   changeStageMode,
   createDependencyEdge,
   createGraphNode,
+  deleteGraphNode,
   parseDefinition,
   removeLoopBodyNode,
   isDeploymentSelectable,
@@ -74,6 +75,20 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     expect(withGate.nodes).toHaveLength(2);
     expect(removed.nodes).toHaveLength(1);
     expect(removed.edges).toEqual([]);
+  });
+  it("删除主图节点时原子清理依赖边和嵌套 Agent Assignment", () => {
+    const stage = createGraphNode("role", []);
+    const loop = createGraphNode("loop", [stage]);
+    const unrelated = createGraphNode("code", [stage, loop]);
+    const result = deleteGraphNode(
+      [stage, loop, unrelated],
+      [{ source: stage.id, target: loop.id }, { source: loop.id, target: unrelated.id }],
+      { [`${loop.id}.${"actor"}`]: "deployment-loop", [`${loop.id}/loop-1-work.developer`]: "deployment-inner", [`${unrelated.id}.developer`]: "deployment-code" },
+      loop.id,
+    );
+    expect(result.nodes.map((node) => node.id)).toEqual([stage.id, unrelated.id]);
+    expect(result.edges).toEqual([]);
+    expect(result.assignments).toEqual({ [`${unrelated.id}.developer`]: "deployment-code" });
   });
   it("只有 Profile 与 Provider 同时声明 Capability 时才允许分配", () => {
     const deployment = {

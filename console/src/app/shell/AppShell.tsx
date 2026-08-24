@@ -1,7 +1,7 @@
 import { Activity, Bot, Boxes, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useIdentity } from "../../features/identity/AuthGate";
-import { projectPath, useProjectId, useProjects } from "../../features/projects/api";
+import { projectPath, useProjectId, useProjects } from "../../entities/project/api";
 
 const globalSections = [
   { path: "/projects", label: "项目", icon: FolderGit2, description: "项目治理、独立工作区与资源授权" },
@@ -41,7 +41,7 @@ export function AppShell() {
     </aside>
     <main>
       <header><div><p className="kicker">团队协作控制层</p><h1>{current.label}</h1><p className="page-description">{current.description}</p></div><div className="identity-chip"><Activity size={16}/><span>规划身份<br/><b>Codex 模拟 Hermes</b></span><span>执行身份<br/><b>Codex 命令行</b></span></div></header>
-      <Outlet/>
+      <Outlet key={location.pathname.startsWith("/projects/") ? projectId : "global"}/>
     </main>
   </div>;
 }

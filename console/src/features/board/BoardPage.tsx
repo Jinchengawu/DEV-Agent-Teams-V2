@@ -8,7 +8,7 @@ import { request } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { commandLabel } from "../../i18n";
-import { useProjectId } from "../projects/api";
+import { useProjectId } from "../../entities/project/api";
 
 type WorkItem = components["schemas"]["WorkItem"];
 type BoardColumn = WorkItem["column"];

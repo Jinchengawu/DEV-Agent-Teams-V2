@@ -5,7 +5,7 @@ import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { DeliveryDetail } from "./DeliveryDetail";
 import { OperatingMap } from "./OperatingMap";
 import { useCreateDelivery, useDeliveries, useDelivery, useDeliveryDecision, useDeliveryEvents, useDeliveryEvidence, useDeliveryPipelineRun, useDeliveryPipelines } from "./api";
-import { useProject, useProjectId } from "../projects/api";
+import { useProject, useProjectId } from "../../entities/project/api";
 
 export function DeliveriesPage() {
   const projectId = useProjectId();

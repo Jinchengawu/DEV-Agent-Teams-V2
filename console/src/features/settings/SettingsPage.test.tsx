@@ -44,6 +44,7 @@ beforeEach(() => {
       live: { ...live, dev_revision: "f".repeat(40) },
       combined: { status: "failed", code: "RELEASE_GATE_REVISION_MISMATCH", reason: "确定性门禁与真实门禁不是同一代码和 ACWM Revision。" },
     });
+    if (url === "/v1/release-gates/history") return response([]);
     return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
   });
 });
@@ -73,5 +74,11 @@ describe("设置页发布双门禁", () => {
     await userEvent.click(screen.getByRole("button", { name: "刷新报告" }));
 
     await waitFor(() => expect(calls.filter((url) => url === "/v1/release-gates/latest")).toHaveLength(2));
+  });
+
+  test("明确展示当前数据目录尚无持久化验收历史", async () => {
+    renderPage();
+    expect((await screen.findAllByText("还没有持久化验收记录")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/当前 Demo 数据目录/).length).toBeGreaterThan(0);
   });
 });

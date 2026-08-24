@@ -4,7 +4,7 @@ import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, 
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
-import { useProjectId } from "../projects/api";
+import { useProjectId } from "../../entities/project/api";
 
 type Space = components["schemas"]["Space"];
 type Document = components["schemas"]["Document"];

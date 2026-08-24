@@ -6,7 +6,7 @@ import { request, type EvidenceRecord } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { EvidenceSummary } from "./EvidenceSummary";
-import { useProjectId } from "../projects/api";
+import { useProjectId } from "../../entities/project/api";
 
 const kinds = ["", "journey", "plan-gate", "candidate", "diff", "verification", "candidate-gate", "apply-receipt"];
 

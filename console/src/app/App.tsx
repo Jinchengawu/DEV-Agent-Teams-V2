@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./shell/AppShell";
 import { LoadingState } from "../shared/feedback/AsyncState";
+import { PageErrorBoundary } from "../shared/feedback/PageErrorBoundary";
 import { AuthGate } from "../features/identity/AuthGate";
 
 const DeliveriesPage = lazy(() => import("../features/deliveries/DeliveriesPage").then((module) => ({ default: module.DeliveriesPage })));
@@ -15,7 +16,7 @@ const ProjectsPage = lazy(() => import("../features/projects/ProjectsPage").then
 const ProjectOverviewPage = lazy(() => import("../features/projects/ProjectOverviewPage").then((module) => ({ default: module.ProjectOverviewPage })));
 
 export function App() {
-  return <BrowserRouter><AuthGate><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
+  return <BrowserRouter><AuthGate><PageErrorBoundary><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
     <Route index element={<Navigate to="/projects" replace/>}/>
     <Route path="projects" element={<ProjectsPage/>}/>
     <Route path="projects/:projectId/overview" element={<ProjectOverviewPage/>}/>
@@ -31,5 +32,5 @@ export function App() {
     <Route path="evidence" element={<Navigate to="/projects/legacy-default/evidence" replace/>}/>
     <Route path="settings" element={<SettingsPage/>}/>
     <Route path="*" element={<Navigate to="/projects" replace/>}/>
-  </Route></Routes></Suspense></AuthGate></BrowserRouter>;
+  </Route></Routes></Suspense></PageErrorBoundary></AuthGate></BrowserRouter>;
 }
