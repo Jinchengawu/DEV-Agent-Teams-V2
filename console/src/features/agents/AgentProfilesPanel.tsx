@@ -4,6 +4,7 @@ import { CheckCircle2, Plus, Save, Upload } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";
 import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
+import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
 
 type Profile = components["schemas"]["AgentProfile"];
 type Draft = components["schemas"]["AgentProfileDraft"];
@@ -24,6 +25,7 @@ export function AgentProfilesPanel() {
   const profiles = useQuery({ queryKey: ["agent-profiles"], queryFn: () => request<Profile[]>("/v1/agent-profiles") });
   const [selectedId, setSelectedId] = useState<string>();
   const [spec, setSpec] = useState<Spec>(defaultSpec);
+  const [publishConfirmation, setPublishConfirmation] = useState(false);
   const selectedDraft = useQuery({ queryKey: ["agent-profile-draft", selectedId], queryFn: () => request<Draft>(`/v1/agent-profiles/${selectedId}/draft`), enabled: Boolean(selectedId) });
   useEffect(() => { if (selectedDraft.data) setSpec(selectedDraft.data.spec); }, [selectedDraft.data]);
   const refresh = async (profileId?: string) => {
@@ -56,12 +58,13 @@ export function AgentProfilesPanel() {
       <div className="field-grid"><label>Capability ID<input value={spec.capabilities[0]?.id ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: event.target.value, version: spec.capabilities[0]?.version ?? ">=1,<2" }] })}/></label><label>版本范围<input value={spec.capabilities[0]?.version ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: spec.capabilities[0]?.id ?? "", version: event.target.value }] })}/></label></div>
       <label>隔离偏好<select value={spec.isolation_preference} onChange={(event) => setSpec({ ...spec, isolation_preference: event.target.value as Spec["isolation_preference"] })}><option value="shared">共享实例、会话隔离</option><option value="dedicated">独占实例</option></select></label>
       <p className="field-help">Prompt、工具、资源、审批与 Memory 仅保存版本化策略引用。Runtime Feature 由 Adapter 探测，不能在这里伪造。</p>
-      <div className="row-actions">{!selectedId && <button className="primary button-icon" disabled={!spec.id.trim() || !spec.name.trim() || create.isPending} onClick={() => create.mutate()}><Plus size={15}/>创建角色草稿</button>}{selectedId && <><button className="secondary button-icon" disabled={!selectedDraft.data || !isDirty || save.isPending} onClick={() => save.mutate()}><Save size={15}/>保存草稿</button><button className="secondary button-icon" disabled={!selectedDraft.data || isDirty || validate.isPending} onClick={() => validate.mutate()}><CheckCircle2 size={15}/>校验当前版本</button><button className="primary button-icon" disabled={isDirty || selectedDraft.data?.validation_status !== "valid" || publish.isPending} onClick={() => publish.mutate()}><Upload size={15}/>发布不可变 Revision</button><button onClick={startNewProfile}>创建新角色</button></>}</div>
+      <div className="row-actions">{!selectedId && <button className="primary button-icon" disabled={!spec.id.trim() || !spec.name.trim() || create.isPending} onClick={() => create.mutate()}><Plus size={15}/>创建角色草稿</button>}{selectedId && <><button className="secondary button-icon" disabled={!selectedDraft.data || !isDirty || save.isPending} onClick={() => save.mutate()}><Save size={15}/>保存草稿</button><button className="secondary button-icon" disabled={!selectedDraft.data || isDirty || validate.isPending} onClick={() => validate.mutate()}><CheckCircle2 size={15}/>校验当前版本</button><button className="primary button-icon" disabled={isDirty || selectedDraft.data?.validation_status !== "valid" || publish.isPending} onClick={() => setPublishConfirmation(true)}><Upload size={15}/>发布不可变 Revision</button><button onClick={startNewProfile}>创建新角色</button></>}</div>
       {selectedDraft.isLoading && <LoadingState label="正在读取角色草稿…"/>}
       {draftError && <ErrorState error={draftError} retry={() => void selectedDraft.refetch()}/>}
       {selectedDraft.data && <small className="field-help">草稿版本 {selectedDraft.data.version} · 校验状态 {validationLabel(selectedDraft.data.validation_status)}{isDirty ? " · 有未保存修改" : ""}</small>}
       {mutationError && <ErrorState error={mutationError}/>}
     </div></div>
+    <ConfirmDialog open={publishConfirmation} title={`发布角色“${spec.name || selectedId || ""}”`} detail="发布后会生成不可变 Agent Profile Revision，并可被 Agent Deployment 和流水线执行快照引用；修改职责或 Capability 必须创建后续 Revision。" confirmLabel="确认发布角色 Revision" pending={publish.isPending} onCancel={() => setPublishConfirmation(false)} onConfirm={() => publish.mutate(undefined, { onSuccess: () => setPublishConfirmation(false) })}/>
   </section>;
 }
 

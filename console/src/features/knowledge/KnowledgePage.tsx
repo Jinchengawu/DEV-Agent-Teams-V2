@@ -4,6 +4,7 @@ import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, 
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
+import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
 import { useProjectId } from "../../entities/project/api";
 
 type Space = components["schemas"]["Space"];
@@ -79,10 +80,11 @@ export function KnowledgePage() {
   const [editorContent, setEditorContent] = useState("");
 
   const [commentText, setCommentText] = useState("");
+  const [pendingRestore, setPendingRestore] = useState<{ revision: number; contentSha256: string }>();
 
   const spaces = useQuery({
     queryKey: ["wiki-spaces", projectId],
-    queryFn: () => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true`),
+    queryFn: ({ signal }) => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true`, { signal }),
   });
 
   useEffect(() => {
@@ -107,13 +109,13 @@ export function KnowledgePage() {
   const documents = useQuery({
     queryKey: ["wiki-documents", projectId, selectedSpaceId],
     enabled: spaces.isSuccess && Boolean(listDocumentsPath),
-    queryFn: () => request<Document[]>(listDocumentsPath),
+    queryFn: ({ signal }) => request<Document[]>(listDocumentsPath, { signal }),
   });
 
   const unifiedSearch = useQuery({
     queryKey: ["knowledge-search", projectId, search],
     enabled: Boolean(search.trim()),
-    queryFn: () => request<KnowledgeSearchHit[]>(`/v1/knowledge/search?project_id=${encodeURIComponent(projectId)}&include_global=true&q=${encodeURIComponent(search.trim())}`),
+    queryFn: ({ signal }) => request<KnowledgeSearchHit[]>(`/v1/knowledge/search?project_id=${encodeURIComponent(projectId)}&include_global=true&q=${encodeURIComponent(search.trim())}`, { signal }),
   });
 
   const selectedDocument = useMemo(
@@ -130,19 +132,19 @@ export function KnowledgePage() {
   const currentRevision = useQuery({
     queryKey: ["wiki-document-revision", selectedDocument?.id, selectedDocument?.current_revision],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Revision>(`/v1/wiki/documents/${selectedDocument!.id}/revisions/${selectedDocument!.current_revision}`),
+    queryFn: ({ signal }) => request<Revision>(`/v1/wiki/documents/${selectedDocument!.id}/revisions/${selectedDocument!.current_revision}`, { signal }),
   });
 
   const revisions = useQuery({
     queryKey: ["wiki-document-revisions", selectedDocument?.id],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Revision[]>(`/v1/wiki/documents/${selectedDocument!.id}/revisions`),
+    queryFn: ({ signal }) => request<Revision[]>(`/v1/wiki/documents/${selectedDocument!.id}/revisions`, { signal }),
   });
 
   const comments = useQuery({
     queryKey: ["wiki-document-comments", selectedDocument?.id],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Comment[]>(`/v1/wiki/documents/${selectedDocument!.id}/comments`),
+    queryFn: ({ signal }) => request<Comment[]>(`/v1/wiki/documents/${selectedDocument!.id}/comments`, { signal }),
   });
 
   const createSpace = useMutation({
@@ -424,13 +426,7 @@ export function KnowledgePage() {
                   <button
                     className="secondary"
                     disabled={restoreRevision.isPending || revision.revision === selectedDocument.current_revision}
-                    onClick={() =>
-                      restoreRevision.mutate({
-                        documentId: selectedDocument.id,
-                        revision: revision.revision,
-                        expectedVersion: selectedDocument.version,
-                      })
-                    }
+                    onClick={() => setPendingRestore({ revision: revision.revision, contentSha256: revision.content_sha256 })}
                   >
                     <RefreshCw size={14} />恢复该版本
                   </button>
@@ -468,6 +464,7 @@ export function KnowledgePage() {
           </>
         ) : <EmptyState title="未选择文档" detail="先选择文档读取评论并提交。" />}
       </section>
+      <ConfirmDialog open={Boolean(pendingRestore)} title={`恢复“${selectedDocument?.title ?? "当前文档"}”到修订 ${pendingRestore?.revision ?? ""}`} detail={`系统会以该历史内容创建一个新的当前修订，不会改写或删除原修订。目标内容 SHA-256：${pendingRestore?.contentSha256.slice(0, 16) ?? ""}。`} confirmLabel={`确认恢复到修订 ${pendingRestore?.revision ?? ""}`} tone="danger" pending={restoreRevision.isPending} onCancel={() => setPendingRestore(undefined)} onConfirm={() => { if (selectedDocument && pendingRestore) restoreRevision.mutate({ documentId: selectedDocument.id, revision: pendingRestore.revision, expectedVersion: selectedDocument.version }, { onSuccess: () => setPendingRestore(undefined) }); }}/>
     </div>
   );
 }

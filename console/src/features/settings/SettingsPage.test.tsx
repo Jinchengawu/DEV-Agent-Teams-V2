@@ -63,7 +63,7 @@ describe("设置页发布双门禁", () => {
     await screen.findByRole("heading", { name: "禁止发布" });
     expect(screen.getByText("RELEASE_GATE_REVISION_MISMATCH")).toBeTruthy();
     expect(screen.getByText("deterministic-model-boundary")).toBeTruthy();
-    expect(screen.getByText("codex-cli")).toBeTruthy();
+    expect(screen.getAllByText("codex-cli").length).toBeGreaterThan(0);
     expect(screen.getByText("浏览器闭环 已执行 · 进程重启恢复 已验证")).toBeTruthy();
     expect(screen.getByText("多流水线闭环 已验证 · 已验证证据 7 条 · Main 精确等于 Candidate")).toBeTruthy();
   });

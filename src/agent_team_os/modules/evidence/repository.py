@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ...shared.ids import new_id
-from .domain import EvidenceRecord, EvidenceStatus
+from .domain import EvidenceRecord, EvidenceStatus, EvidenceVerificationRecord
 
 
 class SQLiteEvidenceRepository:
@@ -81,6 +81,29 @@ class SQLiteEvidenceRepository:
         if found is None:
             raise KeyError(evidence_id)
         return found
+
+    def list_verifications(
+        self, evidence_id: str
+    ) -> tuple[EvidenceVerificationRecord, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,evidence_id,status,error,verified_at
+                FROM evidence_verifications WHERE evidence_id=?
+                ORDER BY verified_at DESC,id DESC""",
+                (evidence_id,),
+            ).fetchall()
+        return tuple(
+            EvidenceVerificationRecord.model_validate(
+                {
+                    "id": row[0],
+                    "evidence_id": row[1],
+                    "status": row[2],
+                    "error": row[3],
+                    "verified_at": row[4],
+                }
+            )
+            for row in rows
+        )
 
 
 _SELECT = """SELECT evidence_records.id,evidence_records.project_id,

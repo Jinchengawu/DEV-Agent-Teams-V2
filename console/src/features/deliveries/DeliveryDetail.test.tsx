@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { Delivery } from "../../shared/api/client";
 import { DeliveryDetail } from "./DeliveryDetail";
@@ -28,8 +29,11 @@ function delivery(): Delivery {
 describe("交付黄金纵切", () => {
   it("把计划审批映射为带明确语义的真实命令", async () => {
     const onDecision = vi.fn();
-    render(<DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/>);
+    render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/></MemoryRouter>);
     await userEvent.click(screen.getByRole("button", { name: "批准计划并开始执行" }));
+    expect(screen.getByRole("alertdialog", { name: "批准计划并启动代码执行" })).toBeTruthy();
+    expect(onDecision).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "确认批准并执行" }));
     expect(onDecision).toHaveBeenCalledWith("approve-plan");
     expect(screen.getByText("当前阶段尚无证据。只有真实产物生成后才会出现记录。")).toBeTruthy();
   });

@@ -49,7 +49,13 @@ from .modules.agents import (
     create_agent_profile_router,
 )
 from .modules.board import BoardProjector, WorkItem
-from .modules.evidence import EvidenceKind, EvidenceLedger, EvidenceRecord, EvidenceStatus
+from .modules.evidence import (
+    EvidenceKind,
+    EvidenceLedger,
+    EvidenceRecord,
+    EvidenceStatus,
+    EvidenceVerificationRecord,
+)
 from .modules.identity import (
     CSRF_HEADER,
     SESSION_COOKIE,
@@ -146,7 +152,7 @@ def create_app(
         coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs, agent_runs)
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.3.1",
+        version="0.4.0",
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},
@@ -397,6 +403,18 @@ def create_app(
             require_permission(request, Permission.EVIDENCE_VERIFY)
             try:
                 return evidence.verify(evidence_id)
+            except KeyError as error:
+                raise HTTPException(status_code=404, detail="evidence not found") from error
+
+        @app.get(
+            "/v1/evidence/{evidence_id}/verifications",
+            response_model=list[EvidenceVerificationRecord],
+        )
+        def list_evidence_verifications(
+            evidence_id: str,
+        ) -> tuple[EvidenceVerificationRecord, ...]:
+            try:
+                return evidence.verification_history(evidence_id)
             except KeyError as error:
                 raise HTTPException(status_code=404, detail="evidence not found") from error
 

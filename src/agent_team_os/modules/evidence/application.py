@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from ...shared.hashes import Sha256, is_valid_sha256, sha256_json
-from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus
+from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus, EvidenceVerificationRecord
 from .ports import EvidenceRepository
 
 
@@ -137,6 +137,13 @@ class EvidenceLedger:
                 evidence_id, EvidenceStatus.INVALID, "MISSING_OR_ZERO_SHA256"
             )
         return self.repository.append_verification(evidence_id, EvidenceStatus.VERIFIED, None)
+
+    def verification_history(
+        self, evidence_id: str
+    ) -> tuple[EvidenceVerificationRecord, ...]:
+        if self.repository.get(evidence_id) is None:
+            raise KeyError(evidence_id)
+        return self.repository.list_verifications(evidence_id)
 
 
 def _text(value: object) -> str | None:

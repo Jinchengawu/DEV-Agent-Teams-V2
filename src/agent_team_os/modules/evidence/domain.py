@@ -46,3 +46,13 @@ class EvidenceRecord(BaseModel):
         if self.status == EvidenceStatus.VERIFIED and self.content_sha256 is None:
             raise ValueError("verified evidence requires a non-zero SHA-256")
         return self
+
+
+class EvidenceVerificationRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    evidence_id: str
+    status: EvidenceStatus
+    error: str | None = None
+    verified_at: datetime

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { DeliveryDetail } from "./DeliveryDetail";
@@ -9,6 +10,7 @@ import { useProject, useProjectId } from "../../entities/project/api";
 
 export function DeliveriesPage() {
   const projectId = useProjectId();
+  const [searchParams, setSearchParams] = useSearchParams();
   const project = useProject(projectId);
   const deliveries = useDeliveries(projectId);
   const [selectedId, setSelectedId] = useState<string>();
@@ -18,12 +20,23 @@ export function DeliveriesPage() {
   const [pipelineRevisionId, setPipelineRevisionId] = useState<string>();
   useEffect(() => { if (!pipelineRevisionId && activePipelines[0]?.active_revision) setPipelineRevisionId(`${activePipelines[0].id}:${activePipelines[0].active_revision}`); }, [activePipelines, pipelineRevisionId]);
   useEffect(() => { setSelectedId(undefined); setPipelineRevisionId(undefined); }, [projectId]);
-  useEffect(() => { if (!selectedId && deliveries.data?.length) setSelectedId(deliveries.data[0].id); }, [deliveries.data, selectedId]);
-  const selected = useDelivery(selectedId);
-  const events = useDeliveryEvents(selectedId);
-  const evidence = useDeliveryEvidence(selectedId);
+  useEffect(() => {
+    const requestedId = searchParams.get("delivery_id");
+    if (requestedId && deliveries.data?.some((delivery) => delivery.id === requestedId)) {
+      setSelectedId(requestedId);
+      return;
+    }
+    if (!selectedId && deliveries.data?.length) setSelectedId(deliveries.data[0].id);
+  }, [deliveries.data, searchParams, selectedId]);
+  const selectDelivery = (deliveryId: string) => {
+    setSelectedId(deliveryId);
+    setSearchParams({ delivery_id: deliveryId }, { replace: true });
+  };
+  const selected = useDelivery(selectedId, projectId);
+  const events = useDeliveryEvents(selectedId, projectId);
+  const evidence = useDeliveryEvidence(selectedId, projectId);
   const pipelineRun = useDeliveryPipelineRun(selectedId, selected.data?.pipeline_run_id);
-  const create = useCreateDelivery(projectId, setSelectedId);
+  const create = useCreateDelivery(projectId, selectDelivery);
   const decision = useDeliveryDecision();
 
   if (deliveries.isLoading) return <LoadingState label="正在载入交付历史…"/>;
@@ -36,7 +49,7 @@ export function DeliveriesPage() {
       <aside className="delivery-sidebar">
         <div className="sidebar-title"><div><span className="eyebrow">项目工作区</span><b>{project.data?.project.name ?? projectId}</b></div><button aria-label="刷新交付" onClick={() => deliveries.refetch()}><RefreshCw size={15}/></button></div>
         <details className="create-drawer" open={deliveries.data?.length === 0}><summary><Plus size={15}/>新建交付</summary><label>执行流水线<select aria-label="执行流水线" value={pipelineRevisionId ?? ""} onChange={(event) => setPipelineRevisionId(event.target.value)}><option value="">请选择已激活流水线</option>{activePipelines.map((pipeline) => <option key={pipeline.id} value={`${pipeline.id}:${pipeline.active_revision}`}>{pipeline.name} · R{pipeline.active_revision}</option>)}</select></label>{pipelines.isSuccess && activePipelines.length === 0 && <p className="field-warning">没有已激活流水线。请先到可视化编排中发布并激活一个版本。</p>}<textarea aria-label="交付需求" value={requestText} onChange={(event) => setRequestText(event.target.value)}/><button className="primary" disabled={create.isPending || !requestText.trim() || !pipelineRevisionId} onClick={() => create.mutate({ userRequest: requestText, pipelineRevisionId })}>按所选流水线启动闭环</button>{create.error && <ErrorState error={create.error}/>}</details>
-        <div className="delivery-list">{deliveries.data?.map((item) => <button key={item.id} className={selectedId === item.id ? "selected" : ""} onClick={() => setSelectedId(item.id)}><span><b>{item.user_request}</b><small>{item.id.slice(0, 8)} · v{item.version}</small></span><StatusBadge value={item.status}/></button>)}</div>
+        <div className="delivery-list">{deliveries.data?.map((item) => <button key={item.id} className={selectedId === item.id ? "selected" : ""} onClick={() => selectDelivery(item.id)}><span><b>{item.user_request}</b><small>{item.id.slice(0, 8)} · v{item.version}</small></span><StatusBadge value={item.status}/></button>)}</div>
       </aside>
       <div className="delivery-canvas">
         {selected.isLoading && <LoadingState label="正在读取交付聚合与证据…"/>}

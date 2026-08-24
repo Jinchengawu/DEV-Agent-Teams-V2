@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, type Delivery, type EvidenceRecord, type ProductEvent } from "../../shared/api/client";
 import type { components } from "../../shared/api/generated/schema";
+import { assertProjectScope } from "../../entities/project/api";
 
 type Pipeline = components["schemas"]["Pipeline"];
 export type PipelineRun = components["schemas"]["PipelineRunRecord"];
@@ -13,19 +14,19 @@ export const deliveryKeys = {
 };
 
 export function useDeliveries(projectId: string) {
-  return useQuery({ queryKey: deliveryKeys.all(projectId), queryFn: () => request<Delivery[]>(`/v1/deliveries?project_id=${encodeURIComponent(projectId)}`), refetchInterval: 1500 });
+  return useQuery({ queryKey: deliveryKeys.all(projectId), queryFn: async ({ signal }) => assertProjectScope(projectId, await request<Delivery[]>(`/v1/deliveries?project_id=${encodeURIComponent(projectId)}`, { signal }), "交付列表"), refetchInterval: 1500 });
 }
 
-export function useDelivery(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.detail(id ?? ""), queryFn: () => request<Delivery>(`/v1/deliveries/${id}`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDelivery(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.detail(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, [await request<Delivery>(`/v1/deliveries/${id}`, { signal })], "交付详情")[0], enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
-export function useDeliveryEvents(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.events(id ?? ""), queryFn: () => request<ProductEvent[]>(`/v1/deliveries/${id}/events`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDeliveryEvents(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.events(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, await request<ProductEvent[]>(`/v1/deliveries/${id}/events`, { signal }), "交付事件"), enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
-export function useDeliveryEvidence(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.evidence(id ?? ""), queryFn: () => request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDeliveryEvidence(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.evidence(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, await request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`, { signal }), "交付证据"), enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
 export function useDeliveryPipelineRun(deliveryId?: string, runId?: string | null) {

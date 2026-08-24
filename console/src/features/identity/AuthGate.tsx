@@ -18,6 +18,10 @@ export function useIdentity(): IdentityContextValue {
   return value;
 }
 
+export function IdentityProvider({ user, children, logout = () => undefined, loggingOut = false }: { user: CurrentUser; children: ReactNode; logout?: () => void; loggingOut?: boolean }) {
+  return <IdentityContext.Provider value={{ user, logout, loggingOut }}>{children}</IdentityContext.Provider>;
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const bootstrap = useQuery({
@@ -50,11 +54,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       queryClient.setQueryData(["identity", "session"], user);
     }} />;
   }
-  return <IdentityContext.Provider value={{
-    user: session.data,
-    logout: () => logout.mutate(),
-    loggingOut: logout.isPending,
-  }}>{children}</IdentityContext.Provider>;
+  return <IdentityProvider user={session.data} logout={() => logout.mutate()} loggingOut={logout.isPending}>{children}</IdentityProvider>;
 }
 
 function IdentityForm({

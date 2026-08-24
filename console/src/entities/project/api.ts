@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import type { components } from "../../shared/api/generated/schema";
-import { request } from "../../shared/api/client";
+import { ApiProblem, request } from "../../shared/api/client";
 
 export type Project = components["schemas"]["Project"];
 export type ProjectDetail = components["schemas"]["ProjectDetail"];
 export type ProjectCreate = components["schemas"]["ProjectCreate"];
 
 export const LEGACY_PROJECT_ID = "legacy-default";
+export const ACTIVE_PROJECT_STORAGE_KEY = "agent-team-os.active-project";
 
 export const projectKeys = {
   all: ["projects"] as const,
@@ -15,7 +16,27 @@ export const projectKeys = {
 };
 
 export function useProjectId() {
-  return useParams<{ projectId: string }>().projectId ?? LEGACY_PROJECT_ID;
+  return useRouteProjectId() ?? LEGACY_PROJECT_ID;
+}
+
+export function useRouteProjectId() {
+  return useParams<{ projectId: string }>().projectId;
+}
+
+export function readActiveProjectId() {
+  try {
+    return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function rememberActiveProjectId(projectId: string) {
+  try {
+    window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectId);
+  } catch {
+    // Storage is a convenience only. Route-scoped project authority remains intact.
+  }
 }
 
 export function projectPath(projectId: string, section = "overview") {
@@ -28,4 +49,15 @@ export function useProjects() {
 
 export function useProject(projectId: string) {
   return useQuery({ queryKey: projectKeys.detail(projectId), queryFn: ({ signal }) => request<ProjectDetail>(`/v1/projects/${encodeURIComponent(projectId)}`, { signal }), enabled: Boolean(projectId) });
+}
+
+export function assertProjectScope<T extends { project_id?: string | null }>(projectId: string, records: T[], resourceLabel: string): T[] {
+  const leaked = records.find((record) => record.project_id !== projectId);
+  if (!leaked) return records;
+  throw new ApiProblem(500, {
+    code: "PROJECT_SCOPE_MISMATCH",
+    title: `${resourceLabel}项目范围不一致`,
+    detail: `服务返回了属于项目 ${leaked.project_id} 的记录，当前项目为 ${projectId}。为避免跨项目数据混淆，界面已拒绝展示。`,
+    repair: "刷新页面；若问题持续，请检查后端项目查询过滤与投影索引。",
+  });
 }

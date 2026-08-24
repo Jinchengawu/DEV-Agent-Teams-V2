@@ -152,6 +152,11 @@ def test_evidence_ledger_never_marks_zero_hash_as_verified(tmp_path: Path) -> No
     assert journey.content_sha256 is None
     assert diff.status == EvidenceStatus.VERIFIED
     assert ledger.verify(journey.id).status == EvidenceStatus.INVALID
+    assert ledger.verify(journey.id).status == EvidenceStatus.INVALID
+    history = ledger.verification_history(journey.id)
+    assert len(history) == 2
+    assert all(item.evidence_id == journey.id for item in history)
+    assert all(item.error == "MISSING_OR_ZERO_SHA256" for item in history)
 
 
 def test_evidence_ledger_prefers_pinned_pipeline_revision(tmp_path: Path) -> None:
@@ -256,6 +261,11 @@ def test_foundation_interfaces_expose_events_evidence_and_problem_details(
             time.sleep(0.01)
         events = client.get(f"/v1/deliveries/{delivery_id}/events")
         evidence_response = client.get(f"/v1/deliveries/{delivery_id}/evidence")
+        evidence_id = evidence_response.json()[0]["id"]
+        verified = client.post(f"/v1/evidence/{evidence_id}/verify")
+        verification_history = client.get(
+            f"/v1/evidence/{evidence_id}/verifications"
+        )
         initial_settings = client.get("/v1/settings").json()
         changed = client.patch(
             "/v1/settings",
@@ -279,6 +289,9 @@ def test_foundation_interfaces_expose_events_evidence_and_problem_details(
         "delivery.awaiting_plan_decision",
     ]
     assert evidence_response.status_code == 200
+    assert verified.status_code == 200
+    assert verification_history.status_code == 200
+    assert verification_history.json()[0]["evidence_id"] == evidence_id
     assert any(item["kind"] == "journey" for item in evidence_response.json())
     assert changed.json()["evidence_retention_days"] == 12
     assert conflict.status_code == 409

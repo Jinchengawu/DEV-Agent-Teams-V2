@@ -922,6 +922,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/evidence/{evidence_id}/verifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Evidence Verifications */
+        get: operations["list_evidence_verifications_v1_evidence__evidence_id__verifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/runtime-adapters": {
         parameters: {
             query?: never;
@@ -2267,6 +2284,21 @@ export interface components {
          * @enum {string}
          */
         EvidenceStatus: "verified" | "invalid" | "unavailable";
+        /** EvidenceVerificationRecord */
+        EvidenceVerificationRecord: {
+            /** Id */
+            id: string;
+            /** Evidence Id */
+            evidence_id: string;
+            status: components["schemas"]["EvidenceStatus"];
+            /** Error */
+            error?: string | null;
+            /**
+             * Verified At
+             * Format: date-time
+             */
+            verified_at: string;
+        };
         /** GateRecord */
         GateRecord: {
             /** Gate Id */
@@ -7536,6 +7568,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvidenceRecord"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_evidence_verifications_v1_evidence__evidence_id__verifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evidence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceVerificationRecord"][];
                 };
             };
             /** @description 目标资源不存在 */
