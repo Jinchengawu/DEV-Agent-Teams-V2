@@ -102,6 +102,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     _add_dependency(page, "主图", "loop-1", "gate-2")
 
     page.get_by_label("选择主图节点").select_option("loop-1")
+    page.get_by_role("button", name="打开 LOOP 全屏工作区").click()
     page.get_by_label("退出条件策略").fill("machine-tests-passed")
     page.get_by_label("最大轮次").fill("4")
     page.locator(".loop-body-editor").get_by_role("button", name="角色 Stage").click()
@@ -114,6 +115,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         "builtin-planning-deployment"
     )
     _add_dependency(page, "循环体", "loop-1-work", "stage-1")
+    page.get_by_role("button", name="关闭 LOOP 工作区并保留草稿修改").click()
 
     with page.expect_response(
         lambda response: (
