@@ -91,25 +91,25 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("button", name="审批 Gate").click()
     page.get_by_role("button", name="有限 LOOP").click()
 
-    _select_flow_node(page, "主图", "stage-2")
+    page.get_by_label("选择主图节点").select_option("stage-2")
     page.get_by_label("Capability").fill("hermes-project-admin")
     page.get_by_label("Agent Deployment stage-2.actor").select_option("builtin-planning-deployment")
-    _select_flow_node(page, "主图", "stage-1")
+    page.get_by_label("选择主图节点").select_option("stage-1")
     page.get_by_label("Agent Deployment stage-1.actor").select_option("builtin-planning-deployment")
     _add_dependency(page, "主图", "stage-1", "stage-2")
     _add_dependency(page, "主图", "stage-2", "gate-1")
     _add_dependency(page, "主图", "gate-1", "loop-1", "approved")
     _add_dependency(page, "主图", "loop-1", "gate-2")
 
-    _select_flow_node(page, "主图", "loop-1")
+    page.get_by_label("选择主图节点").select_option("loop-1")
     page.get_by_label("退出条件策略").fill("machine-tests-passed")
     page.get_by_label("最大轮次").fill("4")
     page.locator(".loop-body-editor").get_by_role("button", name="角色 Stage").click()
-    _select_flow_node(page, "循环体", "loop-1-work")
+    page.get_by_label("选择循环体节点").select_option("loop-1-work")
     page.get_by_label("Agent Deployment loop-1/loop-1-work.developer").select_option(
         "builtin-backend-deployment"
     )
-    _select_flow_node(page, "循环体", "stage-1")
+    page.get_by_label("选择循环体节点").select_option("stage-1")
     page.get_by_label("Agent Deployment loop-1/stage-1.actor").select_option(
         "builtin-planning-deployment"
     )
@@ -270,20 +270,6 @@ def _add_dependency(page: Page, label: str, source: str, target: str, condition:
     if condition:
         editor.get_by_label(f"{label}分支条件").fill(condition)
     editor.get_by_role("button", name="添加依赖边").click()
-
-
-def _select_flow_node(page: Page, editor: str, node_id: str) -> None:
-    """Select a semantic node without depending on animated canvas coordinates."""
-
-    container = (
-        page.locator(".flow > .react-flow")
-        if editor == "主图"
-        else page.locator(".loop-body-editor .react-flow")
-    )
-    node = container.get_by_test_id(f"rf__node-{node_id}")
-    node.wait_for(state="attached")
-    page.wait_for_timeout(250)
-    node.click(force=True)
 
 
 if __name__ == "__main__":

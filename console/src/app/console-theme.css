@@ -186,6 +186,9 @@ button:disabled { opacity: .52; }
 .loop-workspace-content > aside { display: grid; align-content: start; gap: 16px; padding: 22px; border-right: 1px solid var(--line); background: #f7f9fc; }
 .loop-workspace-content .loop-body-editor { min-width: 0; min-height: 0; padding: 22px; grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
 .loop-workspace-content .loop-flow { height: auto; min-height: 420px; }
+.node-jump { display: grid; grid-template-columns: max-content minmax(220px, 360px); align-items: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 12px; }
+.node-jump select { min-height: 36px; }
+@media (max-width: 760px) { .node-jump { grid-template-columns: 1fr; } .node-jump select { min-height: 44px; width: 100%; } }
 .loop-workspace-content .dependency-creator { grid-template-columns: auto repeat(3, minmax(120px, 1fr)) auto; }
 .loop-workspace-content .dependency-creator > b, .loop-workspace-content .dependency-creator button { grid-column: auto; }
 

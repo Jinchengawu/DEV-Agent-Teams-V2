@@ -86,6 +86,12 @@ export type LoopNode = {
 };
 export type GraphNode = StageNode | GateNode | LoopNode;
 
+function graphNodeKindLabel(node: GraphNode): string {
+  if (node.kind === "stage") return "执行阶段";
+  if (node.kind === "approval_gate") return "审批关卡";
+  return "有限循环";
+}
+
 const stageSchema = z.object({
   id: z.string(),
   kind: z.literal("stage"),
@@ -452,6 +458,24 @@ export function OrchestrationPage() {
                 </button>
               )}
             </div>
+            <label className="node-jump">
+              <span>选择主图节点</span>
+              <select
+                aria-label="选择主图节点"
+                value={selectedNodeId ?? ""}
+                onChange={(event) => {
+                  setSelectedNodeId(event.target.value || undefined);
+                  setSelectedEdgeId(undefined);
+                }}
+              >
+                <option value="">从列表定位并编辑节点</option>
+                {workspace.nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {graphNodeKindLabel(node)} · {node.id}
+                  </option>
+                ))}
+              </select>
+            </label>
             <DependencyCreator
               label="主图"
               nodes={workspace.nodes}
@@ -1208,6 +1232,24 @@ function LoopBodyEditor({
       <p className="field-hint">
         当前版本只允许循环体执行机器节点；人工审批 Gate 必须放在 LOOP 外部。
       </p>
+      <label className="node-jump">
+        <span>选择循环体节点</span>
+        <select
+          aria-label="选择循环体节点"
+          value={selectedNodeId ?? ""}
+          onChange={(event) => {
+            setSelectedNodeId(event.target.value || undefined);
+            setSelectedEdgeId(undefined);
+          }}
+        >
+          <option value="">从列表定位并编辑节点</option>
+          {loop.nodes.map((node) => (
+            <option key={node.id} value={node.id}>
+              {graphNodeKindLabel(node)} · {node.id}
+            </option>
+          ))}
+        </select>
+      </label>
       <DependencyCreator
         label="循环体"
         nodes={loop.nodes}
