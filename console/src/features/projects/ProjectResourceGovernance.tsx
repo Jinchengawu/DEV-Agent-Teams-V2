@@ -48,7 +48,7 @@ export function ProjectResourceGovernance({ detail }: { detail: ProjectDetail })
           const enabled = Boolean(binding?.enabled);
           return <div key={`${pipeline.id}:${revision}`}><div><b>{pipeline.name}</b><small><code>{pipeline.id}:R{revision}</code></small></div><StatusBadge value={binding?.is_default && enabled ? "default" : enabled ? "enabled" : "disabled"}/><div className="resource-actions">{!enabled ? <button className="secondary" disabled={!mutable || updatePipeline.isPending} onClick={() => updatePipeline.mutate({ pipeline_revision_id: `${pipeline.id}:${revision}`, enabled: true, is_default: !defaultBinding, expected_version: binding?.version })}>授权</button> : <><button className="secondary" disabled={!mutable || binding?.is_default || updatePipeline.isPending} onClick={() => updatePipeline.mutate({ pipeline_revision_id: `${pipeline.id}:${revision}`, enabled: true, is_default: true, expected_version: binding?.version })}>设为默认</button><button className="danger" title={binding?.is_default ? "请先将另一条流水线设为默认" : undefined} disabled={!mutable || binding?.is_default || updatePipeline.isPending} onClick={() => updatePipeline.mutate({ pipeline_revision_id: `${pipeline.id}:${revision}`, enabled: false, is_default: false, expected_version: binding?.version })}>停用</button></>}</div></div>;
         })}</div>}
-        {updatePipeline.error && <ErrorState error={updatePipeline.error}/>} 
+        {updatePipeline.error && <ErrorState error={updatePipeline.error}/>}
       </article>
       <article>
         <header><Bot size={18}/><div><h3>Agent 部署访问</h3><p>只有已启用且资格通过的 Deployment 才能加入新的项目执行快照。</p></div></header>
@@ -58,7 +58,7 @@ export function ProjectResourceGovernance({ detail }: { detail: ProjectDetail })
           const usable = deployment.enabled && deployment.qualification_status === "qualified";
           return <div key={deployment.id}><div><b>{deployment.name}</b><small>{deployment.profile_id} · {deployment.adapter_id}</small></div><StatusBadge value={enabled ? "enabled" : usable ? "qualified" : deployment.qualification_status}/><div className="resource-actions"><button className={enabled ? "danger" : "secondary"} disabled={!mutable || updateDeployment.isPending || (!enabled && !usable)} title={!enabled && !usable ? "部署必须先启用并通过资格检查" : undefined} onClick={() => updateDeployment.mutate({ deployment_id: deployment.id, enabled: !enabled, expected_version: access?.version })}>{enabled ? "撤销授权" : "授权使用"}</button></div></div>;
         })}</div>}
-        {updateDeployment.error && <ErrorState error={updateDeployment.error}/>} 
+        {updateDeployment.error && <ErrorState error={updateDeployment.error}/>}
       </article>
     </div>
   </section>;
