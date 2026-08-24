@@ -11,7 +11,6 @@ from .api import create_app
 from .control_plane import ControlPlaneService, HealthResult
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from .git_delivery import GitCandidateApplier, GitCandidateVerifier, GitCodeExecutor
-from .git_sandbox import GitSandbox
 from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
@@ -19,6 +18,7 @@ from .infrastructure.acwm import (
     ControlPlaneBindingResolver,
 )
 from .infrastructure.database import MigrationRunner
+from .infrastructure.git import ProjectGitWorkspaces
 from .journey import (
     load_backend_delivery_definition,
     resolve_backend_delivery_fingerprint,
@@ -35,13 +35,18 @@ from .modules.agents import (
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
-from .modules.knowledge import SQLiteWikiRepository, WikiService
+from .modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
 from .modules.orchestration import (
     PipelineCatalog,
     PipelineCreate,
     PipelineRunLedger,
     SQLitePipelineRepository,
     SQLitePipelineRunRepository,
+)
+from .modules.projects import (
+    ProjectCatalog,
+    ProjectLeaseDeliveryRepository,
+    SQLiteProjectRepository,
 )
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .release import DeterministicWorkspaceAgent
@@ -71,14 +76,19 @@ def build_gate_app() -> FastAPI:
     data_dir = Path(os.environ["AGENT_TEAM_OS_DATA_DIR"])
     database = data_dir / "agent-team-os.sqlite"
     MigrationRunner(database, project_root / "migrations").migrate()
-    sandbox = GitSandbox(data_dir / "browser-workspaces")
+    project_workspaces = ProjectGitWorkspaces(data_dir / "browser-workspaces")
+    sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
+    projects = ProjectCatalog(SQLiteProjectRepository(database), project_workspaces)
+    delivery_repository = ProjectLeaseDeliveryRepository(
+        SQLiteDeliveryRepository(database), projects
+    )
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
-        executor=GitCodeExecutor(sandbox, DeterministicWorkspaceAgent()),
-        verifier=GitCandidateVerifier(sandbox),
-        applier=GitCandidateApplier(sandbox),
-        repository=SQLiteDeliveryRepository(database),
+        executor=GitCodeExecutor(project_workspaces, DeterministicWorkspaceAgent()),
+        verifier=GitCandidateVerifier(project_workspaces),
+        applier=GitCandidateApplier(project_workspaces),
+        repository=delivery_repository,
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
     control_plane = ControlPlaneService(
@@ -115,7 +125,7 @@ def build_gate_app() -> FastAPI:
         ),
         definition_policy=BackendDeliveryPipelinePolicy(),
     )
-    pipeline_catalog.ensure_builtin_pipeline(
+    builtin_pipeline = pipeline_catalog.ensure_builtin_pipeline(
         PipelineCreate(
             id="backend-delivery",
             name="内置后端交付闭环",
@@ -125,13 +135,33 @@ def build_gate_app() -> FastAPI:
         ),
         actor_id="system",
     )
+
+    def validate_project_pipeline(revision_id: str) -> None:
+        pipeline_catalog.resolve_revision(revision_id)
+
+    def validate_project_deployment(deployment_id: str) -> None:
+        deployment = agent_deployments.get(deployment_id)
+        if not deployment.enabled or deployment.qualification_status != "qualified":
+            raise ValueError("deployment is not enabled and qualified")
+
+    projects.configure_resource_validators(
+        pipeline=validate_project_pipeline,
+        deployment=validate_project_deployment,
+    )
+    if builtin_pipeline.active_revision is not None:
+        projects.ensure_legacy_defaults(
+            f"backend-delivery:{builtin_pipeline.active_revision}",
+            tuple(sorted(set(builtin_assignments.values()))),
+        )
     result = create_app(
         coordinator,
         control_plane=control_plane,
         evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
-        knowledge=WikiService(SQLiteWikiRepository(database)),
+        knowledge=WikiService(
+            SQLiteWikiRepository(database), project_guard=projects.assert_writable
+        ),
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
@@ -140,6 +170,8 @@ def build_gate_app() -> FastAPI:
         agent_deployments=agent_deployments,
         provider_manifests=provider_manifests,
         agent_runs=AgentRunLedger(database),
+        projects=projects,
+        knowledge_search=KnowledgeSearchIndex(database),
     )
     install_preview_ui(result, project_root / "console" / "dist")
     return result
