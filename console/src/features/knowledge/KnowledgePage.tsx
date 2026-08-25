@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input } from "antd";
 import { BookMarked, BookPlus, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
@@ -338,8 +339,8 @@ export function KnowledgePage() {
                   {new Date(item.occurred_at).toLocaleString("zh-CN")} · 修订 {item.revision} · SHA-256 {item.content_sha256?.slice(0, 16) ?? "未提供"}
                 </small>
                 {item.source_kind !== "wiki" && (
-                  <button
-                    className="secondary button-icon knowledge-derive-button"
+                  <Button
+                    className="button-icon knowledge-derive-button"
                     aria-label={`提炼“${item.title}”为 Wiki`}
                     disabled={
                       deriveSource.isPending ||
@@ -354,7 +355,7 @@ export function KnowledgePage() {
                     }}
                   >
                     <BookPlus size={15} />提炼为 Wiki
-                  </button>
+                  </Button>
                 )}
               </article>
             ))}
@@ -374,7 +375,7 @@ export function KnowledgePage() {
 
         <div className="knowledge-space-list" role="list" aria-label="知识空间列表">
           {spaces.data?.length ? spaces.data.map((space) => (
-            <button
+            <Button
               key={space.id}
               className={`knowledge-space-item ${selectedSpaceId === space.id ? "selected" : ""}`}
               onClick={() => {
@@ -385,15 +386,16 @@ export function KnowledgePage() {
               <b>{space.name}</b>
               <small>协议 ID: {space.id}</small>
               <small>版本: {space.version}</small>
-            </button>
+            </Button>
           )) : <EmptyState title="当前无知识空间" detail="请先在下方创建知识空间后再写入文档。" />}
         </div>
 
         <div className="panel-head"><span>创建知识空间</span><small>协议 ID 不可手工伪造</small></div>
-        <label>空间名称<input value={newSpaceName} onChange={(event) => setNewSpaceName(event.target.value)} placeholder="例如：交付经验库" /></label>
-        <label>说明<textarea value={newSpaceDescription} onChange={(event) => setNewSpaceDescription(event.target.value)} placeholder="例如：记录交付策略与知识版本" /></label>
-        <button
-          className="primary button-icon"
+        <label>空间名称<Input value={newSpaceName} onChange={(event) => setNewSpaceName(event.target.value)} placeholder="例如：交付经验库" /></label>
+        <label>说明<Input.TextArea value={newSpaceDescription} onChange={(event) => setNewSpaceDescription(event.target.value)} placeholder="例如：记录交付策略与知识版本" /></label>
+        <Button
+          type="primary"
+          className="button-icon"
           disabled={createSpace.isPending || !newSpaceName.trim()}
           onClick={() =>
             createSpace.mutate({
@@ -405,12 +407,12 @@ export function KnowledgePage() {
           }
         >
           <FolderPlus size={16} />创建空间
-        </button>
+        </Button>
         {createSpace.error && <ErrorState error={createSpace.error} />}
 
         <label className="search-field">
           <Search size={15} />
-          <input
+          <Input
             aria-label="全文搜索"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -426,7 +428,7 @@ export function KnowledgePage() {
         <div className="panel-head"><span>当前空间文档</span><small>{selectedSpaceId || "未选择空间"}</small></div>
         <div className="document-list" role="list" aria-label="当前空间文档列表">
           {documents.data?.length ? documents.data.map((document) => (
-            <button
+            <Button
               key={document.id}
               className={`knowledge-doc-item ${selectedDocumentId === document.id ? "selected" : ""}`}
               aria-label={`文档 ${document.title}`}
@@ -435,7 +437,7 @@ export function KnowledgePage() {
               <b>{document.title}</b>
               <small>文档 ID: {document.id}</small>
               <small>修订: {document.current_revision} · 协议版本: {document.version}</small>
-            </button>
+            </Button>
           )) : <EmptyState title="当前空间无文档" detail="选择一个空间后创建并编辑 Markdown 文档。" />}
         </div>
       </section>
@@ -469,10 +471,11 @@ export function KnowledgePage() {
         {conflictError && <ConflictState error={conflictError} />}
 
         <div className="panel-subtitle">创建文档</div>
-        <label>标题<input value={newDocumentTitle} onChange={(event) => setNewDocumentTitle(event.target.value)} disabled={!selectedSpaceId} placeholder="文档标题" /></label>
-        <label><BookMarked size={14} />Markdown 正文<textarea value={newDocumentContent} onChange={(event) => setNewDocumentContent(event.target.value)} disabled={!selectedSpaceId} placeholder="使用 Markdown 正文" /></label>
-        <button
-          className="primary button-icon"
+        <label>标题<Input value={newDocumentTitle} onChange={(event) => setNewDocumentTitle(event.target.value)} disabled={!selectedSpaceId} placeholder="文档标题" /></label>
+        <label><BookMarked size={14} />Markdown 正文<Input.TextArea value={newDocumentContent} onChange={(event) => setNewDocumentContent(event.target.value)} disabled={!selectedSpaceId} placeholder="使用 Markdown 正文" /></label>
+        <Button
+          type="primary"
+          className="button-icon"
           disabled={!selectedSpaceId || createDocument.isPending || !newDocumentTitle.trim() || !newDocumentContent.trim()}
           onClick={() =>
             createDocument.mutate({
@@ -484,16 +487,16 @@ export function KnowledgePage() {
           }
         >
           <FilePlus2 size={16} />创建文档
-        </button>
+        </Button>
         {createDocument.error && !isConflictError(createDocument.error) && <ErrorState error={createDocument.error} />}
 
         <div className="panel-subtitle">编辑当前文档（expected_version）</div>
         {selectedDocument ? (
           <>
-            <label>标题<input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="文档标题" /></label>
-            <label><MessageSquare size={14} />Markdown 正文<textarea value={editorContent} onChange={(event) => setEditorContent(event.target.value)} placeholder="Markdown 正文" /></label>
-            <button
-              className="secondary button-icon"
+            <label>标题<Input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="文档标题" /></label>
+            <label><MessageSquare size={14} />Markdown 正文<Input.TextArea value={editorContent} onChange={(event) => setEditorContent(event.target.value)} placeholder="Markdown 正文" /></label>
+            <Button
+              className="button-icon"
               disabled={updateDocument.isPending || !editorTitle.trim() || !editorContent.trim()}
               onClick={() =>
                 updateDocument.mutate({
@@ -505,7 +508,7 @@ export function KnowledgePage() {
               }
             >
               <FileText size={16} />保存标题与正文
-            </button>
+            </Button>
             {updateDocument.error && !isConflictError(updateDocument.error) && <ErrorState error={updateDocument.error} />}
           </>
         ) : <EmptyState title="未选择可编辑文档" detail="先从左栏选择文档后才能编辑标题和 Markdown 正文。" />}
@@ -520,13 +523,12 @@ export function KnowledgePage() {
                 <article key={revision.revision} className="revision-item" role="listitem">
                   <div><b>修订 {revision.revision}</b><small>创建于 {revision.created_at}</small></div>
                   <small>SHA-256 {revision.content_sha256.slice(0, 12)}</small>
-                  <button
-                    className="secondary"
+                  <Button
                     disabled={restoreRevision.isPending || revision.revision === selectedDocument.current_revision}
                     onClick={() => setPendingRestore({ revision: revision.revision, contentSha256: revision.content_sha256 })}
                   >
                     <RefreshCw size={14} />恢复该版本
-                  </button>
+                  </Button>
                 </article>
               ))}
             </div>
@@ -549,14 +551,14 @@ export function KnowledgePage() {
                 ))}
               </div>
             ) : <EmptyState title="暂无评论" detail="当前文档还未形成评论流。" />}
-            <label>添加评论<textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="输入评论正文" /></label>
-            <button
-              className="secondary button-icon"
+            <label>添加评论<Input.TextArea value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="输入评论正文" /></label>
+            <Button
+              className="button-icon"
               disabled={addComment.isPending || !commentText.trim()}
               onClick={() => selectedDocument && addComment.mutate({ documentId: selectedDocument.id, body: commentText })}
             >
               <MessageSquare size={16} />添加评论
-            </button>
+            </Button>
             {addComment.error && !isConflictError(addComment.error) && <ErrorState error={addComment.error} />}
           </>
         ) : <EmptyState title="未选择文档" detail="先选择文档读取评论并提交。" />}

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Select } from "antd";
 import {
   Background,
   Controls,
   MiniMap,
+  Position as FlowPosition,
   ReactFlow,
   applyEdgeChanges,
   useEdgesState,
@@ -443,7 +445,7 @@ export function OrchestrationPage() {
         />
         <div className="pipeline-list">
           {pipelines.data?.map((pipeline) => (
-            <button
+            <Button
               className={pipeline.id === selectedPipeline?.id ? "selected" : ""}
               key={pipeline.id}
               onClick={() => setSelectedPipelineId(pipeline.id)}
@@ -455,7 +457,7 @@ export function OrchestrationPage() {
                   ? `活动版本 R${pipeline.active_revision}`
                   : "尚未激活版本"}
               </small>
-            </button>
+            </Button>
           ))}
         </div>
       </aside>
@@ -482,64 +484,66 @@ export function OrchestrationPage() {
           <>
             <div className="orchestration-toolbar">
               <div className="node-forge" aria-label="新增图节点">
-                <button onClick={() => addNode("role")}>
+                <Button onClick={() => addNode("role")}>
                   <Bot size={15} />
                   角色 Stage
-                </button>
-                <button onClick={() => addNode("code")}>
+                </Button>
+                <Button onClick={() => addNode("code")}>
                   <Code2 size={15} />
                   交付 Stage
-                </button>
-                <button onClick={() => addNode("gate")}>
+                </Button>
+                <Button onClick={() => addNode("gate")}>
                   <ShieldQuestion size={15} />
                   审批 Gate
-                </button>
-                <button onClick={() => addNode("loop")}>
+                </Button>
+                <Button onClick={() => addNode("loop")}>
                   <GitBranch size={15} />
                   有限 LOOP
-                </button>
+                </Button>
               </div>
               <span className="toolbar-separator" />
-              <button aria-label="撤销图修改" disabled={history.past.length === 0} onClick={undoWorkspace} title="撤销（Ctrl/⌘+Z）">
+              <Button aria-label="撤销图修改" disabled={history.past.length === 0} onClick={undoWorkspace} title="撤销（Ctrl/⌘+Z）">
                 <Undo2 size={15} />
                 撤销
-              </button>
-              <button aria-label="重做图修改" disabled={history.future.length === 0} onClick={redoWorkspace} title="重做（Ctrl/⌘+Shift+Z）">
+              </Button>
+              <Button aria-label="重做图修改" disabled={history.future.length === 0} onClick={redoWorkspace} title="重做（Ctrl/⌘+Shift+Z）">
                 <Redo2 size={15} />
                 重做
-              </button>
-              <button aria-label="定位全部节点" disabled={nodes.length === 0} onClick={fitAllNodes}>
+              </Button>
+              <Button aria-label="定位全部节点" disabled={nodes.length === 0} onClick={fitAllNodes}>
                 <Maximize2 size={15} />
                 定位全部节点
-              </button>
-              <button disabled={!isDirty || save.isPending} onClick={() => save.mutate()}>
+              </Button>
+              <Button disabled={!isDirty || save.isPending} onClick={() => save.mutate()}>
                 <Save size={15} />
                 保存图与布局
-              </button>
-              <button disabled={isDirty || validate.isPending} onClick={() => validate.mutate()}>
+              </Button>
+              <Button disabled={isDirty || validate.isPending} onClick={() => validate.mutate()}>
                 <CheckCircle2 size={15} />
                 ACWM 图校验
-              </button>
-              <button
-                className="primary"
+              </Button>
+              <Button
+                type="primary"
                 disabled={isDirty || draft.validation_status !== "valid" || publish.isPending}
                 onClick={() => setPendingRelease("publish")}
               >
                 发布不可变版本
-              </button>
+              </Button>
               {publish.data && (
-                <button onClick={() => setPendingRelease("activate")}>
+                <Button onClick={() => setPendingRelease("activate")}>
                   激活 R{publish.data.revision}
-                </button>
+                </Button>
               )}
             </div>
             <label className="node-jump">
               <span>选择主图节点</span>
-              <select
+              <Select
                 aria-label="选择主图节点"
-                value={selectedNodeId ?? ""}
-                onChange={(event) => {
-                  const nodeId = event.target.value || undefined;
+                value={selectedNodeId}
+                placeholder="从列表定位并编辑节点"
+                allowClear
+                onChange={(value) => {
+                  const nodeId = value || undefined;
                   setSelectedNodeId(nodeId);
                   setSelectedEdgeId(undefined);
                   if (nodeId && flowInstance) {
@@ -551,14 +555,8 @@ export function OrchestrationPage() {
                     });
                   }
                 }}
-              >
-                <option value="">从列表定位并编辑节点</option>
-                {workspace.nodes.map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {graphNodeKindLabel(node)} · {node.id}
-                  </option>
-                ))}
-              </select>
+                options={workspace.nodes.map((node) => ({ value: node.id, label: `${graphNodeKindLabel(node)} · ${node.id}` }))}
+              />
             </label>
             <DependencyCreator
               label="主图"
@@ -770,19 +768,19 @@ function PipelineCreator({
   const [name, setName] = useState("");
   return (
     <div className="pipeline-create">
-      <input
+      <Input
         aria-label="流水线 ID"
         placeholder="例如 release-review"
         value={id}
         onChange={(event) => setId(event.target.value)}
       />
-      <input
+      <Input
         aria-label="流水线名称"
         placeholder="中文名称"
         value={name}
         onChange={(event) => setName(event.target.value)}
       />
-      <button
+      <Button
         disabled={pending || !id || !name}
         onClick={() => {
           onCreate(id, name);
@@ -792,7 +790,7 @@ function PipelineCreator({
       >
         <Plus size={14} />
         创建流水线
-      </button>
+      </Button>
     </div>
   );
 }
@@ -819,44 +817,34 @@ function DependencyCreator({
       <b>{label}依赖编辑器</b>
       <label>
         {label}上游节点
-        <select
+        <Select
           aria-label={`${label}上游节点`}
-          value={source}
-          onChange={(event) => setSource(event.target.value)}
-        >
-          <option value="">请选择</option>
-          {nodes.map((node) => (
-            <option key={node.id} value={node.id}>
-              {node.id}
-            </option>
-          ))}
-        </select>
+          value={source || undefined}
+          placeholder="请选择"
+          onChange={setSource}
+          options={nodes.map((node) => ({ value: node.id, label: node.id }))}
+        />
       </label>
       <label>
         {label}下游节点
-        <select
+        <Select
           aria-label={`${label}下游节点`}
-          value={target}
-          onChange={(event) => setTarget(event.target.value)}
-        >
-          <option value="">请选择</option>
-          {nodes.map((node) => (
-            <option key={node.id} value={node.id}>
-              {node.id}
-            </option>
-          ))}
-        </select>
+          value={target || undefined}
+          placeholder="请选择"
+          onChange={setTarget}
+          options={nodes.map((node) => ({ value: node.id, label: node.id }))}
+        />
       </label>
       <label>
         {label}分支条件
-        <input
+        <Input
           aria-label={`${label}分支条件`}
           placeholder="可选"
           value={condition}
           onChange={(event) => setCondition(event.target.value)}
         />
       </label>
-      <button
+      <Button
         disabled={!valid}
         onClick={() => {
           onAdd(createDependencyEdge(source, target, condition));
@@ -866,7 +854,7 @@ function DependencyCreator({
         }}
       >
         添加依赖边
-      </button>
+      </Button>
     </div>
   );
 }
@@ -911,23 +899,20 @@ function GraphNodeInspector({
         </dl>
         <label>
           审批主题
-          <select
+          <Select
+            aria-label="审批主题"
             value={node.subject_kind}
-            onChange={(event) =>
-              onChange({ ...node, subject_kind: event.target.value })
-            }
-          >
-            <option value="delivery-plan">交付计划审批</option>
-            <option value="candidate-change">候选变更审批</option>
-          </select>
+            onChange={(value) => onChange({ ...node, subject_kind: value })}
+            options={[{ value: "delivery-plan", label: "交付计划审批" }, { value: "candidate-change", label: "候选变更审批" }]}
+          />
         </label>
         <p className="field-hint">
           审批主题决定产品生成的不可变 Gate Subject 与允许执行的命令。
         </p>
-        <button className="danger button-icon" onClick={onDelete}>
+        <Button danger className="button-icon" onClick={onDelete}>
           <Trash2 size={15} />
           删除 Gate
-        </button>
+        </Button>
       </div>
     );
   const capability = Object.values(node.bindings)[0] ?? "";
@@ -944,7 +929,7 @@ function GraphNodeInspector({
       </dl>
       <label>
         Capability
-        <input
+        <Input
           value={capability}
           onChange={(event) => {
             onChange(changeCapability(node, event.target.value));
@@ -954,21 +939,17 @@ function GraphNodeInspector({
       </label>
       <label>
         阶段模式
-        <select
+        <Select
+          aria-label="阶段模式"
           value={node.workflow_mode}
-          onChange={(event) => {
+          onChange={(value: StageNode["workflow_mode"]) => {
             onChange(
-              changeStageMode(
-                node,
-                event.target.value as StageNode["workflow_mode"],
-              ),
+              changeStageMode(node, value),
             );
             onAssignment(site, "");
           }}
-        >
-          <option value="agentscope.role-turn">AgentScope 角色执行</option>
-          <option value="code-delivery">受控代码交付</option>
-        </select>
+          options={[{ value: "agentscope.role-turn", label: "AgentScope 角色执行" }, { value: "code-delivery", label: "受控代码交付" }]}
+        />
       </label>
       <DeploymentAssignmentEditor
         site={site}
@@ -978,10 +959,10 @@ function GraphNodeInspector({
         providers={providers}
         onChange={(deploymentId) => onAssignment(site, deploymentId)}
       />
-      <button className="danger button-icon" onClick={onDelete}>
+      <Button danger className="button-icon" onClick={onDelete}>
         <Trash2 size={15} />
         删除 Stage
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1061,17 +1042,18 @@ function LoopNodeInspector({
       <p className="field-hint">
         循环策略与内部 DAG 在专用工作区编辑，避免在狭窄检查器中误操作。
       </p>
-      <button
-        className="primary button-icon"
+      <Button
+        type="primary"
+        className="button-icon"
         onClick={() => setWorkspaceOpen(true)}
       >
         <Maximize2 size={15} />
         打开 LOOP 全屏工作区
-      </button>
-      <button className="danger button-icon" onClick={onDelete}>
+      </Button>
+      <Button danger className="button-icon" onClick={onDelete}>
         <Trash2 size={15} />
         删除 LOOP
-      </button>
+      </Button>
       {workspaceOpen && (
         <div className="loop-workspace-backdrop" role="presentation">
           <section
@@ -1086,20 +1068,20 @@ function LoopNodeInspector({
                 <h2 id="loop-workspace-title">{node.id}</h2>
                 <p>策略定义退出边界；内部节点和依赖边定义每轮执行顺序。关闭后修改仍保留在未保存草稿中。</p>
               </div>
-              <button
-                className="secondary button-icon"
+              <Button
+                className="button-icon"
                 aria-label="关闭 LOOP 工作区并保留草稿修改"
                 onClick={() => setWorkspaceOpen(false)}
               >
                 <X size={18} />
                 关闭并保留修改
-              </button>
+              </Button>
             </header>
             <div className="loop-workspace-content">
               <aside>
                 <label>
                   退出条件策略
-                  <input
+                  <Input
                     value={node.policy.exit_condition}
                     onChange={(event) =>
                       onChange({
@@ -1114,7 +1096,7 @@ function LoopNodeInspector({
                 </label>
                 <label>
                   最大轮次
-                  <input
+                  <Input
                     type="number"
                     min={1}
                     max={100}
@@ -1132,7 +1114,7 @@ function LoopNodeInspector({
                 </label>
                 <label>
                   总超时（秒）
-                  <input
+                  <Input
                     type="number"
                     min={1}
                     value={node.policy.timeout_seconds}
@@ -1149,23 +1131,20 @@ function LoopNodeInspector({
                 </label>
                 <label>
                   耗尽动作
-                  <select
+                  <Select
+                    aria-label="耗尽动作"
                     value={node.policy.on_exhausted}
-                    onChange={(event) =>
+                    onChange={(value: LoopNode["policy"]["on_exhausted"]) =>
                       onChange({
                         ...node,
                         policy: {
                           ...node.policy,
-                          on_exhausted: event.target
-                            .value as LoopNode["policy"]["on_exhausted"],
+                          on_exhausted: value,
                         },
                       })
                     }
-                  >
-                    <option value="fail">失败</option>
-                    <option value="needs_attention">转人工处理</option>
-                    <option value="continue">继续下游</option>
-                  </select>
+                    options={[{ value: "fail", label: "失败" }, { value: "needs_attention", label: "转人工处理" }, { value: "continue", label: "继续下游" }]}
+                  />
                 </label>
               </aside>
               <LoopBodyEditor
@@ -1205,7 +1184,7 @@ function GraphEdgeInspector({
       </dl>
       <label>
         分支条件
-        <input
+        <Input
           aria-label="分支条件"
           placeholder="留空表示无条件依赖"
           value={
@@ -1217,10 +1196,10 @@ function GraphEdgeInspector({
       <p className="field-hint">
         条件值必须对应上游节点声明的命名结果；ACWM 发布时会验证。
       </p>
-      <button className="danger button-icon" onClick={onDelete}>
+      <Button danger className="button-icon" onClick={onDelete}>
         <Trash2 size={15} />
         删除连线
-      </button>
+      </Button>
     </div>
   );
 }
@@ -1309,29 +1288,25 @@ function LoopBodyEditor({
         </small>
       </div>
       <div className="node-forge">
-        <button onClick={() => add("role")}>角色 Stage</button>
-        <button onClick={() => add("code")}>交付 Stage</button>
+        <Button onClick={() => add("role")}>角色 Stage</Button>
+        <Button onClick={() => add("code")}>交付 Stage</Button>
       </div>
       <p className="field-hint">
         当前版本只允许循环体执行机器节点；人工审批 Gate 必须放在 LOOP 外部。
       </p>
       <label className="node-jump">
         <span>选择循环体节点</span>
-        <select
+        <Select
           aria-label="选择循环体节点"
-          value={selectedNodeId ?? ""}
-          onChange={(event) => {
-            setSelectedNodeId(event.target.value || undefined);
+          value={selectedNodeId}
+          placeholder="从列表定位并编辑节点"
+          allowClear
+          onChange={(value) => {
+            setSelectedNodeId(value || undefined);
             setSelectedEdgeId(undefined);
           }}
-        >
-          <option value="">从列表定位并编辑节点</option>
-          {loop.nodes.map((node) => (
-            <option key={node.id} value={node.id}>
-              {graphNodeKindLabel(node)} · {node.id}
-            </option>
-          ))}
-        </select>
+          options={loop.nodes.map((node) => ({ value: node.id, label: `${graphNodeKindLabel(node)} · ${node.id}` }))}
+        />
       </label>
       <DependencyCreator
         label="循环体"
@@ -1378,17 +1353,17 @@ function LoopBodyEditor({
         />
       )}{" "}
       {selectedNodeId && (
-        <button
-          className="danger"
+        <Button
+          danger
           onClick={() => setPendingNodeDelete(selectedNodeId)}
         >
           删除内部节点 {selectedNodeId}
-        </button>
+        </Button>
       )}
       {selectedEdge && (
         <label>
           内部边条件
-          <input
+          <Input
             aria-label="内部边条件"
             value={
               typeof selectedEdge.data?.condition === "string"
@@ -1460,36 +1435,17 @@ function DeploymentAssignmentEditor({
     <div className="deployment-assignment">
       <label>
         Agent Deployment
-        <select
+        <Select
           aria-label={`Agent Deployment ${site}`}
-          value={value ?? ""}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          <option value="">请选择已通过资格检查的部署</option>
-          {selectable.length > 0 && (
-            <optgroup label="可选择">
-              {selectable.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} · {item.profile_id} → {item.instance_id}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {unavailable.length > 0 && (
-            <optgroup label="不可选择">
-              {unavailable.map((item) => (
-                <option key={item.id} value={item.id} disabled>
-                  {item.name} ·{" "}
-                  {deploymentUnavailableReason(
-                    item,
-                    compatibleProviderIds,
-                    capability,
-                  )}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          value={value || undefined}
+          placeholder="请选择已通过资格检查的部署"
+          allowClear
+          onChange={(next) => onChange(next ?? "")}
+          options={[
+            ...(selectable.length > 0 ? [{ label: "可选择", options: selectable.map((item) => ({ value: item.id, label: `${item.name} · ${item.profile_id} → ${item.instance_id}` })) }] : []),
+            ...(unavailable.length > 0 ? [{ label: "不可选择", options: unavailable.map((item) => ({ value: item.id, label: `${item.name} · ${deploymentUnavailableReason(item, compatibleProviderIds, capability)}`, disabled: true })) }] : []),
+          ]}
+        />
       </label>
       <dl>
         <dt>Binding Site</dt>
@@ -1816,12 +1772,40 @@ export function createFlowNode(node: GraphNode, position: Position): Node {
   return {
     id: node.id,
     position,
-    // React Flow normally discovers these dimensions through ResizeObserver.
-    // Supplying the stable dimensions also makes the graph usable when the
-    // editor mounts inside a previously hidden route or a constrained WebView,
-    // where the first observer notification can be missed.
-    width: 170,
-    height: 68,
+    // `width`/`height` are React Flow's measured dimensions. Pre-populating
+    // them prevents the internal node observer from completing handle
+    // measurement, so connected edges never enter the render tree. Initial
+    // dimensions preserve a stable first paint without impersonating a
+    // completed measurement.
+    initialWidth: 170,
+    initialHeight: 68,
+    sourcePosition: FlowPosition.Bottom,
+    targetPosition: FlowPosition.Top,
+    // The default node renderer owns the visible Handle elements, while these
+    // bounds give React Flow deterministic geometry before ResizeObserver has
+    // measured them. Without the bounds the semantic edges exist in state but
+    // are filtered from the SVG render tree on the first (and, in WebKit,
+    // sometimes every) paint.
+    handles: [
+      {
+        id: null,
+        type: "target",
+        position: FlowPosition.Top,
+        x: 80,
+        y: -5,
+        width: 10,
+        height: 10,
+      },
+      {
+        id: null,
+        type: "source",
+        position: FlowPosition.Bottom,
+        x: 80,
+        y: 63,
+        width: 10,
+        height: 10,
+      },
+    ],
     data: {
       label: (
         <>

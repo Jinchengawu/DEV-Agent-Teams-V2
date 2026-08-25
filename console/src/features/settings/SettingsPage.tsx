@@ -61,7 +61,7 @@ function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?:
 
 function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: LatestGateReports; loading: boolean; error: Error | null; onRefresh: () => void }) {
   return <section className="panel release-gates-panel">
-    <div className="panel-head"><span>发布双门禁</span><button className="text-button button-icon" onClick={onRefresh}><RefreshCw size={13}/>刷新报告</button></div>
+    <div className="panel-head"><span>发布双门禁</span><Button type="text" icon={<RefreshCw size={13}/>} onClick={onRefresh}>刷新报告</Button></div>
     {loading && <LoadingState label="正在核验最新确定性与真实 Codex 报告…"/>}
     {error && <ErrorState error={error} retry={onRefresh}/>}
     {reports && <>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "antd";
 import { CheckCircle2, CircleAlert, GitCommitHorizontal, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { artifactTypeLabel, identityLabel, statusLabel } from "../../i18n";
@@ -41,7 +42,7 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
         {delivery.requirements ? <><h3>{delivery.requirements.summary}</h3><ul>{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code>{item.statement}</li>)}</ul></> : <p className="muted">需求产物尚未生成。</p>}
         {delivery.task && <div className="task-contract"><span>单一任务合同</span><b>{delivery.task.title}</b><small>{delivery.task.acceptance_ids.join(" · ")}</small></div>}
         {delivery.plan_gate && <GateSubject label="计划审批主题" sha={delivery.plan_gate.subject_sha256} revision={delivery.plan_gate.revision}/>} 
-        {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始执行</button><button className="danger" disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</button></div>}
+        {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始执行</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</Button></div>}
       </section>
 
       <section className="panel artifact-panel">
@@ -53,7 +54,7 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
         </> : <p className="muted">尚未形成经过验证的 Git Candidate。</p>}
         {delivery.verification && <div className={`verification ${delivery.verification.status === "passed" ? "verified" : "invalid"}`}><ShieldCheck size={18}/><div><b>固定机器测试：{statusLabel(delivery.verification.status)}</b><code>{delivery.verification.commands.join(" && ")}</code><small>退出码 {delivery.verification.exit_code} · 日志哈希 {delivery.verification.log_sha256}</small></div></div>}
         {delivery.candidate_gate && <GateSubject label="候选审批主题" sha={delivery.candidate_gate.subject_sha256} revision={delivery.candidate_gate.revision}/>} 
-        {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>接受候选并原子应用</button><button className="danger" disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>拒绝候选</button></div>}
+        {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><Button type="primary" danger disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>接受候选并原子应用</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>拒绝候选</Button></div>}
         {delivery.apply_receipt && <div className="apply-receipt"><CheckCircle2 size={20}/><div><b>应用回执已核验</b><small>应用前 {delivery.apply_receipt.before_revision}<br/>候选 {delivery.apply_receipt.candidate_revision}<br/>应用后 {delivery.apply_receipt.after_revision}</small></div></div>}
       </section>
     </div>

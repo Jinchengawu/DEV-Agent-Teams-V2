@@ -41,7 +41,7 @@ describe("项目概览", () => {
     await userEvent.click(await screen.findByRole("button", { name: "归档项目" }));
     expect(screen.getByRole("alertdialog", { name: "归档“项目一”" })).toBeTruthy();
     expect(screen.getByText(/当前版本不支持恢复/)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "取消" }));
+    await userEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -59,7 +59,7 @@ describe("项目概览", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/projects/pj1/overview"]}><Routes><Route path="/projects/:projectId/overview" element={withIdentity(<ProjectOverviewPage/>)}/></Routes></MemoryRouter></QueryClientProvider>);
 
-    await userEvent.click(await screen.findByRole("button", { name: "授权" }));
+    await userEvent.click(await screen.findByRole("button", { name: /授\s*权/ }));
     expect(fetchMock).toHaveBeenCalledWith("/v1/projects/pj1/pipeline-bindings", expect.objectContaining({ method: "PUT", body: JSON.stringify({ pipeline_revision_id: "release:2", enabled: true, is_default: true }) }));
   });
 });

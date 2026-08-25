@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -32,8 +32,10 @@ describe("项目治理目录", () => {
     await screen.findByText("还没有项目");
     await userEvent.type(screen.getByPlaceholderText("例如：pj1"), "pj1");
     await userEvent.type(screen.getByPlaceholderText("例如：客户门户后端"), "项目一");
-    await userEvent.selectOptions(screen.getByLabelText("默认流水线"), "delivery:3");
-    await userEvent.click(screen.getByText("后端执行器"));
+    const pipelineSelect = screen.getByRole("combobox", { name: "默认流水线" });
+    fireEvent.keyDown(pipelineSelect, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
+    fireEvent.keyDown(pipelineSelect, { key: "Enter", code: "Enter", keyCode: 13 });
+    await userEvent.click(screen.getByRole("checkbox", { name: /后端执行器/ }));
     await userEvent.click(screen.getByRole("button", { name: "创建并初始化独立工作区" }));
     await screen.findByText("项目概览已打开");
     const create = calls.find((call) => call.url === "/v1/projects" && call.init?.method === "POST");

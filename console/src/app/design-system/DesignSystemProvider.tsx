@@ -26,6 +26,7 @@ const tokens = {
 export function DesignSystemProvider({ children }: { children: ReactNode }) {
   return <ConfigProvider
     locale={zhCN}
+    button={{ autoInsertSpace: false }}
     wave={{ disabled: true }}
     theme={{
       algorithm: theme.defaultAlgorithm,

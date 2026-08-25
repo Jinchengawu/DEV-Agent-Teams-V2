@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, Card, Checkbox, Form, Input, Space, Typography } from "antd";
+import { Button, Card, Checkbox, Form, Input, Select, Space, Typography } from "antd";
 import { FolderGit2, Plus } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import type { components } from "../../shared/api/generated/schema";
@@ -44,7 +44,7 @@ export function ProjectsPage() {
         <Form.Item label="项目标识" htmlFor="project-id" required><Input id="project-id" value={id} onChange={(event) => setId(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="例如：pj1"/></Form.Item>
         <Form.Item label="项目名称" htmlFor="project-name" required><Input id="project-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：客户门户后端"/></Form.Item>
         <Form.Item label="项目说明" htmlFor="project-description"><Input.TextArea id="project-description" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明项目边界和验收目标"/></Form.Item>
-        <Form.Item label="默认流水线" htmlFor="project-pipeline" required><select id="project-pipeline" aria-label="默认流水线" value={pipelineRevisionId} onChange={(event) => setPipelineRevisionId(event.target.value)}><option value="">请选择已激活的固定版本</option>{activePipelines.map((pipeline) => <option key={pipeline.id} value={`${pipeline.id}:${pipeline.active_revision}`}>{pipeline.name} · R{pipeline.active_revision}</option>)}</select></Form.Item>
+        <Form.Item label="默认流水线" htmlFor="project-pipeline" required><Select id="project-pipeline" aria-label="默认流水线" value={pipelineRevisionId || undefined} placeholder="请选择已激活的固定版本" onChange={setPipelineRevisionId} options={activePipelines.map((pipeline) => ({ value: `${pipeline.id}:${pipeline.active_revision}`, label: `${pipeline.name} · R${pipeline.active_revision}` }))}/></Form.Item>
         <Form.Item label="允许的 Agent 部署"><div className="project-deployment-list">{usableDeployments.length ? usableDeployments.map((deployment) => <label className="project-deployment-option" key={deployment.id}><Checkbox checked={deploymentIds.includes(deployment.id)} onChange={(event) => setDeploymentIds((current) => event.target.checked ? [...current, deployment.id] : current.filter((value) => value !== deployment.id))}/><span>{deployment.name}<small>{deployment.id}</small></span></label>) : <p className="field-warning">没有已启用且资格通过的部署。请先在“智能体实例”中完成部署。</p>}</div></Form.Item>
         <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
           <Button block type="primary" htmlType="submit" icon={<Plus size={16}/>} loading={create.isPending} disabled={!id || !name.trim() || !pipelineRevisionId}>创建并初始化独立工作区</Button>

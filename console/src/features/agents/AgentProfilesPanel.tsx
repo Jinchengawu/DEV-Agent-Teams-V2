@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Select } from "antd";
 import { CheckCircle2, Plus, Save, Upload } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";
@@ -48,17 +49,17 @@ export function AgentProfilesPanel() {
   return <section className="panel profiles-panel">
     <div className="panel-head"><span>智能体角色</span><small>可复用 AgentProfileSpec · 不包含凭据与运行端点</small></div>
     <div className="profile-workbench"><div className="profile-list">
-      {items.map((profile) => <button key={profile.id} className={selectedId === profile.id ? "selected" : ""} onClick={() => selectProfile(profile.id)}><b>{profile.name}</b><small>{profile.id} · 已发布 Revision {profile.latest_revision ?? "无"}</small></button>)}
+      {items.map((profile) => <Button type="text" block key={profile.id} className={selectedId === profile.id ? "selected" : ""} onClick={() => selectProfile(profile.id)}><b>{profile.name}</b><small>{profile.id} · 已发布 Revision {profile.latest_revision ?? "无"}</small></Button>)}
       {items.length === 0 && <EmptyState title="尚未创建角色" detail="使用右侧中文表单创建前端、测试、PM 或其他逻辑角色。"/>}
     </div><div className="compact-form profile-editor">
       <h3>{selectedId ? "编辑智能体角色" : "创建智能体角色"}</h3>
-      <div className="field-grid"><label>角色 ID<input value={spec.id} disabled={Boolean(selectedId)} placeholder="例如：frontend-engineer" onChange={(event) => setSpec({ ...spec, id: event.target.value })}/></label><label>角色名称<input value={spec.name} placeholder="例如：前端开发工程师" onChange={(event) => setSpec({ ...spec, name: event.target.value })}/></label></div>
-      <label>角色职责<textarea value={spec.description} onChange={(event) => setSpec({ ...spec, description: event.target.value })}/></label>
-      <label>执行指令<textarea value={spec.instructions.custom_text} onChange={(event) => setSpec({ ...spec, instructions: { ...spec.instructions, custom_text: event.target.value } })}/></label>
-      <div className="field-grid"><label>Capability ID<input value={spec.capabilities[0]?.id ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: event.target.value, version: spec.capabilities[0]?.version ?? ">=1,<2" }] })}/></label><label>版本范围<input value={spec.capabilities[0]?.version ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: spec.capabilities[0]?.id ?? "", version: event.target.value }] })}/></label></div>
-      <label>隔离偏好<select value={spec.isolation_preference} onChange={(event) => setSpec({ ...spec, isolation_preference: event.target.value as Spec["isolation_preference"] })}><option value="shared">共享实例、会话隔离</option><option value="dedicated">独占实例</option></select></label>
+      <div className="field-grid"><label>角色 ID<Input value={spec.id} disabled={Boolean(selectedId)} placeholder="例如：frontend-engineer" onChange={(event) => setSpec({ ...spec, id: event.target.value })}/></label><label>角色名称<Input value={spec.name} placeholder="例如：前端开发工程师" onChange={(event) => setSpec({ ...spec, name: event.target.value })}/></label></div>
+      <label>角色职责<Input.TextArea value={spec.description} onChange={(event) => setSpec({ ...spec, description: event.target.value })}/></label>
+      <label>执行指令<Input.TextArea value={spec.instructions.custom_text} onChange={(event) => setSpec({ ...spec, instructions: { ...spec.instructions, custom_text: event.target.value } })}/></label>
+      <div className="field-grid"><label>Capability ID<Input value={spec.capabilities[0]?.id ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: event.target.value, version: spec.capabilities[0]?.version ?? ">=1,<2" }] })}/></label><label>版本范围<Input value={spec.capabilities[0]?.version ?? ""} onChange={(event) => setSpec({ ...spec, capabilities: [{ id: spec.capabilities[0]?.id ?? "", version: event.target.value }] })}/></label></div>
+      <label>隔离偏好<Select aria-label="隔离偏好" value={spec.isolation_preference} onChange={(value) => setSpec({ ...spec, isolation_preference: value })} options={[{ value: "shared", label: "共享实例、会话隔离" }, { value: "dedicated", label: "独占实例" }]}/></label>
       <p className="field-help">Prompt、工具、资源、审批与 Memory 仅保存版本化策略引用。Runtime Feature 由 Adapter 探测，不能在这里伪造。</p>
-      <div className="row-actions">{!selectedId && <button className="primary button-icon" disabled={!spec.id.trim() || !spec.name.trim() || create.isPending} onClick={() => create.mutate()}><Plus size={15}/>创建角色草稿</button>}{selectedId && <><button className="secondary button-icon" disabled={!selectedDraft.data || !isDirty || save.isPending} onClick={() => save.mutate()}><Save size={15}/>保存草稿</button><button className="secondary button-icon" disabled={!selectedDraft.data || isDirty || validate.isPending} onClick={() => validate.mutate()}><CheckCircle2 size={15}/>校验当前版本</button><button className="primary button-icon" disabled={isDirty || selectedDraft.data?.validation_status !== "valid" || publish.isPending} onClick={() => setPublishConfirmation(true)}><Upload size={15}/>发布不可变 Revision</button><button onClick={startNewProfile}>创建新角色</button></>}</div>
+      <div className="row-actions">{!selectedId && <Button type="primary" icon={<Plus size={15}/>} disabled={!spec.id.trim() || !spec.name.trim() || create.isPending} onClick={() => create.mutate()}>创建角色草稿</Button>}{selectedId && <><Button icon={<Save size={15}/>} disabled={!selectedDraft.data || !isDirty || save.isPending} onClick={() => save.mutate()}>保存草稿</Button><Button icon={<CheckCircle2 size={15}/>} disabled={!selectedDraft.data || isDirty || validate.isPending} onClick={() => validate.mutate()}>校验当前版本</Button><Button type="primary" icon={<Upload size={15}/>} disabled={isDirty || selectedDraft.data?.validation_status !== "valid" || publish.isPending} onClick={() => setPublishConfirmation(true)}>发布不可变 Revision</Button><Button onClick={startNewProfile}>创建新角色</Button></>}</div>
       {selectedDraft.isLoading && <LoadingState label="正在读取角色草稿…"/>}
       {draftError && <ErrorState error={draftError} retry={() => void selectedDraft.refetch()}/>}
       {selectedDraft.data && <small className="field-help">草稿版本 {selectedDraft.data.version} · 校验状态 {validationLabel(selectedDraft.data.validation_status)}{isDirty ? " · 有未保存修改" : ""}</small>}

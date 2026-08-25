@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +9,7 @@ import { EvidencePage } from "./EvidencePage";
 const sha256 = "a".repeat(64);
 const response = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -29,7 +29,7 @@ describe("项目证据工作台", () => {
     expect(await screen.findByDisplayValue("delivery-1")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /delivery-1.*codex-cli/i }));
     expect(await screen.findByText("哈希与当前不可变内容一致")).toBeTruthy();
-    expect(screen.getByText(/AC-001/)).toBeTruthy();
+    expect(screen.getAllByText(/AC-001/).length).toBeGreaterThan(0);
   });
 
   it("剪贴板被拒绝时给出可执行的中文修复动作", async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentsPage } from "./AgentsPage";
@@ -116,11 +116,15 @@ describe("智能体角色、部署与运行实例", () => {
     renderPage();
     await userEvent.click(screen.getByRole("tab", { name: "运行实例" }));
     await screen.findByRole("heading", { name: "Codex 主执行器" });
-    await userEvent.selectOptions(screen.getByLabelText("运行时类型"), "hermes-http");
-    expect((screen.getByLabelText("连接端点") as HTMLInputElement).value).toBe("");
+    const runtimeSelect = screen.getByRole("combobox", { name: "运行时类型" });
+    fireEvent.keyDown(runtimeSelect, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
+    fireEvent.keyDown(runtimeSelect, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
+    fireEvent.keyDown(runtimeSelect, { key: "Enter", code: "Enter", keyCode: 13 });
+    const endpoint = await screen.findByPlaceholderText("例如：http://127.0.0.1:9000");
+    expect((endpoint as HTMLInputElement).value).toBe("");
     await userEvent.type(screen.getByLabelText("实例名称"), "Hermes PM 01");
     expect((screen.getByRole("button", { name: "注册实例" }) as HTMLButtonElement).disabled).toBe(true);
-    await userEvent.type(screen.getByLabelText("连接端点"), "http://127.0.0.1:9100");
+    await userEvent.type(endpoint, "http://127.0.0.1:9100");
     await userEvent.click(screen.getByRole("button", { name: "注册实例" }));
 
     await waitFor(() => expect(calls.some((call) => call.url === "/v1/agent-instances" && call.method === "POST")).toBe(true));

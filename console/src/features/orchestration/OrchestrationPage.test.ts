@@ -105,10 +105,17 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
   });
   it("为画布节点提供稳定初始尺寸，避免首次测量前被隐藏", () => {
     const node = createGraphNode("role", []);
-    expect(createFlowNode(node, { x: 20, y: 40 })).toMatchObject({
+    const flowNode = createFlowNode(node, { x: 20, y: 40 });
+    expect(flowNode).toMatchObject({
       id: "stage-1",
-      width: 170,
-      height: 68,
+      initialWidth: 170,
+      initialHeight: 68,
+      handles: [
+        expect.objectContaining({ type: "target", x: 80, y: -5 }),
+        expect.objectContaining({ type: "source", x: 80, y: 63 }),
+      ],
     });
+    expect(flowNode).not.toHaveProperty("width");
+    expect(flowNode).not.toHaveProperty("height");
   });
 });
