@@ -128,6 +128,9 @@ class EvidenceLedger:
     ) -> tuple[EvidenceRecord, ...]:
         return self.repository.list(delivery_id, project_id)
 
+    def get(self, evidence_id: str) -> EvidenceRecord | None:
+        return self.repository.get(evidence_id)
+
     def verify(self, evidence_id: str) -> EvidenceRecord:
         record = self.repository.get(evidence_id)
         if record is None:

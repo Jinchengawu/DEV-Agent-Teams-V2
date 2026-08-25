@@ -10,6 +10,8 @@ import {
   removeLoopBodyNode,
   isDeploymentSelectable,
   setEdgeCondition,
+  graphViewportIdentity,
+  createFlowNode,
 } from "./OrchestrationPage";
 
 describe("DAG 与 LOOP 流水线编辑控制器", () => {
@@ -85,5 +87,28 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     const providers = new Set(["codex-cli-provider"]);
     expect(isDeploymentSelectable(deployment, providers, "frontend.implementation")).toBe(true);
     expect(isDeploymentSelectable(deployment, providers, "hermes-pm")).toBe(false);
+  });
+  it("相同节点数的不同草稿仍产生不同视口恢复标识", () => {
+    const nodes = [
+      { id: "plan", position: { x: 20, y: 40 } },
+      { id: "code", position: { x: 260, y: 40 } },
+    ];
+    expect(graphViewportIdentity("draft-a", 2, nodes)).not.toBe(
+      graphViewportIdentity("draft-b", 2, nodes),
+    );
+    expect(graphViewportIdentity("draft-a", 2, nodes)).not.toBe(
+      graphViewportIdentity("draft-a", 2, [
+        nodes[0]!,
+        { id: "code", position: { x: 2600, y: 40 } },
+      ]),
+    );
+  });
+  it("为画布节点提供稳定初始尺寸，避免首次测量前被隐藏", () => {
+    const node = createGraphNode("role", []);
+    expect(createFlowNode(node, { x: 20, y: 40 })).toMatchObject({
+      id: "stage-1",
+      width: 170,
+      height: 68,
+    });
   });
 });

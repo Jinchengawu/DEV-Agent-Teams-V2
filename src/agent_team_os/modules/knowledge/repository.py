@@ -9,7 +9,15 @@ from pydantic import JsonValue, TypeAdapter
 
 from ...shared.events import ProductEvent
 from ...shared.hashes import Sha256
-from .domain import Comment, Document, PermissionGrant, Revision, Space, WikiAccess
+from .domain import (
+    Comment,
+    Document,
+    KnowledgeDerivation,
+    PermissionGrant,
+    Revision,
+    Space,
+    WikiAccess,
+)
 from .ports import CompareAndSwapResult
 
 JSON_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -142,6 +150,88 @@ class SQLiteWikiRepository:
             )
             connection.commit()
         return document
+
+    def create_derived_document(
+        self,
+        document: Document,
+        revision: Revision,
+        derivation: KnowledgeDerivation,
+    ) -> tuple[Document, KnowledgeDerivation, bool]:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """SELECT derivation.* FROM knowledge_derivations derivation
+                WHERE derivation.project_id=? AND derivation.target_space_id=?
+                AND derivation.source_kind=? AND derivation.source_id=?""",
+                (
+                    derivation.project_id,
+                    derivation.target_space_id,
+                    derivation.source_kind,
+                    derivation.source_id,
+                ),
+            ).fetchone()
+            if existing is not None:
+                document_row = connection.execute(
+                    "SELECT * FROM wiki_documents WHERE id=?",
+                    (str(existing["document_id"]),),
+                ).fetchone()
+                if document_row is None:
+                    raise RuntimeError("derived Wiki document is missing")
+                return self._document(document_row), self._derivation(existing), False
+            connection.execute(
+                """INSERT INTO wiki_documents(
+                id,space_id,parent_id,title,current_revision,version,created_by,created_at,
+                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    document.id,
+                    document.space_id,
+                    document.parent_id,
+                    document.title,
+                    document.current_revision,
+                    document.version,
+                    document.created_by,
+                    document.created_at.isoformat(),
+                    document.updated_at.isoformat(),
+                    document.source_kind,
+                    document.source_id,
+                ),
+            )
+            self._insert_revision(connection, revision, document)
+            connection.execute(
+                """INSERT INTO knowledge_derivations(
+                document_id,project_id,target_space_id,source_kind,source_id,source_revision,
+                source_sha256,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    derivation.document_id,
+                    derivation.project_id,
+                    derivation.target_space_id,
+                    derivation.source_kind,
+                    derivation.source_id,
+                    derivation.source_revision,
+                    derivation.source_sha256,
+                    derivation.created_by,
+                    derivation.created_at.isoformat(),
+                ),
+            )
+            self._append_event(
+                connection,
+                ProductEvent(
+                    event_type="knowledge.source-derived",
+                    aggregate_type="wiki-document",
+                    aggregate_id=document.id,
+                    aggregate_version=document.version,
+                    project_id=derivation.project_id,
+                    payload={
+                        "space_id": document.space_id,
+                        "source_kind": derivation.source_kind,
+                        "source_id": derivation.source_id,
+                        "source_sha256": derivation.source_sha256,
+                    },
+                    occurred_at=document.updated_at,
+                ),
+            )
+            connection.commit()
+        return document, derivation, True
 
     def ensure_system_document(self, document: Document, revision: Revision) -> Document:
         if document.source_id is None:
@@ -492,6 +582,20 @@ class SQLiteWikiRepository:
             content=JSON_ADAPTER.validate_json(str(row["content_json"])),
             search_text=str(row["search_text"]),
             content_sha256=Sha256.validate(str(row["content_sha256"])),
+            created_by=str(row["created_by"]),
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    @staticmethod
+    def _derivation(row: sqlite3.Row) -> KnowledgeDerivation:
+        return KnowledgeDerivation(
+            document_id=str(row["document_id"]),
+            project_id=str(row["project_id"]),
+            target_space_id=str(row["target_space_id"]),
+            source_kind=str(row["source_kind"]),
+            source_id=str(row["source_id"]),
+            source_revision=str(row["source_revision"]),
+            source_sha256=Sha256.validate(str(row["source_sha256"])),
             created_by=str(row["created_by"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
         )

@@ -92,6 +92,39 @@ class DocumentCreate(BaseModel):
     content: JsonValue
 
 
+class KnowledgeDerivation(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    document_id: str
+    project_id: str
+    target_space_id: str
+    source_kind: str
+    source_id: str
+    source_revision: str
+    source_sha256: Sha256
+    created_by: str
+    created_at: datetime
+
+
+class KnowledgeDerivationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str = Field(min_length=1)
+    source_kind: str = Field(pattern=r"^(evidence|provider-snapshot)$")
+    source_id: str = Field(min_length=1)
+    expected_source_sha256: Sha256
+    target_space_id: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=240)
+
+
+class KnowledgeDerivationResult(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    document: Document
+    derivation: KnowledgeDerivation
+    created: bool
+
+
 class DocumentPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

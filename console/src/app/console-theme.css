@@ -12,6 +12,12 @@
   --cyan: #087f6b;
   --orange: #a84a08;
   --red: #bd2638;
+  --item-hover-bg: #f1f6fc;
+  --item-selected-bg: #e4f0ff;
+  --item-selected-fg: #0a4382;
+  --item-selected-muted: #385f8b;
+  --item-selected-border: #0b63ce;
+  --focus-ring: #176fd1;
 }
 
 html { background: #f3f5f8; }
@@ -72,6 +78,55 @@ main { padding: 28px 32px 60px; }
 .danger { background: #fff; color: var(--red); border-color: #d98a94; }
 .danger--filled { background: var(--red); color: #fff; border-color: var(--red); }
 button:disabled { opacity: .52; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus-ring) 32%, transparent);
+  outline-offset: 2px;
+}
+
+/* One interaction-state contract for every selectable collection in the light console. */
+.delivery-list > button:hover,
+.ledger-table > button:hover,
+.knowledge-space-item:hover,
+.knowledge-doc-item:hover,
+.document-list button:hover,
+.profile-list > button:hover,
+.pipeline-list button:hover,
+.project-card:hover,
+.project-section-card:hover {
+  background: var(--item-hover-bg);
+  color: var(--item-selected-fg);
+  border-color: var(--item-selected-border);
+}
+.delivery-list > button.selected,
+.ledger-table > button.selected,
+.knowledge-space-item.selected,
+.knowledge-doc-item.selected,
+.document-list button.selected,
+.profile-list > button.selected,
+.pipeline-list button.selected {
+  background: var(--item-selected-bg);
+  color: var(--item-selected-fg);
+  border-left-color: var(--item-selected-border);
+  border-color: var(--item-selected-border);
+}
+.delivery-list > button.selected :is(b, span, code),
+.ledger-table > button.selected :is(b, span, code),
+.knowledge-space-item.selected :is(b, span, code),
+.knowledge-doc-item.selected :is(b, span, code),
+.document-list button.selected :is(b, span, code),
+.profile-list > button.selected :is(b, span, code),
+.pipeline-list button.selected :is(b, span, code) {
+  color: var(--item-selected-fg);
+}
+.delivery-list > button.selected small,
+.ledger-table > button.selected small,
+.knowledge-space-item.selected small,
+.knowledge-doc-item.selected small,
+.document-list button.selected small,
+.profile-list > button.selected small,
+.pipeline-list button.selected small {
+  color: var(--item-selected-muted);
+}
 
 .status { font-size: 12px; background: #f7f9fc; border-radius: 999px; padding: 4px 8px; }
 .status-ready, .status-active, .status-completed, .status-passed, .status-verified, .status-valid { color: #08715f; border-color: #65ad9f; }
@@ -188,6 +243,17 @@ button:disabled { opacity: .52; }
 .loop-workspace-content .loop-flow { height: auto; min-height: 420px; }
 .node-jump { display: grid; grid-template-columns: max-content minmax(220px, 360px); align-items: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 12px; }
 .node-jump select { min-height: 36px; }
+.knowledge-activity { grid-column: 1 / -1; }
+.knowledge-activity-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.knowledge-activity-item { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px; color: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 6px; background: #fbfcfe; }
+.knowledge-activity-item:hover { background: var(--item-hover-bg); border-color: var(--item-selected-border); }
+.knowledge-activity-item b { font-size: 14px; }
+.knowledge-activity-link { color: var(--item-selected-fg); text-decoration: none; }
+.knowledge-activity-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.knowledge-activity-item p { margin: 0; color: #354052; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.knowledge-activity-item small { color: var(--muted); overflow-wrap: anywhere; }
+.knowledge-source-label { width: fit-content; padding: 3px 7px; color: #0a5b4f; border: 1px solid #91c9bf; border-radius: 999px; background: #edf9f6; font-size: 12px; }
+.knowledge-derive-button { width: fit-content; margin-top: 4px; }
 @media (max-width: 760px) { .node-jump { grid-template-columns: 1fr; } .node-jump select { min-height: 44px; width: 100%; } }
 .loop-workspace-content .dependency-creator { grid-template-columns: auto repeat(3, minmax(120px, 1fr)) auto; }
 .loop-workspace-content .dependency-creator > b, .loop-workspace-content .dependency-creator button { grid-column: auto; }

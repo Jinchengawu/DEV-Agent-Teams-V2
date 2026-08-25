@@ -3,10 +3,11 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -65,7 +66,10 @@ from .modules.identity import (
     ensure_same_origin,
 )
 from .modules.knowledge import (
+    KnowledgeActivityItem,
     KnowledgeActor,
+    KnowledgeDerivationCreate,
+    KnowledgeDerivationResult,
     KnowledgeSearchHit,
     KnowledgeSearchIndex,
     ProviderKnowledgeManager,
@@ -361,6 +365,37 @@ def create_app(
                 mutation_actor=resolve_knowledge_mutation_actor,
             )
         )
+        if knowledge_search is not None:
+
+            @app.post(
+                "/v1/knowledge/derivations",
+                response_model=KnowledgeDerivationResult,
+                status_code=201,
+            )
+            def derive_knowledge_source(
+                request_body: KnowledgeDerivationCreate,
+                request: Request,
+                response: Response,
+            ) -> KnowledgeDerivationResult:
+                require_permission(request, Permission.WIKI_EDIT)
+                actor = resolve_knowledge_actor(request)
+                source = knowledge_search.resolve_source(
+                    request_body.project_id,
+                    request_body.source_kind,
+                    request_body.source_id,
+                )
+                if source is None:
+                    raise ProductError(
+                        code="KNOWLEDGE_SOURCE_NOT_AVAILABLE",
+                        title="知识来源不可用于提炼",
+                        detail="来源不存在、不属于当前项目或尚未通过完整性验证。",
+                        repair="刷新知识动态并选择已验证的来源。",
+                        status_code=404,
+                    )
+                result = knowledge.derive_source(actor, request_body, source)
+                if not result.created:
+                    response.status_code = 200
+                return result
         if provider_knowledge is not None:
             app.include_router(
                 create_provider_knowledge_router(
@@ -655,6 +690,24 @@ def create_app(
             return StreamingResponse(events(), media_type="text/event-stream")
 
     if knowledge_search is not None:
+
+        @app.get("/v1/knowledge/activity", response_model=list[KnowledgeActivityItem])
+        def list_project_knowledge_activity(
+            project_id: str,
+            include_global: bool = True,
+            source_kind: str | None = None,
+            delivery_id: str | None = None,
+            before: datetime | None = None,
+            limit: int = Query(default=50, ge=1, le=100),
+        ) -> tuple[KnowledgeActivityItem, ...]:
+            return knowledge_search.activity(
+                project_id,
+                include_global=include_global,
+                source_kind=source_kind,
+                delivery_id=delivery_id,
+                before=before,
+                limit=limit,
+            )
 
         @app.get("/v1/knowledge/search", response_model=list[KnowledgeSearchHit])
         def search_project_knowledge(

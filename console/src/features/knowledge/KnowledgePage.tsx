@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
+import { BookMarked, BookPlus, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
@@ -17,6 +17,9 @@ type DocumentPatch = components["schemas"]["DocumentPatch"];
 type CommentCreate = components["schemas"]["CommentCreate"];
 type RevisionRestoreRequest = components["schemas"]["RevisionRestoreRequest"];
 type KnowledgeSearchHit = components["schemas"]["KnowledgeSearchHit"];
+type KnowledgeActivityItem = components["schemas"]["KnowledgeActivityItem"];
+type KnowledgeDerivationCreate = components["schemas"]["KnowledgeDerivationCreate"];
+type KnowledgeDerivationResult = components["schemas"]["KnowledgeDerivationResult"];
 
 type MarkdownPayload = {
   format: "markdown";
@@ -116,6 +119,45 @@ export function KnowledgePage() {
     queryKey: ["knowledge-search", projectId, search],
     enabled: Boolean(search.trim()),
     queryFn: ({ signal }) => request<KnowledgeSearchHit[]>(`/v1/knowledge/search?project_id=${encodeURIComponent(projectId)}&include_global=true&q=${encodeURIComponent(search.trim())}`, { signal }),
+  });
+
+  const activity = useQuery({
+    queryKey: ["knowledge-activity", projectId],
+    queryFn: ({ signal }) =>
+      request<KnowledgeActivityItem[]>(
+        `/v1/knowledge/activity?project_id=${encodeURIComponent(projectId)}&include_global=true&limit=50`,
+        { signal },
+      ),
+  });
+
+  const deriveSource = useMutation({
+    mutationFn: ({ item, targetSpaceId }: { item: KnowledgeActivityItem; targetSpaceId: string }) =>
+      request<KnowledgeDerivationResult>("/v1/knowledge/derivations", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projectId,
+          source_kind: item.source_kind,
+          source_id: item.source_id,
+          expected_source_sha256: item.content_sha256,
+          target_space_id: targetSpaceId,
+          title: item.title,
+        } as KnowledgeDerivationCreate),
+      }),
+    onSuccess: async (result) => {
+      setSelectedSpaceId(result.document.space_id);
+      setSelectedDocumentId(result.document.id);
+      client.setQueryData<Document[]>(
+        ["wiki-documents", projectId, result.document.space_id],
+        (current) => [
+          result.document,
+          ...(current ?? []).filter((item) => item.id !== result.document.id),
+        ],
+      );
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["wiki-documents"] }),
+        client.invalidateQueries({ queryKey: ["knowledge-activity", projectId] }),
+      ]);
+    },
   });
 
   const selectedDocument = useMemo(
@@ -246,6 +288,7 @@ export function KnowledgePage() {
     updateDocument.error,
     restoreRevision.error,
     addComment.error,
+    deriveSource.error,
   ];
 
   const conflictError = operationErrors.find(isConflictError);
@@ -269,6 +312,60 @@ export function KnowledgePage() {
 
   return (
     <div className="knowledge-layout">
+      <section className="panel knowledge-activity" aria-label="项目知识动态">
+        <div className="panel-head">
+          <span>项目知识动态</span>
+          <small>交付证据、Wiki 修订与外部来源按时间汇总，不改变各自权威数据</small>
+        </div>
+        {activity.isLoading ? (
+          <LoadingState label="正在读取项目知识动态…" />
+        ) : activity.error ? (
+          <ErrorState error={activity.error} retry={() => activity.refetch()} />
+        ) : activity.data?.length ? (
+          <div className="knowledge-activity-list" role="list">
+            {activity.data.map((item) => (
+              <article
+                key={`${item.source_kind}:${item.source_id}`}
+                className="knowledge-activity-item"
+                role="listitem"
+              >
+                <span className="knowledge-source-label">{sourceKindLabel(item.source_kind)}</span>
+                <a className="knowledge-activity-link" href={item.source_link || undefined}>
+                  <b>{item.title}</b>
+                </a>
+                <p>{item.summary || "该来源没有可展示的文本摘要。"}</p>
+                <small>
+                  {new Date(item.occurred_at).toLocaleString("zh-CN")} · 修订 {item.revision} · SHA-256 {item.content_sha256?.slice(0, 16) ?? "未提供"}
+                </small>
+                {item.source_kind !== "wiki" && (
+                  <button
+                    className="secondary button-icon knowledge-derive-button"
+                    aria-label={`提炼“${item.title}”为 Wiki`}
+                    disabled={
+                      deriveSource.isPending ||
+                      !selectedSpaceId ||
+                      !item.content_sha256
+                    }
+                    title={selectedSpaceId ? "保留来源 Revision 与 SHA-256，创建可编辑 Wiki" : "请先创建或选择项目知识空间"}
+                    onClick={() => {
+                      if (selectedSpaceId) {
+                        deriveSource.mutate({ item, targetSpaceId: selectedSpaceId });
+                      }
+                    }}
+                  >
+                    <BookPlus size={15} />提炼为 Wiki
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="当前项目还没有知识来源"
+            detail="完成交付、创建 Wiki 或同步外部来源后，真实记录会自动出现在这里。"
+          />
+        )}
+      </section>
       <section className="panel knowledge-index">
         <div className="panel-head">
           <span>知识空间</span>

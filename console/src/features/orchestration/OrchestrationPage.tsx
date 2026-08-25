@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Background,
@@ -85,6 +85,41 @@ export type LoopNode = {
   edges: SemanticEdge[];
 };
 export type GraphNode = StageNode | GateNode | LoopNode;
+
+type ViewportNode = { id: string; position: { x: number; y: number } };
+
+export function graphViewportIdentity(
+  draftId: string | undefined,
+  draftVersion: number | undefined,
+  nodes: ViewportNode[],
+): string {
+  const geometry = nodes
+    .map((node) => `${node.id}:${node.position.x}:${node.position.y}`)
+    .sort()
+    .join("|");
+  return `${draftId ?? "no-draft"}:${draftVersion ?? 0}:${geometry}`;
+}
+
+function hasVisibleFlowNode(container: HTMLElement): boolean {
+  const viewport = container.getBoundingClientRect();
+  return Array.from(container.querySelectorAll<HTMLElement>(".react-flow__node")).some(
+    (node) => {
+      const bounds = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return (
+        style.visibility === "visible" &&
+        style.display !== "none" &&
+        Number(style.opacity) > 0 &&
+        bounds.width > 0 &&
+        bounds.height > 0 &&
+        bounds.right > viewport.left &&
+        bounds.left < viewport.right &&
+        bounds.bottom > viewport.top &&
+        bounds.top < viewport.bottom
+      );
+    },
+  );
+}
 
 function graphNodeKindLabel(node: GraphNode): string {
   if (node.kind === "stage") return "执行阶段";
@@ -186,6 +221,14 @@ export function OrchestrationPage() {
     () => createFlowNodes(workspace.nodes, workspace.layout),
     [workspace.layout, workspace.nodes],
   );
+  const savedFlowNodes = useMemo(
+    () => createFlowNodes(savedWorkspace.nodes, savedWorkspace.layout),
+    [savedWorkspace.layout, savedWorkspace.nodes],
+  );
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
   const edges = useMemo(
     () => createFlowEdges(workspace.edges),
     [workspace.edges],
@@ -195,6 +238,7 @@ export function OrchestrationPage() {
   const [connectionError, setConnectionError] = useState<string>();
   const [flowInstance, setFlowInstance] =
     useState<ReactFlowInstance<Node, Edge>>();
+  const flowContainer = useRef<HTMLDivElement>(null);
   const [pendingDelete, setPendingDelete] = useState<{
     kind: "node" | "edge";
     id: string;
@@ -225,10 +269,37 @@ export function OrchestrationPage() {
     document.addEventListener("keydown", handleShortcut);
     return () => document.removeEventListener("keydown", handleShortcut);
   }, []);
+  const viewportIdentity = useMemo(
+    () => graphViewportIdentity(draft?.id, draft?.version, savedFlowNodes),
+    [draft?.id, draft?.version, savedFlowNodes],
+  );
+  const fitAllNodes = useCallback(() => {
+    const currentNodes = nodesRef.current;
+    if (!flowInstance || currentNodes.length === 0) return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        void flowInstance.fitView({
+          nodes: nodesRef.current.map((node) => ({ id: node.id })),
+          padding: 0.18,
+          duration: 180,
+          minZoom: 0.1,
+          maxZoom: 1.2,
+        });
+      });
+    });
+  }, [flowInstance]);
   useEffect(() => {
-    if (flowInstance && nodes.length > 0)
-      void flowInstance.fitView({ padding: 0.15, duration: 180 });
-  }, [flowInstance, nodes.length]);
+    fitAllNodes();
+  }, [fitAllNodes, viewportIdentity]);
+  useEffect(() => {
+    const container = flowContainer.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!hasVisibleFlowNode(container)) fitAllNodes();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [fitAllNodes]);
 
   const createPipeline = useMutation({
     mutationFn: (value: { id: string; name: string }) =>
@@ -437,6 +508,10 @@ export function OrchestrationPage() {
                 <Redo2 size={15} />
                 重做
               </button>
+              <button aria-label="定位全部节点" disabled={nodes.length === 0} onClick={fitAllNodes}>
+                <Maximize2 size={15} />
+                定位全部节点
+              </button>
               <button disabled={!isDirty || save.isPending} onClick={() => save.mutate()}>
                 <Save size={15} />
                 保存图与布局
@@ -464,8 +539,17 @@ export function OrchestrationPage() {
                 aria-label="选择主图节点"
                 value={selectedNodeId ?? ""}
                 onChange={(event) => {
-                  setSelectedNodeId(event.target.value || undefined);
+                  const nodeId = event.target.value || undefined;
+                  setSelectedNodeId(nodeId);
                   setSelectedEdgeId(undefined);
+                  if (nodeId && flowInstance) {
+                    void flowInstance.fitView({
+                      nodes: [{ id: nodeId }],
+                      padding: 0.65,
+                      duration: 180,
+                      maxZoom: 1.1,
+                    });
+                  }
                 }}
               >
                 <option value="">从列表定位并编辑节点</option>
@@ -490,11 +574,10 @@ export function OrchestrationPage() {
                 setSelectedNodeId(undefined);
               }}
             />
-            <div className="flow">
+            <div className="flow" ref={flowContainer}>
               <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                fitView
                 onInit={setFlowInstance}
                 nodesDraggable
                 nodesConnectable
@@ -1721,7 +1804,7 @@ function createLoopFlowNodes(nodes: Array<StageNode | GateNode>): Node[] {
     createFlowNode(node, { x: index * 145, y: 55 }),
   );
 }
-function createFlowNode(node: GraphNode, position: Position): Node {
+export function createFlowNode(node: GraphNode, position: Position): Node {
   const type =
     node.kind === "loop"
       ? "有限 LOOP"
@@ -1733,6 +1816,12 @@ function createFlowNode(node: GraphNode, position: Position): Node {
   return {
     id: node.id,
     position,
+    // React Flow normally discovers these dimensions through ResizeObserver.
+    // Supplying the stable dimensions also makes the graph usable when the
+    // editor mounts inside a previously hidden route or a constrained WebView,
+    // where the first observer notification can be missed.
+    width: 170,
+    height: 68,
     data: {
       label: (
         <>

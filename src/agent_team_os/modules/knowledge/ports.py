@@ -3,7 +3,15 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Protocol
 
-from .domain import Comment, Document, PermissionGrant, Revision, Space, WikiAccess
+from .domain import (
+    Comment,
+    Document,
+    KnowledgeDerivation,
+    PermissionGrant,
+    Revision,
+    Space,
+    WikiAccess,
+)
 
 
 class CompareAndSwapResult(StrEnum):
@@ -22,6 +30,13 @@ class WikiRepository(Protocol):
     def list_spaces(self) -> tuple[Space, ...]: ...
 
     def create_document(self, document: Document, revision: Revision) -> Document: ...
+
+    def create_derived_document(
+        self,
+        document: Document,
+        revision: Revision,
+        derivation: KnowledgeDerivation,
+    ) -> tuple[Document, KnowledgeDerivation, bool]: ...
 
     def ensure_system_document(self, document: Document, revision: Revision) -> Document: ...
 

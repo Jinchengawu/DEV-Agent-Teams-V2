@@ -17,6 +17,9 @@ from .domain import (
     DocumentCreate,
     DocumentPatch,
     KnowledgeActor,
+    KnowledgeDerivation,
+    KnowledgeDerivationCreate,
+    KnowledgeDerivationResult,
     PermissionGrant,
     Revision,
     Space,
@@ -25,6 +28,7 @@ from .domain import (
     WikiAccess,
 )
 from .ports import CompareAndSwapResult, WikiRepository
+from .search import ResolvedKnowledgeSource
 
 ACCESS_LEVEL = {
     WikiAccess.NONE: 0,
@@ -109,6 +113,80 @@ class WikiService:
         )
         revision = self._revision(document, 1, request.content, actor.user_id)
         return self.repository.create_document(document, revision)
+
+    def derive_source(
+        self,
+        actor: KnowledgeActor,
+        request: KnowledgeDerivationCreate,
+        source: ResolvedKnowledgeSource,
+    ) -> KnowledgeDerivationResult:
+        space = self._space(request.target_space_id)
+        if space.project_id != request.project_id or source.project_id != request.project_id:
+            raise ProductError(
+                code="KNOWLEDGE_SOURCE_PROJECT_MISMATCH",
+                title="知识来源不属于当前项目",
+                detail="来源、目标知识空间和当前项目必须一致。",
+                repair="切换到来源所属项目并重新选择目标空间。",
+                status_code=409,
+            )
+        if source.content_sha256 != request.expected_source_sha256:
+            raise ProductError(
+                code="KNOWLEDGE_SOURCE_VERSION_CONFLICT",
+                title="知识来源版本已变化",
+                detail="提炼请求引用的来源哈希已不是当前版本。",
+                repair="刷新知识动态后重新发起提炼。",
+                status_code=409,
+            )
+        if self.project_guard is not None:
+            self.project_guard(request.project_id)
+        self._require_access(actor, space.id, None, WikiAccess.EDIT)
+        now = self.clock.now()
+        document = Document(
+            id=new_id(),
+            space_id=space.id,
+            title=request.title,
+            current_revision=1,
+            version=1,
+            source_kind="manual",
+            created_by=actor.user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        content: JsonValue = {
+            "format": "markdown",
+            "text": (
+                f"# {request.title}\n\n"
+                f"> 来源：{source.source_kind} · {source.source_id} · Revision {source.revision}\n"
+                f"> SHA-256：{source.content_sha256}\n\n"
+                f"```json\n{source.content_text}\n```\n"
+            ),
+        }
+        revision = self._revision(document, 1, content, actor.user_id)
+        derivation = KnowledgeDerivation(
+            document_id=document.id,
+            project_id=request.project_id,
+            target_space_id=space.id,
+            source_kind=source.source_kind,
+            source_id=source.source_id,
+            source_revision=source.revision,
+            source_sha256=source.content_sha256,
+            created_by=actor.user_id,
+            created_at=now,
+        )
+        persisted, persisted_derivation, created = self.repository.create_derived_document(
+            document, revision, derivation
+        )
+        if persisted_derivation.source_sha256 != source.content_sha256:
+            raise ProductError(
+                code="KNOWLEDGE_DERIVATION_SOURCE_CONFLICT",
+                title="知识提炼来源冲突",
+                detail="该来源已经按另一个不可变哈希提炼。",
+                repair="打开已有 Wiki 并核对其来源链。",
+                status_code=409,
+            )
+        return KnowledgeDerivationResult(
+            document=persisted, derivation=persisted_derivation, created=created
+        )
 
     def sync_system_artifacts(
         self,
