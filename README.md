@@ -2,85 +2,85 @@
 
 # Agent-Team-OS
 
-**An evidence-gated delivery control plane for local AI software teams**
+**面向本地 AI 软件团队的可信交付控制平面**
 
-`v0.4.0` · `local alpha` · `Python + FastAPI + React`
+`v0.4.0` · `本地 Alpha` · `Python + FastAPI + React`
 
-[中文](README.zh-CN.md) · [Quickstart](#five-minute-local-start) · [Delivery model](#the-delivery-loop) · [Architecture](#architecture-and-ownership) · [Limits](#current-limitations)
+[English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
 
 </div>
 
 ---
 
-Agent-Team-OS turns an AI-generated code change into a reviewable software delivery: a request is planned, approved, executed in an isolated Git Worktree, verified by fixed machine checks, reviewed as an immutable candidate, and either applied with compare-and-swap or rejected without changing `main`.
+Agent-Team-OS 把一次 AI 代码修改变成可审查的软件交付：需求经过规划和审批后，由 Codex 在隔离 Git Worktree 中修改代码，系统执行固定机器验证，用户审查不可变候选版本，最终通过 compare-and-swap 精确应用，或在拒绝后保持 `main` 不变。
 
 > [!IMPORTANT]
-> Agent-Team-OS is a local alpha, not a production-ready service. The current real execution path targets the built-in standard-library Python backend sandbox. Planning defaults to the explicitly labelled `codex-simulated-hermes` identity; it is not evidence of a real Hermes call.
+> Agent-Team-OS 当前是本地 Alpha，不是生产稳定服务。真实代码执行目前只面向内置的纯标准库 Python Backend 沙箱。默认规划身份明确标记为 `codex-simulated-hermes`，不能作为真实 Hermes 调用证据。
 
-## The delivery loop
+## 交付闭环
 
 ```mermaid
 flowchart LR
-    A[Backend request] --> B[Project and published Pipeline]
-    B --> C[Requirements and task planning]
-    C --> D{Plan approval}
-    D -->|Reject| X[Close without code execution]
-    D -->|Accept| E[Codex in isolated Git Worktree]
-    E --> F[Path, secret and fixed-test verification]
-    F --> G[Immutable Candidate and Diff]
-    G --> H{Candidate approval}
-    H -->|Reject| Y[Keep project main unchanged]
-    H -->|Accept| I[Git compare-and-swap apply]
-    I --> J[Receipt, events and verifiable evidence]
+    A[Backend 需求] --> B[项目与已发布流水线]
+    B --> C[需求分析与任务规划]
+    C --> D{计划审批}
+    D -->|拒绝| X[关闭且不执行代码]
+    D -->|接受| E[Codex 隔离 Git Worktree]
+    E --> F[路径、秘密材料与固定测试验证]
+    F --> G[不可变 Candidate 与 Diff]
+    G --> H{候选审批}
+    H -->|拒绝| Y[项目 main 保持不变]
+    H -->|接受| I[Git compare-and-swap 应用]
+    I --> J[回执、事件与可验证证据]
 ```
 
-The product keeps four facts separate:
+产品明确区分四个事实：
 
-1. the Agent produced an Artifact;
-2. machine verification passed;
-3. a user accepted the candidate;
-4. Git applied the exact reviewed revision.
+1. Agent 产生了 Artifact；
+2. 机器验证已经通过；
+3. 用户接受了候选版本；
+4. Git 精确应用了已审查的 Revision。
 
-Only a complete apply receipt can finish an accepted delivery.
+只有完整的 Apply Receipt 才能结束一次已接受交付。
 
-## Why this project exists
+## 为什么需要 Agent-Team-OS
 
-An Agent being able to edit files does not make the change safe to ship. Agent-Team-OS places product-owned controls around Agent runtimes:
+Agent 能修改文件，不代表代码已经可以安全交付。Agent-Team-OS 在 Agent Runtime 外建立产品级控制：
 
-| Delivery risk | Product control |
+| 交付风险 | 产品控制 |
 |---|---|
-| A plan silently changes after approval | Gate subject hash and optimistic version |
-| An Agent edits the wrong files | System-owned allowed paths and actual Git Diff validation |
-| Output contains credentials or secret material | Candidate secret scan before human review |
-| A model says tests passed | Fixed machine verification with exit code and log hash |
-| A candidate is applied to a changed base | Atomic `git update-ref <candidate> <base>` compare-and-swap |
-| A restart leaves work looking active forever | Persisted state, interrupted-run failure and apply recovery |
-| UI text is mistaken for a successful delivery | Immutable Evidence records and explicit runtime identities |
+| 审批后计划被悄悄替换 | Gate Subject Hash 与乐观版本 |
+| Agent 修改错误文件 | 系统固定允许路径并核对真实 Git Diff |
+| 产物包含凭据或秘密材料 | 进入人工审查前执行候选秘密扫描 |
+| 模型文本声称测试通过 | 固定机器命令、退出码和日志哈希 |
+| Candidate 基线已经变化 | 原子 `git update-ref <candidate> <base>` CAS |
+| 重启后任务永久显示运行中 | 持久化状态、执行中断失败与 Apply 恢复 |
+| UI 文本被误认为交付成功 | 不可变 Evidence 与显式 Runtime Identity |
 
-## Module overview
+## 模块总览
 
-| Module | Available in v0.4 local alpha | Deliberate boundary |
+| 模块 | V0.4 本地 Alpha 已有能力 | 明确边界 |
 |---|---|---|
-| **Projects** | Project lifecycle, independent Git workspace, fixed Pipeline binding and Deployment access | No project-level RBAC yet |
-| **Deliveries** | Request, two approvals, real Candidate/Diff, fixed tests, reject/apply and history | Built-in Python backend only |
-| **Board** | Rebuildable project-scoped work items and legal commands | Dragging expresses a command; it cannot forge completion |
-| **Orchestration** | Multiple Pipelines, React Flow DAG editor, conditional edges and bounded LOOP | Human Gates inside LOOP bodies are rejected |
-| **Agents** | Agent Profiles, immutable revisions, Deployments, runtime instances, Provider manifests and qualification | Runtime features come from trusted adapters, not browser input |
-| **Knowledge** | Project/global Wiki, revisions, comments, FTS5 search, provider snapshots and project knowledge activity | No embeddings, RAG answer generation or long-term Agent memory |
-| **Evidence** | Append-only delivery facts, SHA-256 integrity and re-verification history | Evidence can be derived into Wiki, but is never made editable |
-| **Settings** | Readiness, release-gate status and safe operational configuration | Hard security policy remains system-owned |
+| **项目** | 项目生命周期、独立 Git 工作区、固定流水线绑定和 Deployment 授权 | 暂无项目级 RBAC |
+| **交付** | 需求、两次审批、真实 Candidate/Diff、固定测试、拒绝/应用和历史 | 仅支持内置 Python Backend |
+| **看板** | 可重建的项目级 WorkItem 与合法命令 | 拖动表达命令，不能伪造完成状态 |
+| **可视化编排** | 多流水线、React Flow DAG、条件边和有界 LOOP | LOOP 内禁止人工 Gate |
+| **智能体** | Agent Profile、不可变 Revision、Deployment、运行实例、Provider Manifest 与资格检查 | Runtime Feature 来自可信 Adapter，浏览器不可伪造 |
+| **知识中心** | 项目/全局 Wiki、版本、评论、FTS5、Provider Snapshot 与项目知识动态 | 不含 Embedding、RAG 回答生成和长期 Agent Memory |
+| **证据** | 只追加交付事实、SHA-256 完整性与重新验证历史 | Evidence 可提炼为 Wiki，但本体永远不可编辑 |
+| **设置** | Readiness、发布门禁状态和安全运营配置 | 系统安全硬限制不可由界面放宽 |
 
-## Five-minute local start
+## 五分钟本地启动
 
-### Prerequisites
+### 前置条件
 
 - Python `>=3.11,<3.13`
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
-- Node.js and pnpm (`pnpm@10.13.1` is pinned in `console/package.json`)
-- an installed and logged-in Codex CLI for the real code-execution path
+- Node.js 与 pnpm（`console/package.json` 固定 `pnpm@10.13.1`）
+- 已安装并登录 Codex CLI，用于真实代码执行
 
-The repository does not currently publish a package or GitHub Release. Until the default branch is moved to v0.4, clone the verified branch explicitly:
+仓库当前没有发布安装包或 GitHub Release。在默认分支切换到 V0.4 前，请显式克隆已验证分支：
 
 ```bash
 git clone --branch codex/v04-experience-completeness \
@@ -92,139 +92,139 @@ pnpm --dir console install --frozen-lockfile
 uv run --extra live agent-team-os demo
 ```
 
-Open <http://127.0.0.1:8080>. On a fresh data directory, the console asks you to create the first local administrator. Passwords must contain letters and numbers and be at least 12 characters long.
+打开 <http://127.0.0.1:8080>。全新数据目录首次访问时，控制台会要求创建本地管理员。密码至少 12 位，并同时包含字母和数字。
 
-Runtime state is stored under `.agent-team-os/` by default. Use a separate directory when you want a disposable environment:
+运行数据默认保存在 `.agent-team-os/`。需要一次性环境时可以指定独立目录：
 
 ```bash
 AGENT_TEAM_OS_DATA_DIR=/tmp/agent-team-os-demo \
   uv run --extra live agent-team-os demo
 ```
 
-### First observable success
+### 第一次可观察成功
 
-1. Confirm that Readiness reports ACWM, AgentScope, Git and Codex login as ready.
-2. Open **Projects** and select the initialized project.
-3. In **Deliveries**, select an enabled immutable Pipeline revision and submit a bounded backend request.
-4. Review the requirement and task Artifact, then approve the plan.
-5. Wait for the real Codex Worktree execution and fixed machine verification.
-6. Review the unified Diff, Candidate revision, changed files, test command and hashes.
-7. Reject to prove that project `main` is unchanged, or accept to apply the exact Candidate revision.
-8. Open **Evidence** and **Knowledge** to inspect the receipt and project knowledge activity.
+1. 确认 Readiness 中 ACWM、AgentScope、Git 和 Codex 登录状态全部 Ready。
+2. 打开“项目”，选择已初始化项目。
+3. 在“交付”中选择已启用的不可变流水线 Revision，提交一个有边界的 Backend 需求。
+4. 审查 Requirement 与 Task Artifact，批准计划。
+5. 等待真实 Codex Worktree 执行和固定机器验证。
+6. 审查 Unified Diff、Candidate Revision、变更文件、测试命令和哈希。
+7. Reject 可证明项目 `main` 不变；Accept 会应用展示过的精确 Candidate Revision。
+8. 在“证据”和“知识中心”查询 Apply Receipt 与项目知识动态。
 
-If a dependency is missing, startup fails closed and Readiness returns a repair action instead of silently switching to a deterministic model.
+如果缺少依赖，系统会 Fail Closed 并返回修复动作，不会静默切换到确定性模型。
 
-## Product surfaces
+## 产品模块
 
-### Projects and Deliveries
+### 项目与交付
 
-Each active Project has its own managed Git workspace. A Delivery freezes its Project, Pipeline revision, Agent binding snapshots and policy fingerprints. A project-scoped lease prevents two active deliveries from mutating the same project workspace concurrently.
+每个 Active Project 拥有独立的受管 Git Workspace。Delivery 会冻结 Project、Pipeline Revision、Agent Binding Snapshot 和策略指纹。项目级交付租约阻止两个活动 Delivery 同时修改同一项目工作区。
 
-Terminal states release the lease. Archived projects remain readable but cannot start deliveries, reset their workspace or change resource bindings.
+进入终态后释放租约。已归档项目可以继续查询，但不能启动 Delivery、重置 Workspace 或修改资源绑定。
 
-### Board
+### 看板
 
-The Board is an event-derived projection, not another task state machine. Its columns reflect Delivery, Stage and Gate facts. Commands such as approve, reject or cancel are validated by the owning domain; an arbitrary drag cannot turn an executing item into a completed item.
+看板是由事件构建的投影，不是另一套任务状态机。各列反映 Delivery、Stage 与 Gate 事实。批准、拒绝、取消等命令由权威领域验证；任意拖动不能把执行中卡片直接变成已完成。
 
-### Visual orchestration
+### 可视化编排
 
-Pipeline drafts support semantic DAG dependencies, conditional edges and bounded LOOP nodes. Validation and publication freeze an immutable revision containing graph, Agent assignments, Provider bindings and fingerprints. New Deliveries pin that revision instead of following a mutable “latest” definition.
+流水线草稿支持语义 DAG 依赖、条件边和有界 LOOP。校验并发布后会冻结包含 Graph、Agent Assignment、Provider Binding 与指纹的不可变 Revision。新 Delivery 固定引用该 Revision，不会跟随可变的“最新版本”。
 
-The built-in backend flow contains requirements, tasking, a plan Gate, a bounded code-repair LOOP and a candidate Gate.
+内置 Backend 流水线包含需求分析、任务规划、计划 Gate、有界代码修复 LOOP 和候选 Gate。
 
-### Agent management
+### Agent 管理
 
-The Agent catalog separates reusable role intent from environment-specific execution:
+Agent Catalog 将可复用角色语义与环境运行配置分离：
 
 ```text
 AgentProfileSpec
   -> AgentDeployment
   -> Runtime Instance + Adapter
   -> Provider Manifest
-  -> frozen Pipeline assignment
+  -> 冻结 Pipeline Assignment
   -> AgentRun + ArtifactEnvelope
 ```
 
-An instance can host multiple shared Profiles when policy allows it. A dedicated Deployment rejects conflicting use. Qualification checks published Profile revisions, instance health/version, trusted adapter features, Provider capabilities and policy bounds.
+策略允许时，一个实例可以承载多个 Shared Profile；Dedicated Deployment 会拒绝冲突占用。Qualification 会检查已发布 Profile Revision、实例健康与版本、可信 Adapter Feature、Provider Capability 和策略边界。
 
-### Knowledge and Evidence
+### 知识与证据
 
-Knowledge search presents different source types together without merging their authority:
+知识检索统一展示不同来源，但不合并其权威语义：
 
-- **Wiki** — editable, versioned project or global knowledge;
-- **Evidence** — immutable delivery facts that can be re-verified;
-- **Provider snapshot** — content-addressed external knowledge, including the Feishu provider boundary.
+- **Wiki**：可编辑、可恢复版本的项目或全局知识；
+- **Evidence**：不可变交付事实，可以重新验证；
+- **Provider Snapshot**：内容寻址的外部知识，包括飞书 Provider 边界。
 
-Verified Evidence can be explicitly derived into a Wiki document. The derivation records the source ID, revision and SHA-256; it does not make the original Evidence editable.
+已验证 Evidence 可以显式提炼成 Wiki 文档。Derivation 会保存来源 ID、Revision 与 SHA-256，但不会让原始 Evidence 变得可编辑。
 
-## Architecture and ownership
+## 架构与职责边界
 
 ```mermaid
 flowchart TB
-    UI[React control console] --> API[Agent-Team-OS FastAPI]
-    API --> PROJECT[Project governance]
-    API --> DELIVERY[Delivery and Git lifecycle]
-    API --> AGENTS[Profiles, Deployments and AgentRun]
-    API --> EVIDENCE[Evidence ledger]
-    API --> KNOWLEDGE[Wiki and knowledge projections]
-    DELIVERY --> ACWM[ACWM graph and capability runtime]
+    UI[React 控制台] --> API[Agent-Team-OS FastAPI]
+    API --> PROJECT[项目治理]
+    API --> DELIVERY[交付与 Git 生命周期]
+    API --> AGENTS[Profile、Deployment 与 AgentRun]
+    API --> EVIDENCE[证据账本]
+    API --> KNOWLEDGE[Wiki 与知识投影]
+    DELIVERY --> ACWM[ACWM 图与 Capability Runtime]
     AGENTS --> ACWM
-    ACWM --> AS[AgentScope stage-local composition]
-    AS --> H[Hermes-compatible planning adapters]
-    AS --> C[Codex CLI execution]
-    DELIVERY --> GIT[Managed bare repositories and Worktrees]
-    PROJECT --> DB[(SQLite + migrations + product events)]
+    ACWM --> AS[AgentScope Stage 内组合]
+    AS --> H[Hermes 兼容规划 Adapter]
+    AS --> C[Codex CLI 执行]
+    DELIVERY --> GIT[受管 Bare Repo 与 Worktree]
+    PROJECT --> DB[(SQLite 迁移与 Product Event)]
     DELIVERY --> DB
     EVIDENCE --> DB
     KNOWLEDGE --> DB
 ```
 
-| Owner | Responsibility |
+| 权威方 | 职责 |
 |---|---|
-| **ACWM** | Cross-stage Workflow, Capability, Provider, Artifact and Gate semantics |
-| **AgentScope** | Communication and Agent composition inside a Stage |
-| **Hermes-compatible instances** | PM and Project Admin role intelligence when explicitly configured |
-| **Codex** | Controlled code execution and the current simulated planning adapter |
-| **Agent-Team-OS** | Identity, permissions, Projects, Git safety, Candidate validation, verification, approvals, apply policy, evidence and UI |
+| **ACWM** | 跨 Stage 的 Workflow、Capability、Provider、Artifact 与 Gate 语义 |
+| **AgentScope** | Stage 内的通信与 Agent 组合 |
+| **Hermes 兼容实例** | 显式配置后承担 PM 与 Project Admin 角色智能 |
+| **Codex** | 受控代码执行，以及当前模拟规划 Adapter |
+| **Agent-Team-OS** | 身份、权限、项目、Git 安全、候选校验、机器验证、审批、应用策略、证据和 UI |
 
-Agent-Team-OS does not copy ACWM runtime contracts and does not ask AgentScope to own the cross-stage product state machine.
+Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管跨 Stage 的产品状态机。
 
-Architecture decisions are documented under [`docs/architecture/`](docs/architecture/), including:
+详细架构决策位于 [`docs/architecture/`](docs/architecture/)：
 
-- [modular-monolith boundaries](docs/architecture/ADR-0002-MODULAR-MONOLITH.md);
-- [SQLite transactions and Product Events](docs/architecture/ADR-0003-SQLITE-UOW-EVENTS.md);
-- [Evidence trust](docs/architecture/ADR-0005-EVIDENCE-TRUST.md);
-- [multi-Pipeline DAG/LOOP semantics](docs/architecture/ADR-0009-MULTI-PIPELINE-DAG-LOOP.md);
-- [Agent Profiles and Deployments](docs/architecture/ADR-0010-AGENT-PROFILES-AND-DEPLOYMENTS.md);
-- [Project governance and workspace isolation](docs/architecture/ADR-0011-PROJECT-GOVERNANCE.md).
+- [模块化单体边界](docs/architecture/ADR-0002-MODULAR-MONOLITH.md)；
+- [SQLite 事务与 Product Event](docs/architecture/ADR-0003-SQLITE-UOW-EVENTS.md)；
+- [Evidence 可信度](docs/architecture/ADR-0005-EVIDENCE-TRUST.md)；
+- [多流水线 DAG/LOOP](docs/architecture/ADR-0009-MULTI-PIPELINE-DAG-LOOP.md)；
+- [Agent Profile 与 Deployment](docs/architecture/ADR-0010-AGENT-PROFILES-AND-DEPLOYMENTS.md)；
+- [项目治理与 Workspace 隔离](docs/architecture/ADR-0011-PROJECT-GOVERNANCE.md)。
 
-## Runtime identities
+## 运行身份
 
-| Path | Current identity | What it proves |
+| 路径 | 当前身份 | 可以证明什么 |
 |---|---|---|
-| Default requirements/task planning | `codex-simulated-hermes` | Codex executed the structured planning adapter; it does **not** prove Hermes was called |
-| Code delivery | `codex-cli` | Codex ran with workspace-write in the managed Worktree |
-| Deterministic gate | `deterministic-test` | Product and Git lifecycle behavior only; never live-model quality |
-| Hermes adapters | `hermes-acp` / `hermes-http` | Available for registration and health checks; live use requires explicit configuration and evidence |
+| 默认需求/任务规划 | `codex-simulated-hermes` | Codex 执行了结构化规划 Adapter；不能证明调用了 Hermes |
+| 代码交付 | `codex-cli` | Codex 在受管 Worktree 中以 workspace-write 执行 |
+| 确定性门禁 | `deterministic-test` | 只证明产品与 Git 生命周期，不证明真实模型质量 |
+| Hermes Adapter | `hermes-acp` / `hermes-http` | 可注册并健康检查；真实使用必须显式配置并产生对应证据 |
 
-Unknown or unverified Artifact types remain auditable but cannot drive Delivery success.
+未知或未验证 Artifact 可以被审计，但不能驱动 Delivery 成功。
 
-## Security and data boundaries
+## 安全与数据边界
 
-- The demo binds to `127.0.0.1` by default.
-- Local identity uses scrypt password hashes, sessions, CSRF/origin checks and role-based permissions.
-- Credential fields accept environment-variable or keychain references; raw secret values are not intended for API responses or SQLite records.
-- Browser input cannot choose real workspace paths, validation commands or trusted runtime features.
-- Codex executes inside a managed Worktree with system-owned allowed paths.
-- Empty changes, path escapes, secret-bearing changes, invalid Artifacts, timeouts and failed fixed tests fail closed before candidate review.
-- Reject does not update project `main`; accept uses the reviewed base and candidate revisions in a Git compare-and-swap.
-- Evidence is append-only and content-addressed; re-verification appends a result instead of overwriting history.
+- Demo 默认只监听 `127.0.0.1`。
+- 本地身份使用 scrypt 密码哈希、Session、CSRF/Origin 检查和角色权限。
+- 凭据字段接受环境变量或 Keychain 引用；设计上不应把秘密值写入 API 响应或 SQLite。
+- 浏览器不能决定真实 Workspace 路径、机器验证命令或可信 Runtime Feature。
+- Codex 在系统管理的 Worktree 中执行，允许路径由系统生成。
+- 空修改、越界修改、秘密材料、非法 Artifact、超时和固定测试失败都会在候选审批前 Fail Closed。
+- Reject 不更新项目 `main`；Accept 使用已审查 Base 与 Candidate Revision 执行 Git CAS。
+- Evidence 只追加并进行内容寻址；重新验证追加新结果，不覆盖历史。
 
-This local alpha has not undergone an independent security audit. Do not expose it directly to an untrusted network or point it at sensitive repositories.
+本地 Alpha 尚未经过独立安全审计。不要直接暴露到不可信网络，也不要用于敏感真实仓库。
 
-## Verification and release gates
+## 验证与发布门禁
 
-Developer checks:
+开发检查：
 
 ```bash
 uv run ruff check src tests
@@ -236,99 +236,99 @@ pnpm --dir console test
 pnpm --dir console build
 ```
 
-Delivery gates:
+交付门禁：
 
 ```bash
-# Real Git lifecycle with deterministic model boundaries
+# 真实 Git 生命周期，确定性模型边界
 uv run --extra live agent-team-os gate
 
-# Real Codex planning adapter and real Codex code execution
+# 真实 Codex 规划 Adapter 与真实 Codex 代码执行
 uv run --extra live agent-team-os gate --live
 
-# Run deterministic and live gates and combine their reports
+# 顺序运行 deterministic/live，并生成组合结论
 uv run --extra live agent-team-os release
 ```
 
-Gate reports include DEV and ACWM revisions, Pipeline revision, graph fingerprint, GraphRun status, Candidate revision, Diff SHA-256, verification result, runtime identities and an evidence hash. Missing, stale, corrupt, skipped, warning-bearing or revision-mismatched evidence cannot produce a release-passed state.
+报告包含 DEV/ACWM Revision、Pipeline Revision、Graph Fingerprint、GraphRun 状态、Candidate Revision、Diff SHA-256、机器验证结果、运行身份和 Evidence Hash。缺失、过期、损坏、包含 skipped/WARN 或 Revision 不一致的证据不能形成发布通过状态。
 
-The baseline audited before this README update was commit `e3f8d9d` on 2026-08-25:
+本 README 更新前审计的基线为 2026-08-25 的提交 `e3f8d9d`：
 
-| Check | Observed result | Scope |
+| 检查 | 实际结果 | 证明范围 |
 |---|---:|---|
-| Python tests | 134 passed, 1 existing skipped | Local automated behavior |
-| React tests | 51 passed | Component and controller behavior |
-| Ruff / strict Mypy / TypeScript | Passed | Static checks |
-| Vite production build | Passed | Local buildability |
-| Browser smoke | 5 graph nodes visible, 7 historical knowledge items, no console errors | Selected local UI path |
+| Python 测试 | 134 passed，1 个既有 skipped | 本地自动化行为 |
+| React 测试 | 51 passed | 组件与控制器行为 |
+| Ruff / strict Mypy / TypeScript | 通过 | 静态检查 |
+| Vite 生产构建 | 通过 | 本地可构建性 |
+| 浏览器冒烟 | 5 个图节点可见、7 条历史知识、无控制台错误 | 选定本地 UI 路径 |
 
-These checks do not establish production availability, external adoption, live Hermes behavior or a public benchmark ranking.
+这些结果不能证明生产可用、外部用户采用、真实 Hermes 行为或公开 Benchmark 排名。
 
-## Current limitations
+## 当前限制
 
-- Real code execution supports the built-in standard-library Python backend sandbox, not arbitrary user repositories.
-- Planning defaults to Codex simulating Hermes PM/Admin; real Hermes is not a release requirement yet.
-- Frontend code execution, multi-task delivery and cloud deployment are not supported.
-- There is no embedding pipeline, RAG answer generation, shared long-term Agent memory or multi-tenancy.
-- Project-level RBAC is not implemented; current roles are control-plane-wide.
-- No package, Git tag, GitHub Release or maintained CI result is published for v0.4.
-- The repository currently has no license file. Public visibility alone does not grant reuse rights.
+- 真实代码执行只支持内置纯标准库 Python Backend 沙箱，不支持任意用户仓库。
+- 默认由 Codex 模拟 Hermes PM/Admin；真实 Hermes 尚不是发布门禁。
+- 不支持 Frontend 代码执行、多任务交付和云部署。
+- 没有 Embedding、RAG 回答生成、共享长期 Agent Memory 或多租户。
+- 尚未实现项目级 RBAC；当前角色作用于整个控制平面。
+- V0.4 没有发布安装包、Git Tag、GitHub Release 或持续维护的 CI 结果。
+- 仓库当前没有 License；公开可见不代表获得复用授权。
 
-## Roadmap direction
+## Roadmap 方向
 
-Planned work remains subject to architecture review and evidence gates:
+以下方向仍需架构评审与证据门禁：
 
-1. adapt the delivery boundary to real user Git repositories;
-2. qualify real Hermes planning as a release-gated runtime identity;
-3. extend execution beyond the backend sandbox;
-4. deepen project authorization and operational isolation;
-5. add richer AgentScope-native teams, communication and memory only where they do not duplicate ACWM or product governance.
+1. 将交付边界适配到真实用户 Git 仓库；
+2. 把真实 Hermes 规划升级为发布门禁身份；
+3. 将执行范围扩展到 Backend 沙箱之外；
+4. 深化项目授权与运行隔离；
+5. 仅在不复制 ACWM 或产品治理的前提下，引入更丰富的 AgentScope Team、通信与 Memory。
 
-Planned items are not current capabilities.
+Roadmap 不是当前能力。
 
-## Who this is for
+## 适合谁
 
-Agent-Team-OS is useful if you are:
+Agent-Team-OS 适合：
 
-- building a Coding Agent or Agent Team and need a governed delivery lifecycle;
-- evaluating how DAG/LOOP orchestration, human approval and Git safety fit together;
-- designing explicit ownership across ACWM, AgentScope, Hermes and Codex;
-- studying evidence, recovery, idempotency and compare-and-swap in Agent products.
+- 正在开发 Coding Agent 或 Agent Team，需要受治理交付生命周期的工程师；
+- 希望验证 DAG/LOOP、人工审批和 Git 安全如何组合的架构师；
+- 研究 ACWM、AgentScope、Hermes 与 Codex 职责边界的人；
+- 学习 Agent 产品中 Evidence、恢复、幂等和 CAS 的开发者。
 
-It is not currently the right choice if you need:
+当前不适合：
 
-- a hosted production Agent platform;
-- arbitrary repository support with enterprise isolation;
-- a general-purpose multi-Agent chat UI;
-- built-in RAG, vector search or long-term memory;
-- an OSI-licensed dependency that can already be redistributed without further permission.
+- 需要托管生产 Agent 平台的团队；
+- 需要任意仓库与企业级隔离的用户；
+- 需要通用多 Agent 聊天界面的产品；
+- 需要内置 RAG、向量检索或长期 Memory 的应用；
+- 需要已经具备 OSI License、可以直接再分发的依赖方。
 
-## Repository map
+## 仓库结构
 
 ```text
-src/agent_team_os/       Python product and infrastructure modules
-console/                 React/Vite control console
-config/                  ACWM capabilities, journeys and framework lock
-migrations/              Checksummed SQLite migrations
-docs/architecture/       Architecture Decision Records
-docs/design/             Product and integration designs
-scripts/                 OpenAPI and browser verification helpers
-tests/                   Unit, contract, integration and release behavior tests
-tasks/spark/             Versioned bounded implementation task manifests
-reviews/spark/           Tracked candidate review records
+src/agent_team_os/       Python 产品与基础设施模块
+console/                 React/Vite 控制台
+config/                  ACWM Capability、Journey 与框架锁
+migrations/              带 Checksum 的 SQLite 迁移
+docs/architecture/       架构决策记录
+docs/design/             产品与集成设计
+scripts/                 OpenAPI 与浏览器验证工具
+tests/                   单元、合同、集成和发布行为测试
+tasks/spark/             版本化、受限的实现任务清单
+reviews/spark/           候选代码审查记录
 ```
 
-## Contributing
+## 参与开发
 
-The repository does not yet include a formal contribution guide. Before proposing a change:
+仓库当前还没有正式贡献指南。提交修改前：
 
-1. read [`AGENTS.md`](AGENTS.md) and the relevant ADR;
-2. keep ACWM as the cross-stage semantic authority;
-3. keep AgentScope inside Stage-local composition;
-4. preserve product ownership of permissions, Git safety, evidence, approval and apply policy;
-5. add a vertical public-interface test and do not present deterministic evidence as live Agent evidence.
+1. 阅读 [`AGENTS.md`](AGENTS.md) 和相关 ADR；
+2. 保持 ACWM 为跨 Stage 语义权威；
+3. 保持 AgentScope 只负责 Stage 内组合；
+4. 保留产品层对权限、Git 安全、Evidence、审批和应用策略的所有权；
+5. 为纵切功能增加公共接口测试，不得把确定性证据描述成真实 Agent 证据。
 
-Use GitHub Issues for reproducible defects or architecture proposals. Do not include credentials, private repository contents or local `.agent-team-os/` data.
+可以通过 GitHub Issue 提交可复现缺陷或架构提案。不要上传凭据、私有仓库内容或本地 `.agent-team-os/` 数据。
 
 ## License
 
-No license file is currently present. Until the maintainer adds an explicit license, copyright law reserves reuse, modification and redistribution rights. Repository visibility should not be interpreted as an open-source grant.
+仓库当前没有 License 文件。在维护者添加明确许可证之前，版权法默认保留复用、修改和再分发权利；仓库公开可见不应被理解为开源授权。
