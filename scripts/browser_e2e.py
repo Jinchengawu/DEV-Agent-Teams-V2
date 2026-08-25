@@ -123,7 +123,7 @@ def _execute_control_plane_loop(
     instance_card.get_by_text("就绪", exact=True).wait_for()
 
     binding_selector = page.get_by_label("为 后端代码交付 选择实例")
-    binding_selector.select_option(instance_id)
+    _select_option(page, "为 后端代码交付 选择实例", instance_id)
     with page.expect_response(
         lambda response: response.request.method == "PUT"
         and response.url.endswith("/v1/capability-bindings/codex-backend")
@@ -138,7 +138,7 @@ def _execute_control_plane_loop(
     page.get_by_role("button", name="克隆为可编辑草稿", exact=True).click()
     page.get_by_role("button", name="添加角色阶段").wait_for()
     page.get_by_role("button", name="添加角色阶段").click()
-    page.get_by_label("Capability").select_option("hermes-project-admin")
+    _select_option(page, "Capability", "hermes-project-admin")
     with page.expect_response(
         lambda response: response.request.method == "PATCH"
         and "/v1/journey-drafts/" in response.url
@@ -320,6 +320,16 @@ def _delivery_json(context: BrowserContext, url: str, delivery_id: str) -> dict[
     assert response.ok, response.text()
     result: dict[str, Any] = response.json()
     return result
+
+
+def _select_option(page: Page, label: str, option_text: str) -> None:
+    """Operate the Ant Design Select through its public accessibility surface."""
+
+    page.get_by_label(label).click()
+    dropdown = page.locator(".ant-select-dropdown:visible")
+    option = dropdown.get_by_role("option").filter(has_text=option_text)
+    option.first.wait_for()
+    option.first.click()
 
 
 def _capture_console_errors(page: Page) -> list[str]:

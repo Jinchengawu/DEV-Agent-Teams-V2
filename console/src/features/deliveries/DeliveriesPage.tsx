@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button, Collapse, Input, Select } from "antd";
 import { Plus, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
@@ -47,9 +48,23 @@ export function DeliveriesPage() {
     <OperatingMap delivery={active}/>
     <div className="delivery-workbench">
       <aside className="delivery-sidebar">
-        <div className="sidebar-title"><div><span className="eyebrow">项目工作区</span><b>{project.data?.project.name ?? projectId}</b></div><button aria-label="刷新交付" onClick={() => deliveries.refetch()}><RefreshCw size={15}/></button></div>
-        <details className="create-drawer" open={deliveries.data?.length === 0}><summary><Plus size={15}/>新建交付</summary><label>执行流水线<select aria-label="执行流水线" value={pipelineRevisionId ?? ""} onChange={(event) => setPipelineRevisionId(event.target.value)}><option value="">请选择已激活流水线</option>{activePipelines.map((pipeline) => <option key={pipeline.id} value={`${pipeline.id}:${pipeline.active_revision}`}>{pipeline.name} · R{pipeline.active_revision}</option>)}</select></label>{pipelines.isSuccess && activePipelines.length === 0 && <p className="field-warning">没有已激活流水线。请先到可视化编排中发布并激活一个版本。</p>}<textarea aria-label="交付需求" value={requestText} onChange={(event) => setRequestText(event.target.value)}/><button className="primary" disabled={create.isPending || !requestText.trim() || !pipelineRevisionId} onClick={() => create.mutate({ userRequest: requestText, pipelineRevisionId })}>按所选流水线启动闭环</button>{create.error && <ErrorState error={create.error}/>}</details>
-        <div className="delivery-list">{deliveries.data?.map((item) => <button key={item.id} className={selectedId === item.id ? "selected" : ""} onClick={() => selectDelivery(item.id)}><span><b>{item.user_request}</b><small>{item.id.slice(0, 8)} · v{item.version}</small></span><StatusBadge value={item.status}/></button>)}</div>
+        <div className="sidebar-title"><div><span className="eyebrow">项目工作区</span><b>{project.data?.project.name ?? projectId}</b></div><Button type="text" aria-label="刷新交付" icon={<RefreshCw size={15}/>} onClick={() => deliveries.refetch()}/></div>
+        <Collapse
+          className="create-drawer"
+          defaultActiveKey={deliveries.data?.length === 0 ? ["create"] : []}
+          items={[{
+            key: "create",
+            label: <span className="create-drawer__title"><Plus size={15}/>新建交付</span>,
+            children: <div className="create-drawer__body">
+              <label>执行流水线<Select aria-label="执行流水线" value={pipelineRevisionId} placeholder="请选择已激活流水线" onChange={setPipelineRevisionId} options={activePipelines.map((pipeline) => ({ value: `${pipeline.id}:${pipeline.active_revision}`, label: `${pipeline.name} · R${pipeline.active_revision}` }))}/></label>
+              {pipelines.isSuccess && activePipelines.length === 0 && <p className="field-warning">没有已激活流水线。请先到可视化编排中发布并激活一个版本。</p>}
+              <Input.TextArea aria-label="交付需求" value={requestText} onChange={(event) => setRequestText(event.target.value)} autoSize={{ minRows: 4, maxRows: 8 }}/>
+              <Button type="primary" block loading={create.isPending} disabled={!requestText.trim() || !pipelineRevisionId} onClick={() => create.mutate({ userRequest: requestText, pipelineRevisionId })}>按所选流水线启动闭环</Button>
+              {create.error && <ErrorState error={create.error}/>}
+            </div>,
+          }]}
+        />
+        <div className="delivery-list">{deliveries.data?.map((item) => <Button type="text" block key={item.id} className={selectedId === item.id ? "selected" : ""} onClick={() => selectDelivery(item.id)}><span><b>{item.user_request}</b><small>{item.id.slice(0, 8)} · v{item.version}</small></span><StatusBadge value={item.status}/></Button>)}</div>
       </aside>
       <div className="delivery-canvas">
         {selected.isLoading && <LoadingState label="正在读取交付聚合与证据…"/>}

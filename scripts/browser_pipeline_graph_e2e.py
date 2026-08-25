@@ -91,28 +91,32 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("button", name="审批 Gate").click()
     page.get_by_role("button", name="有限 LOOP").click()
 
-    page.get_by_label("选择主图节点").select_option("stage-2")
+    _select_option(page, "选择主图节点", "stage-2")
     page.get_by_label("Capability").fill("hermes-project-admin")
-    page.get_by_label("Agent Deployment stage-2.actor").select_option("builtin-planning-deployment")
-    page.get_by_label("选择主图节点").select_option("stage-1")
-    page.get_by_label("Agent Deployment stage-1.actor").select_option("builtin-planning-deployment")
+    _select_option(page, "Agent Deployment stage-2.actor", "builtin-planning-deployment")
+    _select_option(page, "选择主图节点", "stage-1")
+    _select_option(page, "Agent Deployment stage-1.actor", "builtin-planning-deployment")
     _add_dependency(page, "主图", "stage-1", "stage-2")
     _add_dependency(page, "主图", "stage-2", "gate-1")
     _add_dependency(page, "主图", "gate-1", "loop-1", "approved")
     _add_dependency(page, "主图", "loop-1", "gate-2")
 
-    page.get_by_label("选择主图节点").select_option("loop-1")
+    _select_option(page, "选择主图节点", "loop-1")
     page.get_by_role("button", name="打开 LOOP 全屏工作区").click()
     page.get_by_label("退出条件策略").fill("machine-tests-passed")
     page.get_by_label("最大轮次").fill("4")
     page.locator(".loop-body-editor").get_by_role("button", name="角色 Stage").click()
-    page.get_by_label("选择循环体节点").select_option("loop-1-work")
-    page.get_by_label("Agent Deployment loop-1/loop-1-work.developer").select_option(
-        "builtin-backend-deployment"
+    _select_option(page, "选择循环体节点", "loop-1-work")
+    _select_option(
+        page,
+        "Agent Deployment loop-1/loop-1-work.developer",
+        "builtin-backend-deployment",
     )
-    page.get_by_label("选择循环体节点").select_option("stage-1")
-    page.get_by_label("Agent Deployment loop-1/stage-1.actor").select_option(
-        "builtin-planning-deployment"
+    _select_option(page, "选择循环体节点", "stage-1")
+    _select_option(
+        page,
+        "Agent Deployment loop-1/stage-1.actor",
+        "builtin-planning-deployment",
     )
     _add_dependency(page, "循环体", "loop-1-work", "stage-1")
     page.get_by_role("button", name="关闭 LOOP 工作区并保留草稿修改").click()
@@ -127,6 +131,12 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     definition = saved_response.value.json()["definition"]
     assert len(definition["nodes"]) == 5, definition
     assert any(edge.get("condition") == "approved" for edge in definition["edges"]), definition
+    rendered_edges = page.locator(".flow .react-flow__edge-path")
+    rendered_edges.first.wait_for(timeout=10_000)
+    assert rendered_edges.count() == len(definition["edges"]), {
+        "semantic_edges": definition["edges"],
+        "rendered_edge_count": rendered_edges.count(),
+    }
     loop = next(node for node in definition["nodes"] if node["kind"] == "loop")
     assert loop["policy"]["max_iterations"] == 4, loop
     assert len(loop["nodes"]) == 2 and len(loop["edges"]) == 1, loop
@@ -155,10 +165,12 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="项目", exact=True).click()
     page.get_by_placeholder("例如：pj1").fill(project_id)
     page.get_by_placeholder("例如：客户门户后端").fill("浏览器 DAG LOOP 项目")
-    page.get_by_label("默认流水线").select_option(
-        f"{published['pipeline_id']}:{published['revision']}"
+    _select_option(
+        page,
+        "默认流水线",
+        f"{published['pipeline_id']}:{published['revision']}",
     )
-    deployment_checks = page.locator(".project-create input[type=checkbox]")
+    deployment_checks = page.locator(".project-create").get_by_role("checkbox")
     deployment_checks.first.wait_for()
     for index in range(deployment_checks.count()):
         deployment_checks.nth(index).check()
@@ -171,8 +183,10 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     assert project["workspace"]["workspace_id"] == f"project:{project_id}", project
     page.goto(f"{url}/projects/{project_id}/deliveries")
     page.wait_for_load_state("networkidle")
-    page.get_by_label("执行流水线").select_option(
-        f"{published['pipeline_id']}:{published['revision']}"
+    _select_option(
+        page,
+        "执行流水线",
+        f"{published['pipeline_id']}:{published['revision']}",
     )
     page.get_by_label("交付需求").fill("增加可审计的健康检查。")
     with page.expect_response(
@@ -218,7 +232,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="证据", exact=True).click()
     page.get_by_text("项目证据账本", exact=True).wait_for(timeout=30_000)
     page.get_by_label("按交付筛选").fill(delivery["id"])
-    page.get_by_label("按完整性筛选").select_option("verified")
+    _select_option(page, "按完整性筛选", "已验证")
     page.wait_for_timeout(300)
     verified_evidence_count = page.locator(".ledger-table button").count()
     assert verified_evidence_count >= 7, verified_evidence_count
@@ -257,7 +271,7 @@ def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None
     page.goto(f"{url}/projects/{checkpoint['project_id']}/evidence")
     page.wait_for_load_state("networkidle")
     page.get_by_label("按交付筛选").fill(checkpoint["delivery_id"])
-    page.get_by_label("按完整性筛选").select_option("verified")
+    _select_option(page, "按完整性筛选", "已验证")
     page.wait_for_timeout(300)
     assert (
         page.locator(".ledger-table button").count()
@@ -267,11 +281,28 @@ def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None
 
 def _add_dependency(page: Page, label: str, source: str, target: str, condition: str = "") -> None:
     editor = page.locator(".dependency-creator").filter(has_text=f"{label}依赖编辑器")
-    editor.get_by_label(f"{label}上游节点").select_option(source)
-    editor.get_by_label(f"{label}下游节点").select_option(target)
+    _select_option(page, f"{label}上游节点", source, scope=editor)
+    _select_option(page, f"{label}下游节点", target, scope=editor)
     if condition:
         editor.get_by_label(f"{label}分支条件").fill(condition)
     editor.get_by_role("button", name="添加依赖边").click()
+
+
+def _select_option(
+    page: Page,
+    label: str,
+    option_text: str,
+    *,
+    scope: Any | None = None,
+) -> None:
+    """Operate the Ant Design Select through its public accessibility surface."""
+
+    root = scope or page
+    root.get_by_label(label).click()
+    dropdown = page.locator(".ant-select-dropdown:visible")
+    option = dropdown.get_by_role("option").filter(has_text=option_text)
+    option.first.wait_for()
+    option.first.click()
 
 
 if __name__ == "__main__":

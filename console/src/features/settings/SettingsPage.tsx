@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, InputNumber } from "antd";
 import { Clock3, GitCommitHorizontal, LockKeyhole, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request, type AppSettings, type AppSettingsPatch } from "../../shared/api/client";
@@ -37,7 +38,7 @@ export function SettingsPage() {
         <NumberField label="验证超时（秒）" value={draft.verification_timeout_seconds} min={10} max={300} onChange={(value) => update("verification_timeout_seconds", value)}/>
         <NumberField label="证据保留（天）" value={draft.evidence_retention_days} min={1} max={30} onChange={(value) => update("evidence_retention_days", value)}/>
       </div>
-      <button className="primary button-icon" disabled={save.isPending} onClick={() => save.mutate({ expected_version: draft.version, planning_timeout_seconds: draft.planning_timeout_seconds, execution_timeout_seconds: draft.execution_timeout_seconds, verification_timeout_seconds: draft.verification_timeout_seconds, evidence_retention_days: draft.evidence_retention_days })}><Save size={16}/>保存参数</button>
+      <Button type="primary" icon={<Save size={16}/>} loading={save.isPending} onClick={() => save.mutate({ expected_version: draft.version, planning_timeout_seconds: draft.planning_timeout_seconds, execution_timeout_seconds: draft.execution_timeout_seconds, verification_timeout_seconds: draft.verification_timeout_seconds, evidence_retention_days: draft.evidence_retention_days })}>保存参数</Button>
       {save.error && !("status" in save.error && save.error.status === 409) && <ErrorState error={save.error}/>} 
     </section>
     <section className="panel locked-policy">
@@ -60,7 +61,7 @@ function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?:
 
 function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: LatestGateReports; loading: boolean; error: Error | null; onRefresh: () => void }) {
   return <section className="panel release-gates-panel">
-    <div className="panel-head"><span>发布双门禁</span><button className="text-button button-icon" onClick={onRefresh}><RefreshCw size={13}/>刷新报告</button></div>
+    <div className="panel-head"><span>发布双门禁</span><Button type="text" icon={<RefreshCw size={13}/>} onClick={onRefresh}>刷新报告</Button></div>
     {loading && <LoadingState label="正在核验最新确定性与真实 Codex 报告…"/>}
     {error && <ErrorState error={error} retry={onRefresh}/>}
     {reports && <>
@@ -114,7 +115,7 @@ function formatReportTime(value: string) {
 }
 
 function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (value: number) => void }) {
-  return <label><span>{label}</span><input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))}/><small>允许范围 {min}–{max}</small></label>;
+  return <label><span>{label}</span><InputNumber min={min} max={max} value={value} onChange={(next) => onChange(next ?? min)} style={{ width: "100%" }}/><small>允许范围 {min}–{max}</small></label>;
 }
 
 function Policy({ label, values }: { label: string; values: readonly string[] }) {

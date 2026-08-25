@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Button, Select, Tooltip } from "antd";
 import { Activity, Bot, Boxes, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useIdentity } from "../../features/identity/AuthGate";
@@ -56,7 +57,7 @@ export function AppShell() {
         <span className="nav-separator">全局目录</span>
         {globalSections.filter((section) => section.path !== "/projects").map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}
       </nav>
-      <div className="system-state"><span className="pulse"/>{user.display_name}<small>{roleLabel(user.role)} · {user.username}</small><button className="text-button" onClick={logout} disabled={loggingOut}>{loggingOut ? "正在退出…" : "退出登录"}</button></div>
+      <div className="system-state"><span className="pulse"/>{user.display_name}<small>{roleLabel(user.role)} · {user.username}</small><Button type="link" onClick={logout} loading={loggingOut}>退出登录</Button></div>
     </aside>
     <main>
       <header><div><p className="kicker">团队协作控制层</p><h1>{current.label}</h1><p className="page-description">{current.description}</p></div><div className="identity-chip"><Activity size={16}/><span>规划身份<br/><b>Codex 模拟 Hermes</b></span><span>执行身份<br/><b>Codex 命令行</b></span></div></header>
@@ -69,7 +70,7 @@ export function AppShell() {
 }
 
 function ProjectSelect({ projectId, projects, onChange }: { projectId: string; projects: Array<{ id: string; name: string }> | undefined; onChange: (projectId: string) => void }) {
-  return <label>当前项目<select aria-label="当前项目" value={projectId} onChange={(event) => onChange(event.target.value)} disabled={!projects?.length}>{projects?.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>;
+  return <label>当前项目<Tooltip title={projects?.length ? "切换后，交付、看板、知识与证据会同步切换项目作用域。" : "尚无可用项目"}><Select className="shell-project-select" aria-label="当前项目" value={projectId} onChange={onChange} disabled={!projects?.length} options={projects?.map((project) => ({ value: project.id, label: project.name }))}/></Tooltip></label>;
 }
 
 function roleLabel(role: string) {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Input, Select, Tabs } from "antd";
 import { Activity, Bot, Boxes, Plus, ServerCog } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";
@@ -19,6 +20,14 @@ type RuntimeType = Instance["runtime_type"];
 type Provider = components["schemas"]["ProviderManifestView"];
 type Adapter = components["schemas"]["RuntimeAdapterDescriptor"];
 type AgentWorkspace = "profiles" | "deployments" | "instances" | "providers" | "adapters";
+const workspaceTabs: Array<{ key: AgentWorkspace; label: string }> = [
+  { key: "profiles", label: "Agent 角色" },
+  { key: "deployments", label: "Agent 部署" },
+  { key: "instances", label: "运行实例" },
+  { key: "providers", label: "Provider 能力" },
+  { key: "adapters", label: "Runtime Adapter" },
+];
+
 export function AgentsPage() {
   const client = useQueryClient();
   const instances = useQuery({
@@ -73,13 +82,7 @@ export function AgentsPage() {
 
   return (
     <div className="agent-management">
-      <nav className="agent-workspace-tabs" role="tablist" aria-label="Agent 管理工作区">
-        <WorkspaceTab id="profiles" label="Agent 角色" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="deployments" label="Agent 部署" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="instances" label="运行实例" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="providers" label="Provider 能力" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="adapters" label="Runtime Adapter" current={workspace} onSelect={setWorkspace}/>
-      </nav>
+      <Tabs className="agent-workspace-tabs-v2" aria-label="Agent 管理工作区" activeKey={workspace} onChange={(key) => setWorkspace(key as AgentWorkspace)} items={workspaceTabs}/>
       <div className="agent-workspace" role="tabpanel">
       {workspace === "profiles" && <AgentProfilesPanel />}
       {workspace === "deployments" && <AgentDeploymentsPanel />}
@@ -121,11 +124,10 @@ export function AgentsPage() {
                     <dd>{item.credential_ref || "不需要凭据引用"}</dd>
                   </dl>
                   <div className="row-actions">
-                    <button onClick={() => health.mutate(item.id)}>
-                      <Activity size={14} />
+                    <Button icon={<Activity size={14} />} onClick={() => health.mutate(item.id)}>
                       健康检查
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={() =>
                         item.enabled
                           ? setPendingDisable(item)
@@ -133,7 +135,7 @@ export function AgentsPage() {
                       }
                     >
                       {item.enabled ? "禁用新运行" : "重新启用"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </article>
@@ -158,7 +160,8 @@ export function AgentsPage() {
         </div>
         <label>
           实例名称
-          <input
+          <Input
+            aria-label="实例名称"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="例如：Codex 后端执行器 01"
@@ -166,23 +169,21 @@ export function AgentsPage() {
         </label>
         <label>
           运行时类型
-          <select
+          <Select
+            aria-label="运行时类型"
             value={runtime}
-            onChange={(event) => {
-              const next = event.target.value as RuntimeType;
+            onChange={(next: RuntimeType) => {
               setRuntime(next);
               setConnectionTarget(next === "codex-cli" ? "codex" : "");
               create.reset();
             }}
-          >
-            <option value="codex-cli">Codex 命令行</option>
-            <option value="hermes-http">Hermes HTTP 服务</option>
-            <option value="hermes-acp">Hermes ACP 服务</option>
-          </select>
+            options={[{ value: "codex-cli", label: "Codex 命令行" }, { value: "hermes-http", label: "Hermes HTTP 服务" }, { value: "hermes-acp", label: "Hermes ACP 服务" }]}
+          />
         </label>
         <label>
           {runtime === "codex-cli" ? "命令" : "连接端点"}
-          <input
+          <Input
+            aria-label={runtime === "codex-cli" ? "命令" : "连接端点"}
             value={connectionTarget}
             onChange={(event) => setConnectionTarget(event.target.value)}
             placeholder={
@@ -194,7 +195,8 @@ export function AgentsPage() {
         </label>
         <label>
           凭据引用
-          <input
+          <Input
+            aria-label="凭据引用"
             value={credentialRef}
             onChange={(event) => setCredentialRef(event.target.value)}
             placeholder="env:HERMES_API_KEY 或 keychain:名称"
@@ -203,16 +205,16 @@ export function AgentsPage() {
         <p className="field-help">
           密钥值不会进入 API、日志或 SQLite。仅接受环境变量或系统钥匙串引用。
         </p>
-        <button
-          className="primary button-icon"
+        <Button
+          type="primary"
+          icon={<Plus size={16} />}
           disabled={
             !name.trim() || !connectionTarget.trim() || create.isPending
           }
           onClick={() => create.mutate()}
         >
-          <Plus size={16} />
           注册实例
-        </button>
+        </Button>
         {create.error && <ErrorState error={create.error} />}
       </section></div>)}
       {workspace === "providers" && <ProviderCatalog/>}
@@ -236,10 +238,6 @@ export function AgentsPage() {
       />
     </div>
   );
-}
-
-function WorkspaceTab({ id, label, current, onSelect }: { id: AgentWorkspace; label: string; current: AgentWorkspace; onSelect: (workspace: AgentWorkspace) => void }) {
-  return <button role="tab" aria-selected={current === id} className={current === id ? "active" : ""} onClick={() => onSelect(id)}>{label}</button>;
 }
 
 function ProviderCatalog() {
