@@ -117,3 +117,40 @@ code, .technical-id { font-family: var(--atos-mono); }
   .project-card-v2 .ant-card { transition: none; }
   .project-card-v2:hover .ant-card { transform: none; }
 }
+
+/*
+ * Ant Button has a token-driven fixed control height. These selectors are
+ * record pickers, not one-line controls: their title, identity and status form
+ * a compact audit row. Keep one shared layout contract so content never
+ * escapes the clickable/focusable surface after a component-library upgrade.
+ */
+:is(
+  .delivery-list > .ant-btn,
+  .ledger-table > .ant-btn,
+  .pipeline-list > .ant-btn,
+  .profile-list > .ant-btn,
+  .document-list > .ant-btn,
+  .ant-btn.knowledge-space-item,
+  .ant-btn.knowledge-doc-item
+) {
+  height: auto;
+  min-height: 56px;
+  white-space: normal;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+.delivery-list > .ant-btn { min-height: 64px; }
+.ledger-table > .ant-btn { min-height: 58px; }
+
+.delivery-list > .ant-btn > span:first-child,
+.ledger-table > .ant-btn > span:not(.ant-tag) {
+  min-width: 0;
+}
+
+.ledger-table > .ant-btn code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
