@@ -871,6 +871,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/knowledge/derivations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Derive Knowledge Source */
+        post: operations["derive_knowledge_source_v1_knowledge_derivations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/evidence": {
         parameters: {
             query?: never;
@@ -1225,6 +1242,23 @@ export interface paths {
         };
         /** Stream Events */
         get: operations["stream_events_v1_events_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Project Knowledge Activity */
+        get: operations["list_project_knowledge_activity_v1_knowledge_activity_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2502,6 +2536,78 @@ export interface components {
             published_at?: string;
         };
         JsonValue: unknown;
+        /** KnowledgeActivityItem */
+        KnowledgeActivityItem: {
+            /** Project Id */
+            project_id: string | null;
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string;
+            /** Delivery Id */
+            delivery_id?: string | null;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /** Revision */
+            revision: string;
+            /** Content Sha256 */
+            content_sha256: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Source Link */
+            source_link: string;
+        };
+        /** KnowledgeDerivation */
+        KnowledgeDerivation: {
+            /** Document Id */
+            document_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Target Space Id */
+            target_space_id: string;
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Revision */
+            source_revision: string;
+            /** Source Sha256 */
+            source_sha256: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** KnowledgeDerivationCreate */
+        KnowledgeDerivationCreate: {
+            /** Project Id */
+            project_id: string;
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string;
+            /** Expected Source Sha256 */
+            expected_source_sha256: string;
+            /** Target Space Id */
+            target_space_id: string;
+            /** Title */
+            title: string;
+        };
+        /** KnowledgeDerivationResult */
+        KnowledgeDerivationResult: {
+            document: components["schemas"]["Document"];
+            derivation: components["schemas"]["KnowledgeDerivation"];
+            /** Created */
+            created: boolean;
+        };
         /** KnowledgeDocument */
         KnowledgeDocument: {
             /** Id */
@@ -7431,6 +7537,66 @@ export interface operations {
             };
         };
     };
+    derive_knowledge_source_v1_knowledge_derivations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeDerivationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeDerivationResult"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     list_evidence_v1_evidence_get: {
         parameters: {
             query?: {
@@ -8913,6 +9079,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_project_knowledge_activity_v1_knowledge_activity_get: {
+        parameters: {
+            query: {
+                project_id: string;
+                include_global?: boolean;
+                source_kind?: string | null;
+                delivery_id?: string | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeActivityItem"][];
                 };
             };
             /** @description 目标资源不存在 */

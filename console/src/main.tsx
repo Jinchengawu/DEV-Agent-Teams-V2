@@ -6,9 +6,10 @@ import "./styles.css";
 import "./orchestration.css";
 import "./app/console-theme.css";
 import { App } from "./app/App";
+import { DesignSystemProvider } from "./app/design-system/DesignSystemProvider";
 
 const client = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 500 } } });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><QueryClientProvider client={client}><App /></QueryClientProvider></React.StrictMode>,
+  <React.StrictMode><DesignSystemProvider><QueryClientProvider client={client}><App /></QueryClientProvider></DesignSystemProvider></React.StrictMode>,
 );

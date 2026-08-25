@@ -1,5 +1,6 @@
-import { createContext, type FormEvent, type ReactNode, useContext, useState } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Alert, Button, Card, Form, Input } from "antd";
 import { LockKeyhole, ShieldCheck } from "lucide-react";
 import { ApiProblem, request, type CurrentUser } from "../../shared/api/client";
 import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
@@ -88,28 +89,27 @@ function IdentityForm({
         : "身份服务暂时无法完成操作。",
     ),
   });
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = () => {
     setProblem(null);
     authenticate.mutate();
   };
   return <IdentityFrame>
-    <form className="identity-form" onSubmit={submit}>
+    <Card className="identity-form evidence-rail">
       <span className="identity-form-icon">{mode === "bootstrap" ? <ShieldCheck /> : <LockKeyhole />}</span>
-      <p className="kicker">本地身份与权限</p>
-      <h1>{mode === "bootstrap" ? "初始化管理员" : "登录 Agent-Team-OS"}</h1>
-      <p>{mode === "bootstrap"
+      <div><p className="kicker">本地身份与权限</p><h1>{mode === "bootstrap" ? "初始化管理员" : "登录 Agent-Team-OS"}</h1></div>
+      <p className="identity-copy">{mode === "bootstrap"
         ? "首次使用需创建唯一的初始管理员。密码仅以 scrypt 哈希保存。"
         : "登录后才能查看交付、证据与知识内容。"}</p>
-      <label><span>用户名</span><input value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} autoComplete="username" /></label>
-      {mode === "bootstrap" && <label><span>显示名称</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></label>}
-      <label><span>密码</span><input value={password} onChange={(event) => setPassword(event.target.value)} required minLength={12} type="password" autoComplete={mode === "bootstrap" ? "new-password" : "current-password"} /></label>
-      <small>密码至少 12 位，并同时包含字母和数字。</small>
-      {problem && <p className="form-problem" role="alert">{problem}</p>}
-      <button className="primary-button" disabled={authenticate.isPending}>
-        {authenticate.isPending ? "正在验证…" : mode === "bootstrap" ? "创建并登录" : "登录控制平面"}
-      </button>
-    </form>
+      <Form layout="vertical" requiredMark={false} onFinish={submit}>
+        <Form.Item label="用户名" htmlFor="identity-username" required><Input id="identity-username" value={username} onChange={(event) => setUsername(event.target.value)} minLength={3} autoComplete="username" /></Form.Item>
+        {mode === "bootstrap" && <Form.Item label="显示名称" htmlFor="identity-display-name" required><Input id="identity-display-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Form.Item>}
+        <Form.Item label="密码" htmlFor="identity-password" required extra="密码至少 12 位，并同时包含字母和数字。"><Input.Password id="identity-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} autoComplete={mode === "bootstrap" ? "new-password" : "current-password"} /></Form.Item>
+        {problem && <Alert type="error" showIcon title={problem} role="alert" />}
+        <Button type="primary" htmlType="submit" loading={authenticate.isPending}>
+          {mode === "bootstrap" ? "创建并登录" : "登录控制平面"}
+        </Button>
+      </Form>
+    </Card>
   </IdentityFrame>;
 }
 

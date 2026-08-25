@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Tabs } from "antd";
 import { Activity, Bot, Boxes, Plus, ServerCog } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";
@@ -19,6 +20,14 @@ type RuntimeType = Instance["runtime_type"];
 type Provider = components["schemas"]["ProviderManifestView"];
 type Adapter = components["schemas"]["RuntimeAdapterDescriptor"];
 type AgentWorkspace = "profiles" | "deployments" | "instances" | "providers" | "adapters";
+const workspaceTabs: Array<{ key: AgentWorkspace; label: string }> = [
+  { key: "profiles", label: "Agent 角色" },
+  { key: "deployments", label: "Agent 部署" },
+  { key: "instances", label: "运行实例" },
+  { key: "providers", label: "Provider 能力" },
+  { key: "adapters", label: "Runtime Adapter" },
+];
+
 export function AgentsPage() {
   const client = useQueryClient();
   const instances = useQuery({
@@ -73,13 +82,7 @@ export function AgentsPage() {
 
   return (
     <div className="agent-management">
-      <nav className="agent-workspace-tabs" role="tablist" aria-label="Agent 管理工作区">
-        <WorkspaceTab id="profiles" label="Agent 角色" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="deployments" label="Agent 部署" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="instances" label="运行实例" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="providers" label="Provider 能力" current={workspace} onSelect={setWorkspace}/>
-        <WorkspaceTab id="adapters" label="Runtime Adapter" current={workspace} onSelect={setWorkspace}/>
-      </nav>
+      <Tabs className="agent-workspace-tabs-v2" aria-label="Agent 管理工作区" activeKey={workspace} onChange={(key) => setWorkspace(key as AgentWorkspace)} items={workspaceTabs}/>
       <div className="agent-workspace" role="tabpanel">
       {workspace === "profiles" && <AgentProfilesPanel />}
       {workspace === "deployments" && <AgentDeploymentsPanel />}
@@ -236,10 +239,6 @@ export function AgentsPage() {
       />
     </div>
   );
-}
-
-function WorkspaceTab({ id, label, current, onSelect }: { id: AgentWorkspace; label: string; current: AgentWorkspace; onSelect: (workspace: AgentWorkspace) => void }) {
-  return <button role="tab" aria-selected={current === id} className={current === id ? "active" : ""} onClick={() => onSelect(id)}>{label}</button>;
 }
 
 function ProviderCatalog() {
