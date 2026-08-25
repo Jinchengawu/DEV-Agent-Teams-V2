@@ -49,9 +49,7 @@ class ProviderBindingCreate(BaseModel):
     external_space_id: str = Field(min_length=1, max_length=240)
     credential_ref: str = Field(min_length=1, max_length=240)
 
-    _credential_must_be_a_reference = field_validator("credential_ref")(
-        _credential_reference
-    )
+    _credential_must_be_a_reference = field_validator("credential_ref")(_credential_reference)
 
 
 class ProviderBinding(BaseModel):
@@ -68,9 +66,7 @@ class ProviderBinding(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    _credential_must_be_a_reference = field_validator("credential_ref")(
-        _credential_reference
-    )
+    _credential_must_be_a_reference = field_validator("credential_ref")(_credential_reference)
 
 
 class ProviderSpace(BaseModel):
@@ -155,11 +151,15 @@ class ProviderSyncRun(BaseModel):
             self.error_code
         ):
             raise ValueError("同步失败或不可用必须提供稳定错误码")
-        if self.status in {
-            ProviderSyncStatus.SUCCEEDED,
-            ProviderSyncStatus.FAILED,
-            ProviderSyncStatus.UNAVAILABLE,
-        } and self.completed_at is None:
+        if (
+            self.status
+            in {
+                ProviderSyncStatus.SUCCEEDED,
+                ProviderSyncStatus.FAILED,
+                ProviderSyncStatus.UNAVAILABLE,
+            }
+            and self.completed_at is None
+        ):
             raise ValueError("终态同步必须记录完成时间")
         if self.status != ProviderSyncStatus.QUEUED and self.started_at is None:
             raise ValueError("已启动同步必须记录开始时间")

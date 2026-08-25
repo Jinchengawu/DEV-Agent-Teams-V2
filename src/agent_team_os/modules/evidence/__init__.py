@@ -1,5 +1,5 @@
 from .application import EvidenceLedger
-from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus
+from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus, EvidenceVerificationRecord
 from .repository import SQLiteEvidenceRepository
 
 __all__ = [
@@ -7,6 +7,6 @@ __all__ = [
     "EvidenceLedger",
     "EvidenceRecord",
     "EvidenceStatus",
+    "EvidenceVerificationRecord",
     "SQLiteEvidenceRepository",
 ]
-

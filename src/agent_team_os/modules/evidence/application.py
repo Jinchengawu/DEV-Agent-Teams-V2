@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from ...shared.hashes import Sha256, is_valid_sha256, sha256_json
-from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus
+from .domain import EvidenceKind, EvidenceRecord, EvidenceStatus, EvidenceVerificationRecord
 from .ports import EvidenceRepository
 
 
@@ -15,6 +15,7 @@ class EvidenceLedger:
 
     def sync_delivery(self, snapshot: Mapping[str, object]) -> tuple[EvidenceRecord, ...]:
         delivery_id = str(snapshot["id"])
+        project_id = str(snapshot.get("project_id") or "legacy-default")
         created_at = _date(snapshot.get("created_at"))
         planning_identity = str(snapshot.get("planning_identity") or "unknown")
         execution_identity = str(snapshot.get("execution_identity") or planning_identity)
@@ -23,18 +24,13 @@ class EvidenceLedger:
         pipeline_revision_id = _text(snapshot.get("pipeline_revision_id"))
         journey_revision_id = _text(snapshot.get("journey_revision_id"))
         journey_hash = _text(
-            snapshot.get("resolved_pipeline_sha256")
-            or snapshot.get("resolved_journey_sha256")
+            snapshot.get("resolved_pipeline_sha256") or snapshot.get("resolved_journey_sha256")
         )
         candidates.append(
             (
                 EvidenceKind.JOURNEY,
                 "pipeline-revision" if pipeline_revision_id else "journey-revision",
-                str(
-                    pipeline_revision_id
-                    or journey_revision_id
-                    or f"{delivery_id}:legacy-journey"
-                ),
+                str(pipeline_revision_id or journey_revision_id or f"{delivery_id}:legacy-journey"),
                 journey_hash,
                 {
                     "pipeline_revision_id": pipeline_revision_id,
@@ -108,6 +104,7 @@ class EvidenceLedger:
             valid = is_valid_sha256(source_hash)
             record = EvidenceRecord(
                 id=str(uuid5(NAMESPACE_URL, f"agent-team-os:{delivery_id}:{kind}:{source_id}")),
+                project_id=project_id,
                 delivery_id=delivery_id,
                 kind=kind,
                 source_kind=source_kind,
@@ -126,8 +123,13 @@ class EvidenceLedger:
             records.append(self.repository.append(record))
         return tuple(records)
 
-    def list(self, delivery_id: str | None = None) -> tuple[EvidenceRecord, ...]:
-        return self.repository.list(delivery_id)
+    def list(
+        self, delivery_id: str | None = None, project_id: str | None = None
+    ) -> tuple[EvidenceRecord, ...]:
+        return self.repository.list(delivery_id, project_id)
+
+    def get(self, evidence_id: str) -> EvidenceRecord | None:
+        return self.repository.get(evidence_id)
 
     def verify(self, evidence_id: str) -> EvidenceRecord:
         record = self.repository.get(evidence_id)
@@ -138,6 +140,13 @@ class EvidenceLedger:
                 evidence_id, EvidenceStatus.INVALID, "MISSING_OR_ZERO_SHA256"
             )
         return self.repository.append_verification(evidence_id, EvidenceStatus.VERIFIED, None)
+
+    def verification_history(
+        self, evidence_id: str
+    ) -> tuple[EvidenceVerificationRecord, ...]:
+        if self.repository.get(evidence_id) is None:
+            raise KeyError(evidence_id)
+        return self.repository.list_verifications(evidence_id)
 
 
 def _text(value: object) -> str | None:

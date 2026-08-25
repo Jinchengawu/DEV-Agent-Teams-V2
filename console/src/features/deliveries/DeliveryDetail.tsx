@@ -1,7 +1,11 @@
+import { useState } from "react";
 import { CheckCircle2, CircleAlert, GitCommitHorizontal, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 import { artifactTypeLabel, identityLabel, statusLabel } from "../../i18n";
+import { projectPath } from "../../entities/project/api";
 import type { Delivery, EvidenceRecord, ProductEvent } from "../../entities/delivery/model";
 import { ConflictState } from "../../shared/feedback/AsyncState";
+import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import type { DeliveryDecision } from "./api";
 import type { PipelineRun } from "./api";
@@ -17,6 +21,7 @@ type Props = {
 };
 
 export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisionPending, decisionError, onDecision }: Props) {
+  const [pendingDecision, setPendingDecision] = useState<DeliveryDecision>();
   const verified = evidence.filter((item) => item.status === "verified");
   const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   return <div className="delivery-detail">
@@ -36,7 +41,7 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
         {delivery.requirements ? <><h3>{delivery.requirements.summary}</h3><ul>{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code>{item.statement}</li>)}</ul></> : <p className="muted">需求产物尚未生成。</p>}
         {delivery.task && <div className="task-contract"><span>单一任务合同</span><b>{delivery.task.title}</b><small>{delivery.task.acceptance_ids.join(" · ")}</small></div>}
         {delivery.plan_gate && <GateSubject label="计划审批主题" sha={delivery.plan_gate.subject_sha256} revision={delivery.plan_gate.revision}/>} 
-        {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => onDecision("approve-plan")}>批准计划并开始执行</button><button className="danger" disabled={decisionPending} onClick={() => onDecision("reject-plan")}>拒绝计划</button></div>}
+        {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始执行</button><button className="danger" disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</button></div>}
       </section>
 
       <section className="panel artifact-panel">
@@ -48,7 +53,7 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
         </> : <p className="muted">尚未形成经过验证的 Git Candidate。</p>}
         {delivery.verification && <div className={`verification ${delivery.verification.status === "passed" ? "verified" : "invalid"}`}><ShieldCheck size={18}/><div><b>固定机器测试：{statusLabel(delivery.verification.status)}</b><code>{delivery.verification.commands.join(" && ")}</code><small>退出码 {delivery.verification.exit_code} · 日志哈希 {delivery.verification.log_sha256}</small></div></div>}
         {delivery.candidate_gate && <GateSubject label="候选审批主题" sha={delivery.candidate_gate.subject_sha256} revision={delivery.candidate_gate.revision}/>} 
-        {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => onDecision("accept-candidate")}>接受候选并原子应用</button><button className="danger" disabled={decisionPending} onClick={() => onDecision("reject-candidate")}>拒绝候选</button></div>}
+        {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><button className="primary" disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>接受候选并原子应用</button><button className="danger" disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>拒绝候选</button></div>}
         {delivery.apply_receipt && <div className="apply-receipt"><CheckCircle2 size={20}/><div><b>应用回执已核验</b><small>应用前 {delivery.apply_receipt.before_revision}<br/>候选 {delivery.apply_receipt.candidate_revision}<br/>应用后 {delivery.apply_receipt.after_revision}</small></div></div>}
       </section>
     </div>
@@ -56,12 +61,22 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
     <div className="detail-grid evidence-rail">
       <section className="panel"><div className="panel-head"><span>可信证据轨</span><small>{verified.length}/{evidence.length} 已验证</small></div>
         {evidence.length === 0 ? <p className="muted">当前阶段尚无证据。只有真实产物生成后才会出现记录。</p> : <div className="evidence-list">{evidence.map((item) => <article key={item.id}><StatusBadge value={item.status}/><div><b>{artifactTypeLabel(item.kind)}</b><small>{item.producer_identity} · {item.source_id}</small></div><code>{item.content_sha256 ?? "无可验证内容哈希"}</code></article>)}</div>}
+        <Link className="secondary evidence-ledger-link" to={`${projectPath(delivery.project_id, "evidence")}?delivery_id=${encodeURIComponent(delivery.id)}`}>在项目证据账本中查看</Link>
       </section>
       <section className="panel"><div className="panel-head"><span>产品事件</span><small>仅显示已提交事件</small></div>
         {events.length === 0 ? <p className="muted">尚无已提交事件。</p> : <ol className="event-stream">{events.map((event) => <li key={event.id}><i/><div><b>{event.event_type}</b><small>{event.occurred_at} · v{event.aggregate_version}</small></div></li>)}</ol>}
       </section>
     </div>
+    <ConfirmDialog open={Boolean(pendingDecision)} title={decisionConfirmation(pendingDecision).title} detail={decisionConfirmation(pendingDecision).detail} confirmLabel={decisionConfirmation(pendingDecision).label} tone={pendingDecision?.startsWith("reject") || pendingDecision === "accept-candidate" ? "danger" : "warning"} pending={decisionPending} onCancel={() => setPendingDecision(undefined)} onConfirm={() => { if (pendingDecision) onDecision(pendingDecision); setPendingDecision(undefined); }}/>
   </div>;
+}
+
+function decisionConfirmation(decision?: DeliveryDecision) {
+  if (decision === "approve-plan") return { title: "批准计划并启动代码执行", detail: "系统将按当前不可变 Gate Subject 启动受控执行。执行器只能修改允许路径，并必须通过固定机器验证。", label: "确认批准并执行" };
+  if (decision === "reject-plan") return { title: "拒绝当前交付计划", detail: "该交付将进入拒绝终态，工作区 Main 不会发生变化。如需调整需求，必须创建新的交付。", label: "确认拒绝计划" };
+  if (decision === "accept-candidate") return { title: "接受候选并原子应用", detail: "系统将使用基线 Revision 执行 CAS 更新。只有 Main 仍等于已展示基线时才会指向当前 Candidate；该操作会改变项目 Main。", label: "确认应用 Candidate" };
+  if (decision === "reject-candidate") return { title: "拒绝当前候选变更", detail: "候选提交与证据会保留用于审计，但项目 Main 保持不变。该交付将进入拒绝终态。", label: "确认拒绝候选" };
+  return { title: "确认交付命令", detail: "请检查当前交付状态和证据后继续。", label: "确认执行" };
 }
 
 type GraphNodeProjection = { node_id: string; status: string; attempt: number };

@@ -9,7 +9,15 @@ from pydantic import JsonValue, TypeAdapter
 
 from ...shared.events import ProductEvent
 from ...shared.hashes import Sha256
-from .domain import Comment, Document, PermissionGrant, Revision, Space, WikiAccess
+from .domain import (
+    Comment,
+    Document,
+    KnowledgeDerivation,
+    PermissionGrant,
+    Revision,
+    Space,
+    WikiAccess,
+)
 from .ports import CompareAndSwapResult
 
 JSON_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -24,8 +32,8 @@ class SQLiteWikiRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -34,6 +42,8 @@ class SQLiteWikiRepository:
                     space.created_by,
                     space.created_at.isoformat(),
                     space.updated_at.isoformat(),
+                    space.scope_kind,
+                    space.project_id,
                 ),
             )
             self._append_event(
@@ -43,6 +53,7 @@ class SQLiteWikiRepository:
                     aggregate_type="wiki-space",
                     aggregate_id=space.id,
                     aggregate_version=space.version,
+                    project_id=space.project_id,
                     payload={"name": space.name},
                     occurred_at=space.updated_at,
                 ),
@@ -61,8 +72,8 @@ class SQLiteWikiRepository:
                 return self._space(existing)
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
+                VALUES(?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -71,6 +82,8 @@ class SQLiteWikiRepository:
                     space.created_by,
                     space.created_at.isoformat(),
                     space.updated_at.isoformat(),
+                    space.scope_kind,
+                    space.project_id,
                 ),
             )
             self._append_event(
@@ -80,6 +93,7 @@ class SQLiteWikiRepository:
                     aggregate_type="wiki-space",
                     aggregate_id=space.id,
                     aggregate_version=space.version,
+                    project_id=space.project_id,
                     payload={"name": space.name},
                     occurred_at=space.updated_at,
                 ),
@@ -89,16 +103,12 @@ class SQLiteWikiRepository:
 
     def get_space(self, space_id: str) -> Space | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM wiki_spaces WHERE id=?", (space_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM wiki_spaces WHERE id=?", (space_id,)).fetchone()
         return None if row is None else self._space(row)
 
     def list_spaces(self) -> tuple[Space, ...]:
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM wiki_spaces ORDER BY name,id"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM wiki_spaces ORDER BY name,id").fetchall()
         return tuple(self._space(row) for row in rows)
 
     def create_document(self, document: Document, revision: Revision) -> Document:
@@ -141,9 +151,89 @@ class SQLiteWikiRepository:
             connection.commit()
         return document
 
-    def ensure_system_document(
-        self, document: Document, revision: Revision
-    ) -> Document:
+    def create_derived_document(
+        self,
+        document: Document,
+        revision: Revision,
+        derivation: KnowledgeDerivation,
+    ) -> tuple[Document, KnowledgeDerivation, bool]:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """SELECT derivation.* FROM knowledge_derivations derivation
+                WHERE derivation.project_id=? AND derivation.target_space_id=?
+                AND derivation.source_kind=? AND derivation.source_id=?""",
+                (
+                    derivation.project_id,
+                    derivation.target_space_id,
+                    derivation.source_kind,
+                    derivation.source_id,
+                ),
+            ).fetchone()
+            if existing is not None:
+                document_row = connection.execute(
+                    "SELECT * FROM wiki_documents WHERE id=?",
+                    (str(existing["document_id"]),),
+                ).fetchone()
+                if document_row is None:
+                    raise RuntimeError("derived Wiki document is missing")
+                return self._document(document_row), self._derivation(existing), False
+            connection.execute(
+                """INSERT INTO wiki_documents(
+                id,space_id,parent_id,title,current_revision,version,created_by,created_at,
+                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    document.id,
+                    document.space_id,
+                    document.parent_id,
+                    document.title,
+                    document.current_revision,
+                    document.version,
+                    document.created_by,
+                    document.created_at.isoformat(),
+                    document.updated_at.isoformat(),
+                    document.source_kind,
+                    document.source_id,
+                ),
+            )
+            self._insert_revision(connection, revision, document)
+            connection.execute(
+                """INSERT INTO knowledge_derivations(
+                document_id,project_id,target_space_id,source_kind,source_id,source_revision,
+                source_sha256,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    derivation.document_id,
+                    derivation.project_id,
+                    derivation.target_space_id,
+                    derivation.source_kind,
+                    derivation.source_id,
+                    derivation.source_revision,
+                    derivation.source_sha256,
+                    derivation.created_by,
+                    derivation.created_at.isoformat(),
+                ),
+            )
+            self._append_event(
+                connection,
+                ProductEvent(
+                    event_type="knowledge.source-derived",
+                    aggregate_type="wiki-document",
+                    aggregate_id=document.id,
+                    aggregate_version=document.version,
+                    project_id=derivation.project_id,
+                    payload={
+                        "space_id": document.space_id,
+                        "source_kind": derivation.source_kind,
+                        "source_id": derivation.source_id,
+                        "source_sha256": derivation.source_sha256,
+                    },
+                    occurred_at=document.updated_at,
+                ),
+            )
+            connection.commit()
+        return document, derivation, True
+
+    def ensure_system_document(self, document: Document, revision: Revision) -> Document:
         if document.source_id is None:
             raise ValueError("System document requires a source ID")
         with self._connect() as connection:
@@ -215,8 +305,7 @@ class SQLiteWikiRepository:
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    "SELECT * FROM wiki_documents WHERE space_id=? "
-                    "ORDER BY updated_at DESC,id",
+                    "SELECT * FROM wiki_documents WHERE space_id=? ORDER BY updated_at DESC,id",
                     (space_id,),
                 ).fetchall()
         return tuple(self._document(row) for row in rows)
@@ -459,6 +548,8 @@ class SQLiteWikiRepository:
     def _space(row: sqlite3.Row) -> Space:
         return Space(
             id=str(row["id"]),
+            scope_kind=str(row["scope_kind"]),
+            project_id=None if row["project_id"] is None else str(row["project_id"]),
             name=str(row["name"]),
             description=str(row["description"]),
             version=int(row["version"]),
@@ -496,6 +587,20 @@ class SQLiteWikiRepository:
         )
 
     @staticmethod
+    def _derivation(row: sqlite3.Row) -> KnowledgeDerivation:
+        return KnowledgeDerivation(
+            document_id=str(row["document_id"]),
+            project_id=str(row["project_id"]),
+            target_space_id=str(row["target_space_id"]),
+            source_kind=str(row["source_kind"]),
+            source_id=str(row["source_id"]),
+            source_revision=str(row["source_revision"]),
+            source_sha256=Sha256.validate(str(row["source_sha256"])),
+            created_by=str(row["created_by"]),
+            created_at=datetime.fromisoformat(str(row["created_at"])),
+        )
+
+    @staticmethod
     def _comment(row: sqlite3.Row) -> Comment:
         return Comment(
             id=str(row["id"]),
@@ -513,14 +618,15 @@ class SQLiteWikiRepository:
     def _append_event(connection: sqlite3.Connection, event: ProductEvent) -> None:
         connection.execute(
             """INSERT INTO product_events(
-            event_id,event_type,aggregate_type,aggregate_id,aggregate_version,payload_json,occurred_at)
-            VALUES(?,?,?,?,?,?,?)""",
+            event_id,event_type,aggregate_type,aggregate_id,aggregate_version,project_id,payload_json,occurred_at)
+            VALUES(?,?,?,?,?,?,?,?)""",
             (
                 event.id,
                 event.event_type,
                 event.aggregate_type,
                 event.aggregate_id,
                 event.aggregate_version,
+                event.project_id,
                 json.dumps(event.payload, ensure_ascii=False, separators=(",", ":")),
                 event.occurred_at.isoformat(),
             ),

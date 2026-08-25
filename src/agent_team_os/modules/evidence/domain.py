@@ -28,6 +28,7 @@ class EvidenceRecord(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str
+    project_id: str = "legacy-default"
     delivery_id: str
     kind: EvidenceKind
     source_kind: str
@@ -46,3 +47,12 @@ class EvidenceRecord(BaseModel):
             raise ValueError("verified evidence requires a non-zero SHA-256")
         return self
 
+
+class EvidenceVerificationRecord(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    evidence_id: str
+    status: EvidenceStatus
+    error: str | None = None
+    verified_at: datetime

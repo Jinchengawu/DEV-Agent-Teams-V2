@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
+import { BookMarked, BookPlus, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
+import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
+import { useProjectId } from "../../entities/project/api";
 
 type Space = components["schemas"]["Space"];
 type Document = components["schemas"]["Document"];
@@ -14,6 +16,10 @@ type DocumentCreate = components["schemas"]["DocumentCreate"];
 type DocumentPatch = components["schemas"]["DocumentPatch"];
 type CommentCreate = components["schemas"]["CommentCreate"];
 type RevisionRestoreRequest = components["schemas"]["RevisionRestoreRequest"];
+type KnowledgeSearchHit = components["schemas"]["KnowledgeSearchHit"];
+type KnowledgeActivityItem = components["schemas"]["KnowledgeActivityItem"];
+type KnowledgeDerivationCreate = components["schemas"]["KnowledgeDerivationCreate"];
+type KnowledgeDerivationResult = components["schemas"]["KnowledgeDerivationResult"];
 
 type MarkdownPayload = {
   format: "markdown";
@@ -53,7 +59,15 @@ function isConflictError(error: unknown): error is ApiProblem {
   return error instanceof ApiProblem && error.status === 409;
 }
 
+function sourceKindLabel(value: string) {
+  if (value === "wiki") return "Wiki 文档";
+  if (value === "evidence") return "不可变证据";
+  if (value === "provider-snapshot") return "外部来源快照";
+  return `来源 ${value}`;
+}
+
 export function KnowledgePage() {
+  const projectId = useProjectId();
   const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
@@ -69,11 +83,18 @@ export function KnowledgePage() {
   const [editorContent, setEditorContent] = useState("");
 
   const [commentText, setCommentText] = useState("");
+  const [pendingRestore, setPendingRestore] = useState<{ revision: number; contentSha256: string }>();
 
   const spaces = useQuery({
-    queryKey: ["wiki-spaces"],
-    queryFn: () => request<Space[]>("/v1/wiki/spaces"),
+    queryKey: ["wiki-spaces", projectId],
+    queryFn: ({ signal }) => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true`, { signal }),
   });
+
+  useEffect(() => {
+    setSelectedSpaceId("");
+    setSelectedDocumentId(undefined);
+    setSearch("");
+  }, [projectId]);
 
   useEffect(() => {
     if (!selectedSpaceId && spaces.data?.length) {
@@ -82,19 +103,61 @@ export function KnowledgePage() {
   }, [spaces.data, selectedSpaceId]);
 
   const listDocumentsPath = useMemo(() => {
-    if (search.trim()) {
-      return `/v1/wiki/search?q=${encodeURIComponent(search.trim())}`;
-    }
     if (!selectedSpaceId) {
       return "";
     }
     return `/v1/wiki/documents?space_id=${encodeURIComponent(selectedSpaceId)}`;
-  }, [search, selectedSpaceId]);
+  }, [selectedSpaceId]);
 
   const documents = useQuery({
-    queryKey: ["wiki-documents", selectedSpaceId, search],
+    queryKey: ["wiki-documents", projectId, selectedSpaceId],
     enabled: spaces.isSuccess && Boolean(listDocumentsPath),
-    queryFn: () => request<Document[]>(listDocumentsPath),
+    queryFn: ({ signal }) => request<Document[]>(listDocumentsPath, { signal }),
+  });
+
+  const unifiedSearch = useQuery({
+    queryKey: ["knowledge-search", projectId, search],
+    enabled: Boolean(search.trim()),
+    queryFn: ({ signal }) => request<KnowledgeSearchHit[]>(`/v1/knowledge/search?project_id=${encodeURIComponent(projectId)}&include_global=true&q=${encodeURIComponent(search.trim())}`, { signal }),
+  });
+
+  const activity = useQuery({
+    queryKey: ["knowledge-activity", projectId],
+    queryFn: ({ signal }) =>
+      request<KnowledgeActivityItem[]>(
+        `/v1/knowledge/activity?project_id=${encodeURIComponent(projectId)}&include_global=true&limit=50`,
+        { signal },
+      ),
+  });
+
+  const deriveSource = useMutation({
+    mutationFn: ({ item, targetSpaceId }: { item: KnowledgeActivityItem; targetSpaceId: string }) =>
+      request<KnowledgeDerivationResult>("/v1/knowledge/derivations", {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: projectId,
+          source_kind: item.source_kind,
+          source_id: item.source_id,
+          expected_source_sha256: item.content_sha256,
+          target_space_id: targetSpaceId,
+          title: item.title,
+        } as KnowledgeDerivationCreate),
+      }),
+    onSuccess: async (result) => {
+      setSelectedSpaceId(result.document.space_id);
+      setSelectedDocumentId(result.document.id);
+      client.setQueryData<Document[]>(
+        ["wiki-documents", projectId, result.document.space_id],
+        (current) => [
+          result.document,
+          ...(current ?? []).filter((item) => item.id !== result.document.id),
+        ],
+      );
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["wiki-documents"] }),
+        client.invalidateQueries({ queryKey: ["knowledge-activity", projectId] }),
+      ]);
+    },
   });
 
   const selectedDocument = useMemo(
@@ -111,19 +174,19 @@ export function KnowledgePage() {
   const currentRevision = useQuery({
     queryKey: ["wiki-document-revision", selectedDocument?.id, selectedDocument?.current_revision],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Revision>(`/v1/wiki/documents/${selectedDocument!.id}/revisions/${selectedDocument!.current_revision}`),
+    queryFn: ({ signal }) => request<Revision>(`/v1/wiki/documents/${selectedDocument!.id}/revisions/${selectedDocument!.current_revision}`, { signal }),
   });
 
   const revisions = useQuery({
     queryKey: ["wiki-document-revisions", selectedDocument?.id],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Revision[]>(`/v1/wiki/documents/${selectedDocument!.id}/revisions`),
+    queryFn: ({ signal }) => request<Revision[]>(`/v1/wiki/documents/${selectedDocument!.id}/revisions`, { signal }),
   });
 
   const comments = useQuery({
     queryKey: ["wiki-document-comments", selectedDocument?.id],
     enabled: Boolean(selectedDocument),
-    queryFn: () => request<Comment[]>(`/v1/wiki/documents/${selectedDocument!.id}/comments`),
+    queryFn: ({ signal }) => request<Comment[]>(`/v1/wiki/documents/${selectedDocument!.id}/comments`, { signal }),
   });
 
   const createSpace = useMutation({
@@ -136,7 +199,7 @@ export function KnowledgePage() {
       setNewSpaceName("");
       setNewSpaceDescription("");
       setSelectedSpaceId(space.id);
-      await client.invalidateQueries({ queryKey: ["wiki-spaces"] });
+      await client.invalidateQueries({ queryKey: ["wiki-spaces", projectId] });
     },
   });
 
@@ -149,7 +212,7 @@ export function KnowledgePage() {
     onSuccess: async (document) => {
       setNewDocumentTitle("");
       setNewDocumentContent("");
-      client.setQueryData<Document[]>(["wiki-documents", selectedSpaceId, search], (current) => [
+      client.setQueryData<Document[]>(["wiki-documents", projectId, selectedSpaceId], (current) => [
         document,
         ...(current ?? []).filter((item) => item.id !== document.id),
       ]);
@@ -225,6 +288,7 @@ export function KnowledgePage() {
     updateDocument.error,
     restoreRevision.error,
     addComment.error,
+    deriveSource.error,
   ];
 
   const conflictError = operationErrors.find(isConflictError);
@@ -248,6 +312,60 @@ export function KnowledgePage() {
 
   return (
     <div className="knowledge-layout">
+      <section className="panel knowledge-activity" aria-label="项目知识动态">
+        <div className="panel-head">
+          <span>项目知识动态</span>
+          <small>交付证据、Wiki 修订与外部来源按时间汇总，不改变各自权威数据</small>
+        </div>
+        {activity.isLoading ? (
+          <LoadingState label="正在读取项目知识动态…" />
+        ) : activity.error ? (
+          <ErrorState error={activity.error} retry={() => activity.refetch()} />
+        ) : activity.data?.length ? (
+          <div className="knowledge-activity-list" role="list">
+            {activity.data.map((item) => (
+              <article
+                key={`${item.source_kind}:${item.source_id}`}
+                className="knowledge-activity-item"
+                role="listitem"
+              >
+                <span className="knowledge-source-label">{sourceKindLabel(item.source_kind)}</span>
+                <a className="knowledge-activity-link" href={item.source_link || undefined}>
+                  <b>{item.title}</b>
+                </a>
+                <p>{item.summary || "该来源没有可展示的文本摘要。"}</p>
+                <small>
+                  {new Date(item.occurred_at).toLocaleString("zh-CN")} · 修订 {item.revision} · SHA-256 {item.content_sha256?.slice(0, 16) ?? "未提供"}
+                </small>
+                {item.source_kind !== "wiki" && (
+                  <button
+                    className="secondary button-icon knowledge-derive-button"
+                    aria-label={`提炼“${item.title}”为 Wiki`}
+                    disabled={
+                      deriveSource.isPending ||
+                      !selectedSpaceId ||
+                      !item.content_sha256
+                    }
+                    title={selectedSpaceId ? "保留来源 Revision 与 SHA-256，创建可编辑 Wiki" : "请先创建或选择项目知识空间"}
+                    onClick={() => {
+                      if (selectedSpaceId) {
+                        deriveSource.mutate({ item, targetSpaceId: selectedSpaceId });
+                      }
+                    }}
+                  >
+                    <BookPlus size={15} />提炼为 Wiki
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="当前项目还没有知识来源"
+            detail="完成交付、创建 Wiki 或同步外部来源后，真实记录会自动出现在这里。"
+          />
+        )}
+      </section>
       <section className="panel knowledge-index">
         <div className="panel-head">
           <span>知识空间</span>
@@ -281,6 +399,8 @@ export function KnowledgePage() {
             createSpace.mutate({
               name: newSpaceName.trim(),
               description: newSpaceDescription.trim(),
+              scope_kind: "project",
+              project_id: projectId,
             } as SpaceCreate)
           }
         >
@@ -294,9 +414,14 @@ export function KnowledgePage() {
             aria-label="全文搜索"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="全量搜索文档标题与正文"
+            placeholder="搜索项目 Wiki、全局 Wiki、证据与外部快照"
           />
         </label>
+
+        {search.trim() && <div className="knowledge-search-results">
+          <div className="panel-head"><span>统一来源检索</span><small>保留各来源权威语义</small></div>
+          {unifiedSearch.isLoading ? <LoadingState label="正在检索多来源知识…"/> : unifiedSearch.error ? <ErrorState error={unifiedSearch.error} retry={() => unifiedSearch.refetch()}/> : unifiedSearch.data?.length ? unifiedSearch.data.map((hit) => <a key={`${hit.source_kind}:${hit.source_id}`} href={hit.source_link || undefined} className="knowledge-search-hit"><b>{hit.title}</b><span>{sourceKindLabel(hit.source_kind)} · 修订 {hit.revision}</span><small>{hit.content_sha256?.slice(0, 16) ?? "无内容哈希"}</small></a>) : <EmptyState title="没有匹配的来源" detail="系统不会为缺失知识或证据生成模拟结果。"/>}
+        </div>}
 
         <div className="panel-head"><span>当前空间文档</span><small>{selectedSpaceId || "未选择空间"}</small></div>
         <div className="document-list" role="list" aria-label="当前空间文档列表">
@@ -398,13 +523,7 @@ export function KnowledgePage() {
                   <button
                     className="secondary"
                     disabled={restoreRevision.isPending || revision.revision === selectedDocument.current_revision}
-                    onClick={() =>
-                      restoreRevision.mutate({
-                        documentId: selectedDocument.id,
-                        revision: revision.revision,
-                        expectedVersion: selectedDocument.version,
-                      })
-                    }
+                    onClick={() => setPendingRestore({ revision: revision.revision, contentSha256: revision.content_sha256 })}
                   >
                     <RefreshCw size={14} />恢复该版本
                   </button>
@@ -442,6 +561,7 @@ export function KnowledgePage() {
           </>
         ) : <EmptyState title="未选择文档" detail="先选择文档读取评论并提交。" />}
       </section>
+      <ConfirmDialog open={Boolean(pendingRestore)} title={`恢复“${selectedDocument?.title ?? "当前文档"}”到修订 ${pendingRestore?.revision ?? ""}`} detail={`系统会以该历史内容创建一个新的当前修订，不会改写或删除原修订。目标内容 SHA-256：${pendingRestore?.contentSha256.slice(0, 16) ?? ""}。`} confirmLabel={`确认恢复到修订 ${pendingRestore?.revision ?? ""}`} tone="danger" pending={restoreRevision.isPending} onCancel={() => setPendingRestore(undefined)} onConfirm={() => { if (selectedDocument && pendingRestore) restoreRevision.mutate({ documentId: selectedDocument.id, revision: pendingRestore.revision, expectedVersion: selectedDocument.version }, { onSuccess: () => setPendingRestore(undefined) }); }}/>
     </div>
   );
 }

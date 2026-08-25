@@ -19,11 +19,13 @@ const instances = [
   },
 ];
 const providers = [{ id: "codex-cli-provider", revision: "1", fingerprint: "a".repeat(64), runtime_types: ["codex-cli"], capabilities: [{ id: "codex-backend", version: "1.0.0" }], workflow_modes: ["code-delivery"], required_features: [], input_contracts: [], output_contracts: [], permission_requirements: [] }];
+const adapters = [{ id: "codex-cli", version: "1", runtime_type: "codex-cli", features: ["workspace.cwd_binding"], available: true, features_source: "installed-acwm-adapter-manifest", error_code: null }];
 const deployments = [{ id: "backend-codex", name: "后端 Codex 部署", profile_id: "backend-engineer", profile_revision: 1, profile_sha256: "b".repeat(64), capability_requirements: [{ id: "codex-backend", version: ">=1,<2" }], instance_id: "codex-1", instance_version: 2, adapter_id: "codex-cli", adapter_version: "1", provider_id: "codex-cli-provider", provider_revision: "1", provider_fingerprint: "a".repeat(64), isolation_mode: "shared", policy_snapshot: {}, qualification_status: "qualified", qualification_errors: [], enabled: true, version: 3, created_by: "admin", created_at: now, updated_at: now }];
 
 type FetchCall = { url: string; method: string; body?: string };
 const calls: FetchCall[] = [];
 let profileItems: unknown[] = [];
+let deploymentItems: Array<Record<string, unknown>> = deployments;
 const profileSpec = {
   schema_version: "1", id: "frontend-engineer", name: "前端开发工程师", description: "负责前端实现与组件测试", tags: ["development", "frontend"],
   instructions: { template_ref: "prompt://frontend-engineer@1", custom_text: "遵守中文界面、公共 API 和前端架构规范", variables_schema: "schema://agent-prompt-variables@1", examples: [] },
@@ -37,6 +39,7 @@ const response = (body: unknown, status = 200) => new Response(JSON.stringify(bo
 beforeEach(() => {
   calls.length = 0;
   profileItems = [];
+  deploymentItems = deployments;
   vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
     const call = { url: String(input), method: (init?.method ?? "GET").toUpperCase(), body: init?.body?.toString() };
     calls.push(call);
@@ -56,8 +59,10 @@ beforeEach(() => {
     }
     if (call.url === "/v1/agent-profiles/frontend-engineer/draft" && call.method === "GET") return response({ profile_id: profileSpec.id, spec: profileSpec, version: 2, validation_status: "valid", validation_errors: [], updated_by: "admin", updated_at: now });
     if (call.url === "/v1/provider-manifests" && call.method === "GET") return response(providers);
-    if (call.url === "/v1/agent-deployments" && call.method === "GET") return response(deployments);
-    if (call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST") return response({ ...deployments[0], version: 4 });
+    if (call.url === "/v1/runtime-adapters" && call.method === "GET") return response(adapters);
+    if (call.url === "/v1/agent-deployments" && call.method === "GET") return response(deploymentItems);
+    if (call.url === "/v1/agent-deployments/backend-codex" && call.method === "PATCH") return response({ ...deploymentItems[0], instance_version: 2, qualification_status: "unknown", qualification_errors: [], enabled: false, version: 4 });
+    if (call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST") return response({ ...deploymentItems[0], instance_version: 2, qualification_status: "qualified", qualification_errors: [], version: 5 });
     return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
   });
 });
@@ -72,15 +77,18 @@ function renderPage() {
 describe("智能体角色、部署与运行实例", () => {
   test("读取真实实例和 Deployment 快照", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: "Codex 主执行器" });
+    await userEvent.click(screen.getByRole("tab", { name: "Agent 部署" }));
     await screen.findByRole("heading", { name: "后端 Codex 部署" });
-    expect(screen.getByText("Agent 部署")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Agent 部署" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("heading", { name: "后端 Codex 部署" })).toBeTruthy();
     expect(calls.some((call) => call.url === "/v1/agent-deployments")).toBe(true);
+    await userEvent.click(screen.getByRole("tab", { name: "运行实例" }));
+    await screen.findByRole("heading", { name: "Codex 主执行器" });
   });
 
   test("资格检查携带 Deployment 当前 CAS 版本", async () => {
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: "Agent 部署" }));
     const card = (await screen.findByRole("heading", { name: "后端 Codex 部署" })).closest("article");
     expect(card).not.toBeNull();
     const controls = within(card!);
@@ -91,8 +99,22 @@ describe("智能体角色、部署与运行实例", () => {
     expect(JSON.parse(checked?.body ?? "{}")).toEqual({ expected_version: 3 });
   });
 
+  test("过期实例快照可以刷新并自动重新执行资格检查", async () => {
+    deploymentItems = [{ ...deployments[0], instance_version: 1, qualification_status: "failed", qualification_errors: ["RUNTIME_INSTANCE_VERSION_STALE"], enabled: false, version: 3 }];
+    renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: "Agent 部署" }));
+    await userEvent.click(await screen.findByRole("button", { name: "刷新快照并重新检查" }));
+
+    await waitFor(() => expect(calls.some((call) => call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST")).toBe(true));
+    const patch = calls.find((call) => call.url === "/v1/agent-deployments/backend-codex" && call.method === "PATCH");
+    const qualify = calls.find((call) => call.url === "/v1/agent-deployments/backend-codex/qualify" && call.method === "POST");
+    expect(JSON.parse(patch?.body ?? "{}")).toEqual({ expected_version: 3, instance_id: "codex-1" });
+    expect(JSON.parse(qualify?.body ?? "{}")).toEqual({ expected_version: 4 });
+  });
+
   test("Hermes 实例必须显式填写连接端点，不能使用硬编码地址", async () => {
     renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: "运行实例" }));
     await screen.findByRole("heading", { name: "Codex 主执行器" });
     await userEvent.selectOptions(screen.getByLabelText("运行时类型"), "hermes-http");
     expect((screen.getByLabelText("连接端点") as HTMLInputElement).value).toBe("");
@@ -104,6 +126,16 @@ describe("智能体角色、部署与运行实例", () => {
     await waitFor(() => expect(calls.some((call) => call.url === "/v1/agent-instances" && call.method === "POST")).toBe(true));
     const created = calls.find((call) => call.url === "/v1/agent-instances" && call.method === "POST");
     expect(JSON.parse(created?.body ?? "{}").connection).toEqual({ endpoint: "http://127.0.0.1:9100" });
+  });
+
+  test("Provider 与 Adapter 工作区展示可信安装来源", async () => {
+    renderPage();
+    await userEvent.click(screen.getByRole("tab", { name: "Provider 能力" }));
+    await screen.findByRole("heading", { name: "codex-cli-provider" });
+    expect(screen.getByText(/codex-backend@1.0.0/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Runtime Adapter" }));
+    await screen.findByRole("heading", { name: "codex-cli" });
+    expect(screen.getByText("installed-acwm-adapter-manifest")).toBeTruthy();
   });
 
   test("可以从中文表单创建前端开发角色草稿", async () => {

@@ -17,10 +17,18 @@ const statuses: Record<string, string> = {
   passed: "通过",
   verified: "已验证",
   unavailable: "不可用",
+  provisioning: "初始化中",
+  active: "可运行",
+  provision_failed: "初始化失败",
+  archived: "已归档",
   backlog: "待规划",
   "plan-approval": "计划审批",
   "candidate-approval": "候选审批",
   "failed-cancelled": "失败 / 取消",
+  default: "默认",
+  enabled: "已授权",
+  disabled: "未授权",
+  qualified: "资格通过",
 };
 
 const commands: Record<string, string> = {
@@ -41,6 +49,8 @@ const artifactTypes: Record<string, string> = {
   "candidate-gate": "候选审批",
   "apply-receipt": "应用回执",
   "journey-revision": "旅程版本",
+  journey: "旅程快照",
+  diff: "代码差异",
 };
 
 const journeySteps: Record<string, string> = {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitCommitHorizontal, LockKeyhole, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Clock3, GitCommitHorizontal, LockKeyhole, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request, type AppSettings, type AppSettingsPatch } from "../../shared/api/client";
 import { ConflictState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
@@ -13,6 +13,7 @@ export function SettingsPage() {
   const client = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<AppSettings>("/v1/settings") });
   const releaseGates = useQuery({ queryKey: ["release-gates", "latest"], queryFn: () => request<LatestGateReports>("/v1/release-gates/latest") });
+  const releaseHistory = useQuery({ queryKey: ["release-gates", "history"], queryFn: ({ signal }) => request<GateReport[]>("/v1/release-gates/history", { signal }) });
   const [draft, setDraft] = useState<AppSettings>();
   useEffect(() => { if (settings.data) setDraft(settings.data); }, [settings.data]);
   const save = useMutation({
@@ -26,6 +27,7 @@ export function SettingsPage() {
 
   return <div className="settings-layout">
     <ReleaseGatePanel reports={releaseGates.data} loading={releaseGates.isLoading} error={releaseGates.error} onRefresh={() => releaseGates.refetch()}/>
+    <ReleaseHistoryPanel reports={releaseHistory.data} loading={releaseHistory.isLoading} error={releaseHistory.error} onRefresh={() => releaseHistory.refetch()}/>
     <section className="panel settings-form">
       <div className="panel-head"><span>安全运营参数</span><small>CAS 版本 {draft.version}</small></div>
       <ConflictState error={save.error}/>
@@ -44,6 +46,16 @@ export function SettingsPage() {
       <div className="policy-note">这些字段属于产品安全边界。Agent、用户需求和批量开发任务均不能覆盖。</div>
     </section>
   </div>;
+}
+
+function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?: GateReport[]; loading: boolean; error: Error | null; onRefresh: () => void }) {
+  return <section className="panel release-history-panel">
+    <div className="panel-head"><span>版本验收历史</span><small><Clock3 size={13}/>{reports?.length ?? 0} 份不可变报告</small></div>
+    {loading && <LoadingState label="正在读取版本验收历史…"/>}
+    {error && <ErrorState error={error} retry={onRefresh}/>}
+    {!loading && !error && reports?.length === 0 && <div className="state-box state-empty"><div><b>还没有持久化验收记录</b><span>请在当前 Demo 数据目录运行发布命令；完成后评测账号可在此复查 Revision、身份与证据哈希。</span></div></div>}
+    {reports && reports.length > 0 && <div className="release-history-list">{reports.map((report) => <article key={`${report.created_at}-${report.kind}-${report.evidence_sha256}`}><StatusBadge value={report.status}/><div><b>{report.kind === "live" ? "真实 Codex 门禁" : "确定性闭环门禁"}</b><span>{formatReportTime(report.created_at)} · {report.planning_identity} → {report.execution_identity}</span></div><dl><dt>DEV</dt><dd><code>{report.dev_revision}</code></dd><dt>证据</dt><dd><code>{report.evidence_sha256}</code></dd><dt>失败 / 警告 / 跳过</dt><dd>{report.fail} / {report.warn} / {report.skipped}</dd></dl></article>)}</div>}
+  </section>;
 }
 
 function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: LatestGateReports; loading: boolean; error: Error | null; onRefresh: () => void }) {

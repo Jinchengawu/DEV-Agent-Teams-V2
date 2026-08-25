@@ -12,6 +12,21 @@ type Revision = { document_id: string; revision: number; content: unknown; conte
 type Space = { id: string; name: string; description: string; version: number; created_by: string; created_at: string; updated_at: string };
 type Comment = { id: string; document_id: string; body: string; author_id: string; resolved: boolean; version: number; created_at: string; updated_at: string };
 
+const activity = [
+  {
+    project_id: "legacy-default",
+    source_kind: "evidence",
+    source_id: "evidence-1",
+    delivery_id: "delivery-1",
+    title: "候选变更 · delivery-1",
+    summary: "src/health.py 与 tests/test_health.py",
+    revision: "1",
+    content_sha256: "c".repeat(64),
+    occurred_at: "2026-08-04T00:00:00Z",
+    source_link: "/projects/legacy-default/evidence?evidence_id=evidence-1",
+  },
+];
+
 const spaces: Space[] = [
   { id: "space-1", name: "交付知识", description: "交付知识基础空间", version: 1, created_by: "ops", created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z" },
 ];
@@ -37,7 +52,9 @@ const jsonResponse = (body: unknown, status = 200) =>
   });
 
 const route = (url: string, method: string) => {
-  if (url === "/v1/wiki/spaces") return jsonResponse(spaces);
+  if (url.startsWith("/v1/wiki/spaces?")) return jsonResponse(spaces);
+  if (url.startsWith("/v1/knowledge/activity?")) return jsonResponse(activity);
+  if (url.startsWith("/v1/knowledge/search?")) return jsonResponse(activity);
   if (url.startsWith("/v1/wiki/search")) return jsonResponse(documents);
   if (url === "/v1/wiki/documents?space_id=space-1") return jsonResponse(documents);
   if (url === "/v1/wiki/documents/doc-1/revisions/1") return jsonResponse(revision);
@@ -53,6 +70,23 @@ const route = (url: string, method: string) => {
       }),
       { status: 409, headers: { "content-type": "application/json" } },
     );
+  }
+  if (url === "/v1/knowledge/derivations" && method === "POST") {
+    return jsonResponse({
+      document: { id: "doc-derived", space_id: "space-1", title: "候选变更 · delivery-1", current_revision: 1, version: 1 },
+      derivation: {
+        document_id: "doc-derived",
+        project_id: "legacy-default",
+        target_space_id: "space-1",
+        source_kind: "evidence",
+        source_id: "evidence-1",
+        source_revision: "1",
+        source_sha256: "c".repeat(64),
+        created_by: "ops",
+        created_at: "2026-08-04T00:00:00Z",
+      },
+      created: true,
+    }, 201);
   }
   if (url === "/v1/wiki/spaces" || url === "/v1/wiki/documents") {
     return jsonResponse([]);
@@ -90,11 +124,26 @@ afterEach(() => {
 });
 
 describe("知识空间三栏页", () => {
-  test("使用真实 /v1/wiki 接口读取空间与文档", async () => {
+  test("默认读取项目知识动态并展示不可变交付证据", async () => {
     renderKnowledge();
-    await waitFor(() => expect(fetchCalls.some((call) => call.url === "/v1/wiki/spaces")).toBe(true));
+    await waitFor(() => expect(fetchCalls.some((call) => call.url.startsWith("/v1/wiki/spaces?project_id=legacy-default"))).toBe(true));
     await waitFor(() => expect(fetchCalls.some((call) => call.url.includes("/v1/wiki/documents"))).toBe(true));
-    expect(fetchCalls.every((call) => !call.url.includes("/v1/knowledge/"))).toBe(true);
+    await waitFor(() => expect(fetchCalls.some((call) => call.url.startsWith("/v1/knowledge/activity?project_id=legacy-default"))).toBe(true));
+    await screen.findByText("候选变更 · delivery-1");
+    expect(screen.getByText(/不可变证据/)).toBeTruthy();
+  });
+
+  test("把已验证证据提炼到当前 Wiki 空间并保留来源哈希", async () => {
+    renderKnowledge();
+    const derive = await screen.findByRole("button", { name: "提炼“候选变更 · delivery-1”为 Wiki" });
+    await userEvent.click(derive);
+    await waitFor(() =>
+      expect(
+        fetchCalls.some(
+          (call) => call.url === "/v1/knowledge/derivations" && call.method === "POST",
+        ),
+      ).toBe(true),
+    );
   });
 
   test("选择文档后读取当前修订正文", async () => {

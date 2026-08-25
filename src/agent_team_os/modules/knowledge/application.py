@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from pydantic import JsonValue
 
@@ -17,6 +17,9 @@ from .domain import (
     DocumentCreate,
     DocumentPatch,
     KnowledgeActor,
+    KnowledgeDerivation,
+    KnowledgeDerivationCreate,
+    KnowledgeDerivationResult,
     PermissionGrant,
     Revision,
     Space,
@@ -25,6 +28,7 @@ from .domain import (
     WikiAccess,
 )
 from .ports import CompareAndSwapResult, WikiRepository
+from .search import ResolvedKnowledgeSource
 
 ACCESS_LEVEL = {
     WikiAccess.NONE: 0,
@@ -43,16 +47,26 @@ ROLE_MAX_ACCESS = {
 class WikiService:
     SYSTEM_SPACE_ID = "system:delivery-evidence"
 
-    def __init__(self, repository: WikiRepository, clock: Clock | None = None) -> None:
+    def __init__(
+        self,
+        repository: WikiRepository,
+        clock: Clock | None = None,
+        project_guard: Callable[[str], None] | None = None,
+    ) -> None:
         self.repository = repository
         self.clock = clock or SystemClock()
+        self.project_guard = project_guard
 
     def create_space(self, actor: KnowledgeActor, request: SpaceCreate) -> Space:
         self._require_role(actor, Role.ADMINISTRATOR)
+        if request.project_id is not None and self.project_guard is not None:
+            self.project_guard(request.project_id)
         now = self.clock.now()
         return self.repository.create_space(
             Space(
                 id=new_id(),
+                scope_kind=request.scope_kind,
+                project_id=request.project_id,
                 name=request.name,
                 description=request.description,
                 version=1,
@@ -62,15 +76,24 @@ class WikiService:
             )
         )
 
-    def list_spaces(self, actor: KnowledgeActor) -> tuple[Space, ...]:
+    def list_spaces(
+        self, actor: KnowledgeActor, project_id: str | None = None, include_global: bool = True
+    ) -> tuple[Space, ...]:
         return tuple(
             space
             for space in self.repository.list_spaces()
             if self._effective_access(actor, space.id, None) != WikiAccess.NONE
+            and (
+                project_id is None
+                or space.project_id == project_id
+                or (include_global and space.scope_kind == "global")
+            )
         )
 
     def create_document(self, actor: KnowledgeActor, request: DocumentCreate) -> Document:
         space = self._space(request.space_id)
+        if space.project_id is not None and self.project_guard is not None:
+            self.project_guard(space.project_id)
         self._require_access(actor, space.id, None, WikiAccess.EDIT)
         if request.parent_id is not None:
             self._validate_parent(request.space_id, "", request.parent_id)
@@ -90,6 +113,80 @@ class WikiService:
         )
         revision = self._revision(document, 1, request.content, actor.user_id)
         return self.repository.create_document(document, revision)
+
+    def derive_source(
+        self,
+        actor: KnowledgeActor,
+        request: KnowledgeDerivationCreate,
+        source: ResolvedKnowledgeSource,
+    ) -> KnowledgeDerivationResult:
+        space = self._space(request.target_space_id)
+        if space.project_id != request.project_id or source.project_id != request.project_id:
+            raise ProductError(
+                code="KNOWLEDGE_SOURCE_PROJECT_MISMATCH",
+                title="知识来源不属于当前项目",
+                detail="来源、目标知识空间和当前项目必须一致。",
+                repair="切换到来源所属项目并重新选择目标空间。",
+                status_code=409,
+            )
+        if source.content_sha256 != request.expected_source_sha256:
+            raise ProductError(
+                code="KNOWLEDGE_SOURCE_VERSION_CONFLICT",
+                title="知识来源版本已变化",
+                detail="提炼请求引用的来源哈希已不是当前版本。",
+                repair="刷新知识动态后重新发起提炼。",
+                status_code=409,
+            )
+        if self.project_guard is not None:
+            self.project_guard(request.project_id)
+        self._require_access(actor, space.id, None, WikiAccess.EDIT)
+        now = self.clock.now()
+        document = Document(
+            id=new_id(),
+            space_id=space.id,
+            title=request.title,
+            current_revision=1,
+            version=1,
+            source_kind="manual",
+            created_by=actor.user_id,
+            created_at=now,
+            updated_at=now,
+        )
+        content: JsonValue = {
+            "format": "markdown",
+            "text": (
+                f"# {request.title}\n\n"
+                f"> 来源：{source.source_kind} · {source.source_id} · Revision {source.revision}\n"
+                f"> SHA-256：{source.content_sha256}\n\n"
+                f"```json\n{source.content_text}\n```\n"
+            ),
+        }
+        revision = self._revision(document, 1, content, actor.user_id)
+        derivation = KnowledgeDerivation(
+            document_id=document.id,
+            project_id=request.project_id,
+            target_space_id=space.id,
+            source_kind=source.source_kind,
+            source_id=source.source_id,
+            source_revision=source.revision,
+            source_sha256=source.content_sha256,
+            created_by=actor.user_id,
+            created_at=now,
+        )
+        persisted, persisted_derivation, created = self.repository.create_derived_document(
+            document, revision, derivation
+        )
+        if persisted_derivation.source_sha256 != source.content_sha256:
+            raise ProductError(
+                code="KNOWLEDGE_DERIVATION_SOURCE_CONFLICT",
+                title="知识提炼来源冲突",
+                detail="该来源已经按另一个不可变哈希提炼。",
+                repair="打开已有 Wiki 并核对其来源链。",
+                status_code=409,
+            )
+        return KnowledgeDerivationResult(
+            document=persisted, derivation=persisted_derivation, created=created
+        )
 
     def sync_system_artifacts(
         self,
@@ -150,8 +247,7 @@ class WikiService:
         return tuple(
             document
             for document in self.repository.list_documents(space_id)
-            if self._effective_access(actor, document.space_id, document.id)
-            != WikiAccess.NONE
+            if self._effective_access(actor, document.space_id, document.id) != WikiAccess.NONE
         )
 
     def get_document(self, actor: KnowledgeActor, document_id: str) -> Document:
@@ -182,6 +278,9 @@ class WikiService:
         self, actor: KnowledgeActor, document_id: str, request: DocumentPatch
     ) -> Document:
         current = self._document(document_id)
+        space = self._space(current.space_id)
+        if space.project_id is not None and self.project_guard is not None:
+            self.project_guard(space.project_id)
         self._require_access(actor, current.space_id, current.id, WikiAccess.EDIT)
         if current.source_kind != "manual":
             raise ProductError(
@@ -211,9 +310,7 @@ class WikiService:
                 "updated_at": now,
             }
         )
-        revision = self._revision(
-            updated, updated.current_revision, content, actor.user_id
-        )
+        revision = self._revision(updated, updated.current_revision, content, actor.user_id)
         result = self.repository.compare_and_swap_document(
             request.expected_version, updated, revision
         )
@@ -242,9 +339,10 @@ class WikiService:
         found: list[Document] = []
         for document_id in self.repository.search_document_ids(query):
             document = self.repository.get_document(document_id)
-            if document is not None and self._effective_access(
-                actor, document.space_id, document.id
-            ) != WikiAccess.NONE:
+            if (
+                document is not None
+                and self._effective_access(actor, document.space_id, document.id) != WikiAccess.NONE
+            ):
                 found.append(document)
         return tuple(found)
 
@@ -252,6 +350,7 @@ class WikiService:
         self, actor: KnowledgeActor, document_id: str, request: CommentCreate
     ) -> Comment:
         document = self._document(document_id)
+        self._assert_project_writable(document.space_id)
         self._require_access(actor, document.space_id, document.id, WikiAccess.COMMENT)
         now = self.clock.now()
         return self.repository.create_comment(
@@ -285,10 +384,12 @@ class WikiService:
                 status_code=404,
             )
         document = self._document(comment.document_id)
+        self._assert_project_writable(document.space_id)
         access = self._effective_access(actor, document.space_id, document.id)
-        can_change = comment.author_id == actor.user_id or ACCESS_LEVEL[access] >= ACCESS_LEVEL[
-            WikiAccess.EDIT
-        ]
+        can_change = (
+            comment.author_id == actor.user_id
+            or ACCESS_LEVEL[access] >= ACCESS_LEVEL[WikiAccess.EDIT]
+        )
         if not can_change:
             raise self._permission_denied()
         if comment.version != request.expected_version:
@@ -298,23 +399,17 @@ class WikiService:
         updated = comment.model_copy(
             update={
                 "body": request.body or comment.body,
-                "resolved": comment.resolved
-                if request.resolved is None
-                else request.resolved,
+                "resolved": comment.resolved if request.resolved is None else request.resolved,
                 "version": comment.version + 1,
                 "updated_at": self.clock.now(),
             }
         )
-        result = self.repository.compare_and_swap_comment(
-            request.expected_version, updated
-        )
+        result = self.repository.compare_and_swap_comment(request.expected_version, updated)
         if result != CompareAndSwapResult.UPDATED:
             raise self._version_conflict(request.expected_version, None)
         return updated
 
-    def put_permission(
-        self, actor: KnowledgeActor, grant: PermissionGrant
-    ) -> PermissionGrant:
+    def put_permission(self, actor: KnowledgeActor, grant: PermissionGrant) -> PermissionGrant:
         self._require_role(actor, Role.ADMINISTRATOR)
         if grant.resource_kind not in {"wiki-space", "wiki-document"}:
             raise ProductError(
@@ -324,7 +419,18 @@ class WikiService:
                 repair="选择有效的知识资源后重试。",
                 status_code=422,
             )
+        space_id = (
+            grant.resource_id
+            if grant.resource_kind == "wiki-space"
+            else self._document(grant.resource_id).space_id
+        )
+        self._assert_project_writable(space_id)
         return self.repository.put_permission(grant)
+
+    def _assert_project_writable(self, space_id: str) -> None:
+        space = self._space(space_id)
+        if space.project_id is not None and self.project_guard is not None:
+            self.project_guard(space.project_id)
 
     def _effective_access(
         self, actor: KnowledgeActor, space_id: str, document_id: str | None
@@ -332,9 +438,7 @@ class WikiService:
         maximum = ROLE_MAX_ACCESS[actor.role]
         explicit = None
         if document_id is not None:
-            explicit = self.repository.get_permission(
-                "wiki-document", document_id, actor.user_id
-            )
+            explicit = self.repository.get_permission("wiki-document", document_id, actor.user_id)
         if explicit is None:
             explicit = self.repository.get_permission("wiki-space", space_id, actor.user_id)
         requested = maximum if explicit is None else explicit
@@ -380,9 +484,7 @@ class WikiService:
             )
         return document
 
-    def _validate_parent(
-        self, space_id: str, document_id: str, parent_id: str
-    ) -> None:
+    def _validate_parent(self, space_id: str, document_id: str, parent_id: str) -> None:
         visited = {document_id} if document_id else set()
         candidate_id: str | None = parent_id
         while candidate_id is not None:

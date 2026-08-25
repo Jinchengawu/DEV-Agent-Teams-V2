@@ -1,31 +1,32 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, type Delivery, type EvidenceRecord, type ProductEvent } from "../../shared/api/client";
 import type { components } from "../../shared/api/generated/schema";
+import { assertProjectScope } from "../../entities/project/api";
 
 type Pipeline = components["schemas"]["Pipeline"];
 export type PipelineRun = components["schemas"]["PipelineRunRecord"];
 
 export const deliveryKeys = {
-  all: ["deliveries"] as const,
+  all: (projectId: string) => ["deliveries", projectId] as const,
   detail: (id: string) => ["deliveries", id] as const,
   events: (id: string) => ["deliveries", id, "events"] as const,
   evidence: (id: string) => ["deliveries", id, "evidence"] as const,
 };
 
-export function useDeliveries() {
-  return useQuery({ queryKey: deliveryKeys.all, queryFn: () => request<Delivery[]>("/v1/deliveries"), refetchInterval: 1500 });
+export function useDeliveries(projectId: string) {
+  return useQuery({ queryKey: deliveryKeys.all(projectId), queryFn: async ({ signal }) => assertProjectScope(projectId, await request<Delivery[]>(`/v1/deliveries?project_id=${encodeURIComponent(projectId)}`, { signal }), "交付列表"), refetchInterval: 1500 });
 }
 
-export function useDelivery(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.detail(id ?? ""), queryFn: () => request<Delivery>(`/v1/deliveries/${id}`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDelivery(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.detail(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, [await request<Delivery>(`/v1/deliveries/${id}`, { signal })], "交付详情")[0], enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
-export function useDeliveryEvents(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.events(id ?? ""), queryFn: () => request<ProductEvent[]>(`/v1/deliveries/${id}/events`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDeliveryEvents(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.events(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, await request<ProductEvent[]>(`/v1/deliveries/${id}/events`, { signal }), "交付事件"), enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
-export function useDeliveryEvidence(id?: string) {
-  return useQuery({ queryKey: deliveryKeys.evidence(id ?? ""), queryFn: () => request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`), enabled: Boolean(id), refetchInterval: 1000 });
+export function useDeliveryEvidence(id?: string, projectId?: string) {
+  return useQuery({ queryKey: [...deliveryKeys.evidence(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, await request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`, { signal }), "交付证据"), enabled: Boolean(id && projectId), refetchInterval: 1000 });
 }
 
 export function useDeliveryPipelineRun(deliveryId?: string, runId?: string | null) {
@@ -41,11 +42,11 @@ export function useDeliveryPipelines() {
   return useQuery({ queryKey: ["pipelines", "delivery-selector"], queryFn: () => request<Pipeline[]>("/v1/pipelines") });
 }
 
-export function useCreateDelivery(onCreated: (id: string) => void) {
+export function useCreateDelivery(projectId: string, onCreated: (id: string) => void) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userRequest, pipelineRevisionId }: { userRequest: string; pipelineRevisionId?: string }) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ workspace_id: "backend-demo", user_request: userRequest, pipeline_revision_id: pipelineRevisionId }) }),
-    onSuccess: async (delivery) => { await client.invalidateQueries({ queryKey: deliveryKeys.all }); onCreated(delivery.id); },
+    mutationFn: ({ userRequest, pipelineRevisionId }: { userRequest: string; pipelineRevisionId?: string }) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ project_id: projectId, user_request: userRequest, pipeline_revision_id: pipelineRevisionId }) }),
+    onSuccess: async (delivery) => { await client.invalidateQueries({ queryKey: deliveryKeys.all(projectId) }); onCreated(delivery.id); },
   });
 }
 
@@ -71,7 +72,7 @@ export function useDeliveryDecision() {
     },
     onSuccess: async (delivery) => {
       await Promise.all([
-        client.invalidateQueries({ queryKey: deliveryKeys.all }),
+        client.invalidateQueries({ queryKey: ["deliveries"] }),
         client.invalidateQueries({ queryKey: deliveryKeys.detail(delivery.id) }),
         client.invalidateQueries({ queryKey: deliveryKeys.events(delivery.id) }),
       ]);

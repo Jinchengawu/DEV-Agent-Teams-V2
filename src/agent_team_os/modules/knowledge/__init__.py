@@ -7,6 +7,9 @@ from .domain import (
     DocumentCreate,
     DocumentPatch,
     KnowledgeActor,
+    KnowledgeDerivation,
+    KnowledgeDerivationCreate,
+    KnowledgeDerivationResult,
     PermissionGrant,
     Revision,
     RevisionRestoreRequest,
@@ -41,6 +44,7 @@ from .provider_ports import (
 )
 from .provider_repository import SQLiteProviderKnowledgeRepository
 from .repository import SQLiteWikiRepository
+from .search import KnowledgeActivityItem, KnowledgeSearchHit, KnowledgeSearchIndex
 
 __all__ = [
     "Comment",
@@ -49,6 +53,9 @@ __all__ = [
     "Document",
     "DocumentCreate",
     "DocumentPatch",
+    "KnowledgeDerivation",
+    "KnowledgeDerivationCreate",
+    "KnowledgeDerivationResult",
     "KnowledgeActor",
     "KnowledgeProvider",
     "KnowledgeProviderResolver",
@@ -80,5 +87,8 @@ __all__ = [
     "WikiAccess",
     "WikiService",
     "create_wiki_router",
+    "KnowledgeSearchHit",
+    "KnowledgeActivityItem",
+    "KnowledgeSearchIndex",
     "create_provider_knowledge_router",
 ]

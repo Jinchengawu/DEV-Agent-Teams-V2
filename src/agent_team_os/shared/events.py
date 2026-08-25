@@ -15,6 +15,6 @@ class ProductEvent(BaseModel):
     aggregate_type: str
     aggregate_id: str
     aggregate_version: int = Field(ge=1)
+    project_id: str | None = None
     payload: dict[str, object] = Field(default_factory=dict)
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-

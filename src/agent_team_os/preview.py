@@ -27,7 +27,6 @@ from .git_delivery import (
     GitCandidateVerifier,
     GitCodeExecutor,
 )
-from .git_sandbox import GitSandbox
 from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
@@ -36,6 +35,7 @@ from .infrastructure.acwm import (
     PipelineBindingResolutionError,
 )
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
+from .infrastructure.git import ProjectGitWorkspaces
 from .journey import (
     load_backend_delivery_definition,
     resolve_backend_delivery_fingerprint,
@@ -52,13 +52,19 @@ from .modules.agents import (
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
-from .modules.knowledge import SQLiteWikiRepository, WikiService
+from .modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
 from .modules.orchestration import (
+    Pipeline,
     PipelineCatalog,
     PipelineCreate,
     PipelineRunLedger,
     SQLitePipelineRepository,
     SQLitePipelineRunRepository,
+)
+from .modules.projects import (
+    ProjectCatalog,
+    ProjectLeaseDeliveryRepository,
+    SQLiteProjectRepository,
 )
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import (
@@ -110,7 +116,7 @@ def _has_acwm_graph_runtime() -> bool:
 
 def _ensure_builtin_pipeline_for_preview(
     catalog: PipelineCatalog, request: PipelineCreate
-) -> object | None:
+) -> Pipeline | None:
     """Keep the repair UI online when product-owned bindings need attention."""
     try:
         return catalog.ensure_builtin_pipeline(request, actor_id="system")
@@ -130,8 +136,10 @@ def build_preview_app() -> FastAPI:
     )
     runner = ACWMCodexRoleRunner(workspace=project_root)
     code_agent = ACWMCodexWorkspaceAgent()
-    sandbox = GitSandbox(data_dir / "workspaces")
+    project_workspaces = ProjectGitWorkspaces(data_dir / "workspaces")
+    sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
+    projects = ProjectCatalog(SQLiteProjectRepository(database), project_workspaces)
 
     def reset_workspace() -> str:
         active = {
@@ -149,17 +157,18 @@ def build_preview_app() -> FastAPI:
             raise DeliveryStateConflictError("cannot reset while a Delivery is active")
         return sandbox.reset()
 
+    delivery_repository = ProjectLeaseDeliveryRepository(
+        SQLiteDeliveryRepository(database), projects
+    )
     coordinator = DeliveryCoordinator(
         planning=CodexSimulatedHermesPlanning(runner),
-        executor=GitCodeExecutor(sandbox, code_agent),
-        verifier=GitCandidateVerifier(sandbox),
-        applier=GitCandidateApplier(sandbox),
-        repository=SQLiteDeliveryRepository(database),
+        executor=GitCodeExecutor(project_workspaces, code_agent),
+        verifier=GitCandidateVerifier(project_workspaces),
+        applier=GitCandidateApplier(project_workspaces),
+        repository=delivery_repository,
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
-    control_plane = ControlPlaneService(
-        database, config_root=project_root / "config"
-    )
+    control_plane = ControlPlaneService(database, config_root=project_root / "config")
     control_plane.import_builtin_journey(
         planning_identity="codex-simulated-hermes",
         execution_identity="codex-cli",
@@ -172,9 +181,7 @@ def build_preview_app() -> FastAPI:
         control_plane,
         provider_manifests,
     )
-    builtin_assignments = ensure_builtin_agent_deployments(
-        agent_profiles, agent_deployments
-    )
+    builtin_assignments = ensure_builtin_agent_deployments(agent_profiles, agent_deployments)
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
         graph_compiler=ACWMGraphCompiler(),
@@ -186,7 +193,7 @@ def build_preview_app() -> FastAPI:
         ),
         definition_policy=BackendDeliveryPipelinePolicy(),
     )
-    _ensure_builtin_pipeline_for_preview(
+    builtin_pipeline = _ensure_builtin_pipeline_for_preview(
         pipeline_catalog,
         PipelineCreate(
             id="backend-delivery",
@@ -196,6 +203,24 @@ def build_preview_app() -> FastAPI:
             agent_assignments=builtin_assignments,
         ),
     )
+
+    def validate_project_pipeline(revision_id: str) -> None:
+        pipeline_catalog.resolve_revision(revision_id)
+
+    def validate_project_deployment(deployment_id: str) -> None:
+        deployment = agent_deployments.get(deployment_id)
+        if not deployment.enabled or deployment.qualification_status != "qualified":
+            raise ValueError("deployment is not enabled and qualified")
+
+    projects.configure_resource_validators(
+        pipeline=validate_project_pipeline,
+        deployment=validate_project_deployment,
+    )
+    if builtin_pipeline is not None and getattr(builtin_pipeline, "active_revision", None):
+        projects.ensure_legacy_defaults(
+            f"backend-delivery:{builtin_pipeline.active_revision}",
+            tuple(sorted(set(builtin_assignments.values()))),
+        )
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
@@ -205,7 +230,9 @@ def build_preview_app() -> FastAPI:
         evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
-        knowledge=WikiService(SQLiteWikiRepository(database)),
+        knowledge=WikiService(
+            SQLiteWikiRepository(database), project_guard=projects.assert_writable
+        ),
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
@@ -214,11 +241,15 @@ def build_preview_app() -> FastAPI:
         agent_deployments=agent_deployments,
         provider_manifests=provider_manifests,
         agent_runs=AgentRunLedger(database),
+        projects=projects,
+        knowledge_search=KnowledgeSearchIndex(database),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        projects.recover_provisioning()
+        delivery_repository.reconcile_leases()
         await coordinator.recover()
         try:
             yield
@@ -277,9 +308,7 @@ def main() -> None:
                 reports.append(report)
                 print(json.dumps(report.model_dump(mode="json"), ensure_ascii=False))
             if command == "release":
-                combined = combined_gate_status(
-                    {report.kind: report for report in reports}
-                )
+                combined = combined_gate_status({report.kind: report for report in reports})
                 print(json.dumps(combined.model_dump(mode="json"), ensure_ascii=False))
                 return 0 if combined.status == "passed" else 1
             return 0 if reports[0].status == "passed" else 1
