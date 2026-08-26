@@ -20,6 +20,7 @@ type WorkCommand = components["schemas"]["WorkItemCommand"]["command"];
 const columns: Array<{ id: BoardColumn; label: string; note: string }> = [
   { id: "backlog", label: "待规划", note: "等待机器生成计划" },
   { id: "plan-approval", label: "计划审批", note: "需要人工授权" },
+  { id: "design-approval", label: "设计审批", note: "确认 UI 规范" },
   { id: "executing", label: "执行中", note: "机器受控运行" },
   { id: "candidate-approval", label: "候选审批", note: "检查差异与证据" },
   { id: "completed", label: "已完成", note: "已生成应用回执" },
@@ -28,6 +29,7 @@ const columns: Array<{ id: BoardColumn; label: string; note: string }> = [
 
 const commandByMove: Partial<Record<BoardColumn, Partial<Record<BoardColumn, WorkCommand>>>> = {
   "plan-approval": { executing: "approve-plan", "failed-cancelled": "reject-plan" },
+  "design-approval": { executing: "approve-design", "failed-cancelled": "reject-design" },
   "candidate-approval": { completed: "accept-candidate", "failed-cancelled": "reject-candidate" },
   backlog: { "failed-cancelled": "cancel" },
   executing: { "failed-cancelled": "cancel" },
@@ -87,7 +89,7 @@ export function BoardPage() {
       <section className="board interactive-board">{columns.map((column) => <BoardLane key={column.id} {...column} items={grouped[column.id]} onOpen={setSelected}/>)}</section>
       <DragOverlay>{active && <WorkCard item={active} overlay/>}</DragOverlay>
     </DndContext>
-    <ConfirmDialog open={Boolean(pending)} title={pending ? commandLabel(pending.command) : "确认看板命令"} detail={`此操作将对交付 ${pending?.item.delivery_id ?? ""} 发出真实命令。卡片只会在后端成功写入状态、事件和对应证据后进入目标列。`} confirmLabel="确认发出命令" cancelLabel="返回看板" tone={pending && ["reject-plan", "reject-candidate", "cancel"].includes(pending.command) ? "danger" : "warning"} pending={command.isPending} onCancel={() => setPending(undefined)} onConfirm={() => { if (pending) command.mutate({ item: pending.item, command: pending.command }); }}/>
+    <ConfirmDialog open={Boolean(pending)} title={pending ? commandLabel(pending.command) : "确认看板命令"} detail={`此操作将对交付 ${pending?.item.delivery_id ?? ""} 发出真实命令。卡片只会在后端成功写入状态、事件和对应证据后进入目标列。`} confirmLabel="确认发出命令" cancelLabel="返回看板" tone={pending && ["reject-plan", "reject-design", "reject-candidate", "cancel"].includes(pending.command) ? "danger" : "warning"} pending={command.isPending} onCancel={() => setPending(undefined)} onConfirm={() => { if (pending) command.mutate({ item: pending.item, command: pending.command }); }}/>
     {command.error && <ErrorState error={command.error}/>}
     {selected && <aside className="work-item-drawer" role="dialog" aria-modal="false" aria-labelledby="work-item-title"><header><div><span className="eyebrow">项目任务详情</span><h2 id="work-item-title">{selected.title}</h2></div><Button type="text" aria-label="关闭任务详情" icon={<X size={16}/>} onClick={() => setSelected(undefined)}/></header><dl><dt>交付 ID</dt><dd><code>{selected.delivery_id}</code></dd><dt>当前状态</dt><dd><StatusBadge value={selected.column}/></dd><dt>投影版本</dt><dd>v{selected.version}</dd><dt>验收标准</dt><dd>{selected.acceptance_ids.length ? selected.acceptance_ids.join(" · ") : "等待任务合同"}</dd><dt>可用命令</dt><dd>{selected.available_commands.length ? selected.available_commands.map(commandLabel).join("、") : "当前无可用命令"}</dd></dl><Link className="primary drawer-link" to={`${projectPath(projectId, "deliveries")}?delivery_id=${encodeURIComponent(selected.delivery_id)}`}>打开该交付并审查证据</Link></aside>}
   </>;

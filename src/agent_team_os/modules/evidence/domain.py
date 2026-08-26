@@ -10,12 +10,17 @@ from ...shared.hashes import Sha256
 
 class EvidenceKind(StrEnum):
     JOURNEY = "journey"
+    REQUIREMENT = "requirement"
+    TASK = "task"
     PLAN_GATE = "plan-gate"
+    DESIGN_GATE = "design-gate"
     CANDIDATE = "candidate"
     DIFF = "diff"
     VERIFICATION = "verification"
     CANDIDATE_GATE = "candidate-gate"
     APPLY_RECEIPT = "apply-receipt"
+    RELEASE_BUNDLE = "release-bundle"
+    RELEASE_MANIFEST = "release-manifest"
 
 
 class EvidenceStatus(StrEnum):

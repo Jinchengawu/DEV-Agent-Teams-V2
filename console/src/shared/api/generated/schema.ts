@@ -91,6 +91,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/repositories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Repositories */
+        get: operations["list_repositories_v1_projects__project_id__repositories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/repositories/provision-fullstack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Provision Fullstack */
+        post: operations["provision_fullstack_v1_projects__project_id__repositories_provision_fullstack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/pipeline-bindings": {
         parameters: {
             query?: never;
@@ -1336,6 +1370,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deliveries/{delivery_id}/design-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Design */
+        post: operations["decide_design_v1_deliveries__delivery_id__design_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deliveries/{delivery_id}/pipeline-run": {
         parameters: {
             query?: never;
@@ -1527,6 +1578,13 @@ export interface components {
             policy_snapshot: {
                 [key: string]: string;
             };
+            /**
+             * Extension Snapshot
+             * @default []
+             */
+            extension_snapshot: {
+                [key: string]: unknown;
+            }[];
             /**
              * Qualification Status
              * @default unknown
@@ -1993,11 +2051,23 @@ export interface components {
             /** Contract Id */
             contract_id: string;
             /** Content */
-            content: {
+            content?: {
                 [key: string]: unknown;
-            };
+            } | null;
+            reference?: components["schemas"]["ArtifactReference"] | null;
             /** Sha256 */
             sha256: string;
+        };
+        /** ArtifactReference */
+        ArtifactReference: {
+            /** Uri */
+            uri: string;
+            /** Sha256 */
+            sha256: string;
+            /** Media Type */
+            media_type: string;
+            /** Size Bytes */
+            size_bytes: number;
         };
         /** BindingRequest */
         BindingRequest: {
@@ -2166,15 +2236,23 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "planning" | "awaiting_plan_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "completed" | "rejected" | "failed" | "cancelled";
+            status: "queued" | "planning" | "awaiting_plan_decision" | "awaiting_design_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "completed" | "rejected" | "failed" | "cancelled";
             /** Version */
             version: number;
             requirements?: components["schemas"]["RequirementArtifact"] | null;
             task?: components["schemas"]["TaskContract"] | null;
             candidate?: components["schemas"]["CandidateChange"] | null;
             verification?: components["schemas"]["VerificationRun"] | null;
+            /**
+             * Repository Candidates
+             * @default []
+             */
+            repository_candidates: components["schemas"]["RepositoryCandidate"][];
+            release_bundle?: components["schemas"]["ReleaseBundle"] | null;
+            release_manifest?: components["schemas"]["ReleaseManifest"] | null;
             apply_receipt?: components["schemas"]["ApplyReceipt"] | null;
             plan_gate?: components["schemas"]["GateRecord"] | null;
+            design_gate?: components["schemas"]["GateRecord"] | null;
             candidate_gate?: components["schemas"]["GateRecord"] | null;
             /** Pipeline Run Id */
             pipeline_run_id?: string | null;
@@ -2216,6 +2294,18 @@ export interface components {
             planning_identity: string;
             /** Execution Identity */
             execution_identity?: string | null;
+        };
+        /** DesignDecisionRequest */
+        DesignDecisionRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "approve" | "reject";
+            /** Expected Version */
+            expected_version: number;
+            /** Expected Subject Sha256 */
+            expected_subject_sha256: string;
         };
         /** Document */
         Document: {
@@ -2277,7 +2367,7 @@ export interface components {
          * EvidenceKind
          * @enum {string}
          */
-        EvidenceKind: "journey" | "plan-gate" | "candidate" | "diff" | "verification" | "candidate-gate" | "apply-receipt";
+        EvidenceKind: "journey" | "requirement" | "task" | "plan-gate" | "design-gate" | "candidate" | "diff" | "verification" | "candidate-gate" | "apply-receipt" | "release-bundle" | "release-manifest";
         /** EvidenceRecord */
         EvidenceRecord: {
             /** Id */
@@ -3034,6 +3124,12 @@ export interface components {
              * @default []
              */
             deployment_ids: string[];
+            /**
+             * Repository Mode
+             * @default backend
+             * @enum {string}
+             */
+            repository_mode: "backend" | "fullstack";
         };
         /** ProjectDeploymentAccess */
         ProjectDeploymentAccess: {
@@ -3082,6 +3178,11 @@ export interface components {
              * @default []
              */
             knowledge_sources: components["schemas"]["ProjectKnowledgeSource"][];
+            /**
+             * Repositories
+             * @default []
+             */
+            repositories: components["schemas"]["ProjectRepository"][];
             /** Active Delivery Id */
             active_delivery_id?: string | null;
         };
@@ -3102,6 +3203,13 @@ export interface components {
              * @default []
              */
             deployment_ids: string[];
+            /**
+             * Repositories
+             * @default []
+             */
+            repositories: components["schemas"]["RepositorySnapshot"][];
+            /** Repository Set Sha256 */
+            repository_set_sha256?: string | null;
         };
         /** ProjectKnowledgeSource */
         ProjectKnowledgeSource: {
@@ -3164,6 +3272,41 @@ export interface components {
             is_default: boolean;
             /** Version */
             version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** ProjectRepository */
+        ProjectRepository: {
+            /** Project Id */
+            project_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "backend" | "design" | "frontend" | "qa";
+            /** Workspace Ref */
+            workspace_ref: string;
+            /** Repository Ref */
+            repository_ref: string;
+            /** Seed Revision */
+            seed_revision?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "provisioning" | "ready" | "failed";
+            /** Provision Attempt */
+            provision_attempt: number;
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
             /**
              * Updated At
              * Format: date-time
@@ -3242,6 +3385,109 @@ export interface components {
              * @default []
              */
             permission_requirements: string[];
+        };
+        /** ReleaseBundle */
+        ReleaseBundle: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Repository Set Sha256 */
+            repository_set_sha256: string;
+            /** Candidates */
+            candidates: components["schemas"]["RepositoryCandidate"][];
+            /** Bundle Sha256 */
+            bundle_sha256: string;
+            /**
+             * Status
+             * @default verified
+             * @constant
+             */
+            status: "verified";
+            /**
+             * Verified At
+             * Format: date-time
+             */
+            verified_at?: string;
+        };
+        /** ReleaseManifest */
+        ReleaseManifest: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Bundle Sha256 */
+            bundle_sha256: string;
+            /** Repositories */
+            repositories: components["schemas"]["RepositoryApplyReceipt"][];
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /**
+             * Status
+             * @default active
+             * @constant
+             */
+            status: "active";
+            /**
+             * Activated At
+             * Format: date-time
+             */
+            activated_at?: string;
+        };
+        /** RepositoryApplyReceipt */
+        RepositoryApplyReceipt: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "backend" | "design" | "frontend" | "qa";
+            /** Workspace Ref */
+            workspace_ref: string;
+            /** Repository Ref */
+            repository_ref: string;
+            receipt: components["schemas"]["ApplyReceipt"];
+        };
+        /** RepositoryCandidate */
+        RepositoryCandidate: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "backend" | "design" | "frontend" | "qa";
+            /** Workspace Ref */
+            workspace_ref: string;
+            /** Repository Ref */
+            repository_ref: string;
+            candidate: components["schemas"]["CandidateChange"];
+            verification: components["schemas"]["VerificationRun"];
+            /** Producer Identity */
+            producer_identity: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /**
+         * RepositorySnapshot
+         * @description Immutable repository identity frozen into a Delivery execution context.
+         */
+        RepositorySnapshot: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "backend" | "design" | "frontend" | "qa";
+            /** Workspace Ref */
+            workspace_ref: string;
+            /** Repository Ref */
+            repository_ref: string;
+            /** Seed Revision */
+            seed_revision: string;
         };
         /** RequirementArtifact */
         RequirementArtifact: {
@@ -3506,7 +3752,7 @@ export interface components {
              * Column
              * @enum {string}
              */
-            column: "backlog" | "plan-approval" | "executing" | "candidate-approval" | "completed" | "failed-cancelled";
+            column: "backlog" | "plan-approval" | "design-approval" | "executing" | "candidate-approval" | "completed" | "failed-cancelled";
             /**
              * Acceptance Ids
              * @default []
@@ -3528,7 +3774,7 @@ export interface components {
              * Command
              * @enum {string}
              */
-            command: "approve-plan" | "reject-plan" | "accept-candidate" | "reject-candidate" | "cancel";
+            command: "approve-plan" | "reject-plan" | "approve-design" | "reject-design" | "accept-candidate" | "reject-candidate" | "cancel";
             /** Expected Version */
             expected_version: number;
         };
@@ -3917,6 +4163,122 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_repositories_v1_projects__project_id__repositories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectRepository"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    provision_fullstack_v1_projects__project_id__repositories_provision_fullstack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDetail"];
                 };
             };
             /** @description 目标资源不存在 */
@@ -9435,6 +9797,68 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRun"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    decide_design_v1_deliveries__delivery_id__design_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DesignDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

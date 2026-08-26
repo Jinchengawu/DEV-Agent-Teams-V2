@@ -6,10 +6,17 @@ from typing import cast
 
 
 class BackendDeliveryPipelinePolicy:
-    required_capabilities = frozenset(
-        {"hermes-pm", "hermes-project-admin", "codex-backend"}
+    legacy_capabilities = frozenset({"hermes-pm", "hermes-project-admin", "codex-backend"})
+    fullstack_capabilities = frozenset(
+        {
+            "hermes-pm",
+            "hermes-project-admin",
+            "design.system",
+            "codex-backend",
+            "frontend.implementation",
+            "testing.review",
+        }
     )
-    required_gate_subjects = frozenset({"delivery-plan", "candidate-change"})
     emitted_conditions = frozenset(
         {
             "requirements-ready",
@@ -24,6 +31,16 @@ class BackendDeliveryPipelinePolicy:
             "tests-failed",
             "accepted",
             "candidate-accepted",
+            "design-approved",
+            "backend-candidate-verified",
+            "design-candidate-verified",
+            "frontend-candidate-verified",
+            "qa-candidate-verified",
+            "backend-tests-failed",
+            "design-tests-failed",
+            "frontend-tests-failed",
+            "qa-tests-failed",
+            "release-bundle-verified",
         }
     )
 
@@ -31,27 +48,32 @@ class BackendDeliveryPipelinePolicy:
         nodes = _items(definition.get("nodes") or definition.get("steps"))
         capabilities = _capabilities(nodes)
         outer_gates = tuple(
-            str(node.get("subject_kind"))
-            for node in nodes
-            if node.get("kind") == "approval_gate"
+            str(node.get("subject_kind")) for node in nodes if node.get("kind") == "approval_gate"
         )
         errors: list[str] = []
-        for capability in sorted(self.required_capabilities - capabilities):
+        fullstack = bool(capabilities & (self.fullstack_capabilities - self.legacy_capabilities))
+        required_capabilities = (
+            self.fullstack_capabilities if fullstack else self.legacy_capabilities
+        )
+        required_gate_subjects = (
+            frozenset({"delivery-plan", "design-candidate", "release-bundle"})
+            if fullstack
+            else frozenset({"delivery-plan", "candidate-change"})
+        )
+        for capability in sorted(required_capabilities - capabilities):
             errors.append(
                 f"DELIVERY_PIPELINE_MISSING_CAPABILITY:{capability}:"
                 f"缺少必要 Capability {capability}"
             )
-        for subject in sorted(self.required_gate_subjects):
+        for subject in sorted(required_gate_subjects):
             count = outer_gates.count(subject)
             if count == 0:
                 errors.append(
-                    f"DELIVERY_PIPELINE_MISSING_GATE:{subject}:"
-                    f"缺少必要审批 Gate {subject}"
+                    f"DELIVERY_PIPELINE_MISSING_GATE:{subject}:缺少必要审批 Gate {subject}"
                 )
             elif count > 1:
                 errors.append(
-                    f"DELIVERY_PIPELINE_DUPLICATE_GATE:{subject}:"
-                    f"审批 Gate {subject} 只能出现一次"
+                    f"DELIVERY_PIPELINE_DUPLICATE_GATE:{subject}:审批 Gate {subject} 只能出现一次"
                 )
         for node in nodes:
             if node.get("kind") != "loop":
@@ -74,9 +96,7 @@ class BackendDeliveryPipelinePolicy:
 def _items(value: object) -> tuple[dict[str, object], ...]:
     if not isinstance(value, list | tuple):
         return ()
-    return tuple(
-        cast(dict[str, object], item) for item in value if isinstance(item, dict)
-    )
+    return tuple(cast(dict[str, object], item) for item in value if isinstance(item, dict))
 
 
 def _capabilities(nodes: tuple[dict[str, object], ...]) -> frozenset[str]:

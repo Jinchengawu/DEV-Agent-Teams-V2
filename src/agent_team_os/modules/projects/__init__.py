@@ -11,6 +11,7 @@ from .domain import (
     ProjectKnowledgeSourceUpdate,
     ProjectPatch,
     ProjectPipelineBinding,
+    ProjectRepository,
     ProjectWorkspace,
 )
 from .http import create_project_router
@@ -30,6 +31,7 @@ __all__ = [
     "ProjectKnowledgeSourceUpdate",
     "ProjectPatch",
     "ProjectPipelineBinding",
+    "ProjectRepository",
     "ProjectWorkspace",
     "ProjectLeaseDeliveryRepository",
     "SQLiteProjectRepository",

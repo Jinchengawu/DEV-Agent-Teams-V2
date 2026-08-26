@@ -8,6 +8,7 @@ from .domain import (
     ProjectDeploymentAccess,
     ProjectKnowledgeSource,
     ProjectPipelineBinding,
+    ProjectRepository,
     ProjectWorkspace,
 )
 
@@ -44,6 +45,24 @@ class SQLiteProjectRepository:
                     workspace.workspace_id,
                     workspace.seed_revision,
                     workspace.repository_ref,
+                    workspace.status,
+                    workspace.provision_attempt,
+                    workspace.error_code,
+                    workspace.created_at.isoformat(),
+                    workspace.updated_at.isoformat(),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO project_repositories(
+                project_id,role,workspace_ref,repository_ref,seed_revision,status,
+                provision_attempt,error_code,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    workspace.project_id,
+                    "backend",
+                    workspace.workspace_id,
+                    workspace.repository_ref,
+                    workspace.seed_revision,
                     workspace.status,
                     workspace.provision_attempt,
                     workspace.error_code,
@@ -97,6 +116,7 @@ class SQLiteProjectRepository:
 
     def update_workspace(self, workspace: ProjectWorkspace) -> None:
         with sqlite3.connect(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """UPDATE project_workspaces SET seed_revision=?,status=?,provision_attempt=?,
                 error_code=?,updated_at=? WHERE project_id=?""",
@@ -107,6 +127,58 @@ class SQLiteProjectRepository:
                     workspace.error_code,
                     workspace.updated_at.isoformat(),
                     workspace.project_id,
+                ),
+            )
+            connection.execute(
+                """UPDATE project_repositories SET seed_revision=?,status=?,
+                provision_attempt=?,error_code=?,updated_at=?
+                WHERE project_id=? AND role='backend'""",
+                (
+                    workspace.seed_revision,
+                    workspace.status,
+                    workspace.provision_attempt,
+                    workspace.error_code,
+                    workspace.updated_at.isoformat(),
+                    workspace.project_id,
+                ),
+            )
+
+    def list_repositories(self, project_id: str) -> tuple[ProjectRepository, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT project_id,role,workspace_ref,repository_ref,seed_revision,
+                status,provision_attempt,error_code,created_at,updated_at
+                FROM project_repositories WHERE project_id=? ORDER BY role""",
+                (project_id,),
+            ).fetchall()
+        return tuple(_repository(row) for row in rows)
+
+    def put_repository(self, repository: ProjectRepository) -> None:
+        with sqlite3.connect(self.database) as connection:
+            connection.execute(
+                """INSERT INTO project_repositories(
+                project_id,role,workspace_ref,repository_ref,seed_revision,status,
+                provision_attempt,error_code,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(project_id,role) DO UPDATE SET
+                workspace_ref=excluded.workspace_ref,
+                repository_ref=excluded.repository_ref,
+                seed_revision=excluded.seed_revision,
+                status=excluded.status,
+                provision_attempt=excluded.provision_attempt,
+                error_code=excluded.error_code,
+                updated_at=excluded.updated_at""",
+                (
+                    repository.project_id,
+                    repository.role,
+                    repository.workspace_ref,
+                    repository.repository_ref,
+                    repository.seed_revision,
+                    repository.status,
+                    repository.provision_attempt,
+                    repository.error_code,
+                    repository.created_at.isoformat(),
+                    repository.updated_at.isoformat(),
                 ),
             )
 
@@ -292,6 +364,22 @@ def _workspace(row: tuple[object, ...]) -> ProjectWorkspace:
         "updated_at",
     )
     return ProjectWorkspace.model_validate(dict(zip(fields, row, strict=True)))
+
+
+def _repository(row: tuple[object, ...]) -> ProjectRepository:
+    fields = (
+        "project_id",
+        "role",
+        "workspace_ref",
+        "repository_ref",
+        "seed_revision",
+        "status",
+        "provision_attempt",
+        "error_code",
+        "created_at",
+        "updated_at",
+    )
+    return ProjectRepository.model_validate(dict(zip(fields, row, strict=True)))
 
 
 def _pipeline_binding(row: tuple[object, ...]) -> ProjectPipelineBinding:

@@ -169,6 +169,7 @@ class WorkItem(ImmutableModel):
     column: Literal[
         "backlog",
         "plan-approval",
+        "design-approval",
         "executing",
         "candidate-approval",
         "completed",
@@ -186,6 +187,8 @@ class WorkItemCommand(BaseModel):
     command: Literal[
         "approve-plan",
         "reject-plan",
+        "approve-design",
+        "reject-design",
         "accept-candidate",
         "reject-candidate",
         "cancel",
@@ -651,6 +654,7 @@ class ControlPlaneService:
             "queued": "backlog",
             "planning": "backlog",
             "awaiting_plan_decision": "plan-approval",
+            "awaiting_design_decision": "design-approval",
             "executing": "executing",
             "verifying": "executing",
             "awaiting_candidate_decision": "candidate-approval",
@@ -662,6 +666,11 @@ class ControlPlaneService:
         }
         commands = {
             "awaiting_plan_decision": ("approve-plan", "reject-plan", "cancel"),
+            "awaiting_design_decision": (
+                "approve-design",
+                "reject-design",
+                "cancel",
+            ),
             "awaiting_candidate_decision": (
                 "accept-candidate",
                 "reject-candidate",

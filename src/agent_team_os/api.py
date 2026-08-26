@@ -37,6 +37,7 @@ from .delivery import (
     DeliveryVersionConflictError,
     PlanningServiceError,
     ProjectExecutionSnapshot,
+    ReleaseApplier,
     RuntimeBindingConflictError,
 )
 from .modules.agents import (
@@ -57,6 +58,7 @@ from .modules.evidence import (
     EvidenceStatus,
     EvidenceVerificationRecord,
 )
+from .modules.extensions import RuntimeExtensionCatalog, create_runtime_extension_router
 from .modules.identity import (
     CSRF_HEADER,
     SESSION_COOKIE,
@@ -125,6 +127,14 @@ class CandidateDecisionRequest(BaseModel):
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class DesignDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    expected_version: int = Field(ge=1)
+    expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class CancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -151,9 +161,16 @@ def create_app(
     agent_runs: AgentRunLedger | None = None,
     projects: ProjectCatalog | None = None,
     knowledge_search: KnowledgeSearchIndex | None = None,
+    runtime_extensions: RuntimeExtensionCatalog | None = None,
+    release_applier: ReleaseApplier | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
-        coordinator.configure_pipeline_runtime(pipeline_catalog, pipeline_runs, agent_runs)
+        coordinator.configure_pipeline_runtime(
+            pipeline_catalog,
+            pipeline_runs,
+            agent_runs,
+            release_applier=release_applier,
+        )
     app = FastAPI(
         title="Agent-Team-OS",
         version="0.4.0",
@@ -256,6 +273,22 @@ def create_app(
                 actor_id=agent_deployment_actor_id,
                 authorize_manage=lambda request: require_permission(
                     request, Permission.AGENT_DEPLOYMENT_MANAGE
+                ),
+            )
+        )
+
+    if runtime_extensions is not None:
+
+        def runtime_extension_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_runtime_extension_router(
+                runtime_extensions,
+                actor_id=runtime_extension_actor_id,
+                authorize_manage=lambda request: require_permission(
+                    request, Permission.RUNTIME_EXTENSION_MANAGE
                 ),
             )
         )
@@ -396,6 +429,7 @@ def create_app(
                 if not result.created:
                     response.status_code = 200
                 return result
+
         if provider_knowledge is not None:
             app.include_router(
                 create_provider_knowledge_router(
@@ -621,6 +655,19 @@ def create_app(
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.plan_gate.subject_sha256,
+                    )
+                if request_body.command in {"approve-design", "reject-design"}:
+                    if delivery.design_gate is None:
+                        raise DeliveryStateConflictError(work_item_id)
+                    return coordinator.start_design_decision(
+                        work_item_id,
+                        decision=(
+                            "approve"
+                            if request_body.command == "approve-design"
+                            else "reject"
+                        ),
+                        expected_version=request_body.expected_version,
+                        expected_subject_sha256=delivery.design_gate.subject_sha256,
                     )
                 if request_body.command in {"accept-candidate", "reject-candidate"}:
                     if delivery.candidate_gate is None:
@@ -907,6 +954,32 @@ def create_app(
             return service.get(delivery_id)
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
+
+    @app.post(
+        "/v1/deliveries/{delivery_id}/design-decision",
+        response_model=DeliveryRun,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def decide_design(
+        delivery_id: str,
+        request_body: DesignDecisionRequest,
+        request: Request,
+        service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
+    ) -> DeliveryRun:
+        require_permission(request, Permission.PLAN_DECIDE)
+        try:
+            return service.start_design_decision(
+                delivery_id,
+                decision=request_body.decision,
+                expected_version=request_body.expected_version,
+                expected_subject_sha256=request_body.expected_subject_sha256,
+            )
+        except DeliveryNotFoundError as error:
+            raise HTTPException(status_code=404, detail="delivery not found") from error
+        except DeliveryVersionConflictError as error:
+            raise HTTPException(status_code=409, detail="delivery version conflict") from error
+        except DeliveryStateConflictError as error:
+            raise HTTPException(status_code=409, detail="delivery state conflict") from error
 
     @app.get(
         "/v1/deliveries/{delivery_id}/pipeline-run",

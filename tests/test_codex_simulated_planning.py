@@ -13,9 +13,11 @@ class ScriptedCodexRoleRunner:
     def __init__(self, responses: list[str]) -> None:
         self.responses = deque(responses)
         self.roles: list[str] = []
+        self.prompts: list[str] = []
 
     async def run(self, role: str, prompt: str) -> str:
         self.roles.append(role)
+        self.prompts.append(prompt)
         return self.responses.popleft()
 
 
@@ -72,6 +74,10 @@ def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> N
         "verification_commands": ["python -m unittest discover -s tests -v"],
     }
     assert runner.roles == ["hermes-pm-simulator"] * 2 + ["hermes-admin-simulator"] * 2
+    assert all("Do not call tools" in prompt for prompt in runner.prompts)
+    assert all("inspect the workspace" in prompt for prompt in runner.prompts)
+    assert "product-delivery task" in runner.prompts[-1]
+    assert "frontend, backend and QA" in runner.prompts[-1]
 
 
 def test_invalid_codex_planning_fails_as_an_upstream_error() -> None:

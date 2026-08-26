@@ -68,11 +68,12 @@ class ProviderManifestCatalog:
 def _codex_provider() -> CapabilityProviderManifest:
     return CapabilityProviderManifest.create(
         provider_id="codex-cli-provider",
-        provider_revision="1",
+        provider_revision="2",
         capabilities=tuple(
             ProviderCapability(id=capability_id, version="1.0.0")
             for capability_id in (
                 "codex-backend",
+                "design.system",
                 "hermes-pm",
                 "hermes-project-admin",
                 "frontend.implementation",

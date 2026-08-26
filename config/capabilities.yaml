@@ -21,3 +21,30 @@ capabilities:
       config:
         sandbox: workspace-write
         timeout_seconds: 180
+
+  - id: design.system
+    version: "1.0.0"
+    labels: [designer, ui, specification]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: workspace-write
+        timeout_seconds: 180
+
+  - id: frontend.implementation
+    version: "1.0.0"
+    labels: [developer, frontend]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: workspace-write
+        timeout_seconds: 180
+
+  - id: testing.review
+    version: "1.0.0"
+    labels: [qa, testing]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: workspace-write
+        timeout_seconds: 180

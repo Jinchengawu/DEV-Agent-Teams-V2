@@ -19,6 +19,7 @@ function delivery(): Delivery {
     requirements: { summary: "实现健康检查", non_goals: [], risks: [], acceptance_criteria: [{ id: "AC-001", statement: "返回健康状态" }] },
     task: { title: "实现健康检查", instructions: "修改受限路径", acceptance_ids: ["AC-001"], system_policy: { allowed_paths: ["src/**"], verification_commands: ["python -m unittest"] } },
     plan_gate: { gate_id: "gate-1", subject_kind: "plan", artifact_id: "task-1", subject_sha256: hash, revision: 1 },
+    repository_candidates: [],
     journey_binding_snapshot: {},
     resolved_journey_sha256: hash,
     evidence_identity: "deterministic-test",
@@ -30,11 +31,26 @@ describe("交付黄金纵切", () => {
   it("把计划审批映射为带明确语义的真实命令", async () => {
     const onDecision = vi.fn();
     render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/></MemoryRouter>);
-    await userEvent.click(screen.getByRole("button", { name: "批准计划并开始执行" }));
-    expect(screen.getByRole("alertdialog", { name: "批准计划并启动代码执行" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "批准计划并开始设计" }));
+    expect(screen.getByRole("alertdialog", { name: "批准计划并启动 UI 设计" })).toBeTruthy();
     expect(onDecision).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "确认批准并执行" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认批准计划" }));
     expect(onDecision).toHaveBeenCalledWith("approve-plan");
     expect(screen.getByText("当前阶段尚无证据。只有真实产物生成后才会出现记录。")).toBeTruthy();
+  });
+
+  it("把设计审批保持为独立 Gate，不能绕过后直接发布", async () => {
+    const onDecision = vi.fn();
+    const designDelivery = delivery();
+    designDelivery.status = "awaiting_design_decision";
+    designDelivery.version = 4;
+    designDelivery.design_gate = { gate_id: "gate-design", subject_kind: "design", artifact_id: "candidate-design", subject_sha256: hash, revision: 1 };
+    render(<MemoryRouter><DeliveryDetail delivery={designDelivery} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/></MemoryRouter>);
+
+    await userEvent.click(screen.getByRole("button", { name: "批准设计并开始前后端实现" }));
+    expect(screen.getByRole("alertdialog", { name: "批准 UI 设计候选" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "确认批准设计" }));
+    expect(onDecision).toHaveBeenCalledWith("approve-design");
+    expect(screen.queryByRole("button", { name: /四仓发布/ })).toBeNull();
   });
 });

@@ -131,7 +131,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .status { font-size: 12px; background: #f7f9fc; border-radius: 999px; padding: 4px 8px; }
 .status-ready, .status-active, .status-completed, .status-passed, .status-verified, .status-valid { color: #08715f; border-color: #65ad9f; }
 .status-failed, .status-rejected, .status-cancelled, .status-invalid, .status-failed-cancelled, .status-provision-failed { color: #a91f31; border-color: #d98a94; }
-.status-awaiting-plan-decision, .status-awaiting-candidate-decision, .status-plan-approval, .status-candidate-approval { color: #8c3b05; border-color: #d9a279; }
+.status-awaiting-plan-decision, .status-awaiting-design-decision, .status-awaiting-candidate-decision, .status-plan-approval, .status-design-approval, .status-candidate-approval { color: #8c3b05; border-color: #d9a279; }
+
+.operating-map { overflow-x: auto; }
+.map-label { position: sticky; left: 0; z-index: 1; min-width: max-content; }
+.map-track { grid-template-columns: repeat(8, minmax(112px, 1fr)); min-width: 896px; }
+.design-review-panel .panel-head small { display: inline-flex; align-items: center; gap: 6px; }
+.repository-candidates-panel { min-width: 0; }
+.repository-candidate-tabs .ant-tabs-nav { margin-bottom: 14px; }
+.repository-candidate-tabs .ant-tabs-tab { min-height: 44px; }
+.repository-tab-label { display: inline-flex; align-items: center; gap: 8px; }
+.repository-candidate { min-width: 0; }
+.candidate-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.candidate-heading > div { min-width: 0; }
+.candidate-heading b { display: block; margin-top: 5px; overflow-wrap: anywhere; }
+.release-bundle-proof, .release-manifest-head { display: flex; align-items: flex-start; gap: 12px; padding: 15px; border: 1px solid #7fb7aa; border-left: 4px solid var(--cyan); border-radius: 7px; background: #effaf7; color: #134c44; }
+.release-bundle-proof > div, .release-manifest-head > div { display: grid; min-width: 0; gap: 5px; }
+.release-bundle-proof span, .release-manifest-head span { color: #35675f; font-size: 13px; }
+.release-bundle-proof code, .release-manifest-head code { overflow-wrap: anywhere; color: #08715f; }
+.release-manifest { display: grid; gap: 12px; margin-top: 16px; }
+.release-receipts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.release-receipts article { display: grid; gap: 7px; min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfe; }
+.release-receipts small { display: grid; gap: 3px; color: var(--muted); }
+.release-receipts code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .state-box { color: var(--muted); background: #fbfcfe; border-color: var(--line-strong); border-radius: 8px; }
 .modal-backdrop { background: rgba(18, 27, 43, .55); backdrop-filter: blur(2px); }
@@ -282,6 +304,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .board-filters { min-width: 0; grid-template-columns: 1fr 150px; }
   .board-filters > span { grid-column: 1 / -1; }
   .project-resource-grid { grid-template-columns: 1fr; }
+  .release-receipts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 600px) {
@@ -297,6 +320,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .catalog-grid { grid-template-columns: 1fr; }
   .resource-access-list > div { grid-template-columns: minmax(0, 1fr) auto; }
   .resource-actions { grid-column: 1 / -1; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .release-receipts { grid-template-columns: 1fr; }
+  .candidate-heading { flex-direction: column; }
   button:not(.text-button):not(.drag-handle), .main-sidebar nav a { min-height: 44px; }
 }
 

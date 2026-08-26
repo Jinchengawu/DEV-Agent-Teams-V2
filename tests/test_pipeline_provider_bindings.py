@@ -10,7 +10,10 @@ from agent_team_os.infrastructure.acwm import (
     AgentDeploymentBindingResolver,
 )
 from agent_team_os.infrastructure.database import MigrationRunner
-from agent_team_os.journey import load_backend_delivery_definition
+from agent_team_os.journey import (
+    load_backend_delivery_definition,
+    load_fullstack_delivery_definition,
+)
 from agent_team_os.modules.agents import (
     AgentDeploymentCatalog,
     AgentProfileCatalog,
@@ -19,6 +22,7 @@ from agent_team_os.modules.agents import (
     SQLiteAgentDeploymentRepository,
     SQLiteAgentProfileRepository,
     ensure_builtin_agent_deployments,
+    ensure_builtin_fullstack_agent_deployments,
 )
 from agent_team_os.modules.delivery import BackendDeliveryPipelinePolicy
 from agent_team_os.modules.orchestration import (
@@ -29,6 +33,17 @@ from agent_team_os.modules.orchestration import (
     SQLitePipelineRunRepository,
 )
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
+
+
+class CapturingPlanningService(DeterministicPlanningService):
+    evidence_identity = "codex-simulated-hermes"
+
+    def __init__(self) -> None:
+        self.analyze_inputs: list[str] = []
+
+    async def analyze(self, user_request: str):
+        self.analyze_inputs.append(user_request)
+        return await super().analyze(user_request)
 
 
 def _catalog(tmp_path: Path) -> tuple[PipelineCatalog, dict[str, str]]:
@@ -50,9 +65,7 @@ def _catalog(tmp_path: Path) -> tuple[PipelineCatalog, dict[str, str]]:
         PipelineCatalog(
             SQLitePipelineRepository(database),
             graph_compiler=ACWMGraphCompiler(),
-            provider_binding_resolver=AgentDeploymentBindingResolver(
-                deployments, providers
-            ),
+            provider_binding_resolver=AgentDeploymentBindingResolver(deployments, providers),
             definition_policy=BackendDeliveryPipelinePolicy(),
         ),
         assignments,
@@ -73,9 +86,7 @@ def test_pipeline_publication_freezes_provider_bindings_by_stage_site(
         ),
         created_by="test",
     )
-    validated = catalog.validate_draft(
-        created.draft.id, expected_version=created.draft.version
-    )
+    validated = catalog.validate_draft(created.draft.id, expected_version=created.draft.version)
     revision = catalog.publish_draft(
         created.draft.id,
         expected_version=validated.version,
@@ -87,8 +98,10 @@ def test_pipeline_publication_freezes_provider_bindings_by_stage_site(
     assert revision.binding_snapshot == {}
     assert set(revision.resolved_provider_bindings) == set(assignments)
     for snapshot in revision.resolved_provider_bindings.values():
+        profile = cast(dict[str, object], snapshot["profile"])
         deployment = cast(dict[str, object], snapshot["deployment"])
         binding = cast(dict[str, object], snapshot["binding"])
+        assert len(cast(str, profile["sha256"])) == 64
         assert deployment["enabled"] is True
         assert len(cast(str, binding["binding_fingerprint"])) == 64
 
@@ -102,20 +115,52 @@ def test_pipeline_validation_rejects_missing_deployment_assignment(
         PipelineCreate(
             id="missing-assignment",
             name="缺失分配",
-            definition=load_backend_delivery_definition(
-                Path(__file__).parents[1] / "config"
-            ),
+            definition=load_backend_delivery_definition(Path(__file__).parents[1] / "config"),
             agent_assignments=assignments,
         ),
         created_by="test",
     )
 
-    validated = catalog.validate_draft(
-        created.draft.id, expected_version=created.draft.version
-    )
+    validated = catalog.validate_draft(created.draft.id, expected_version=created.draft.version)
 
     assert validated.validation_status == "invalid"
     assert "PROVIDER_ASSIGNMENT_MISSING" in validated.validation_errors[0]
+
+
+def test_fullstack_pipeline_freezes_five_role_assignments(tmp_path: Path) -> None:
+    catalog, _ = _catalog(tmp_path)
+    database = tmp_path / "agent-team-os.sqlite"
+    instances = ControlPlaneService(database, config_root=Path(__file__).parents[1] / "config")
+    profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
+    providers = ProviderManifestCatalog()
+    deployments = AgentDeploymentCatalog(
+        SQLiteAgentDeploymentRepository(database), profiles, instances, providers
+    )
+    assignments = ensure_builtin_fullstack_agent_deployments(profiles, deployments)
+    created = catalog.create_pipeline(
+        PipelineCreate(
+            id="fullstack-provider-runtime",
+            name="五角色产品交付",
+            definition=load_fullstack_delivery_definition(Path(__file__).parents[1] / "config"),
+            agent_assignments=assignments,
+        ),
+        created_by="test",
+    )
+
+    validated = catalog.validate_draft(created.draft.id, expected_version=created.draft.version)
+    revision = catalog.publish_draft(
+        created.draft.id,
+        expected_version=validated.version,
+        published_by="test",
+    )
+
+    assert validated.validation_status == "valid"
+    assert revision.binding_model == "provider-v1"
+    assert set(revision.resolved_provider_bindings) == set(assignments)
+    assert {
+        snapshot["deployment"]["id"]  # type: ignore[index]
+        for snapshot in revision.resolved_provider_bindings.values()
+    } == set(assignments.values())
 
 
 def test_provider_pipeline_records_frozen_agent_runs_and_typed_artifacts(
@@ -127,28 +172,23 @@ def test_provider_pipeline_records_frozen_agent_runs_and_typed_artifacts(
             PipelineCreate(
                 id="provider-runtime",
                 name="Provider 运行",
-                definition=load_backend_delivery_definition(
-                    Path(__file__).parents[1] / "config"
-                ),
+                definition=load_backend_delivery_definition(Path(__file__).parents[1] / "config"),
                 agent_assignments=assignments,
             ),
             created_by="test",
         )
-        validated = catalog.validate_draft(
-            created.draft.id, expected_version=created.draft.version
-        )
+        validated = catalog.validate_draft(created.draft.id, expected_version=created.draft.version)
         revision = catalog.publish_draft(
             created.draft.id,
             expected_version=validated.version,
             published_by="test",
         )
         database = tmp_path / "agent-team-os.sqlite"
-        runs = PipelineRunLedger(
-            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
-        )
+        runs = PipelineRunLedger(SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime())
         agent_runs = AgentRunLedger(database)
+        planning = CapturingPlanningService()
         coordinator = DeliveryCoordinator(
-            planning=DeterministicPlanningService(),
+            planning=planning,
             executor=DeterministicCodeExecutor(),
             repository=InMemoryDeliveryRepository(),
             resolved_journey_sha256=revision.fingerprint,
@@ -185,5 +225,8 @@ def test_provider_pipeline_records_frozen_agent_runs_and_typed_artifacts(
             snapshot = revision.resolved_provider_bindings[item.binding_site]
             binding = cast(dict[str, object], snapshot["binding"])
             assert item.resolved_binding_hash == binding["binding_fingerprint"]
+        assert len(planning.analyze_inputs) == 1
+        assert "遵守已发布 Pipeline 与系统安全策略" in planning.analyze_inputs[0]
+        assert "增加健康检查" in planning.analyze_inputs[0]
 
     asyncio.run(scenario())

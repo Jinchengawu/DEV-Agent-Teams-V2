@@ -82,9 +82,7 @@ class SQLiteEvidenceRepository:
             raise KeyError(evidence_id)
         return found
 
-    def list_verifications(
-        self, evidence_id: str
-    ) -> tuple[EvidenceVerificationRecord, ...]:
+    def list_verifications(self, evidence_id: str) -> tuple[EvidenceVerificationRecord, ...]:
         with sqlite3.connect(self.database) as connection:
             rows = connection.execute(
                 """SELECT id,evidence_id,status,error,verified_at

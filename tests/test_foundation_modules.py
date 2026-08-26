@@ -38,7 +38,7 @@ ROOT = Path(__file__).parents[1]
 def _database(tmp_path: Path) -> tuple[Path, MigrationRunner]:
     database = tmp_path / "agent-team-os.sqlite"
     runner = MigrationRunner(database, ROOT / "migrations")
-    assert runner.migrate() == tuple(range(1, 22))
+    assert runner.migrate() == tuple(range(1, 26))
     return database, runner
 
 
@@ -263,9 +263,7 @@ def test_foundation_interfaces_expose_events_evidence_and_problem_details(
         evidence_response = client.get(f"/v1/deliveries/{delivery_id}/evidence")
         evidence_id = evidence_response.json()[0]["id"]
         verified = client.post(f"/v1/evidence/{evidence_id}/verify")
-        verification_history = client.get(
-            f"/v1/evidence/{evidence_id}/verifications"
-        )
+        verification_history = client.get(f"/v1/evidence/{evidence_id}/verifications")
         initial_settings = client.get("/v1/settings").json()
         changed = client.patch(
             "/v1/settings",

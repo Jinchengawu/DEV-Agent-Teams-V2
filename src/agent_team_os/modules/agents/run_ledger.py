@@ -5,10 +5,11 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...shared.hashes import Sha256
 from ...shared.ids import new_id
+from ..artifacts import ArtifactReference, ContentAddressedArtifactStorage
 
 
 class ArtifactEnvelope(BaseModel):
@@ -16,8 +17,17 @@ class ArtifactEnvelope(BaseModel):
 
     id: str = Field(default_factory=new_id)
     contract_id: str
-    content: dict[str, object]
+    content: dict[str, object] | None = None
+    reference: ArtifactReference | None = None
     sha256: Sha256
+
+    @model_validator(mode="after")
+    def has_one_content_location(self) -> ArtifactEnvelope:
+        if (self.content is None) == (self.reference is None):
+            raise ValueError("Artifact Envelope requires exactly one content location")
+        if self.reference is not None and self.reference.sha256 != self.sha256:
+            raise ValueError("Artifact reference hash differs from Envelope hash")
+        return self
 
 
 class AgentRun(BaseModel):
@@ -38,8 +48,16 @@ class AgentRun(BaseModel):
 
 
 class AgentRunLedger:
-    def __init__(self, database: Path) -> None:
+    def __init__(
+        self,
+        database: Path,
+        *,
+        artifact_storage: ContentAddressedArtifactStorage | None = None,
+    ) -> None:
         self.database = database
+        self.artifact_storage = artifact_storage or ContentAddressedArtifactStorage(
+            database.parent / "artifacts"
+        )
 
     def start(
         self,
@@ -79,10 +97,11 @@ class AgentRunLedger:
         status: str,
         artifacts: tuple[ArtifactEnvelope, ...] = (),
     ) -> AgentRun:
+        persisted_artifacts = tuple(self._persist(item) for item in artifacts)
         updated = run.model_copy(
             update={
                 "status": status,
-                "artifact_envelopes": artifacts,
+                "artifact_envelopes": persisted_artifacts,
                 "updated_at": datetime.now(UTC),
             }
         )
@@ -92,7 +111,12 @@ class AgentRunLedger:
                 WHERE id=? AND status='running'""",
                 (
                     updated.status,
-                    _json([item.model_dump(mode="json") for item in artifacts]),
+                    _json(
+                        [
+                            item.model_dump(mode="json", exclude_none=True)
+                            for item in persisted_artifacts
+                        ]
+                    ),
                     updated.updated_at.isoformat(),
                     run.id,
                 ),
@@ -100,6 +124,17 @@ class AgentRunLedger:
             if cursor.rowcount != 1:
                 raise RuntimeError("AgentRun is no longer running")
         return updated
+
+    def _persist(self, envelope: ArtifactEnvelope) -> ArtifactEnvelope:
+        if envelope.reference is not None:
+            self.artifact_storage.get_bytes(envelope.reference)
+            return envelope
+        if envelope.content is None:
+            raise RuntimeError("Artifact Envelope content is unavailable")
+        reference = self.artifact_storage.put_json(envelope.content)
+        if reference.sha256 != envelope.sha256:
+            raise RuntimeError("Artifact Envelope hash differs from serialized content")
+        return envelope.model_copy(update={"content": None, "reference": reference})
 
     def list(self, delivery_id: str) -> tuple[AgentRun, ...]:
         with self._connect() as connection:
@@ -129,7 +164,7 @@ def _values(run: AgentRun) -> tuple[object, ...]:
         run.attempt_id,
         run.runtime_identity,
         run.status,
-        _json([item.model_dump(mode="json") for item in run.artifact_envelopes]),
+        _json([item.model_dump(mode="json", exclude_none=True) for item in run.artifact_envelopes]),
         run.created_at.isoformat(),
         run.updated_at.isoformat(),
     )

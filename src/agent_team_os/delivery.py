@@ -27,6 +27,7 @@ from .modules.agents import AgentRunLedger
 from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
+from .shared.repositories import RepositoryRole, RepositorySnapshot
 
 
 class ImmutableModel(BaseModel):
@@ -75,12 +76,51 @@ class VerificationRun(ImmutableModel):
     acceptance_ids: tuple[str, ...] = ()
 
 
+class RepositoryCandidate(ImmutableModel):
+    role: RepositoryRole
+    workspace_ref: str
+    repository_ref: str
+    candidate: CandidateChange
+    verification: VerificationRun
+    producer_identity: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ReleaseBundle(ImmutableModel):
+    delivery_id: str
+    project_id: str
+    pipeline_revision_id: str
+    repository_set_sha256: Sha256
+    candidates: tuple[RepositoryCandidate, ...]
+    bundle_sha256: Sha256
+    status: Literal["verified"] = "verified"
+    verified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class ApplyReceipt(ImmutableModel):
     before_revision: str
     candidate_revision: str
     after_revision: str
     result: Literal["applied"]
     recovered: bool = False
+
+
+class RepositoryApplyReceipt(ImmutableModel):
+    role: RepositoryRole
+    workspace_ref: str
+    repository_ref: str
+    receipt: ApplyReceipt
+
+
+class ReleaseManifest(ImmutableModel):
+    delivery_id: str
+    project_id: str
+    pipeline_revision_id: str
+    bundle_sha256: Sha256
+    repositories: tuple[RepositoryApplyReceipt, ...]
+    manifest_sha256: Sha256
+    status: Literal["active"] = "active"
+    activated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class GateRecord(ImmutableModel):
@@ -99,6 +139,8 @@ class ProjectExecutionSnapshot(ImmutableModel):
     repository_ref: str
     pipeline_revision_id: str
     deployment_ids: tuple[str, ...] = ()
+    repositories: tuple[RepositorySnapshot, ...] = ()
+    repository_set_sha256: Sha256 | None = None
 
 
 class DeliveryRun(ImmutableModel):
@@ -111,6 +153,7 @@ class DeliveryRun(ImmutableModel):
         "queued",
         "planning",
         "awaiting_plan_decision",
+        "awaiting_design_decision",
         "executing",
         "verifying",
         "awaiting_candidate_decision",
@@ -125,8 +168,12 @@ class DeliveryRun(ImmutableModel):
     task: TaskContract | None = None
     candidate: CandidateChange | None = None
     verification: VerificationRun | None = None
+    repository_candidates: tuple[RepositoryCandidate, ...] = ()
+    release_bundle: ReleaseBundle | None = None
+    release_manifest: ReleaseManifest | None = None
     apply_receipt: ApplyReceipt | None = None
     plan_gate: GateRecord | None = None
+    design_gate: GateRecord | None = None
     candidate_gate: GateRecord | None = None
     pipeline_run_id: str | None = None
     pipeline_revision_id: str | None = None
@@ -171,6 +218,10 @@ class CandidateVerifier(Protocol):
 
 class CandidateApplier(Protocol):
     async def apply(self, candidate: CandidateChange, workspace_id: str) -> ApplyReceipt: ...
+
+
+class ReleaseApplier(Protocol):
+    async def apply(self, bundle: ReleaseBundle) -> ReleaseManifest: ...
 
 
 class DeliveryNotFoundError(LookupError):
@@ -232,6 +283,15 @@ class PipelineExecution(Protocol):
         delivery: DeliveryRun,
         *,
         decision: Literal["accept", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun: ...
+
+    async def decide_design(
+        self,
+        delivery: DeliveryRun,
+        *,
+        decision: Literal["approve", "reject"],
         expected_version: int,
         expected_subject_sha256: str,
     ) -> DeliveryRun: ...
@@ -398,6 +458,7 @@ class DeliveryCoordinator:
         catalog: PipelineCatalog,
         runs: PipelineRunLedger,
         agent_runs: AgentRunLedger | None = None,
+        release_applier: ReleaseApplier | None = None,
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
         from .modules.delivery import PipelineExecutionModule
@@ -411,6 +472,7 @@ class DeliveryCoordinator:
             catalog=catalog,
             runs=runs,
             agent_runs=agent_runs,
+            release_applier=release_applier,
         )
 
     def enqueue(
@@ -590,6 +652,7 @@ class DeliveryCoordinator:
             "queued",
             "planning",
             "awaiting_plan_decision",
+            "awaiting_design_decision",
             "executing",
             "verifying",
             "awaiting_candidate_decision",
@@ -720,6 +783,50 @@ class DeliveryCoordinator:
             ),
         )
         return delivery
+
+    def start_design_decision(
+        self,
+        delivery_id: str,
+        *,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        self._validate_gate_request(
+            delivery,
+            gate=delivery.design_gate,
+            expected_status="awaiting_design_decision",
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
+        self._schedule(
+            delivery_id,
+            self._run_design_decision(
+                delivery_id,
+                decision,
+                expected_version,
+                expected_subject_sha256,
+            ),
+        )
+        return delivery
+
+    async def _run_design_decision(
+        self,
+        delivery_id: str,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> None:
+        try:
+            await self.decide_design(
+                delivery_id,
+                decision=decision,
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
+        except Exception as error:
+            self._save_failed(self.get(delivery_id), error, "DESIGN_DECISION_FAILED")
 
     async def _run_candidate_decision(
         self,
@@ -853,6 +960,24 @@ class DeliveryCoordinator:
             )
         self._repository.save(updated)
         return updated
+
+    async def decide_design(
+        self,
+        delivery_id: str,
+        *,
+        decision: Literal["approve", "reject"],
+        expected_version: int,
+        expected_subject_sha256: str,
+    ) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        if delivery.pipeline_revision_id is None or self._pipeline_execution is None:
+            raise DeliveryStateConflictError("design gate requires Pipeline runtime")
+        return await self._pipeline_execution.decide_design(
+            delivery,
+            decision=decision,
+            expected_version=expected_version,
+            expected_subject_sha256=expected_subject_sha256,
+        )
 
     async def decide_candidate(
         self,

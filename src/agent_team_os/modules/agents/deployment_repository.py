@@ -45,7 +45,7 @@ class SQLiteAgentDeploymentRepository:
                 """UPDATE agent_deployments SET
                 name=?,profile_id=?,profile_revision=?,profile_sha256=?,capability_requirements_json=?,instance_id=?,
                 instance_version=?,adapter_id=?,adapter_version=?,provider_id=?,
-                provider_revision=?,provider_fingerprint=?,isolation_mode=?,policy_snapshot_json=?,
+                provider_revision=?,provider_fingerprint=?,isolation_mode=?,policy_snapshot_json=?,extension_snapshot_json=?,
                 qualification_status=?,qualification_errors_json=?,enabled=?,version=?,updated_at=?
                 WHERE id=? AND version=?""",
                 (
@@ -54,10 +54,7 @@ class SQLiteAgentDeploymentRepository:
                     updated.profile_revision,
                     updated.profile_sha256,
                     _json(
-                        [
-                            item.model_dump(mode="json")
-                            for item in updated.capability_requirements
-                        ]
+                        [item.model_dump(mode="json") for item in updated.capability_requirements]
                     ),
                     updated.instance_id,
                     updated.instance_version,
@@ -68,6 +65,7 @@ class SQLiteAgentDeploymentRepository:
                     updated.provider_fingerprint,
                     updated.isolation_mode,
                     _json(updated.policy_snapshot),
+                    _json(updated.extension_snapshot),
                     updated.qualification_status,
                     _json(updated.qualification_errors),
                     int(updated.enabled),
@@ -85,7 +83,7 @@ class SQLiteAgentDeploymentRepository:
 
     def _insert(self, connection: sqlite3.Connection, deployment: AgentDeployment) -> None:
         connection.execute(
-            f"INSERT INTO agent_deployments({_COLUMNS}) VALUES({','.join('?' * 22)})",  # noqa: S608
+            f"INSERT INTO agent_deployments({_COLUMNS}) VALUES({','.join('?' * 23)})",  # noqa: S608
             _values(deployment),
         )
 
@@ -129,7 +127,7 @@ class SQLiteAgentDeploymentRepository:
 _COLUMNS = """id,name,profile_id,profile_revision,profile_sha256,
 capability_requirements_json,instance_id,
 instance_version,adapter_id,adapter_version,provider_id,provider_revision,
-provider_fingerprint,isolation_mode,policy_snapshot_json,qualification_status,
+provider_fingerprint,isolation_mode,policy_snapshot_json,extension_snapshot_json,qualification_status,
 qualification_errors_json,enabled,version,created_by,created_at,updated_at"""
 
 
@@ -150,6 +148,7 @@ def _values(deployment: AgentDeployment) -> tuple[object, ...]:
         deployment.provider_fingerprint,
         deployment.isolation_mode,
         _json(deployment.policy_snapshot),
+        _json(deployment.extension_snapshot),
         deployment.qualification_status,
         _json(deployment.qualification_errors),
         int(deployment.enabled),
@@ -163,10 +162,9 @@ def _values(deployment: AgentDeployment) -> tuple[object, ...]:
 def _deployment(row: tuple[object, ...]) -> AgentDeployment:
     keys = tuple(item.strip() for item in _COLUMNS.replace("\n", "").split(","))
     values = dict(zip(keys, row, strict=True))
-    values["capability_requirements"] = json.loads(
-        str(values.pop("capability_requirements_json"))
-    )
+    values["capability_requirements"] = json.loads(str(values.pop("capability_requirements_json")))
     values["policy_snapshot"] = json.loads(str(values.pop("policy_snapshot_json")))
+    values["extension_snapshot"] = json.loads(str(values.pop("extension_snapshot_json")))
     values["qualification_errors"] = json.loads(str(values.pop("qualification_errors_json")))
     values["enabled"] = bool(values["enabled"])
     return AgentDeployment.model_validate(values)

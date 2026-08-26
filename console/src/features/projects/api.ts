@@ -30,6 +30,17 @@ export function useResetProjectWorkspace(projectId: string) {
   return useMutation({ mutationFn: () => request<{ main_revision: string }>(`/v1/projects/${encodeURIComponent(projectId)}/workspace/reset`, { method: "POST" }) });
 }
 
+export function useProvisionFullstackRepositories(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => request<ProjectDetail>(`/v1/projects/${encodeURIComponent(projectId)}/repositories/provision-fullstack`, { method: "POST" }),
+    onSuccess: async (detail) => {
+      client.setQueryData(projectKeys.detail(projectId), detail);
+      await client.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
+    },
+  });
+}
+
 export function useArchiveProject(projectId: string, expectedVersion: number) {
   const client = useQueryClient();
   return useMutation({

@@ -114,18 +114,67 @@ class DeterministicWorkspaceAgent:
 
     async def run(self, *, instruction: str, workspace: Path) -> str:
         marker = re.sub(r"[^a-z0-9]", "_", workspace.name.lower())
-        (workspace / "src" / f"delivery_{marker}.py").write_text(
-            "def delivered() -> bool:\n    return True\n", encoding="utf-8"
-        )
-        (workspace / "tests" / f"test_delivery_{marker}.py").write_text(
-            "import unittest\n\n"
-            f"from src.delivery_{marker} import delivered\n\n\n"
-            "class DeliveryTest(unittest.TestCase):\n"
-            "    def test_delivered(self) -> None:\n"
-            "        self.assertTrue(delivered())\n",
-            encoding="utf-8",
-        )
-        return "deterministic boundary completed"
+        role = workspace.parents[1].name
+        if role == "design":
+            _write_gate_file(
+                workspace / "design" / "system.md",
+                (
+                    "# 设计系统\n\n## 已批准交付规范\n\n"
+                    "状态：ready；覆盖加载、空、错误、冲突与完成态。\n"
+                ),
+            )
+            _write_gate_file(
+                workspace / "tests" / f"test_design_{marker}.py",
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class DesignDeliveryTest(unittest.TestCase):\n"
+                "    def test_design_is_reviewable(self) -> None:\n"
+                "        self.assertIn('已批准交付规范', Path('design/system.md').read_text())\n",
+            )
+        elif role == "frontend":
+            _write_gate_file(
+                workspace / "src" / "delivery-status.js",
+                'export const deliveryStatus = "ready";\n',
+            )
+            _write_gate_file(
+                workspace / "tests" / f"test_frontend_{marker}.py",
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class FrontendDeliveryTest(unittest.TestCase):\n"
+                "    def test_status_marker(self) -> None:\n"
+                "        self.assertIn('ready', Path('src/delivery-status.js').read_text())\n",
+            )
+        elif role == "qa":
+            _write_gate_file(
+                workspace / "reports" / "fullstack.md",
+                "# 五角色交付验收\n\nPASS\n\nFAIL=0 · WARN=0 · skipped=0\n",
+            )
+            _write_gate_file(
+                workspace / "tests" / f"test_qa_{marker}.py",
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class QADeliveryTest(unittest.TestCase):\n"
+                "    def test_report_passes_without_skips(self) -> None:\n"
+                "        report = Path('reports/fullstack.md').read_text()\n"
+                "        self.assertIn('PASS', report)\n"
+                "        self.assertIn('skipped=0', report)\n",
+            )
+        else:
+            _write_gate_file(
+                workspace / "src" / f"delivery_{marker}.py",
+                "def delivered() -> bool:\n    return True\n",
+            )
+            _write_gate_file(
+                workspace / "tests" / f"test_delivery_{marker}.py",
+                "import unittest\n\n"
+                f"from src.delivery_{marker} import delivered\n\n\n"
+                "class DeliveryTest(unittest.TestCase):\n"
+                "    def test_delivered(self) -> None:\n"
+                "        self.assertTrue(delivered())\n",
+            )
+        return f"deterministic {role} boundary completed"
+
+
+def _write_gate_file(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
 class GateBindingResolver:

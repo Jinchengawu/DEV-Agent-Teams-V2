@@ -87,9 +87,7 @@ class SQLiteAgentProfileRepository:
             raise KeyError(profile_id)
         return _draft(row)
 
-    def compare_and_swap_draft(
-        self, expected_version: int, updated: AgentProfileDraft
-    ) -> bool:
+    def compare_and_swap_draft(self, expected_version: int, updated: AgentProfileDraft) -> bool:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
@@ -214,8 +212,15 @@ def _json(value: object) -> str:
 
 def _profile(row: tuple[object, ...]) -> AgentProfile:
     keys = (
-        "id", "name", "description", "tags", "latest_revision", "version",
-        "created_by", "created_at", "updated_at",
+        "id",
+        "name",
+        "description",
+        "tags",
+        "latest_revision",
+        "version",
+        "created_by",
+        "created_at",
+        "updated_at",
     )
     values = dict(zip(keys, row, strict=True))
     values["tags"] = json.loads(str(values["tags"]))
@@ -224,8 +229,13 @@ def _profile(row: tuple[object, ...]) -> AgentProfile:
 
 def _draft(row: tuple[object, ...]) -> AgentProfileDraft:
     keys = (
-        "profile_id", "spec", "version", "validation_status", "validation_errors",
-        "updated_by", "updated_at",
+        "profile_id",
+        "spec",
+        "version",
+        "validation_status",
+        "validation_errors",
+        "updated_by",
+        "updated_at",
     )
     values = dict(zip(keys, row, strict=True))
     values["spec"] = json.loads(str(values["spec"]))
@@ -235,7 +245,12 @@ def _draft(row: tuple[object, ...]) -> AgentProfileDraft:
 
 def _revision(row: tuple[object, ...]) -> AgentProfileRevision:
     keys = (
-        "profile_id", "revision", "spec", "canonical_json", "sha256", "published_by",
+        "profile_id",
+        "revision",
+        "spec",
+        "canonical_json",
+        "sha256",
+        "published_by",
         "published_at",
     )
     values = dict(zip(keys, row, strict=True))

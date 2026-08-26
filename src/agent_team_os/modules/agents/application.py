@@ -133,9 +133,7 @@ class AgentProfileCatalog:
             }
         )
         if not self.repository.compare_and_swap_draft(current.version, updated):
-            self._raise_version_conflict(
-                expected_version, self.get_draft(profile_id).version
-            )
+            self._raise_version_conflict(expected_version, self.get_draft(profile_id).version)
         return updated
 
     def publish(

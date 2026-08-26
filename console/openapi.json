@@ -500,6 +500,148 @@
         }
       }
     },
+    "/v1/projects/{project_id}/repositories": {
+      "get": {
+        "summary": "List Repositories",
+        "operationId": "list_repositories_v1_projects__project_id__repositories_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectRepository"
+                  },
+                  "title": "Response List Repositories V1 Projects  Project Id  Repositories Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/repositories/provision-fullstack": {
+      "post": {
+        "summary": "Provision Fullstack",
+        "operationId": "provision_fullstack_v1_projects__project_id__repositories_provision_fullstack_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{project_id}/pipeline-bindings": {
       "get": {
         "summary": "List Pipeline Bindings",
@@ -7417,6 +7559,85 @@
         }
       }
     },
+    "/v1/deliveries/{delivery_id}/design-decision": {
+      "post": {
+        "summary": "Decide Design",
+        "operationId": "decide_design_v1_deliveries__delivery_id__design_decision_post",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRun"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/deliveries/{delivery_id}/pipeline-run": {
       "get": {
         "summary": "Get Delivery Pipeline Run",
@@ -8087,6 +8308,15 @@
             },
             "type": "object",
             "title": "Policy Snapshot"
+          },
+          "extension_snapshot": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Extension Snapshot",
+            "default": []
           },
           "qualification_status": {
             "type": "string",
@@ -9211,9 +9441,26 @@
             "title": "Contract Id"
           },
           "content": {
-            "additionalProperties": true,
-            "type": "object",
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Content"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "sha256": {
             "type": "string",
@@ -9224,10 +9471,40 @@
         "type": "object",
         "required": [
           "contract_id",
-          "content",
           "sha256"
         ],
         "title": "ArtifactEnvelope"
+      },
+      "ArtifactReference": {
+        "properties": {
+          "uri": {
+            "type": "string",
+            "title": "Uri"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Media Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Size Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uri",
+          "sha256",
+          "media_type",
+          "size_bytes"
+        ],
+        "title": "ArtifactReference"
       },
       "BindingRequest": {
         "properties": {
@@ -9670,6 +9947,7 @@
               "queued",
               "planning",
               "awaiting_plan_decision",
+              "awaiting_design_decision",
               "executing",
               "verifying",
               "awaiting_candidate_decision",
@@ -9725,6 +10003,34 @@
               }
             ]
           },
+          "repository_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RepositoryCandidate"
+            },
+            "type": "array",
+            "title": "Repository Candidates",
+            "default": []
+          },
+          "release_bundle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseBundle"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release_manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseManifest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "apply_receipt": {
             "anyOf": [
               {
@@ -9736,6 +10042,16 @@
             ]
           },
           "plan_gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GateRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "design_gate": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/GateRecord"
@@ -9880,6 +10196,36 @@
           "planning_identity"
         ],
         "title": "DeliveryRun"
+      },
+      "DesignDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "title": "Decision"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "expected_subject_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Subject Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "expected_version",
+          "expected_subject_sha256"
+        ],
+        "title": "DesignDecisionRequest"
       },
       "Document": {
         "properties": {
@@ -10065,12 +10411,17 @@
         "type": "string",
         "enum": [
           "journey",
+          "requirement",
+          "task",
           "plan-gate",
+          "design-gate",
           "candidate",
           "diff",
           "verification",
           "candidate-gate",
-          "apply-receipt"
+          "apply-receipt",
+          "release-bundle",
+          "release-manifest"
         ],
         "title": "EvidenceKind"
       },
@@ -11876,6 +12227,15 @@
             "type": "array",
             "title": "Deployment Ids",
             "default": []
+          },
+          "repository_mode": {
+            "type": "string",
+            "enum": [
+              "backend",
+              "fullstack"
+            ],
+            "title": "Repository Mode",
+            "default": "backend"
           }
         },
         "additionalProperties": false,
@@ -11985,6 +12345,14 @@
             "title": "Knowledge Sources",
             "default": []
           },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectRepository"
+            },
+            "type": "array",
+            "title": "Repositories",
+            "default": []
+          },
           "active_delivery_id": {
             "anyOf": [
               {
@@ -12035,6 +12403,25 @@
             "type": "array",
             "title": "Deployment Ids",
             "default": []
+          },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/RepositorySnapshot"
+            },
+            "type": "array",
+            "title": "Repositories",
+            "default": []
+          },
+          "repository_set_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Set Sha256"
           }
         },
         "additionalProperties": false,
@@ -12212,6 +12599,89 @@
         ],
         "title": "ProjectPipelineBinding"
       },
+      "ProjectRepository": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "backend",
+              "design",
+              "frontend",
+              "qa"
+            ],
+            "title": "Role"
+          },
+          "workspace_ref": {
+            "type": "string",
+            "title": "Workspace Ref"
+          },
+          "repository_ref": {
+            "type": "string",
+            "title": "Repository Ref"
+          },
+          "seed_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed Revision"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "provisioning",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "provision_attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Provision Attempt"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "role",
+          "workspace_ref",
+          "repository_ref",
+          "status",
+          "provision_attempt"
+        ],
+        "title": "ProjectRepository"
+      },
       "ProjectVersionRequest": {
         "properties": {
           "expected_version": {
@@ -12383,6 +12853,230 @@
           "required_features"
         ],
         "title": "ProviderManifestView"
+      },
+      "ReleaseBundle": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "repository_set_sha256": {
+            "type": "string",
+            "title": "Repository Set Sha256"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/RepositoryCandidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "bundle_sha256": {
+            "type": "string",
+            "title": "Bundle Sha256"
+          },
+          "status": {
+            "type": "string",
+            "const": "verified",
+            "title": "Status",
+            "default": "verified"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verified At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "pipeline_revision_id",
+          "repository_set_sha256",
+          "candidates",
+          "bundle_sha256"
+        ],
+        "title": "ReleaseBundle"
+      },
+      "ReleaseManifest": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "bundle_sha256": {
+            "type": "string",
+            "title": "Bundle Sha256"
+          },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/RepositoryApplyReceipt"
+            },
+            "type": "array",
+            "title": "Repositories"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "status": {
+            "type": "string",
+            "const": "active",
+            "title": "Status",
+            "default": "active"
+          },
+          "activated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Activated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "pipeline_revision_id",
+          "bundle_sha256",
+          "repositories",
+          "manifest_sha256"
+        ],
+        "title": "ReleaseManifest"
+      },
+      "RepositoryApplyReceipt": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "backend",
+              "design",
+              "frontend",
+              "qa"
+            ],
+            "title": "Role"
+          },
+          "workspace_ref": {
+            "type": "string",
+            "title": "Workspace Ref"
+          },
+          "repository_ref": {
+            "type": "string",
+            "title": "Repository Ref"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/ApplyReceipt"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "workspace_ref",
+          "repository_ref",
+          "receipt"
+        ],
+        "title": "RepositoryApplyReceipt"
+      },
+      "RepositoryCandidate": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "backend",
+              "design",
+              "frontend",
+              "qa"
+            ],
+            "title": "Role"
+          },
+          "workspace_ref": {
+            "type": "string",
+            "title": "Workspace Ref"
+          },
+          "repository_ref": {
+            "type": "string",
+            "title": "Repository Ref"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateChange"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/VerificationRun"
+          },
+          "producer_identity": {
+            "type": "string",
+            "title": "Producer Identity"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "workspace_ref",
+          "repository_ref",
+          "candidate",
+          "verification",
+          "producer_identity"
+        ],
+        "title": "RepositoryCandidate"
+      },
+      "RepositorySnapshot": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "backend",
+              "design",
+              "frontend",
+              "qa"
+            ],
+            "title": "Role"
+          },
+          "workspace_ref": {
+            "type": "string",
+            "title": "Workspace Ref"
+          },
+          "repository_ref": {
+            "type": "string",
+            "title": "Repository Ref"
+          },
+          "seed_revision": {
+            "type": "string",
+            "title": "Seed Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role",
+          "workspace_ref",
+          "repository_ref",
+          "seed_revision"
+        ],
+        "title": "RepositorySnapshot",
+        "description": "Immutable repository identity frozen into a Delivery execution context."
       },
       "RequirementArtifact": {
         "properties": {
@@ -12991,6 +13685,7 @@
             "enum": [
               "backlog",
               "plan-approval",
+              "design-approval",
               "executing",
               "candidate-approval",
               "completed",
@@ -13048,6 +13743,8 @@
             "enum": [
               "approve-plan",
               "reject-plan",
+              "approve-design",
+              "reject-design",
               "accept-candidate",
               "reject-candidate",
               "cancel"

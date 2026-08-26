@@ -46,6 +46,7 @@ class AgentDeployment(BaseModel):
     provider_fingerprint: Sha256
     isolation_mode: Literal["shared", "dedicated"]
     policy_snapshot: dict[str, str]
+    extension_snapshot: tuple[dict[str, object], ...] = ()
     qualification_status: Literal["unknown", "qualified", "failed"] = "unknown"
     qualification_errors: tuple[str, ...] = ()
     enabled: bool = False

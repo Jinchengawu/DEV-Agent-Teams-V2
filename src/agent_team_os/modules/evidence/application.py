@@ -39,8 +39,25 @@ class EvidenceLedger:
                 },
             )
         )
+        for field, kind, source_kind in (
+            ("requirements", EvidenceKind.REQUIREMENT, "requirement-artifact"),
+            ("task", EvidenceKind.TASK, "task-contract"),
+        ):
+            artifact = snapshot.get(field)
+            if isinstance(artifact, Mapping):
+                artifact_payload = dict(artifact)
+                candidates.append(
+                    (
+                        kind,
+                        source_kind,
+                        f"{delivery_id}:{field}",
+                        str(sha256_json(artifact_payload)),
+                        artifact_payload,
+                    )
+                )
         for field, kind in (
             ("plan_gate", EvidenceKind.PLAN_GATE),
+            ("design_gate", EvidenceKind.DESIGN_GATE),
             ("candidate_gate", EvidenceKind.CANDIDATE_GATE),
         ):
             gate = snapshot.get(field)
@@ -54,38 +71,46 @@ class EvidenceLedger:
                         dict(gate),
                     )
                 )
-        candidate = snapshot.get("candidate")
-        if isinstance(candidate, Mapping):
-            candidate_payload = dict(candidate)
-            candidates.extend(
-                (
+        repository_candidates = snapshot.get("repository_candidates")
+        if isinstance(repository_candidates, (list, tuple)) and repository_candidates:
+            for repository_candidate in repository_candidates:
+                if not isinstance(repository_candidate, Mapping):
+                    continue
+                role = str(repository_candidate.get("role") or "unknown")
+                candidate = repository_candidate.get("candidate")
+                verification = repository_candidate.get("verification")
+                if isinstance(candidate, Mapping):
+                    _append_candidate_evidence(
+                        candidates,
+                        delivery_id,
+                        candidate,
+                        source_suffix=role,
+                    )
+                if isinstance(verification, Mapping):
+                    candidates.append(
+                        (
+                            EvidenceKind.VERIFICATION,
+                            f"verification-log:{role}",
+                            f"{delivery_id}:{role}:verification",
+                            _text(verification.get("log_sha256")),
+                            dict(verification),
+                        )
+                    )
+        else:
+            candidate = snapshot.get("candidate")
+            if isinstance(candidate, Mapping):
+                _append_candidate_evidence(candidates, delivery_id, candidate)
+            verification = snapshot.get("verification")
+            if isinstance(verification, Mapping):
+                candidates.append(
                     (
-                        EvidenceKind.CANDIDATE,
-                        "git-candidate",
-                        str(candidate.get("candidate_revision") or f"{delivery_id}:candidate"),
-                        str(sha256_json(candidate_payload)),
-                        candidate_payload,
-                    ),
-                    (
-                        EvidenceKind.DIFF,
-                        "unified-diff",
-                        f"{delivery_id}:diff",
-                        _text(candidate.get("diff_sha256")),
-                        {"unified_diff": candidate.get("unified_diff", "")},
-                    ),
+                        EvidenceKind.VERIFICATION,
+                        "verification-log",
+                        f"{delivery_id}:verification",
+                        _text(verification.get("log_sha256")),
+                        dict(verification),
+                    )
                 )
-            )
-        verification = snapshot.get("verification")
-        if isinstance(verification, Mapping):
-            candidates.append(
-                (
-                    EvidenceKind.VERIFICATION,
-                    "verification-log",
-                    f"{delivery_id}:verification",
-                    _text(verification.get("log_sha256")),
-                    dict(verification),
-                )
-            )
         receipt = snapshot.get("apply_receipt")
         if isinstance(receipt, Mapping):
             receipt_payload = dict(receipt)
@@ -98,9 +123,34 @@ class EvidenceLedger:
                     receipt_payload,
                 )
             )
+        for field, kind, source_kind, hash_field in (
+            (
+                "release_bundle",
+                EvidenceKind.RELEASE_BUNDLE,
+                "release-bundle",
+                "bundle_sha256",
+            ),
+            (
+                "release_manifest",
+                EvidenceKind.RELEASE_MANIFEST,
+                "release-manifest",
+                "manifest_sha256",
+            ),
+        ):
+            value = snapshot.get(field)
+            if isinstance(value, Mapping):
+                candidates.append(
+                    (
+                        kind,
+                        source_kind,
+                        str(value.get(hash_field) or f"{delivery_id}:{field}"),
+                        _text(value.get(hash_field)),
+                        dict(value),
+                    )
+                )
 
         records: list[EvidenceRecord] = []
-        for kind, source_kind, source_id, source_hash, payload in candidates:
+        for kind, source_kind, source_id, source_hash, candidate_payload in candidates:
             valid = is_valid_sha256(source_hash)
             record = EvidenceRecord(
                 id=str(uuid5(NAMESPACE_URL, f"agent-team-os:{delivery_id}:{kind}:{source_id}")),
@@ -111,12 +161,22 @@ class EvidenceLedger:
                 source_id=source_id,
                 producer_identity=(
                     planning_identity
-                    if kind in {EvidenceKind.JOURNEY, EvidenceKind.PLAN_GATE}
+                    if kind
+                    in {
+                        EvidenceKind.JOURNEY,
+                        EvidenceKind.REQUIREMENT,
+                        EvidenceKind.TASK,
+                        EvidenceKind.PLAN_GATE,
+                    }
                     else execution_identity
                 ),
                 content_sha256=(Sha256.validate(source_hash) if valid and source_hash else None),
                 status=(EvidenceStatus.VERIFIED if valid else EvidenceStatus.INVALID),
-                payload=(dict(payload) if isinstance(payload, Mapping) else {"value": payload}),
+                payload=(
+                    dict(candidate_payload)
+                    if isinstance(candidate_payload, Mapping)
+                    else {"value": candidate_payload}
+                ),
                 created_at=created_at,
                 verification_error=(None if valid else "MISSING_OR_ZERO_SHA256"),
             )
@@ -141,9 +201,7 @@ class EvidenceLedger:
             )
         return self.repository.append_verification(evidence_id, EvidenceStatus.VERIFIED, None)
 
-    def verification_history(
-        self, evidence_id: str
-    ) -> tuple[EvidenceVerificationRecord, ...]:
+    def verification_history(self, evidence_id: str) -> tuple[EvidenceVerificationRecord, ...]:
         if self.repository.get(evidence_id) is None:
             raise KeyError(evidence_id)
         return self.repository.list_verifications(evidence_id)
@@ -151,6 +209,35 @@ class EvidenceLedger:
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _append_candidate_evidence(
+    candidates: list[tuple[EvidenceKind, str, str, str | None, object]],
+    delivery_id: str,
+    candidate: Mapping[object, object],
+    *,
+    source_suffix: str | None = None,
+) -> None:
+    payload = {str(key): value for key, value in candidate.items()}
+    suffix = "" if source_suffix is None else f":{source_suffix}"
+    candidates.extend(
+        (
+            (
+                EvidenceKind.CANDIDATE,
+                f"git-candidate{suffix}",
+                str(candidate.get("candidate_revision") or f"{delivery_id}{suffix}:candidate"),
+                str(sha256_json(payload)),
+                payload,
+            ),
+            (
+                EvidenceKind.DIFF,
+                f"unified-diff{suffix}",
+                f"{delivery_id}{suffix}:diff",
+                _text(candidate.get("diff_sha256")),
+                {"unified_diff": candidate.get("unified_diff", "")},
+            ),
+        )
+    )
 
 
 def _date(value: object) -> datetime:

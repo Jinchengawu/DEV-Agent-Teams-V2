@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -64,23 +65,19 @@ class GitCodeExecutor:
         sandbox = _sandbox_for(self._sandbox, workspace_id)
         base_revision = sandbox.main_revision()
         worktree = sandbox.create_worktree(delivery_id, base_revision)
+        verification_command = shlex.split(task.system_policy.verification_commands[0])
+        if not verification_command:
+            raise ValueError("system verification command is empty")
         policy = SandboxPolicy(
             allowed_paths=task.system_policy.allowed_paths,
-            verification_command=(
-                "python",
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests",
-                "-v",
-            ),
+            verification_command=tuple(verification_command),
         )
         instruction = (
-            f"Implement this approved Backend task:\n{task.instructions}\n\n"
+            f"Implement this approved repository-scoped task:\n{task.instructions}\n\n"
             f"Acceptance IDs: {', '.join(task.acceptance_ids)}\n"
             f"You may modify only: {', '.join(policy.allowed_paths)}.\n"
-            "You must make at least one concrete source change and a corresponding test change. "
+            "You must make at least one concrete source change and a corresponding test change; "
+            "for design or QA repositories, the role-owned artifact counts as the source. "
             "Do not stop after analysis or return only an explanation. "
             "Do not install dependencies, change manifests, or run user-provided commands. "
             "Use only the Python standard library."
@@ -101,7 +98,13 @@ class GitCandidateVerifier:
         self, candidate: CandidateChange, task: TaskContract, workspace_id: str
     ) -> VerificationRun:
         sandbox = _sandbox_for(self._sandbox, workspace_id)
-        policy = SandboxPolicy(allowed_paths=task.system_policy.allowed_paths)
+        verification_command = shlex.split(task.system_policy.verification_commands[0])
+        if not verification_command:
+            raise ValueError("system verification command is empty")
+        policy = SandboxPolicy(
+            allowed_paths=task.system_policy.allowed_paths,
+            verification_command=tuple(verification_command),
+        )
         return sandbox.verify_candidate(
             candidate, policy=policy, acceptance_ids=task.acceptance_ids
         )
@@ -113,6 +116,12 @@ class GitCandidateApplier:
 
     async def apply(self, candidate: CandidateChange, workspace_id: str) -> ApplyReceipt:
         return _sandbox_for(self._sandbox, workspace_id).apply_candidate(candidate)
+
+    async def rollback(self, receipt: ApplyReceipt, workspace_id: str) -> str:
+        return _sandbox_for(self._sandbox, workspace_id).rollback_candidate(receipt)
+
+    def revision(self, workspace_id: str) -> str:
+        return _sandbox_for(self._sandbox, workspace_id).main_revision()
 
 
 class ACWMCodexWorkspaceAgent:
