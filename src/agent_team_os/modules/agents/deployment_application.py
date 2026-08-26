@@ -30,6 +30,10 @@ class RuntimeInstanceCatalogPort(Protocol):
     def get_instance(self, instance_id: str) -> Any: ...
 
 
+class RuntimeExtensionResolverPort(Protocol):
+    def resolve(self, raw_requirement: dict[str, object]) -> dict[str, object]: ...
+
+
 class AgentDeploymentCatalog:
     def __init__(
         self,
@@ -37,11 +41,14 @@ class AgentDeploymentCatalog:
         profiles: AgentProfileCatalog,
         instances: RuntimeInstanceCatalogPort,
         providers: ProviderManifestCatalog,
+        *,
+        extensions: RuntimeExtensionResolverPort | None = None,
     ) -> None:
         self.repository = repository
         self.profiles = profiles
         self.instances = instances
         self.providers = providers
+        self.extensions = extensions
 
     def create(self, request: AgentDeploymentCreate, *, actor_id: str) -> AgentDeployment:
         revision = self.profiles.get_revision(request.profile_id, request.profile_revision)
@@ -70,6 +77,7 @@ class AgentDeploymentCatalog:
             provider_fingerprint=Sha256.validate(provider.manifest_fingerprint),
             isolation_mode=revision.spec.isolation_preference,
             policy_snapshot=revision.spec.policies.model_dump(mode="json"),
+            extension_snapshot=self._extension_snapshot(revision.spec)[0],
             created_by=actor_id,
             created_at=now,
             updated_at=now,
@@ -132,6 +140,7 @@ class AgentDeploymentCatalog:
                 "provider_fingerprint": provider.manifest_fingerprint,
                 "isolation_mode": revision.spec.isolation_preference,
                 "policy_snapshot": revision.spec.policies.model_dump(mode="json"),
+                "extension_snapshot": self._extension_snapshot(revision.spec)[0],
                 "qualification_status": "unknown",
                 "qualification_errors": (),
                 "enabled": False,
@@ -145,9 +154,13 @@ class AgentDeploymentCatalog:
     def qualify(self, deployment_id: str, expected_version: int) -> AgentDeployment:
         current = self.get(deployment_id)
         self._version(current, expected_version)
-        errors = self._qualification_errors(current)
+        revision = self.profiles.get_revision(current.profile_id, current.profile_revision)
+        extension_snapshot, extension_errors = self._extension_snapshot(revision.spec)
+        candidate = current.model_copy(update={"extension_snapshot": extension_snapshot})
+        errors = tuple(dict.fromkeys((*self._qualification_errors(candidate), *extension_errors)))
         updated = current.model_copy(
             update={
+                "extension_snapshot": extension_snapshot,
                 "qualification_status": "qualified" if not errors else "failed",
                 "qualification_errors": errors,
                 "enabled": current.enabled if not errors else False,
@@ -242,6 +255,24 @@ class AgentDeploymentCatalog:
             )
             errors.extend(issue.code for issue in report.issues)
         return tuple(dict.fromkeys(errors))
+
+    def _extension_snapshot(
+        self, spec: Any
+    ) -> tuple[tuple[dict[str, object], ...], tuple[str, ...]]:
+        snapshots: list[dict[str, object]] = []
+        errors: list[str] = []
+        for requirement in spec.extension_requirements:
+            raw = requirement.model_dump(mode="json")
+            if self.extensions is None:
+                if not requirement.optional:
+                    errors.append("RUNTIME_EXTENSION_CATALOG_UNAVAILABLE")
+                continue
+            try:
+                snapshots.append(self.extensions.resolve(raw))
+            except Exception as error:
+                if not requirement.optional:
+                    errors.append(str(getattr(error, "code", "RUNTIME_EXTENSION_NOT_QUALIFIED")))
+        return tuple(snapshots), tuple(dict.fromkeys(errors))
 
     @staticmethod
     def _provider_capability_version(

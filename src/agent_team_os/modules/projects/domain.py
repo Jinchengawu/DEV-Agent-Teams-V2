@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...shared.hashes import Sha256
+from ...shared.repositories import RepositoryRole, RepositorySnapshot
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -40,6 +43,30 @@ class ProjectWorkspace(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+class ProjectRepository(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    project_id: str
+    role: RepositoryRole
+    workspace_ref: str
+    repository_ref: str
+    seed_revision: str | None = None
+    status: WorkspaceStatus
+    provision_attempt: int = Field(ge=1)
+    error_code: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def snapshot(self) -> RepositorySnapshot:
+        if self.status != "ready" or self.seed_revision is None:
+            raise ValueError("repository is not ready")
+        return RepositorySnapshot(
+            role=self.role,
+            workspace_ref=self.workspace_ref,
+            repository_ref=self.repository_ref,
+            seed_revision=self.seed_revision,
+        )
+
+
 class ProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9-]*$")
@@ -47,6 +74,7 @@ class ProjectCreate(BaseModel):
     description: str = Field(default="", max_length=2_000)
     default_pipeline_revision_id: str
     deployment_ids: tuple[str, ...] = ()
+    repository_mode: Literal["backend", "fullstack"] = "backend"
 
 
 class ProjectPatch(BaseModel):
@@ -121,6 +149,8 @@ class ProjectExecutionContext(BaseModel):
     repository_ref: str
     pipeline_revision_id: str
     deployment_ids: tuple[str, ...]
+    repositories: tuple[RepositorySnapshot, ...] = ()
+    repository_set_sha256: Sha256 | None = None
 
 
 class ProjectDetail(BaseModel):
@@ -130,4 +160,5 @@ class ProjectDetail(BaseModel):
     pipeline_bindings: tuple[ProjectPipelineBinding, ...] = ()
     deployment_access: tuple[ProjectDeploymentAccess, ...] = ()
     knowledge_sources: tuple[ProjectKnowledgeSource, ...] = ()
+    repositories: tuple[ProjectRepository, ...] = ()
     active_delivery_id: str | None = None

@@ -58,6 +58,7 @@ class CodexSimulatedHermesPlanning:
         prompt = f"""You are temporarily simulating the Hermes PM role.
 Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
 Each acceptance criterion must have a stable id and a machine-verifiable statement.
+This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 Do not include permissions, commands, paths, markdown or commentary.
 
 User request:
@@ -68,8 +69,12 @@ User request:
     async def plan(self, requirements: RequirementArtifact) -> TaskContract:
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
 Return raw JSON only with: title, instructions, acceptance_ids.
-Create exactly one bounded Backend task. Use only acceptance ids from the input.
-The instructions must require a non-empty source change and corresponding machine test change.
+Create exactly one bounded product-delivery task. Preserve every approved product, UI,
+frontend, backend and QA concern that appears in the input; backend-only requests must
+remain backend-only. Use only acceptance ids from the input.
+This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
+The instructions must require non-empty implementation or specification changes and
+corresponding machine-verifiable tests in every repository role selected by the Pipeline.
 Do not include permissions, commands, paths, system_policy, markdown or commentary.
 
 Approved requirements:

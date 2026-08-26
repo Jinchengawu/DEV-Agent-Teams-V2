@@ -34,14 +34,18 @@ ROOT = Path(__file__).parents[1]
 class Provisioner:
     def __init__(self) -> None:
         self.fail = False
+        self.fail_refs: set[str] = set()
         self.revisions: dict[str, str] = {}
 
     def provision(self, repository_ref: str) -> str:
-        if self.fail:
+        if self.fail or repository_ref in self.fail_refs:
             raise RuntimeError("git unavailable")
         return self.revisions.setdefault(repository_ref, "a" * 40)
 
     def reset(self, repository_ref: str) -> str:
+        return self.revisions[repository_ref]
+
+    def revision(self, repository_ref: str) -> str:
         return self.revisions[repository_ref]
 
 
@@ -88,9 +92,7 @@ def test_project_provisions_workspace_and_freezes_execution_context(tmp_path: Pa
     second = first.model_copy(
         update={
             "id": "delivery-2",
-            "project_execution_snapshot": ProjectExecutionSnapshot(
-                **second_context.model_dump()
-            ),
+            "project_execution_snapshot": ProjectExecutionSnapshot(**second_context.model_dump()),
         }
     )
     with pytest.raises(ProductError) as active_conflict:
@@ -102,13 +104,88 @@ def test_project_provisions_workspace_and_freezes_execution_context(tmp_path: Pa
     delivery_repository.save(second)
 
 
+def test_project_provisions_fullstack_repository_set_and_freezes_it(tmp_path: Path) -> None:
+    projects, provisioner = catalog(tmp_path)
+    projects.create(
+        ProjectCreate(
+            id="pj-fullstack",
+            name="全栈项目",
+            default_pipeline_revision_id="fullstack-delivery:1",
+            repository_mode="fullstack",
+        ),
+        "admin",
+    )
+
+    upgraded = projects.get("pj-fullstack")
+
+    assert tuple(repository.role for repository in upgraded.repositories) == (
+        "backend",
+        "design",
+        "frontend",
+        "qa",
+    )
+    assert all(repository.status == "ready" for repository in upgraded.repositories)
+    assert len({repository.workspace_ref for repository in upgraded.repositories}) == 4
+    assert len({repository.repository_ref for repository in upgraded.repositories}) == 4
+
+    provisioner.revisions["projects/pj-fullstack/frontend"] = "f" * 40
+    context = projects.prepare_delivery("pj-fullstack", "delivery-fullstack", None)
+    assert tuple(repository.role for repository in context.repositories) == (
+        "backend",
+        "design",
+        "frontend",
+        "qa",
+    )
+    assert len(context.repository_set_sha256) == 64
+    assert (
+        next(
+            repository.seed_revision
+            for repository in context.repositories
+            if repository.role == "frontend"
+        )
+        == "f" * 40
+    )
+    assert (
+        projects.prepare_delivery(
+            "pj-fullstack", "delivery-fullstack-2", None
+        ).repository_set_sha256
+        == context.repository_set_sha256
+    )
+
+
+def test_fullstack_delivery_is_blocked_until_every_repository_is_ready(
+    tmp_path: Path,
+) -> None:
+    projects, provisioner = catalog(tmp_path)
+    provisioner.fail_refs.add("projects/pj-incomplete/frontend")
+    created = projects.create(
+        ProjectCreate(
+            id="pj-incomplete",
+            name="仓库不完整项目",
+            default_pipeline_revision_id="fullstack-product-delivery:1",
+            repository_mode="fullstack",
+        ),
+        "admin",
+    )
+
+    assert created.project.lifecycle_status == "active"
+    assert next(item for item in created.repositories if item.role == "frontend").status == "failed"
+    with pytest.raises(ProductError) as blocked:
+        projects.prepare_delivery("pj-incomplete", "delivery", None)
+    assert blocked.value.code == "PROJECT_REPOSITORY_NOT_READY"
+    assert "frontend" in blocked.value.detail
+
+    provisioner.fail_refs.clear()
+    retried = projects.provision_fullstack("pj-incomplete")
+    assert all(item.status == "ready" for item in retried.repositories)
+    assert len(projects.prepare_delivery("pj-incomplete", "delivery", None).repositories) == 4
+
+
 def test_project_provision_failure_is_retryable_and_never_falls_back(tmp_path: Path) -> None:
     projects, provisioner = catalog(tmp_path)
     provisioner.fail = True
     created = projects.create(
-        ProjectCreate(
-            id="pj2", name="项目二", default_pipeline_revision_id="backend-delivery:3"
-        ),
+        ProjectCreate(id="pj2", name="项目二", default_pipeline_revision_id="backend-delivery:3"),
         "admin",
     )
     assert created.project.lifecycle_status == "provision_failed"
@@ -151,9 +228,7 @@ def test_interrupted_project_provisioning_resumes_idempotently(tmp_path: Path) -
 def test_orphan_delivery_lease_is_removed_during_restart_reconciliation(tmp_path: Path) -> None:
     projects, _ = catalog(tmp_path)
     projects.create(
-        ProjectCreate(
-            id="pj-lease", name="租约恢复", default_pipeline_revision_id="delivery:1"
-        ),
+        ProjectCreate(id="pj-lease", name="租约恢复", default_pipeline_revision_id="delivery:1"),
         "admin",
     )
     projects.repository.acquire_lease("pj-lease", "missing-delivery")
@@ -167,9 +242,7 @@ def test_orphan_delivery_lease_is_removed_during_restart_reconciliation(tmp_path
 def test_initial_delivery_lease_aggregate_and_event_roll_back_together(tmp_path: Path) -> None:
     projects, _ = catalog(tmp_path)
     projects.create(
-        ProjectCreate(
-            id="pj-uow", name="事务项目", default_pipeline_revision_id="delivery:1"
-        ),
+        ProjectCreate(id="pj-uow", name="事务项目", default_pipeline_revision_id="delivery:1"),
         "admin",
     )
     context = projects.prepare_delivery("pj-uow", "delivery-uow", None)
@@ -201,9 +274,7 @@ def test_initial_delivery_lease_aggregate_and_event_roll_back_together(tmp_path:
 def test_delivery_project_index_cannot_drift_from_frozen_snapshot(tmp_path: Path) -> None:
     projects, _ = catalog(tmp_path)
     projects.create(
-        ProjectCreate(
-            id="pj-index", name="索引一致性", default_pipeline_revision_id="delivery:1"
-        ),
+        ProjectCreate(id="pj-index", name="索引一致性", default_pipeline_revision_id="delivery:1"),
         "admin",
     )
     context = projects.prepare_delivery("pj-index", "delivery-index", None)
@@ -230,9 +301,7 @@ def test_delivery_project_index_cannot_drift_from_frozen_snapshot(tmp_path: Path
 def test_archived_project_is_read_only_and_binding_cas_is_enforced(tmp_path: Path) -> None:
     projects, _ = catalog(tmp_path)
     created = projects.create(
-        ProjectCreate(
-            id="pj3", name="项目三", default_pipeline_revision_id="backend-delivery:1"
-        ),
+        ProjectCreate(id="pj3", name="项目三", default_pipeline_revision_id="backend-delivery:1"),
         "admin",
     )
     binding = created.pipeline_bindings[0]
@@ -257,9 +326,7 @@ def test_archived_project_is_read_only_and_binding_cas_is_enforced(tmp_path: Pat
         projects.put_deployment_access("pj3", ProjectDeploymentUpdate(deployment_id="pm"))
     assert error.value.code == "PROJECT_ARCHIVED"
     with pytest.raises(ProductError):
-        projects.put_knowledge_source(
-            "pj3", ProjectKnowledgeSourceUpdate(binding_id="feishu-team")
-        )
+        projects.put_knowledge_source("pj3", ProjectKnowledgeSourceUpdate(binding_id="feishu-team"))
 
 
 def test_project_git_candidates_and_main_revisions_are_fully_isolated(tmp_path: Path) -> None:
@@ -278,6 +345,29 @@ def test_project_git_candidates_and_main_revisions_are_fully_isolated(tmp_path: 
     assert first.main_revision() == candidate.candidate_revision
     assert second.main_revision() == second_base
     assert second.main_revision() != first.main_revision()
+
+
+def test_fullstack_repository_roles_have_isolated_git_main_refs(tmp_path: Path) -> None:
+    workspaces = ProjectGitWorkspaces(tmp_path / "workspaces")
+    frontend_base = workspaces.provision("projects/pj-fullstack/frontend")
+    backend_base = workspaces.provision("projects/pj-fullstack/backend")
+    frontend = workspaces.for_workspace("project:pj-fullstack:frontend")
+    backend = workspaces.for_workspace("project:pj-fullstack:backend")
+
+    frontend_seed = frontend.create_worktree("inspect-frontend", frontend_base)
+    assert (frontend_seed / "src" / "index.html").is_file()
+    assert not (frontend_seed / "src" / "service.py").exists()
+
+    frontend_tree = frontend.create_worktree("delivery-frontend", frontend_base)
+    (frontend_tree / "src" / "project.py").write_text("PROJECT = 'frontend'\n", encoding="utf-8")
+    candidate = frontend.create_candidate(
+        "delivery-frontend", base_revision=frontend_base, policy=SandboxPolicy()
+    )
+    frontend.apply_candidate(candidate)
+
+    assert frontend.main_revision() == candidate.candidate_revision
+    assert backend.main_revision() == backend_base
+    assert backend.main_revision() != frontend.main_revision()
 
 
 def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path: Path) -> None:
@@ -307,7 +397,15 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             ) VALUES('evidence-1','legacy-delivery','journey','delivery','legacy-delivery',
             'legacy','verified','{}',CURRENT_TIMESTAMP)"""
         )
-    assert MigrationRunner(database, ROOT / "migrations").migrate() == (19, 20, 21)
+    assert MigrationRunner(database, ROOT / "migrations").migrate() == (
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+    )
     with sqlite3.connect(database) as connection:
         snapshot, project_id = connection.execute(
             "SELECT snapshot_json,project_id FROM deliveries WHERE id='legacy-delivery'"
@@ -322,8 +420,13 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             """SELECT delivery_count,event_count,evidence_count,source_index_sha256
             FROM project_migration_reports WHERE migration_id='0019-project-governance'"""
         ).fetchone()
+        repositories = connection.execute(
+            """SELECT role,workspace_ref,repository_ref,status
+            FROM project_repositories WHERE project_id='legacy-default'"""
+        ).fetchall()
     assert json.loads(audit[0]) == original
     assert audit[1] != audit[2]
     assert report[:3] == (1, 1, 1)
     assert len(report[3]) == 64
+    assert repositories == [("backend", "backend-demo", "legacy/backend-demo", "ready")]
     assert MigrationRunner(database, ROOT / "migrations").migrate() == ()

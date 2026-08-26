@@ -50,6 +50,15 @@ class AgentCapabilityRequirement(BaseModel):
         return value
 
 
+class AgentExtensionRequirement(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    kind: Literal["skill", "plugin", "mcp"]
+    version: str = Field(min_length=1, max_length=80)
+    optional: bool = False
+
+
 class AgentPolicyReferences(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -90,7 +99,17 @@ class AgentProfileSpec(BaseModel):
             raise ValueError("capability ids must be unique")
         if len(self.tags) != len(set(self.tags)):
             raise ValueError("tags must be unique")
+        extension_ids = [item.id for item in self.extension_requirements]
+        if len(extension_ids) != len(set(extension_ids)):
+            raise ValueError("runtime extension ids must be unique")
         return self
+
+    @property
+    def extension_requirements(self) -> tuple[AgentExtensionRequirement, ...]:
+        raw = self.extensions.get("runtime_extensions", ())
+        if not isinstance(raw, (list, tuple)):
+            raise ValueError("extensions.runtime_extensions must be a list")
+        return tuple(AgentExtensionRequirement.model_validate(item) for item in raw)
 
 
 class AgentProfile(BaseModel):

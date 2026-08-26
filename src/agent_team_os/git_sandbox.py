@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from pydantic import BaseModel, ConfigDict, Field
 
 from .delivery import ApplyReceipt, CandidateChange, VerificationRun
+from .shared.repositories import RepositoryRole
 
 
 class SandboxError(RuntimeError):
@@ -57,8 +58,9 @@ class SandboxPolicy(BaseModel):
 
 
 class GitSandbox:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, repository_role: RepositoryRole = "backend") -> None:
         self.root = root.resolve()
+        self.repository_role = repository_role
         self.bare_repo = self.root / "backend-demo.git"
         self.worktrees = self.root / "worktrees"
 
@@ -71,32 +73,18 @@ class GitSandbox:
         with tempfile.TemporaryDirectory(prefix="agent-team-os-seed-") as directory:
             seed = Path(directory)
             self._run("git", "init", "--initial-branch=main", cwd=seed)
-            (seed / "src").mkdir()
-            (seed / "tests").mkdir()
-            (seed / "src" / "__init__.py").write_text("", encoding="utf-8")
-            (seed / "src" / "service.py").write_text(
-                '"""Backend demo service."""\n\n\ndef service_info() -> dict[str, str]:\n'
-                '    return {"name": "backend-demo"}\n',
-                encoding="utf-8",
-            )
-            (seed / "tests" / "test_service.py").write_text(
-                """import unittest
-
-from src.service import service_info
-
-
-class ServiceInfoTest(unittest.TestCase):
-    def test_service_name(self) -> None:
-        self.assertEqual(service_info()["name"], "backend-demo")
-
-
-if __name__ == "__main__":
-    unittest.main()
-""",
-                encoding="utf-8",
-            )
+            for relative_path, content in _seed_files(self.repository_role).items():
+                path = seed / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
             self._run("git", "add", "--all", cwd=seed)
-            self._run("git", "commit", "-m", "seed backend demo", cwd=seed)
+            self._run(
+                "git",
+                "commit",
+                "-m",
+                f"seed {self.repository_role} demo",
+                cwd=seed,
+            )
             self._run("git", "remote", "add", "origin", str(self.bare_repo), cwd=seed)
             self._run("git", "push", "origin", "main", cwd=seed)
 
@@ -145,12 +133,8 @@ if __name__ == "__main__":
         self._run("git", "add", "--all", cwd=worktree)
         self._run("git", "commit", "-m", f"candidate {delivery_id}", cwd=worktree)
         candidate_revision = self._git("rev-parse", "HEAD", cwd=worktree).strip()
-        candidate_ref = (
-            f"refs/candidates/{self._safe_id(delivery_id)}/{candidate_revision}"
-        )
-        self._git_bare(
-            "update-ref", candidate_ref, candidate_revision, "0" * 40
-        )
+        candidate_ref = f"refs/candidates/{self._safe_id(delivery_id)}/{candidate_revision}"
+        self._git_bare("update-ref", candidate_ref, candidate_revision, "0" * 40)
         unified_diff = self._git_bare(
             "diff", "--binary", "--no-ext-diff", base_revision, candidate_revision, "--"
         )
@@ -276,6 +260,27 @@ if __name__ == "__main__":
             result="applied",
         )
 
+    def rollback_candidate(self, receipt: ApplyReceipt) -> str:
+        """Compensate an applied candidate only while Main is unchanged."""
+        current = self.main_revision()
+        if current == receipt.before_revision:
+            return current
+        if current != receipt.after_revision:
+            raise BaseRevisionConflictError("Main changed after repository apply")
+        try:
+            self._git_bare(
+                "update-ref",
+                "refs/heads/main",
+                receipt.before_revision,
+                receipt.after_revision,
+            )
+        except subprocess.CalledProcessError as error:
+            raise BaseRevisionConflictError("Main changed during compensation") from error
+        restored = self.main_revision()
+        if restored != receipt.before_revision:
+            raise EvidenceMismatchError("compensation did not restore reviewed base")
+        return restored
+
     def _working_tree_files(self, worktree: Path) -> tuple[str, ...]:
         modified = self._git("diff", "--name-only", "HEAD", cwd=worktree).splitlines()
         untracked = self._git(
@@ -356,3 +361,55 @@ if __name__ == "__main__":
             check=True,
         )
         return result.stdout
+
+
+def _seed_files(role: RepositoryRole) -> dict[str, str]:
+    if role == "frontend":
+        return {
+            "src/index.html": (
+                '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+                '<title>Agent-Team-OS 前端</title></head><body><main id="app">'
+                "前端项目</main></body></html>\n"
+            ),
+            "src/app.js": 'document.documentElement.dataset.app = "frontend-demo";\n',
+            "tests/test_frontend.py": (
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class FrontendSeedTest(unittest.TestCase):\n"
+                "    def test_entry_exists(self) -> None:\n"
+                "        self.assertIn('zh-CN', Path('src/index.html').read_text())\n"
+            ),
+        }
+    if role == "design":
+        return {
+            "design/system.md": "# 设计系统\n\n状态：待产品需求与设计 Agent 更新。\n",
+            "tests/test_design.py": (
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class DesignSeedTest(unittest.TestCase):\n"
+                "    def test_design_source_exists(self) -> None:\n"
+                "        self.assertTrue(Path('design/system.md').is_file())\n"
+            ),
+        }
+    if role == "qa":
+        return {
+            "reports/README.md": "# QA 报告\n\n机器报告由测试 Agent 生成。\n",
+            "tests/test_qa.py": (
+                "import unittest\nfrom pathlib import Path\n\n"
+                "class QASeedTest(unittest.TestCase):\n"
+                "    def test_report_directory_exists(self) -> None:\n"
+                "        self.assertTrue(Path('reports').is_dir())\n"
+            ),
+        }
+    return {
+        "src/__init__.py": "",
+        "src/service.py": (
+            '"""Backend demo service."""\n\n\ndef service_info() -> dict[str, str]:\n'
+            '    return {"name": "backend-demo"}\n'
+        ),
+        "tests/test_service.py": (
+            "import unittest\n\nfrom src.service import service_info\n\n\n"
+            "class ServiceInfoTest(unittest.TestCase):\n"
+            "    def test_service_name(self) -> None:\n"
+            "        self.assertEqual(service_info()['name'], 'backend-demo')\n\n\n"
+            'if __name__ == "__main__":\n    unittest.main()\n'
+        ),
+    }

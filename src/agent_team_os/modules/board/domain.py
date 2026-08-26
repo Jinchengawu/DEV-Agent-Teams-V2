@@ -11,6 +11,7 @@ from ...shared.events import ProductEvent
 BoardColumn = Literal[
     "backlog",
     "plan-approval",
+    "design-approval",
     "executing",
     "candidate-approval",
     "completed",
@@ -46,6 +47,7 @@ class BoardProjector:
         "queued": "backlog",
         "planning": "backlog",
         "awaiting_plan_decision": "plan-approval",
+        "awaiting_design_decision": "design-approval",
         "executing": "executing",
         "verifying": "executing",
         "awaiting_candidate_decision": "candidate-approval",
@@ -57,6 +59,11 @@ class BoardProjector:
     }
     _commands: dict[str, tuple[str, ...]] = {
         "awaiting_plan_decision": ("approve-plan", "reject-plan", "cancel"),
+        "awaiting_design_decision": (
+            "approve-design",
+            "reject-design",
+            "cancel",
+        ),
         "awaiting_candidate_decision": (
             "accept-candidate",
             "reject-candidate",

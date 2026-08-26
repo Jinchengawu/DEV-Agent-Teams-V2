@@ -69,6 +69,7 @@ class LegacyDatabaseImporter:
         "queued",
         "planning",
         "awaiting_plan_decision",
+        "awaiting_design_decision",
         "executing",
         "verifying",
         "awaiting_candidate_decision",

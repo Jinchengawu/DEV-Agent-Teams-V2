@@ -305,10 +305,14 @@ def _evidence_kind_label(kind: str) -> str:
         "requirement": "需求分析",
         "task": "任务合同",
         "candidate": "候选变更",
+        "diff": "代码差异",
         "verification": "机器验证",
         "plan-gate": "计划审批",
+        "design-gate": "设计审批",
         "candidate-gate": "候选审批",
         "apply-receipt": "应用回执",
+        "release-bundle": "全栈发布包",
+        "release-manifest": "发布清单",
     }.get(kind, f"交付证据（{kind}）")
 
 

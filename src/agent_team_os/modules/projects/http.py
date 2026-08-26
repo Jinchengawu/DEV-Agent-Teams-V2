@@ -17,6 +17,7 @@ from .domain import (
     ProjectKnowledgeSourceUpdate,
     ProjectPatch,
     ProjectPipelineBinding,
+    ProjectRepository,
 )
 
 
@@ -65,6 +66,21 @@ def create_project_router(
     def reset_workspace(project_id: str, request: Request) -> dict[str, str]:
         authorize_manage(request)
         return {"main_revision": catalog.reset_workspace(project_id)}
+
+    @router.get(
+        "/v1/projects/{project_id}/repositories",
+        response_model=tuple[ProjectRepository, ...],
+    )
+    def list_repositories(project_id: str) -> tuple[ProjectRepository, ...]:
+        return catalog.get(project_id).repositories
+
+    @router.post(
+        "/v1/projects/{project_id}/repositories/provision-fullstack",
+        response_model=ProjectDetail,
+    )
+    def provision_fullstack(project_id: str, request: Request) -> ProjectDetail:
+        authorize_manage(request)
+        return catalog.provision_fullstack(project_id)
 
     @router.get(
         "/v1/projects/{project_id}/pipeline-bindings",

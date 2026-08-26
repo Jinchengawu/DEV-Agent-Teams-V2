@@ -26,6 +26,11 @@ def load_backend_delivery_definition(config_root: Path) -> dict[str, object]:
     return definition.model_dump(mode="json")
 
 
+def load_fullstack_delivery_definition(config_root: Path) -> dict[str, object]:
+    definition = load_journeys(config_root / "journeys.yaml")["fullstack-product-delivery"]
+    return definition.model_dump(mode="json")
+
+
 def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition) -> str:
     catalog = load_capabilities(config_root / "capabilities.yaml")
     adapters = {
@@ -36,6 +41,15 @@ def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition
             CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
         ),
         "codex-backend": CodexCLICapabilityAdapter(
+            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+        ),
+        "design.system": CodexCLICapabilityAdapter(
+            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+        ),
+        "frontend.implementation": CodexCLICapabilityAdapter(
+            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+        ),
+        "testing.review": CodexCLICapabilityAdapter(
             CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
         ),
     }
@@ -50,6 +64,9 @@ def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition
             "requirement-artifact-v1": _ResolutionOnlyValidator(),
             "task-contract-v1": _ResolutionOnlyValidator(),
             "backend-candidate-v1": _ResolutionOnlyValidator(),
+            "design-candidate-v1": _ResolutionOnlyValidator(),
+            "frontend-candidate-v1": _ResolutionOnlyValidator(),
+            "qa-candidate-v1": _ResolutionOnlyValidator(),
         },
     )
     resolved = workflows.resolve_journey(definition)

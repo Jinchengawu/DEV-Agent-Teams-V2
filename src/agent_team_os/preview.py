@@ -38,6 +38,7 @@ from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
 from .infrastructure.git import ProjectGitWorkspaces
 from .journey import (
     load_backend_delivery_definition,
+    load_fullstack_delivery_definition,
     resolve_backend_delivery_fingerprint,
 )
 from .modules.agents import (
@@ -48,9 +49,14 @@ from .modules.agents import (
     SQLiteAgentDeploymentRepository,
     SQLiteAgentProfileRepository,
     ensure_builtin_agent_deployments,
+    ensure_builtin_fullstack_agent_deployments,
 )
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
+from .modules.extensions import (
+    RuntimeExtensionCatalog,
+    SQLiteRuntimeExtensionRepository,
+)
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
 from .modules.orchestration import (
@@ -66,6 +72,7 @@ from .modules.projects import (
     ProjectLeaseDeliveryRepository,
     SQLiteProjectRepository,
 )
+from .modules.releases import ReleaseCoordinator, SQLiteReleaseRepository
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .readiness import (
     DependencyCheck,
@@ -146,6 +153,7 @@ def build_preview_app() -> FastAPI:
             "queued",
             "planning",
             "awaiting_plan_decision",
+            "awaiting_design_decision",
             "executing",
             "verifying",
             "awaiting_candidate_decision",
@@ -160,11 +168,12 @@ def build_preview_app() -> FastAPI:
     delivery_repository = ProjectLeaseDeliveryRepository(
         SQLiteDeliveryRepository(database), projects
     )
+    candidate_applier = GitCandidateApplier(project_workspaces)
     coordinator = DeliveryCoordinator(
         planning=CodexSimulatedHermesPlanning(runner),
         executor=GitCodeExecutor(project_workspaces, code_agent),
         verifier=GitCandidateVerifier(project_workspaces),
-        applier=GitCandidateApplier(project_workspaces),
+        applier=candidate_applier,
         repository=delivery_repository,
         resolved_journey_sha256=resolve_backend_delivery_fingerprint(project_root / "config"),
     )
@@ -174,14 +183,19 @@ def build_preview_app() -> FastAPI:
         execution_identity="codex-cli",
     )
     agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
+    runtime_extensions = RuntimeExtensionCatalog(SQLiteRuntimeExtensionRepository(database))
     provider_manifests = ProviderManifestCatalog()
     agent_deployments = AgentDeploymentCatalog(
         SQLiteAgentDeploymentRepository(database),
         agent_profiles,
         control_plane,
         provider_manifests,
+        extensions=runtime_extensions,
     )
     builtin_assignments = ensure_builtin_agent_deployments(agent_profiles, agent_deployments)
+    fullstack_assignments = ensure_builtin_fullstack_agent_deployments(
+        agent_profiles, agent_deployments
+    )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
         graph_compiler=ACWMGraphCompiler(),
@@ -201,6 +215,16 @@ def build_preview_app() -> FastAPI:
             description="需求、计划审批、代码交付、候选审批与原子应用",
             definition=load_backend_delivery_definition(project_root / "config"),
             agent_assignments=builtin_assignments,
+        ),
+    )
+    _ensure_builtin_pipeline_for_preview(
+        pipeline_catalog,
+        PipelineCreate(
+            id="fullstack-product-delivery",
+            name="产品规划 → UI 设计 → 前后端 → 测试发布",
+            description="五个 Codex 角色、四个隔离仓库、三道人工审批与 Release Manifest",
+            definition=load_fullstack_delivery_definition(project_root / "config"),
+            agent_assignments=fullstack_assignments,
         ),
     )
 
@@ -243,6 +267,8 @@ def build_preview_app() -> FastAPI:
         agent_runs=AgentRunLedger(database),
         projects=projects,
         knowledge_search=KnowledgeSearchIndex(database),
+        runtime_extensions=runtime_extensions,
+        release_applier=ReleaseCoordinator(SQLiteReleaseRepository(database), candidate_applier),
     )
     install_preview_ui(app, project_root / "console" / "dist")
 

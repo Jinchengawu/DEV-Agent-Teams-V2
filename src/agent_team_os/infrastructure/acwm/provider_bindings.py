@@ -142,6 +142,7 @@ class AgentDeploymentBindingResolver:
                     f"{code}: {site.reference}: {error}"
                 ) from error
             snapshot[site.reference] = {
+                "profile": profile.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json"),
                 "runtime_identity": instance.health.identity,
                 "binding": binding.model_dump(mode="json"),

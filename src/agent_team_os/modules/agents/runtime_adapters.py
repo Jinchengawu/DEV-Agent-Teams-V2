@@ -16,9 +16,7 @@ class RuntimeAdapterDescriptor(BaseModel):
     runtime_type: RuntimeType
     features: tuple[str, ...]
     available: bool
-    features_source: Literal["installed-acwm-adapter-manifest"] = (
-        "installed-acwm-adapter-manifest"
-    )
+    features_source: Literal["installed-acwm-adapter-manifest"] = "installed-acwm-adapter-manifest"
     error_code: str | None = None
 
 

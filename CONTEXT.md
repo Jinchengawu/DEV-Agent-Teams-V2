@@ -44,6 +44,12 @@ receipt. A successful label is never evidence by itself.
   are runtime truth and cannot be submitted by the browser.
 - **Agent Assignment**: one Pipeline Stage binding site mapped to a qualified Deployment. Published
   Pipeline Revisions freeze the resulting ACWM Resolved Provider Binding.
+- **Project Repository Set**: the immutable project-scoped collection of Backend, Frontend, Design
+  and QA repository identities frozen when a full-stack Delivery starts.
+- **Release Bundle**: the reviewed collection of per-repository Base, Candidate, Diff and
+  Verification facts coordinated as one product release.
+- **Release Manifest**: the immutable product authority naming the exact repository revisions that
+  form one accepted release. Git Main refs must converge to it but are not cross-repository atomic.
 
 ## Ownership
 
@@ -60,6 +66,9 @@ receipt. A successful label is never evidence by itself.
 - Deterministic adapters and live agents have different evidence identities.
 - Missing, all-zero, stale, or unverifiable hashes are not valid evidence.
 - Reject never changes Main; Accept succeeds only when Main equals the reviewed Candidate.
+- A multi-repository Delivery is complete only when every Main equals its reviewed Candidate and
+  the active Release Manifest names the same revisions; cross-repository Git updates are never
+  described as physically atomic.
 - A Board move expresses a command; it cannot write a terminal state directly.
 - Published Journey Revisions and Evidence Records are immutable.
 - Published Pipeline Revisions pin the compiled Journey Graph, Capability bindings, policies and

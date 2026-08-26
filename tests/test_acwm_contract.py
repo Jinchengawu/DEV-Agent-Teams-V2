@@ -12,8 +12,11 @@ def test_v2_delivery_journey_uses_acwm_without_copying_its_control_plane() -> No
 
     assert tuple(sorted(capabilities.descriptors)) == (
         "codex-backend",
+        "design.system",
+        "frontend.implementation",
         "hermes-pm",
         "hermes-project-admin",
+        "testing.review",
     )
     assert [node.id for node in journey.nodes] == [
         "requirements",
@@ -45,3 +48,33 @@ def test_v2_delivery_journey_uses_acwm_without_copying_its_control_plane() -> No
         ("approve-plan", "code-repair", "plan-approved"),
         ("code-repair", "approve-candidate", None),
     ]
+
+
+def test_fullstack_product_journey_keeps_three_gates_and_bounded_parallel_repair() -> None:
+    root = Path(__file__).parents[1]
+    journey = load_journeys(root / "config" / "journeys.yaml")[
+        "fullstack-product-delivery"
+    ]
+
+    assert [node.id for node in journey.nodes] == [
+        "requirements",
+        "tasking",
+        "approve-plan",
+        "design",
+        "approve-design",
+        "implementation-repair",
+        "approve-release",
+    ]
+    loop = next(node for node in journey.nodes if isinstance(node, LoopDefinition))
+    assert loop.policy.exit_condition == "release-bundle-verified"
+    assert loop.policy.max_iterations == 3
+    assert [node.id for node in loop.nodes] == ["backend", "frontend", "qa"]
+    assert [(edge.source, edge.target) for edge in loop.edges] == [
+        ("backend", "qa"),
+        ("frontend", "qa"),
+    ]
+    assert [
+        node.subject_kind
+        for node in journey.nodes
+        if isinstance(node, ApprovalGateDefinition)
+    ] == ["delivery-plan", "design-candidate", "release-bundle"]

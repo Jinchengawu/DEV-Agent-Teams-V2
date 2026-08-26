@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "node --max-old-space-size=256 ./node_modules/typescript/bin/tsc --noEmit",
-    "build": "node --max-old-space-size=256 ./node_modules/vite/bin/vite.js build",
+    "build": "node --max-old-space-size=1024 ./node_modules/vite/bin/vite.js build",
     "test": "node --max-old-space-size=256 ./node_modules/vitest/vitest.mjs run --reporter=verbose --pool=forks --poolOptions.forks.singleFork=true",
     "api:generate": "node --max-old-space-size=256 ./node_modules/openapi-typescript/bin/cli.js ./openapi.json -o ./src/shared/api/generated/schema.ts",
     "api:check": "pnpm api:generate && git diff --exit-code -- openapi.json src/shared/api/generated/schema.ts"

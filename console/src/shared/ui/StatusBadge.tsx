@@ -8,7 +8,7 @@ export function StatusBadge({ value }: { value: string }) {
 function statusColor(value: string) {
   if (["ready", "active", "completed", "passed", "verified", "valid", "qualified", "healthy"].includes(value)) return "success";
   if (["failed", "rejected", "cancelled", "invalid", "failed_cancelled", "provision_failed", "unhealthy"].includes(value)) return "error";
-  if (["awaiting_plan_decision", "awaiting_candidate_decision", "plan_approval", "candidate_approval", "warning"].includes(value)) return "warning";
+  if (["awaiting_plan_decision", "awaiting_design_decision", "awaiting_candidate_decision", "plan_approval", "design_approval", "candidate_approval", "plan-approval", "design-approval", "candidate-approval", "warning"].includes(value)) return "warning";
   if (["planning", "executing", "verifying", "applying", "running"].includes(value)) return "processing";
   return "default";
 }

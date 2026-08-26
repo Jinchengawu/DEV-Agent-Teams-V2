@@ -2,6 +2,7 @@ const statuses: Record<string, string> = {
   queued: "已排队",
   planning: "规划中",
   awaiting_plan_decision: "等待计划审批",
+  awaiting_design_decision: "等待设计审批",
   executing: "执行中",
   verifying: "验证中",
   awaiting_candidate_decision: "等待候选审批",
@@ -23,6 +24,7 @@ const statuses: Record<string, string> = {
   archived: "已归档",
   backlog: "待规划",
   "plan-approval": "计划审批",
+  "design-approval": "设计审批",
   "candidate-approval": "候选审批",
   "failed-cancelled": "失败 / 取消",
   default: "默认",
@@ -34,6 +36,8 @@ const statuses: Record<string, string> = {
 const commands: Record<string, string> = {
   "approve-plan": "批准计划",
   "reject-plan": "拒绝计划",
+  "approve-design": "批准设计",
+  "reject-design": "拒绝设计",
   "accept-candidate": "接受候选",
   "reject-candidate": "拒绝候选",
   cancel: "取消交付",
@@ -46,7 +50,10 @@ const artifactTypes: Record<string, string> = {
   candidate: "候选变更",
   verification: "机器验证",
   "plan-gate": "计划审批",
+  "design-gate": "设计审批",
   "candidate-gate": "候选审批",
+  "release-bundle": "全栈发布包",
+  "release-manifest": "发布清单",
   "apply-receipt": "应用回执",
   "journey-revision": "旅程版本",
   journey: "旅程快照",
@@ -57,6 +64,10 @@ const journeySteps: Record<string, string> = {
   requirements: "需求分析",
   tasking: "任务规划",
   "approve-plan": "计划审批",
+  design: "UI 设计",
+  "approve-design": "设计审批",
+  "implementation-repair": "前后端实现与测试",
+  "approve-release": "发布审批",
   delivery: "代码交付",
   "approve-candidate": "候选审批",
 };
@@ -96,6 +107,14 @@ export function runtimeTypeLabel(value: string): string {
   if (value === "codex-cli") return "Codex 命令行";
   if (value === "hermes-http") return "Hermes HTTP 服务";
   if (value === "hermes-acp") return "Hermes ACP 服务";
+  return value;
+}
+
+export function repositoryRoleLabel(value: string): string {
+  if (value === "backend") return "后端";
+  if (value === "design") return "UI 设计";
+  if (value === "frontend") return "前端";
+  if (value === "qa") return "测试审查";
   return value;
 }
 

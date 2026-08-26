@@ -21,6 +21,7 @@ class Permission(StrEnum):
     AGENT_PROFILE_PUBLISH = "agent-profile:publish"
     AGENT_INSTANCE_MANAGE = "agent-instance:manage"
     AGENT_DEPLOYMENT_MANAGE = "agent-deployment:manage"
+    RUNTIME_EXTENSION_MANAGE = "runtime-extension:manage"
     CAPABILITY_EDIT = "capability:edit"
     CAPABILITY_PUBLISH = "capability:publish"
     EVIDENCE_VERIFY = "evidence:verify"

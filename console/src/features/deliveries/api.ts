@@ -50,7 +50,7 @@ export function useCreateDelivery(projectId: string, onCreated: (id: string) => 
   });
 }
 
-export type DeliveryDecision = "approve-plan" | "reject-plan" | "accept-candidate" | "reject-candidate";
+export type DeliveryDecision = "approve-plan" | "reject-plan" | "approve-design" | "reject-design" | "accept-candidate" | "reject-candidate";
 type DecisionInput = { delivery: Delivery; decision: DeliveryDecision };
 
 export function useDeliveryDecision() {
@@ -58,13 +58,14 @@ export function useDeliveryDecision() {
   return useMutation({
     mutationFn: ({ delivery, decision }: DecisionInput) => {
       const plan = decision.endsWith("plan");
-      const gate = plan ? delivery.plan_gate : delivery.candidate_gate;
-      const path = plan ? "plan-decision" : "candidate-decision";
+      const design = decision.endsWith("design");
+      const gate = plan ? delivery.plan_gate : design ? delivery.design_gate : delivery.candidate_gate;
+      const path = plan ? "plan-decision" : design ? "design-decision" : "candidate-decision";
       if (!gate) throw new Error("当前审批主题尚未生成，请等待状态推进。");
       return request<Delivery>(`/v1/deliveries/${delivery.id}/${path}`, {
         method: "POST",
         body: JSON.stringify({
-          decision: decision === "approve-plan" ? "approve" : decision === "accept-candidate" ? "accept" : "reject",
+          decision: decision === "approve-plan" || decision === "approve-design" ? "approve" : decision === "accept-candidate" ? "accept" : "reject",
           expected_version: delivery.version,
           expected_subject_sha256: gate.subject_sha256,
         }),

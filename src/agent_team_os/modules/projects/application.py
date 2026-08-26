@@ -4,6 +4,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from ...shared.errors import ProductError
+from ...shared.hashes import sha256_json
+from ...shared.repositories import RepositoryRole
 from .domain import (
     Project,
     ProjectBindingUpdate,
@@ -18,7 +20,17 @@ from .domain import (
     ProjectPipelineBinding,
     ProjectWorkspace,
 )
+from .domain import (
+    ProjectRepository as ProjectRepositoryRecord,
+)
 from .ports import ProjectRepository, ProjectWorkspaceProvisioner
+
+_FULLSTACK_ROLES: tuple[RepositoryRole, ...] = (
+    "backend",
+    "design",
+    "frontend",
+    "qa",
+)
 
 
 class ProjectCatalog:
@@ -78,6 +90,8 @@ class ProjectCatalog:
             self.put_deployment_access(
                 project.id, ProjectDeploymentUpdate(deployment_id=deployment_id)
             )
+        if request.repository_mode == "fullstack":
+            self.provision_fullstack(project.id)
         return self.get(project.id)
 
     def list(self) -> tuple[Project, ...]:
@@ -104,8 +118,70 @@ class ProjectCatalog:
             pipeline_bindings=self.repository.list_pipeline_bindings(project_id),
             deployment_access=self.repository.list_deployment_access(project_id),
             knowledge_sources=self.repository.list_knowledge_sources(project_id),
+            repositories=self.repository.list_repositories(project_id),
             active_delivery_id=self.repository.active_delivery_id(project_id),
         )
+
+    def provision_fullstack(self, project_id: str) -> ProjectDetail:
+        project = self._project(project_id)
+        if project.lifecycle_status != "active":
+            raise _archived() if project.lifecycle_status == "archived" else _not_ready()
+        if self.repository.active_delivery_id(project_id) is not None:
+            raise _conflict(
+                "PROJECT_ACTIVE_DELIVERY_CONFLICT",
+                "项目存在活动交付",
+                "等待交付进入终态后再初始化全栈仓库。",
+            )
+        existing = {item.role: item for item in self.repository.list_repositories(project_id)}
+        now = datetime.now(UTC)
+        for role in _FULLSTACK_ROLES:
+            current = existing.get(role)
+            if current is not None and current.status == "ready":
+                continue
+            repository = current or ProjectRepositoryRecord(
+                project_id=project_id,
+                role=role,
+                workspace_ref=f"project:{project_id}:{role}",
+                repository_ref=f"projects/{project_id}/{role}",
+                status="provisioning",
+                provision_attempt=1,
+                created_at=now,
+                updated_at=now,
+            )
+            if current is not None:
+                repository = current.model_copy(
+                    update={
+                        "status": "provisioning",
+                        "provision_attempt": current.provision_attempt + 1,
+                        "error_code": None,
+                        "updated_at": now,
+                    }
+                )
+            self.repository.put_repository(repository)
+            try:
+                revision = self.provisioner.provision(repository.repository_ref)
+            except Exception:
+                self.repository.put_repository(
+                    repository.model_copy(
+                        update={
+                            "status": "failed",
+                            "error_code": "PROJECT_REPOSITORY_PROVISION_FAILED",
+                            "updated_at": datetime.now(UTC),
+                        }
+                    )
+                )
+                continue
+            self.repository.put_repository(
+                repository.model_copy(
+                    update={
+                        "status": "ready",
+                        "seed_revision": revision,
+                        "error_code": None,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+        return self.get(project_id)
 
     def patch(self, project_id: str, request: ProjectPatch) -> Project:
         project = self._project(project_id)
@@ -302,6 +378,26 @@ class ProjectCatalog:
             for item in self.repository.list_deployment_access(project_id)
             if item.enabled
         )
+        repository_records = self.repository.list_repositories(project_id)
+        unavailable = tuple(item for item in repository_records if item.status != "ready")
+        if unavailable:
+            roles = "、".join(item.role for item in unavailable)
+            raise ProductError(
+                code="PROJECT_REPOSITORY_NOT_READY",
+                title="项目仓库集合尚未就绪",
+                detail=f"以下仓库尚未完成初始化：{roles}。",
+                repair="在项目概览重新初始化全栈仓库，确认全部仓库状态为就绪后再创建交付。",
+                status_code=409,
+            )
+        repositories = tuple(
+            item.snapshot().model_copy(
+                update={"seed_revision": self.provisioner.revision(item.repository_ref)}
+            )
+            for item in repository_records
+        )
+        repository_set_sha256 = sha256_json(
+            [item.model_dump(mode="json") for item in repositories]
+        )
         return ProjectExecutionContext(
             project_id=project_id,
             project_version=project.version,
@@ -309,6 +405,8 @@ class ProjectCatalog:
             repository_ref=workspace.repository_ref,
             pipeline_revision_id=selected.revision_id,
             deployment_ids=deployments,
+            repositories=repositories,
+            repository_set_sha256=repository_set_sha256,
         )
 
     def release_delivery(self, project_id: str, delivery_id: str) -> None:
