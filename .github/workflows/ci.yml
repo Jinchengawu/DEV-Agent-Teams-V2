@@ -18,7 +18,7 @@ jobs:
           python-version: "3.11"
           enable-cache: true
       - name: Install locked development dependencies
-        run: uv sync --extra dev --locked
+        run: uv sync --extra dev --extra live --locked
       - name: Validate evaluation dataset
         run: uv run agent-team-os-dev eval validate-dataset
       - name: Validate migrations on a fresh database

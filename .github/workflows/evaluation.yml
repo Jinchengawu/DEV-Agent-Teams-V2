@@ -16,16 +16,16 @@ jobs:
   offline-standard:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      AGENT_TEAM_OS_DATA_DIR: ${{ runner.temp }}/agent-team-os-evaluation
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
           enable-cache: true
+      - name: Configure evaluation data directory
+        run: echo "AGENT_TEAM_OS_DATA_DIR=${RUNNER_TEMP}/agent-team-os-evaluation" >> "$GITHUB_ENV"
       - name: Install locked development dependencies
-        run: uv sync --extra dev --locked
+        run: uv sync --extra dev --extra live --locked
       - name: Validate versioned dataset
         run: uv run agent-team-os-dev eval validate-dataset
       - name: Calibration run 1
