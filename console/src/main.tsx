@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@xyflow/react/dist/style.css";
 import "./styles.css";
 import "./orchestration.css";
+import "./design-system/foundations.css";
+import "./design-system/tokens.css";
+import "./design-system/product.css";
 import { App } from "./app/App";
 
 const client = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 500 } } });

@@ -28,9 +28,10 @@ describe("交付黄金纵切", () => {
   it("把计划审批映射为带明确语义的真实命令", async () => {
     const onDecision = vi.fn();
     render(<DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/>);
+    await userEvent.click(screen.getByRole("button", { name: "审查计划" }));
+    expect(screen.getByRole("dialog", { name: "审查计划与执行边界" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "批准计划并开始执行" }));
     expect(onDecision).toHaveBeenCalledWith("approve-plan");
-    expect(screen.getByText("当前阶段尚无证据。只有真实产物生成后才会出现记录。")).toBeTruthy();
+    expect(screen.getByText("当前阶段尚无证据。系统不会为缺失产物补造记录。")).toBeTruthy();
   });
 });
-
