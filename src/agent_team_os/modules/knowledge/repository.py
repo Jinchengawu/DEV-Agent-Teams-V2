@@ -12,10 +12,13 @@ from ...shared.hashes import Sha256
 from .domain import (
     Comment,
     Document,
+    DocumentKind,
     KnowledgeDerivation,
+    KnowledgeLifecycleStatus,
     PermissionGrant,
     Revision,
     Space,
+    SpaceKind,
     WikiAccess,
 )
 from .ports import CompareAndSwapResult
@@ -32,8 +35,8 @@ class SQLiteWikiRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id,
+                space_kind,lifecycle_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -44,6 +47,8 @@ class SQLiteWikiRepository:
                     space.updated_at.isoformat(),
                     space.scope_kind,
                     space.project_id,
+                    space.space_kind.value,
+                    space.lifecycle_status.value,
                 ),
             )
             self._append_event(
@@ -61,6 +66,64 @@ class SQLiteWikiRepository:
             connection.commit()
         return space
 
+    def reconcile_project_space(self, space: Space) -> Space:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM wiki_spaces WHERE id=?", (space.id,)
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """INSERT INTO wiki_spaces(
+                    id,name,description,version,created_by,created_at,updated_at,
+                    scope_kind,project_id,space_kind,lifecycle_status)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        space.id,
+                        space.name,
+                        space.description,
+                        space.version,
+                        space.created_by,
+                        space.created_at.isoformat(),
+                        space.updated_at.isoformat(),
+                        space.scope_kind,
+                        space.project_id,
+                        space.space_kind.value,
+                        space.lifecycle_status.value,
+                    ),
+                )
+                self._append_event(
+                    connection,
+                    ProductEvent(
+                        event_type="knowledge.space-created",
+                        aggregate_type="wiki-space",
+                        aggregate_id=space.id,
+                        aggregate_version=space.version,
+                        project_id=space.project_id,
+                        payload={"name": space.name, "space_kind": space.space_kind.value},
+                        occurred_at=space.updated_at,
+                    ),
+                )
+            else:
+                connection.execute(
+                    """UPDATE wiki_spaces SET name=?,description=?,lifecycle_status=?,
+                    updated_at=? WHERE id=?""",
+                    (
+                        space.name,
+                        space.description,
+                        space.lifecycle_status.value,
+                        space.updated_at.isoformat(),
+                        space.id,
+                    ),
+                )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM wiki_spaces WHERE id=?", (space.id,)
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("project knowledge space reconciliation failed")
+        return self._space(row)
+
     def ensure_system_space(self, space: Space) -> Space:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -72,8 +135,8 @@ class SQLiteWikiRepository:
                 return self._space(existing)
             connection.execute(
                 """INSERT INTO wiki_spaces(
-                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
+                id,name,description,version,created_by,created_at,updated_at,scope_kind,project_id,
+                space_kind,lifecycle_status) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     space.id,
                     space.name,
@@ -84,6 +147,8 @@ class SQLiteWikiRepository:
                     space.updated_at.isoformat(),
                     space.scope_kind,
                     space.project_id,
+                    space.space_kind.value,
+                    space.lifecycle_status.value,
                 ),
             )
             self._append_event(
@@ -117,7 +182,8 @@ class SQLiteWikiRepository:
             connection.execute(
                 """INSERT INTO wiki_documents(
                 id,space_id,parent_id,title,current_revision,version,created_by,created_at,
-                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                updated_at,source_kind,source_id,document_kind,role_key,delivery_id,
+                lifecycle_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     document.id,
                     document.space_id,
@@ -130,6 +196,10 @@ class SQLiteWikiRepository:
                     document.updated_at.isoformat(),
                     document.source_kind,
                     document.source_id,
+                    document.document_kind.value,
+                    document.role_key,
+                    document.delivery_id,
+                    document.lifecycle_status.value,
                 ),
             )
             self._insert_revision(connection, revision, document)
@@ -181,7 +251,8 @@ class SQLiteWikiRepository:
             connection.execute(
                 """INSERT INTO wiki_documents(
                 id,space_id,parent_id,title,current_revision,version,created_by,created_at,
-                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                updated_at,source_kind,source_id,document_kind,role_key,delivery_id,
+                lifecycle_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     document.id,
                     document.space_id,
@@ -194,6 +265,10 @@ class SQLiteWikiRepository:
                     document.updated_at.isoformat(),
                     document.source_kind,
                     document.source_id,
+                    document.document_kind.value,
+                    document.role_key,
+                    document.delivery_id,
+                    document.lifecycle_status.value,
                 ),
             )
             self._insert_revision(connection, revision, document)
@@ -248,7 +323,8 @@ class SQLiteWikiRepository:
             connection.execute(
                 """INSERT INTO wiki_documents(
                 id,space_id,parent_id,title,current_revision,version,created_by,created_at,
-                updated_at,source_kind,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                updated_at,source_kind,source_id,document_kind,role_key,delivery_id,
+                lifecycle_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     document.id,
                     document.space_id,
@@ -261,6 +337,10 @@ class SQLiteWikiRepository:
                     document.updated_at.isoformat(),
                     document.source_kind,
                     document.source_id,
+                    document.document_kind.value,
+                    document.role_key,
+                    document.delivery_id,
+                    document.lifecycle_status.value,
                 ),
             )
             self._insert_revision(connection, revision, document)
@@ -519,8 +599,8 @@ class SQLiteWikiRepository:
     ) -> None:
         connection.execute(
             """INSERT INTO wiki_revisions(
-            document_id,revision,content_json,search_text,content_sha256,created_by,created_at)
-            VALUES(?,?,?,?,?,?,?)""",
+            document_id,revision,content_json,search_text,content_sha256,created_by,created_at,
+            provenance_json,asset_references_json) VALUES(?,?,?,?,?,?,?,?,?)""",
             (
                 revision.document_id,
                 revision.revision,
@@ -529,6 +609,12 @@ class SQLiteWikiRepository:
                 revision.content_sha256,
                 revision.created_by,
                 revision.created_at.isoformat(),
+                revision.provenance.model_dump_json(),
+                json.dumps(
+                    [item.model_dump(mode="json") for item in revision.asset_references],
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
             ),
         )
         connection.execute("DELETE FROM wiki_fts WHERE document_id=?", (document.id,))
@@ -550,10 +636,12 @@ class SQLiteWikiRepository:
             id=str(row["id"]),
             scope_kind=str(row["scope_kind"]),
             project_id=None if row["project_id"] is None else str(row["project_id"]),
+            space_kind=SpaceKind(str(row["space_kind"])),
+            lifecycle_status=KnowledgeLifecycleStatus(str(row["lifecycle_status"])),
             name=str(row["name"]),
             description=str(row["description"]),
             version=int(row["version"]),
-            created_by=str(row["created_by"]),
+            created_by=None if row["created_by"] is None else str(row["created_by"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
         )
@@ -569,7 +657,11 @@ class SQLiteWikiRepository:
             version=int(row["version"]),
             source_kind=str(row["source_kind"]),
             source_id=None if row["source_id"] is None else str(row["source_id"]),
-            created_by=str(row["created_by"]),
+            document_kind=DocumentKind(str(row["document_kind"])),
+            role_key=None if row["role_key"] is None else str(row["role_key"]),
+            delivery_id=None if row["delivery_id"] is None else str(row["delivery_id"]),
+            lifecycle_status=KnowledgeLifecycleStatus(str(row["lifecycle_status"])),
+            created_by=None if row["created_by"] is None else str(row["created_by"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
         )
@@ -582,7 +674,9 @@ class SQLiteWikiRepository:
             content=JSON_ADAPTER.validate_json(str(row["content_json"])),
             search_text=str(row["search_text"]),
             content_sha256=Sha256.validate(str(row["content_sha256"])),
-            created_by=str(row["created_by"]),
+            provenance=json.loads(str(row["provenance_json"])),
+            asset_references=json.loads(str(row["asset_references_json"])),
+            created_by=None if row["created_by"] is None else str(row["created_by"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
         )
 

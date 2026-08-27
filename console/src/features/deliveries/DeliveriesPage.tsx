@@ -6,7 +6,7 @@ import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { DeliveryDetail } from "./DeliveryDetail";
 import { OperatingMap } from "./OperatingMap";
-import { useCreateDelivery, useDeliveries, useDelivery, useDeliveryDecision, useDeliveryEvents, useDeliveryEvidence, useDeliveryPipelineRun, useDeliveryPipelines } from "./api";
+import { useCreateDelivery, useDeliveries, useDelivery, useDeliveryDecision, useDeliveryEvents, useDeliveryEvidence, useDeliveryKnowledgePublications, useDeliveryPipelineRun, useDeliveryPipelines, useRetryKnowledgePublication } from "./api";
 import { useProject, useProjectId } from "../../entities/project/api";
 
 export function DeliveriesPage() {
@@ -36,9 +36,11 @@ export function DeliveriesPage() {
   const selected = useDelivery(selectedId, projectId);
   const events = useDeliveryEvents(selectedId, projectId);
   const evidence = useDeliveryEvidence(selectedId, projectId);
+  const publications = useDeliveryKnowledgePublications(selectedId, projectId);
   const pipelineRun = useDeliveryPipelineRun(selectedId, selected.data?.pipeline_run_id);
   const create = useCreateDelivery(projectId, selectDelivery);
   const decision = useDeliveryDecision();
+  const retryPublication = useRetryKnowledgePublication(selectedId);
 
   if (deliveries.isLoading) return <LoadingState label="正在载入交付历史…"/>;
   if (deliveries.error) return <ErrorState error={deliveries.error} retry={() => deliveries.refetch()}/>;
@@ -74,6 +76,12 @@ export function DeliveriesPage() {
           pipelineRun={pipelineRun.data}
           events={events.data ?? []}
           evidence={evidence.data ?? []}
+          evidenceError={evidence.error}
+          publications={publications.data ?? []}
+          publicationsError={publications.error}
+          publicationRetryPending={retryPublication.isPending}
+          publicationRetryError={retryPublication.error}
+          onRetryPublication={(publicationId, expectedVersion) => retryPublication.mutate({ publicationId, expectedVersion })}
           decisionPending={decision.isPending}
           decisionError={decision.error}
           onDecision={(value) => decision.mutate({ delivery: selected.data!, decision: value })}

@@ -17,6 +17,12 @@ Agent-Team-OS 把一次 AI 代码修改变成可审查的软件交付：需求�
 > [!IMPORTANT]
 > Agent-Team-OS 当前是本地 Alpha，不是生产稳定服务。真实代码执行目前只面向内置的纯标准库 Python Backend 沙箱。默认规划身份明确标记为 `codex-simulated-hermes`，不能作为真实 Hermes 调用证据。
 
+## 当前架构
+
+![Agent-Team-OS 当前架构深色版](docs/assets/architecture/agent-team-os-current.dark.png)
+
+中文节点版本及节点对照见[中文架构图](readme-cn.md)。
+
 ## 交付闭环
 
 ```mermaid
@@ -69,6 +75,43 @@ Agent 能修改文件，不代表代码已经可以安全交付。Agent-Team-OS 
 | **知识中心** | 项目/全局 Wiki、版本、评论、FTS5、Provider Snapshot 与项目知识动态 | 不含 Embedding、RAG 回答生成和长期 Agent Memory |
 | **证据** | 只追加交付事实、SHA-256 完整性与重新验证历史 | Evidence 可提炼为 Wiki，但本体永远不可编辑 |
 | **设置** | Readiness、发布门禁状态和安全运营配置 | 系统安全硬限制不可由界面放宽 |
+
+## 项目评测
+
+Agent-Team-OS 建立了独立 Evaluation 评测域，用于可重复验证能力、交付质量和控制面性能。
+每次运行都会冻结 Pipeline Revision、Deployment 绑定、ACWM 与 Git 修订、数据集及评分器身份；
+报告按维度并列展示，不生成误导性综合分。
+
+最新已发布基线：**2026-08-24，suite 1.2.0，offline standard，seed 20260824**。
+
+| 评测维度 | 已评测/总数 | 结果 | 可证明范围 |
+|---|---:|---:|---|
+| ToolCall / BFCL-compatible | 300/300 | 300 通过 | AST 归一化与 Fixture Trace 评分链路 |
+| General Agent / GAIA-compatible | 180/180 | 180 通过 | 类型感知的准精确 Fixture 评分 |
+| Data Generation | 60/60 | 60 平局 | 同一冻结对象未产生虚假质量差异 |
+| Control Plane | 60/60 | 60 通过 | 本地 GraphRun、CAS、恢复、SQLite 和 ASGI 探针 |
+
+本地控制面观测：
+
+| 指标 | p50 | p95 | p99 |
+|---|---:|---:|---:|
+| 候选侧 HTTP 时延 | 2.36 ms | 6.29 ms | 9.43 ms |
+| 候选侧 GraphRun 总时延 | 8.80 ms | 101.03 ms | 121.81 ms |
+
+- 门禁：`passed`；证明范围：`fixture_harness_only`；官方 Benchmark：`false`。
+- Evidence SHA-256：`d9e2019fa6e86f632e0d3d513f04cf7a73d3de55065e05f845919080ead3e2c6`。
+- `134 passed, 1 skipped` 是当时的软件测试基线；上述 600 条是评测工作负载观测，分母不同。
+- Deterministic Fixture **不能**证明真实模型能力、官方 BFCL/GAIA 排名、独立生成质量、Token/成本
+  或生产网络 SLA。未配置 Live Runtime 时，Case 状态为 `blocked`、Run 状态为 `blocked`、
+  Report Gate 为 `not_run`；不同对象缺少独立 Judge 时保持 `blocked`。
+
+详见[评测方法论](docs/evaluation/METHODOLOGY.md)、
+[版本化数据集卡](evaluation/datasets/agent-team-os-mvp/1.3.0/README.md)、
+[脱敏历史基线](docs/evaluation/results/2026-08-24-offline-standard.md)、
+[PR/Push CI](.github/workflows/ci.yml) 和[手动完整评测](.github/workflows/evaluation.yml)。
+
+发布基线属于历史 Suite 1.2.0；当时用例内嵌在代码中，当前仓库不将其冒充为可重放数据集。
+后续可重复验证使用版本化 Suite 1.3.0；修改用例或 Schema 会改变 SHA-256，并要求重新校准。
 
 ## 五分钟本地启动
 

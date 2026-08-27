@@ -17,6 +17,12 @@ Agent-Team-OS turns an AI-generated code change into a reviewable software deliv
 > [!IMPORTANT]
 > Agent-Team-OS is a local alpha, not a production-ready service. The current real execution path targets the built-in standard-library Python backend sandbox. Planning defaults to the explicitly labelled `codex-simulated-hermes` identity; it is not evidence of a real Hermes call.
 
+## Current architecture
+
+![Agent-Team-OS current architecture, dark version](docs/assets/architecture/agent-team-os-current.dark.png)
+
+See the [Chinese-node architecture](readme-cn.md) for the translated node map.
+
 ## The delivery loop
 
 ```mermaid
@@ -69,6 +75,35 @@ An Agent being able to edit files does not make the change safe to ship. Agent-T
 | **Knowledge** | Project/global Wiki, revisions, comments, FTS5 search, provider snapshots and project knowledge activity | No embeddings, RAG answer generation or long-term Agent memory |
 | **Evidence** | Append-only delivery facts, SHA-256 integrity and re-verification history | Evidence can be derived into Wiki, but is never made editable |
 | **Settings** | Readiness, release-gate status and safe operational configuration | Hard security policy remains system-owned |
+
+## Project evaluation
+
+Evaluation freezes the Pipeline Revision, Deployment bindings, Git/ACWM revisions, dataset,
+scorer, seed and environment. Dimensions are reported separately; no aggregate score is emitted.
+
+Latest published historical baseline: **2026-08-24, suite 1.2.0, offline standard, seed 20260824**.
+
+| Dimension | Evaluated/total | Result | Evidence boundary |
+|---|---:|---:|---|
+| ToolCall / BFCL-compatible | 300/300 | 300 passed | Fixture AST/Trace scoring |
+| General Agent / GAIA-compatible | 180/180 | 180 passed | Fixture quasi-exact scoring |
+| Data Generation | 60/60 | 60 ties | Same frozen subject only |
+| Control Plane | 60/60 | 60 passed | Local GraphRun/SQLite/ASGI probes |
+
+Candidate HTTP latency was p50 2.36 ms, p95 6.29 ms and p99 9.43 ms. Candidate GraphRun total
+latency was p50 8.80 ms, p95 101.03 ms and p99 121.81 ms.
+
+- Gate: `passed`; proof scope: `fixture_harness_only`; official benchmark: `false`.
+- Evidence SHA-256: `d9e2019fa6e86f632e0d3d513f04cf7a73d3de55065e05f845919080ead3e2c6`.
+- The historical suite 1.2.0 cases were code-embedded and are not represented as a replayable
+  versioned dataset. Repeatable validation now uses suite 1.3.0.
+- These fixtures do not prove live-agent ability, official BFCL/GAIA results, independent
+  generation quality, token/cost behavior or production network SLA.
+
+See the [English methodology](docs/evaluation/METHODOLOGY.en.md),
+[dataset card](evaluation/datasets/agent-team-os-mvp/1.3.0/README.en.md),
+[historical baseline](docs/evaluation/results/2026-08-24-offline-standard.en.md),
+[PR CI](.github/workflows/ci.yml) and [manual evaluation](.github/workflows/evaluation.yml).
 
 ## Five-minute local start
 

@@ -21,6 +21,7 @@ class EvidenceKind(StrEnum):
     APPLY_RECEIPT = "apply-receipt"
     RELEASE_BUNDLE = "release-bundle"
     RELEASE_MANIFEST = "release-manifest"
+    EVALUATION_REPORT = "evaluation-report"
 
 
 class EvidenceStatus(StrEnum):

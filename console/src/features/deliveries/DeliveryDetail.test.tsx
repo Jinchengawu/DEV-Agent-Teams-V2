@@ -53,4 +53,35 @@ describe("交付黄金纵切", () => {
     expect(onDecision).toHaveBeenCalledWith("approve-design");
     expect(screen.queryByRole("button", { name: /四仓发布/ })).toBeNull();
   });
+
+  it("发布失败只提供知识发布重试，不要求重跑 Agent", async () => {
+    const retryPublication = vi.fn();
+    render(
+      <MemoryRouter>
+        <DeliveryDetail
+          delivery={{ ...delivery(), status: "planning", plan_gate: undefined }}
+          events={[]}
+          evidence={[]}
+          publications={[{
+            id: "publication-1",
+            artifact_key: "primary",
+            contract_id: "requirement-artifact-v1",
+            status: "failed",
+            attempt_count: 1,
+            error_code: "KNOWLEDGE_PUBLICATION_WRITE_FAILED",
+            version: 2,
+          }]}
+          decisionPending={false}
+          publicationRetryPending={false}
+          onRetryPublication={retryPublication}
+          onDecision={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("知识发布阻塞")).toBeTruthy();
+    expect(screen.getByText(/AgentRun 与 Stage 已成功/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "只重试发布" }));
+    expect(retryPublication).toHaveBeenCalledWith("publication-1", 2);
+  });
 });

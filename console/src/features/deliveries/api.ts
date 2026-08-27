@@ -5,12 +5,14 @@ import { assertProjectScope } from "../../entities/project/api";
 
 type Pipeline = components["schemas"]["Pipeline"];
 export type PipelineRun = components["schemas"]["PipelineRunRecord"];
+export type KnowledgePublication = components["schemas"]["KnowledgePublication"];
 
 export const deliveryKeys = {
   all: (projectId: string) => ["deliveries", projectId] as const,
   detail: (id: string) => ["deliveries", id] as const,
   events: (id: string) => ["deliveries", id, "events"] as const,
   evidence: (id: string) => ["deliveries", id, "evidence"] as const,
+  publications: (id: string) => ["deliveries", id, "knowledge-publications"] as const,
 };
 
 export function useDeliveries(projectId: string) {
@@ -27,6 +29,19 @@ export function useDeliveryEvents(id?: string, projectId?: string) {
 
 export function useDeliveryEvidence(id?: string, projectId?: string) {
   return useQuery({ queryKey: [...deliveryKeys.evidence(id ?? ""), projectId ?? ""], queryFn: async ({ signal }) => assertProjectScope(projectId!, await request<EvidenceRecord[]>(`/v1/deliveries/${id}/evidence`, { signal }), "交付证据"), enabled: Boolean(id && projectId), refetchInterval: 1000 });
+}
+
+export function useDeliveryKnowledgePublications(id?: string, projectId?: string) {
+  return useQuery({
+    queryKey: [...deliveryKeys.publications(id ?? ""), projectId ?? ""],
+    queryFn: async ({ signal }) => assertProjectScope(
+      projectId!,
+      await request<KnowledgePublication[]>(`/v1/deliveries/${id}/knowledge-publications`, { signal }),
+      "知识发布列表",
+    ),
+    enabled: Boolean(id && projectId),
+    refetchInterval: 1000,
+  });
 }
 
 export function useDeliveryPipelineRun(deliveryId?: string, runId?: string | null) {
@@ -78,5 +93,24 @@ export function useDeliveryDecision() {
         client.invalidateQueries({ queryKey: deliveryKeys.events(delivery.id) }),
       ]);
     },
+  });
+}
+
+export function useRetryKnowledgePublication(deliveryId?: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ publicationId, expectedVersion }: { publicationId: string; expectedVersion: number }) =>
+      request<KnowledgePublication>(`/v1/knowledge/publications/${publicationId}/retry`, {
+        method: "POST",
+        body: JSON.stringify({ expected_version: expectedVersion }),
+      }),
+    onSuccess: async (publication) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: deliveryKeys.publications(publication.delivery_id) }),
+        client.invalidateQueries({ queryKey: deliveryKeys.detail(publication.delivery_id) }),
+        client.invalidateQueries({ queryKey: ["pipeline-runs"] }),
+      ]);
+    },
+    meta: { deliveryId },
   });
 }

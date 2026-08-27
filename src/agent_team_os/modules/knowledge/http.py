@@ -11,6 +11,7 @@ from .domain import (
     CommentPatch,
     Document,
     DocumentCreate,
+    DocumentKind,
     DocumentPatch,
     KnowledgeActor,
     PermissionGrant,
@@ -30,12 +31,13 @@ def create_wiki_router(
 
     @router.get("/v1/wiki/spaces", response_model=tuple[Space, ...])
     def list_spaces(
-        request: Request, project_id: str | None = None, include_global: bool = True
+        request: Request,
+        project_id: str | None = None,
+        include_global: bool = True,
+        include_archived: bool = False,
     ) -> tuple[Space, ...]:
         actor = read_actor(request)
-        if project_id is None and include_global:
-            return service.list_spaces(actor)
-        return service.list_spaces(actor, project_id, include_global)
+        return service.list_spaces(actor, project_id, include_global, include_archived)
 
     @router.post("/v1/wiki/spaces", response_model=Space, status_code=201)
     def create_space(request_body: SpaceCreate, request: Request) -> Space:
@@ -46,9 +48,22 @@ def create_wiki_router(
     def list_documents(
         request: Request,
         space_id: str | None = None,
+        document_kind: DocumentKind | None = None,
+        role_key: str | None = None,
+        delivery_id: str | None = None,
+        source_kind: str | None = None,
+        include_archived: bool = False,
     ) -> tuple[Document, ...]:
         actor = read_actor(request)
-        return service.list_documents(actor, space_id)
+        return service.list_documents(
+            actor,
+            space_id,
+            document_kind,
+            role_key,
+            delivery_id,
+            source_kind,
+            include_archived,
+        )
 
     @router.post("/v1/wiki/documents", response_model=Document, status_code=201)
     def create_document(request_body: DocumentCreate, request: Request) -> Document:
