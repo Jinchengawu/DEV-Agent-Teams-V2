@@ -16,6 +16,7 @@ class ArtifactEnvelope(BaseModel):
 
     id: str = Field(default_factory=new_id)
     contract_id: str
+    artifact_key: str = Field(default="primary", min_length=1, max_length=120)
     content: dict[str, object]
     sha256: Sha256
 
@@ -79,6 +80,17 @@ class AgentRunLedger:
         status: str,
         artifacts: tuple[ArtifactEnvelope, ...] = (),
     ) -> AgentRun:
+        with self._connect() as connection:
+            return self.finish_on(connection, run, status=status, artifacts=artifacts)
+
+    def finish_on(
+        self,
+        connection: sqlite3.Connection,
+        run: AgentRun,
+        *,
+        status: str,
+        artifacts: tuple[ArtifactEnvelope, ...] = (),
+    ) -> AgentRun:
         updated = run.model_copy(
             update={
                 "status": status,
@@ -86,20 +98,32 @@ class AgentRunLedger:
                 "updated_at": datetime.now(UTC),
             }
         )
-        with self._connect() as connection:
-            cursor = connection.execute(
-                """UPDATE agent_runs SET status=?,artifact_envelopes_json=?,updated_at=?
-                WHERE id=? AND status='running'""",
-                (
-                    updated.status,
-                    _json([item.model_dump(mode="json") for item in artifacts]),
-                    updated.updated_at.isoformat(),
-                    run.id,
-                ),
-            )
-            if cursor.rowcount != 1:
-                raise RuntimeError("AgentRun is no longer running")
+        cursor = connection.execute(
+            """UPDATE agent_runs SET status=?,artifact_envelopes_json=?,updated_at=?
+            WHERE id=? AND status='running'""",
+            (
+                updated.status,
+                _json([item.model_dump(mode="json") for item in artifacts]),
+                updated.updated_at.isoformat(),
+                run.id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("AgentRun is no longer running")
         return updated
+
+    def get(self, run_id: str) -> AgentRun:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT id,delivery_id,pipeline_revision_id,binding_site,
+                resolved_binding_hash,deployment_snapshot_json,attempt_id,runtime_identity,
+                status,artifact_envelopes_json,created_at,updated_at
+                FROM agent_runs WHERE id=?""",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(run_id)
+        return _run(row)
 
     def list(self, delivery_id: str) -> tuple[AgentRun, ...]:
         with self._connect() as connection:

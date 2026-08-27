@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-team-os-evaluation-case-v1",
+  "title": "Agent-Team-OS evaluation dataset case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "dimension", "category", "input", "expected", "scoring", "fixture_output"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "dimension": {"enum": ["tool_call", "general_agent", "data_generation", "control_plane"]},
+    "category": {"type": "string", "minLength": 1},
+    "difficulty": {"type": ["integer", "null"], "minimum": 1, "maximum": 3},
+    "input": {"type": "object"},
+    "expected": {"type": "object"},
+    "scoring": {"type": "object"},
+    "fixture_output": {"type": "object", "description": "Offline harness only; never live evidence."}
+  }
+}

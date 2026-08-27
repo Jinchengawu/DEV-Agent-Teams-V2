@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -26,6 +27,12 @@ from ...delivery import (
 from ...shared.hashes import sha256_json
 from ..agents import AgentRun, AgentRunLedger, ArtifactEnvelope
 from ..orchestration import PipelineCatalog, PipelineRevision, PipelineRunLedger
+from .publication import (
+    PublicationBarrier,
+    RoleDocumentPublicationPort,
+    RoleDocumentPublicationRequest,
+    RoleDocumentPublisher,
+)
 
 
 class PipelineExecutionModule:
@@ -46,6 +53,9 @@ class PipelineExecutionModule:
         catalog: PipelineCatalog,
         runs: PipelineRunLedger,
         agent_runs: AgentRunLedger | None = None,
+        publications: RoleDocumentPublicationPort | None = None,
+        publication_barrier: PublicationBarrier | None = None,
+        document_publisher: RoleDocumentPublisher | None = None,
     ) -> None:
         self._planning = planning
         self._executor = executor
@@ -55,6 +65,9 @@ class PipelineExecutionModule:
         self._catalog = catalog
         self._runs = runs
         self._agent_runs = agent_runs
+        self._publications = publications
+        self._publication_barrier = publication_barrier
+        self._document_publisher = document_publisher
 
     def start(self, delivery: DeliveryRun) -> None:
         revision = self._revision(delivery)
@@ -71,6 +84,11 @@ class PipelineExecutionModule:
                 delivery = self._get(delivery_id)
                 run = self._runs.get_for_delivery(delivery_id)
                 if run.status == "completed":
+                    if (
+                        self._publication_barrier is not None
+                        and not self._publication_barrier.is_satisfied(delivery_id)
+                    ):
+                        return
                     if delivery.apply_receipt is None:
                         raise DeliveryStateConflictError(
                             "pipeline completed without an Apply Receipt"
@@ -128,6 +146,11 @@ class PipelineExecutionModule:
                     if node.get("kind") == "approval_gate"
                 )
                 if gates:
+                    if (
+                        self._publication_barrier is not None
+                        and not self._publication_barrier.is_satisfied(delivery_id)
+                    ):
+                        return
                     node_id, node = gates[0]
                     self._open_gate(delivery_id, node_id, node)
                     return
@@ -351,6 +374,21 @@ class PipelineExecutionModule:
                 )
             await self.advance(delivery.id)
 
+    async def recover_publications(self, delivery_id: str) -> bool:
+        if (
+            self._publication_barrier is None
+            or not self._publication_barrier.has_publications(delivery_id)
+        ):
+            return False
+        if self._document_publisher is not None:
+            try:
+                self._document_publisher.publish_required(delivery_id)
+            except Exception:
+                return True
+        if self._publication_barrier.is_satisfied(delivery_id):
+            await self.advance(delivery_id)
+        return True
+
     async def _execute_stage(
         self, delivery_id: str, node_id: str, node: dict[str, object]
     ) -> None:
@@ -360,10 +398,14 @@ class PipelineExecutionModule:
         )
         delivery = self._get(delivery_id)
         workflow_mode = str(node.get("workflow_mode", ""))
-        agent_run = self._start_agent_run(delivery, f"{node_id}.{self._slot(node)}")
+        binding_site = f"{node_id}.{self._slot(node)}"
+        agent_run = self._start_agent_run(delivery, binding_site)
+        updated_delivery: DeliveryRun | None = None
         try:
             if workflow_mode == "agentscope.role-turn":
-                activated, artifact = await self._execute_role_projection(delivery, node)
+                activated, artifact, updated_delivery = await self._execute_role_projection(
+                    delivery, node
+                )
             elif workflow_mode == "code-delivery":
                 activated = await self._execute_code(delivery)
                 current = self._get(delivery.id)
@@ -375,50 +417,63 @@ class PipelineExecutionModule:
         except Exception:
             self._finish_agent_run(agent_run, "failed")
             raise
-        self._finish_agent_run(agent_run, "succeeded", artifact)
-        run = self._runs.get_for_delivery(delivery_id)
-        self._runs.transition(
-            run.id,
-            command="succeed",
+        artifacts = self._artifact_envelopes(artifact)
+        if not self._commit_role_publication(
+            delivery=updated_delivery,
             node_id=node_id,
-            expected_version=run.version,
+            binding_site=binding_site,
+            agent_run=agent_run,
+            artifacts=artifacts,
             activated_conditions=activated,
-        )
+        ):
+            if updated_delivery is not None:
+                self._repository.save(updated_delivery)
+            self._finish_agent_run(agent_run, "succeeded", artifacts=artifacts)
+            run = self._runs.get_for_delivery(delivery_id)
+            self._runs.transition(
+                run.id,
+                command="succeed",
+                node_id=node_id,
+                expected_version=run.version,
+                activated_conditions=activated,
+            )
+        if self._document_publisher is not None:
+            try:
+                self._document_publisher.publish_required(delivery_id)
+            except Exception:
+                # Publication owns its failed state; AgentRun and GraphRun remain succeeded.
+                return
 
     async def _execute_role_projection(
         self, delivery: DeliveryRun, node: dict[str, object]
-    ) -> tuple[tuple[str, ...], object]:
+    ) -> tuple[tuple[str, ...], object, DeliveryRun]:
         projection = node.get("output_validator")
         if projection == "requirement-artifact-v1" or (
             projection is None and delivery.requirements is None
         ):
             requirements = await self._planning.analyze(delivery.user_request)
-            self._repository.save(
-                delivery.model_copy(
-                    update={
-                        "status": "planning",
-                        "requirements": requirements,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
+            updated = delivery.model_copy(
+                update={
+                    "status": "planning",
+                    "requirements": requirements,
+                    "updated_at": datetime.now(UTC),
+                }
             )
-            return ("requirements-ready",), requirements
+            return ("requirements-ready",), requirements, updated
         if projection == "task-contract-v1" or projection is None:
             if delivery.requirements is None:
                 raise DeliveryStateConflictError(
                     "task projection requires RequirementArtifact"
                 )
             task = await self._planning.plan(delivery.requirements)
-            self._repository.save(
-                delivery.model_copy(
-                    update={
-                        "status": "planning",
-                        "task": task,
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
+            updated = delivery.model_copy(
+                update={
+                    "status": "planning",
+                    "task": task,
+                    "updated_at": datetime.now(UTC),
+                }
             )
-            return ("task-ready", "planning-complete"), task
+            return ("task-ready", "planning-complete"), task, updated
         raise DeliveryStateConflictError(f"unsupported Artifact projection: {projection}")
 
     async def _execute_code(self, delivery: DeliveryRun) -> tuple[str, ...]:
@@ -621,7 +676,10 @@ class PipelineExecutionModule:
         try:
             workflow_mode = str(node.get("workflow_mode", ""))
             if workflow_mode == "agentscope.role-turn":
-                activated, artifact = await self._execute_role_projection(delivery, node)
+                activated, artifact, updated_delivery = (
+                    await self._execute_role_projection(delivery, node)
+                )
+                self._repository.save(updated_delivery)
             elif workflow_mode == "code-delivery":
                 activated = await self._execute_code_loop_attempt(delivery)
                 artifact = self._get(delivery.id).candidate
@@ -739,31 +797,129 @@ class PipelineExecutionModule:
             ),
         )
 
+    @staticmethod
+    def _artifact_envelopes(artifact: object | None) -> tuple[ArtifactEnvelope, ...]:
+        if artifact is None:
+            return ()
+        content = (
+            artifact.model_dump(mode="json")
+            if hasattr(artifact, "model_dump")
+            else {"value": str(artifact)}
+        )
+        contract_id = {
+            "RequirementArtifact": "requirement-artifact-v1",
+            "TaskContract": "task-contract-v1",
+            "CandidateChange": "candidate-change-v1",
+        }.get(type(artifact).__name__, "agent-output-v1")
+        return (
+            ArtifactEnvelope(
+                contract_id=contract_id,
+                artifact_key="primary",
+                content=content,
+                sha256=sha256_json(content),
+            ),
+        )
+
     def _finish_agent_run(
-        self, run: AgentRun | None, status: str, artifact: object | None = None
+        self,
+        run: AgentRun | None,
+        status: str,
+        artifact: object | None = None,
+        *,
+        artifacts: tuple[ArtifactEnvelope, ...] | None = None,
     ) -> None:
         if run is None or self._agent_runs is None:
             return
-        artifacts: tuple[ArtifactEnvelope, ...] = ()
-        if artifact is not None:
-            content = (
-                artifact.model_dump(mode="json")
-                if hasattr(artifact, "model_dump")
-                else {"value": str(artifact)}
+        resolved_artifacts = (
+            self._artifact_envelopes(artifact) if artifacts is None else artifacts
+        )
+        self._agent_runs.finish(run, status=status, artifacts=resolved_artifacts)
+
+    def _commit_role_publication(
+        self,
+        *,
+        delivery: DeliveryRun | None,
+        node_id: str,
+        binding_site: str,
+        agent_run: AgentRun | None,
+        artifacts: tuple[ArtifactEnvelope, ...],
+        activated_conditions: tuple[str, ...],
+    ) -> bool:
+        if (
+            delivery is None
+            or agent_run is None
+            or self._agent_runs is None
+            or self._publications is None
+            or len(artifacts) != 1
+            or artifacts[0].contract_id
+            not in {"requirement-artifact-v1", "task-contract-v1"}
+        ):
+            return False
+        delivery_repository = getattr(self._repository, "inner", self._repository)
+        save_on = getattr(delivery_repository, "save_on", None)
+        run_repository = getattr(self._runs, "repository", None)
+        if (
+            not callable(save_on)
+            or run_repository is None
+            or not hasattr(run_repository, "get_on")
+            or not hasattr(run_repository, "compare_and_swap_on")
+        ):
+            return False
+        database = self._agent_runs.database
+        repository_path = getattr(delivery_repository, "path", database)
+        if str(repository_path) != str(database):
+            raise DeliveryStateConflictError(
+                "role publication participants must share one SQLite database"
             )
-            contract_id = {
-                "RequirementArtifact": "requirement-artifact-v1",
-                "TaskContract": "task-contract-v1",
-                "CandidateChange": "candidate-change-v1",
-            }.get(type(artifact).__name__, "agent-output-v1")
-            artifacts = (
-                ArtifactEnvelope(
-                    contract_id=contract_id,
-                    content=content,
-                    sha256=sha256_json(content),
+        if delivery.pipeline_run_id is None:
+            raise DeliveryStateConflictError(
+                "role publication requires a persisted pipeline run"
+            )
+        artifact = artifacts[0]
+        connection = sqlite3.connect(database, timeout=5)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA busy_timeout=5000")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            save_on(connection, delivery)
+            self._agent_runs.finish_on(
+                connection,
+                agent_run,
+                status="succeeded",
+                artifacts=artifacts,
+            )
+            run = run_repository.get_on(connection, delivery.pipeline_run_id)
+            self._runs.transition_on(
+                connection,
+                run.id,
+                command="succeed",
+                node_id=node_id,
+                expected_version=run.version,
+                activated_conditions=activated_conditions,
+            )
+            self._publications.register_on(
+                connection,
+                RoleDocumentPublicationRequest(
+                    project_id=delivery.project_id,
+                    delivery_id=delivery.id,
+                    node_id=node_id,
+                    binding_site=binding_site,
+                    agent_run_id=agent_run.id,
+                    artifact_id=artifact.id,
+                    artifact_key=artifact.artifact_key,
+                    contract_id=artifact.contract_id,
+                    artifact_sha256=artifact.sha256,
+                    runtime_identity=agent_run.runtime_identity,
                 ),
             )
-        self._agent_runs.finish(run, status=status, artifacts=artifacts)
+            connection.commit()
+            return True
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _exit_condition_met(self, delivery_id: str, exit_condition: str) -> bool:
         delivery = self._get(delivery_id)

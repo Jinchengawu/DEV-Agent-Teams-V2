@@ -71,10 +71,17 @@ function IdentityForm({
   const authenticate = useMutation({
     mutationFn: async () => {
       if (mode === "bootstrap") {
-        await request<CurrentUser>("/v1/auth/bootstrap", {
-          method: "POST",
-          body: JSON.stringify({ username, display_name: displayName, password }),
-        });
+        try {
+          await request<CurrentUser>("/v1/auth/bootstrap", {
+            method: "POST",
+            body: JSON.stringify({ username, display_name: displayName, password }),
+          });
+        } catch (error) {
+          if (!(error instanceof ApiProblem)
+            || error.problem.code !== "IDENTITY_ALREADY_BOOTSTRAPPED") {
+            throw error;
+          }
+        }
       }
       return request<CurrentUser>("/v1/auth/login", {
         method: "POST",

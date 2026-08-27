@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
+import { Archive, BookMarked, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
@@ -22,6 +22,12 @@ type MarkdownPayload = {
   text: string;
 };
 
+type ProjectDocumentPayload = {
+  schema: "project-document-v1";
+  artifact_key: string;
+  markdown: string;
+};
+
 const markdownPayload = (text: string): MarkdownPayload => ({
   format: "markdown",
   text,
@@ -38,9 +44,25 @@ function isMarkdownPayload(value: unknown): value is MarkdownPayload {
   );
 }
 
+function isProjectDocumentPayload(value: unknown): value is ProjectDocumentPayload {
+  return Boolean(
+    value
+      && typeof value === "object"
+      && "schema" in value
+      && (value as Record<string, unknown>).schema === "project-document-v1"
+      && "artifact_key" in value
+      && typeof (value as Record<string, unknown>).artifact_key === "string"
+      && "markdown" in value
+      && typeof (value as Record<string, unknown>).markdown === "string",
+  );
+}
+
 function markdownFromContent(value: unknown): string {
   if (isMarkdownPayload(value)) {
     return value.text;
+  }
+  if (isProjectDocumentPayload(value)) {
+    return value.markdown;
   }
   if (value === null || value === undefined) {
     return "";
@@ -56,10 +78,31 @@ function isConflictError(error: unknown): error is ApiProblem {
 }
 
 function sourceKindLabel(value: string) {
-  if (value === "wiki") return "Wiki 文档";
+  if (value === "wiki") return "项目文档";
   if (value === "evidence") return "不可变证据";
   if (value === "provider-snapshot") return "外部来源快照";
   return `来源 ${value}`;
+}
+
+const documentKinds = [
+  ["product-requirement", "产品需求"],
+  ["delivery-plan", "交付计划"],
+  ["design-spec", "设计说明"],
+  ["frontend-technical", "前端技术"],
+  ["backend-api", "后端 API"],
+  ["test-plan", "测试计划"],
+  ["test-report", "测试报告"],
+  ["project-general", "项目通用"],
+] as const;
+
+const searchGroups = [
+  ["project-document", "项目文档"],
+  ["evidence", "Evidence"],
+  ["external-source", "外部来源"],
+] as const;
+
+function documentKindLabel(value: string) {
+  return documentKinds.find(([kind]) => kind === value)?.[1] ?? value;
 }
 
 export function KnowledgePage() {
@@ -68,12 +111,20 @@ export function KnowledgePage() {
   const [search, setSearch] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [selectedDocumentId, setSelectedDocumentId] = useState<string>();
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [documentKind, setDocumentKind] = useState("");
+  const [roleKey, setRoleKey] = useState("");
+  const [deliveryFilter, setDeliveryFilter] = useState("");
+  const [sourceKind, setSourceKind] = useState("");
 
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceDescription, setNewSpaceDescription] = useState("");
 
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [newDocumentContent, setNewDocumentContent] = useState("");
+  const [newDocumentKind, setNewDocumentKind] = useState("project-general");
+  const [newDocumentRole, setNewDocumentRole] = useState("");
+  const [newDocumentDelivery, setNewDocumentDelivery] = useState("");
 
   const [editorTitle, setEditorTitle] = useState("");
   const [editorContent, setEditorContent] = useState("");
@@ -81,31 +132,58 @@ export function KnowledgePage() {
   const [commentText, setCommentText] = useState("");
 
   const spaces = useQuery({
-    queryKey: ["wiki-spaces", projectId],
-    queryFn: () => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true`),
+    queryKey: ["wiki-spaces", projectId, includeArchived],
+    queryFn: () => request<Space[]>(`/v1/wiki/spaces?project_id=${encodeURIComponent(projectId)}&include_global=true${includeArchived ? "&include_archived=true" : ""}`),
   });
 
   useEffect(() => {
     setSelectedSpaceId("");
     setSelectedDocumentId(undefined);
     setSearch("");
+    setIncludeArchived(false);
+    setDocumentKind("");
+    setRoleKey("");
+    setDeliveryFilter("");
+    setSourceKind("");
   }, [projectId]);
 
   useEffect(() => {
-    if (!selectedSpaceId && spaces.data?.length) {
-      setSelectedSpaceId(spaces.data[0].id);
-    }
+    if (!spaces.data?.length) return;
+    if (selectedSpaceId && spaces.data.some((space) => space.id === selectedSpaceId)) return;
+    const preferred = spaces.data.find((space) =>
+      space.space_kind === "project-documents" && space.lifecycle_status === "active"
+    ) ?? spaces.data.find((space) => space.lifecycle_status === "active") ?? spaces.data[0];
+    setSelectedSpaceId(preferred.id);
   }, [spaces.data, selectedSpaceId]);
+
+  const orderedSpaces = useMemo(() => [...(spaces.data ?? [])].sort((left, right) => {
+    const rank = (space: Space) => space.space_kind === "project-documents" ? 0 : space.space_kind === "custom" ? 1 : 2;
+    return rank(left) - rank(right) || left.name.localeCompare(right.name, "zh-CN");
+  }), [spaces.data]);
+
+  const selectedSpace = useMemo(
+    () => spaces.data?.find((space) => space.id === selectedSpaceId),
+    [selectedSpaceId, spaces.data],
+  );
+  const selectedSpaceReadOnly = selectedSpace?.space_kind === "legacy-archive"
+    || selectedSpace?.lifecycle_status === "archived";
 
   const listDocumentsPath = useMemo(() => {
     if (!selectedSpaceId) {
       return "";
     }
-    return `/v1/wiki/documents?space_id=${encodeURIComponent(selectedSpaceId)}`;
-  }, [selectedSpaceId]);
+    const parameters = new URLSearchParams({ space_id: selectedSpaceId });
+    if (documentKind) parameters.set("document_kind", documentKind);
+    if (roleKey.trim()) parameters.set("role_key", roleKey.trim());
+    if (deliveryFilter.trim()) parameters.set("delivery_id", deliveryFilter.trim());
+    if (sourceKind) parameters.set("source_kind", sourceKind);
+    if (includeArchived) parameters.set("include_archived", "true");
+    return `/v1/wiki/documents?${parameters.toString()}`;
+  }, [deliveryFilter, documentKind, includeArchived, roleKey, selectedSpaceId, sourceKind]);
 
+  const documentQueryKey = ["wiki-documents", projectId, selectedSpaceId, documentKind, roleKey, deliveryFilter, sourceKind, includeArchived] as const;
   const documents = useQuery({
-    queryKey: ["wiki-documents", projectId, selectedSpaceId],
+    queryKey: documentQueryKey,
     enabled: spaces.isSuccess && Boolean(listDocumentsPath),
     queryFn: () => request<Document[]>(listDocumentsPath),
   });
@@ -168,7 +246,10 @@ export function KnowledgePage() {
     onSuccess: async (document) => {
       setNewDocumentTitle("");
       setNewDocumentContent("");
-      client.setQueryData<Document[]>(["wiki-documents", projectId, selectedSpaceId], (current) => [
+      setNewDocumentKind("project-general");
+      setNewDocumentRole("");
+      setNewDocumentDelivery("");
+      client.setQueryData<Document[]>(documentQueryKey, (current) => [
         document,
         ...(current ?? []).filter((item) => item.id !== document.id),
       ]);
@@ -257,14 +338,6 @@ export function KnowledgePage() {
     return <ErrorState error={spaces.error} retry={() => spaces.refetch()} />;
   }
 
-  if (documents.isLoading && selectedSpaceId) {
-    return <LoadingState label="正在读取当前空间文档…" />;
-  }
-
-  if (documents.error) {
-    return <ErrorState error={documents.error} retry={() => documents.refetch()} />;
-  }
-
   return (
     <div className="knowledge-layout">
       <section className="panel knowledge-index">
@@ -274,7 +347,7 @@ export function KnowledgePage() {
         </div>
 
         <div className="knowledge-space-list" role="list" aria-label="知识空间列表">
-          {spaces.data?.length ? spaces.data.map((space) => (
+          {orderedSpaces.length ? orderedSpaces.map((space) => (
             <button
               key={space.id}
               className={`knowledge-space-item ${selectedSpaceId === space.id ? "selected" : ""}`}
@@ -284,6 +357,7 @@ export function KnowledgePage() {
               }}
             >
               <b>{space.name}</b>
+              <small>{space.space_kind === "project-documents" ? "标准项目文档" : space.space_kind === "legacy-archive" ? "Legacy Archive · 只读" : "自定义空间"}</small>
               <small>协议 ID: {space.id}</small>
               <small>版本: {space.version}</small>
             </button>
@@ -309,6 +383,11 @@ export function KnowledgePage() {
         </button>
         {createSpace.error && <ErrorState error={createSpace.error} />}
 
+        <label className="knowledge-archive-toggle">
+          <input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />
+          <span><Archive size={14}/>管理员显式查看 legacy archive</span>
+        </label>
+
         <label className="search-field">
           <Search size={15} />
           <input
@@ -321,12 +400,23 @@ export function KnowledgePage() {
 
         {search.trim() && <div className="knowledge-search-results">
           <div className="panel-head"><span>统一来源检索</span><small>保留各来源权威语义</small></div>
-          {unifiedSearch.isLoading ? <LoadingState label="正在检索多来源知识…"/> : unifiedSearch.error ? <ErrorState error={unifiedSearch.error} retry={() => unifiedSearch.refetch()}/> : unifiedSearch.data?.length ? unifiedSearch.data.map((hit) => <a key={`${hit.source_kind}:${hit.source_id}`} href={hit.source_link || undefined} className="knowledge-search-hit"><b>{hit.title}</b><span>{sourceKindLabel(hit.source_kind)} · 修订 {hit.revision}</span><small>{hit.content_sha256?.slice(0, 16) ?? "无内容哈希"}</small></a>) : <EmptyState title="没有匹配的来源" detail="系统不会为缺失知识或证据生成模拟结果。"/>}
+          {unifiedSearch.isLoading ? <LoadingState label="正在检索多来源知识…"/> : unifiedSearch.error ? <ErrorState error={unifiedSearch.error} retry={() => unifiedSearch.refetch()}/> : unifiedSearch.data?.length ? searchGroups.map(([group, label]) => {
+            const hits = unifiedSearch.data.filter((hit) => hit.group === group);
+            if (!hits.length) return null;
+            return <section className="knowledge-search-group" key={group} aria-label={`${label}搜索结果`}><h3>{label}</h3>{hits.map((hit) => <a key={`${hit.source_kind}:${hit.source_id}`} href={hit.source_link || undefined} className="knowledge-search-hit"><b>{hit.title}</b><span>{sourceKindLabel(hit.source_kind)} · 修订 {hit.revision}</span><small>{hit.summary}</small><code>{hit.content_sha256?.slice(0, 16) ?? "无内容哈希"}</code></a>)}</section>;
+          }) : <EmptyState title="没有匹配的来源" detail="系统不会为缺失知识或证据生成模拟结果。"/>}
         </div>}
+
+        <div className="knowledge-filters" aria-label="项目文档筛选">
+          <label>文档类型<select aria-label="文档类型" value={documentKind} onChange={(event) => setDocumentKind(event.target.value)}><option value="">全部类型</option>{documentKinds.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>角色<input aria-label="角色" value={roleKey} onChange={(event) => setRoleKey(event.target.value)} placeholder="例如 product-manager" /></label>
+          <label>Delivery<input aria-label="Delivery" value={deliveryFilter} onChange={(event) => setDeliveryFilter(event.target.value)} placeholder="Delivery ID" /></label>
+          <label>来源<select aria-label="来源" value={sourceKind} onChange={(event) => setSourceKind(event.target.value)}><option value="">全部来源</option><option value="manual">人工</option><option value="agent-publication">Agent 发布</option><option value="legacy-migrated">Legacy 迁移</option></select></label>
+        </div>
 
         <div className="panel-head"><span>当前空间文档</span><small>{selectedSpaceId || "未选择空间"}</small></div>
         <div className="document-list" role="list" aria-label="当前空间文档列表">
-          {documents.data?.length ? documents.data.map((document) => (
+          {documents.isLoading && selectedSpaceId ? <LoadingState label="正在读取当前空间文档…" /> : documents.error ? <ErrorState error={documents.error} retry={() => documents.refetch()} /> : documents.data?.length ? documents.data.map((document) => (
             <button
               key={document.id}
               className={`knowledge-doc-item ${selectedDocumentId === document.id ? "selected" : ""}`}
@@ -334,6 +424,8 @@ export function KnowledgePage() {
               onClick={() => setSelectedDocumentId(document.id)}
             >
               <b>{document.title}</b>
+              <small>{documentKindLabel(document.document_kind ?? "project-general")} · {document.role_key ?? "未指定角色"}</small>
+              <small>{document.delivery_id ? `Delivery ${document.delivery_id}` : "项目级文档"} · {document.source_kind}</small>
               <small>文档 ID: {document.id}</small>
               <small>修订: {document.current_revision} · 协议版本: {document.version}</small>
             </button>
@@ -355,6 +447,12 @@ export function KnowledgePage() {
               <p className="field-help">协议 ID: <code>{selectedDocument.id}</code></p>
               <p className="field-help">修订号: <code>{currentRevision.data.revision}</code></p>
               <p className="field-help">内容 SHA-256: <code>{currentRevision.data.content_sha256}</code></p>
+              <div className="revision-provenance">
+                <b>Revision Provenance</b>
+                <p>生产者 {currentRevision.data.provenance?.producer_kind ?? "legacy"} / {currentRevision.data.provenance?.producer_id ?? "legacy-system"} · AgentRun {currentRevision.data.provenance?.agent_run_id ?? "无（人工修订）"}</p>
+                <p>运行身份 {currentRevision.data.provenance?.runtime_identity ?? "human"} · Binding {currentRevision.data.provenance?.binding_site ?? "—"} · Contract {currentRevision.data.provenance?.contract_id ?? "—"}</p>
+                <p>原始 Artifact SHA-256 <code>{currentRevision.data.provenance?.source_artifact_sha256 ?? "人工修订无原始 Artifact"}</code></p>
+              </div>
               <pre className="document-content">{markdownFromContent(currentRevision.data.content)}</pre>
             </>
           ) : (
@@ -368,19 +466,27 @@ export function KnowledgePage() {
       <section className="panel knowledge-create">
         <div className="panel-head"><span>文档操作</span><small>右栏执行真实命令</small></div>
         {conflictError && <ConflictState error={conflictError} />}
+        {selectedSpaceReadOnly && <div className="knowledge-readonly"><Archive size={17}/><div><b>Legacy Archive 始终只读</b><span>这里只保留迁移映射；不能创建、编辑、恢复修订或发表评论。</span></div></div>}
 
         <div className="panel-subtitle">创建文档</div>
-        <label>标题<input value={newDocumentTitle} onChange={(event) => setNewDocumentTitle(event.target.value)} disabled={!selectedSpaceId} placeholder="文档标题" /></label>
-        <label><BookMarked size={14} />Markdown 正文<textarea value={newDocumentContent} onChange={(event) => setNewDocumentContent(event.target.value)} disabled={!selectedSpaceId} placeholder="使用 Markdown 正文" /></label>
+        <label>标题<input value={newDocumentTitle} onChange={(event) => setNewDocumentTitle(event.target.value)} disabled={!selectedSpaceId || selectedSpaceReadOnly} placeholder="文档标题" /></label>
+        <label>文档类型<select value={newDocumentKind} onChange={(event) => setNewDocumentKind(event.target.value)} disabled={!selectedSpaceId || selectedSpaceReadOnly}>{documentKinds.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label>角色（可选）<input value={newDocumentRole} onChange={(event) => setNewDocumentRole(event.target.value)} disabled={!selectedSpaceId || selectedSpaceReadOnly} placeholder="例如 frontend-engineer" /></label>
+        <label>Delivery（可选）<input value={newDocumentDelivery} onChange={(event) => setNewDocumentDelivery(event.target.value)} disabled={!selectedSpaceId || selectedSpaceReadOnly} placeholder="Delivery ID" /></label>
+        <label><BookMarked size={14} />Markdown 正文<textarea value={newDocumentContent} onChange={(event) => setNewDocumentContent(event.target.value)} disabled={!selectedSpaceId || selectedSpaceReadOnly} placeholder="使用 Markdown 正文" /></label>
         <button
           className="primary button-icon"
-          disabled={!selectedSpaceId || createDocument.isPending || !newDocumentTitle.trim() || !newDocumentContent.trim()}
+          disabled={!selectedSpaceId || selectedSpaceReadOnly || createDocument.isPending || !newDocumentTitle.trim() || !newDocumentContent.trim()}
           onClick={() =>
             createDocument.mutate({
               space_id: selectedSpaceId,
               parent_id: null,
               title: newDocumentTitle.trim(),
+              document_kind: newDocumentKind,
+              role_key: newDocumentRole.trim() || null,
+              delivery_id: newDocumentDelivery.trim() || null,
               content: markdownPayload(newDocumentContent),
+              asset_references: [],
             } as Omit<DocumentCreate, "content"> & { content: MarkdownPayload })
           }
         >
@@ -391,11 +497,11 @@ export function KnowledgePage() {
         <div className="panel-subtitle">编辑当前文档（expected_version）</div>
         {selectedDocument ? (
           <>
-            <label>标题<input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} placeholder="文档标题" /></label>
-            <label><MessageSquare size={14} />Markdown 正文<textarea value={editorContent} onChange={(event) => setEditorContent(event.target.value)} placeholder="Markdown 正文" /></label>
+            <label>标题<input value={editorTitle} onChange={(event) => setEditorTitle(event.target.value)} disabled={selectedSpaceReadOnly} placeholder="文档标题" /></label>
+            <label><MessageSquare size={14} />Markdown 正文<textarea value={editorContent} onChange={(event) => setEditorContent(event.target.value)} disabled={selectedSpaceReadOnly} placeholder="Markdown 正文" /></label>
             <button
               className="secondary button-icon"
-              disabled={updateDocument.isPending || !editorTitle.trim() || !editorContent.trim()}
+              disabled={selectedSpaceReadOnly || updateDocument.isPending || !editorTitle.trim() || !editorContent.trim()}
               onClick={() =>
                 updateDocument.mutate({
                   id: selectedDocument.id,
@@ -419,11 +525,11 @@ export function KnowledgePage() {
             <div className="revision-list" role="list" aria-label="版本列表">
               {revisions.data.map((revision) => (
                 <article key={revision.revision} className="revision-item" role="listitem">
-                  <div><b>修订 {revision.revision}</b><small>创建于 {revision.created_at}</small></div>
+                  <div><b>修订 {revision.revision}</b><small>{revision.provenance?.producer_kind ?? "legacy"} / {revision.provenance?.producer_id ?? "legacy-system"} · 创建于 {revision.created_at}</small></div>
                   <small>SHA-256 {revision.content_sha256.slice(0, 12)}</small>
                   <button
                     className="secondary"
-                    disabled={restoreRevision.isPending || revision.revision === selectedDocument.current_revision}
+                    disabled={selectedSpaceReadOnly || restoreRevision.isPending || revision.revision === selectedDocument.current_revision}
                     onClick={() =>
                       restoreRevision.mutate({
                         documentId: selectedDocument.id,
@@ -456,10 +562,10 @@ export function KnowledgePage() {
                 ))}
               </div>
             ) : <EmptyState title="暂无评论" detail="当前文档还未形成评论流。" />}
-            <label>添加评论<textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="输入评论正文" /></label>
+            <label>添加评论<textarea value={commentText} onChange={(event) => setCommentText(event.target.value)} disabled={selectedSpaceReadOnly} placeholder="输入评论正文" /></label>
             <button
               className="secondary button-icon"
-              disabled={addComment.isPending || !commentText.trim()}
+              disabled={selectedSpaceReadOnly || addComment.isPending || !commentText.trim()}
               onClick={() => selectedDocument && addComment.mutate({ documentId: selectedDocument.id, body: commentText })}
             >
               <MessageSquare size={16} />添加评论

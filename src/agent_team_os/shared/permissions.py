@@ -24,10 +24,13 @@ class Permission(StrEnum):
     CAPABILITY_EDIT = "capability:edit"
     CAPABILITY_PUBLISH = "capability:publish"
     EVIDENCE_VERIFY = "evidence:verify"
+    EVIDENCE_READ = "evidence:read"
     WIKI_EDIT = "wiki:edit"
     SETTINGS_EDIT = "settings:edit"
     USER_MANAGE = "users:manage"
     WORKSPACE_RESET = "workspace:reset"
+    EVALUATION_RUN = "evaluation:run"
+    EVALUATION_REVIEW = "evaluation:review"
 
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
@@ -40,9 +43,12 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.AGENT_PROFILE_EDIT,
             Permission.CAPABILITY_EDIT,
             Permission.WIKI_EDIT,
+            Permission.EVIDENCE_READ,
+            Permission.EVALUATION_RUN,
+            Permission.EVALUATION_REVIEW,
         }
     ),
-    Role.VIEWER: frozenset(),
+    Role.VIEWER: frozenset({Permission.EVIDENCE_READ}),
 }
 
 

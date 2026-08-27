@@ -736,36 +736,6 @@ class ControlPlaneService:
             )
         return document
 
-    def sync_delivery_documents(self, delivery: DeliveryRun) -> None:
-        artifacts = (
-            ("requirement", delivery.requirements),
-            ("task", delivery.task),
-            ("candidate", delivery.candidate),
-            ("verification", delivery.verification),
-            ("plan-gate", delivery.plan_gate),
-            ("candidate-gate", delivery.candidate_gate),
-            ("apply-receipt", delivery.apply_receipt),
-        )
-        for artifact_type, artifact in artifacts:
-            if artifact is None:
-                continue
-            content = artifact.model_dump_json(indent=2)
-            self.create_document(
-                KnowledgeDocumentCreate(
-                    title=f"{delivery.user_request} · {artifact_type}",
-                    media_type="application/json",
-                    content=content,
-                ),
-                artifact_type=artifact_type,
-                sources=(
-                    SourceLink(
-                        source_kind=artifact_type,
-                        source_id=f"{delivery.id}:{artifact_type}",
-                        delivery_id=delivery.id,
-                    ),
-                ),
-            )
-
     def search_documents(self, query: str) -> tuple[KnowledgeDocument, ...]:
         try:
             with sqlite3.connect(self.database) as connection:

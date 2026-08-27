@@ -301,7 +301,7 @@ def test_delivery_pins_the_requested_published_journey_revision(tmp_path: Path) 
     assert missing.status_code == 404
 
 
-def test_board_commands_drive_delivery_and_knowledge_keeps_provenance(tmp_path: Path) -> None:
+def test_board_commands_and_legacy_knowledge_writes_are_separated(tmp_path: Path) -> None:
     service = ControlPlaneService(tmp_path / "control.sqlite")
     coordinator = DeliveryCoordinator(
         planning=DeterministicPlanningService(),
@@ -354,9 +354,12 @@ def test_board_commands_drive_delivery_and_knowledge_keeps_provenance(tmp_path: 
     assert approved.status_code == 202
     assert board[0]["available_commands"] == ["accept-candidate", "reject-candidate", "cancel"]
     assert illegal.status_code == 409
-    assert {document["artifact_type"] for document in documents} >= {"requirement", "task"}
-    assert duplicate_one.json()["id"] == duplicate_two.json()["id"]
-    assert duplicate_one.json()["sha256"] == duplicate_two.json()["sha256"]
+    assert documents == []
+    assert duplicate_one.status_code == 410
+    assert duplicate_two.status_code == 410
+    assert duplicate_one.json()["code"] == "KNOWLEDGE_LEGACY_WRITE_REMOVED"
+    assert duplicate_one.headers["deprecation"] == "true"
+    assert duplicate_one.headers["x-successor-path"] == "/v1/wiki/documents"
 
 
 def test_board_projection_and_control_events_are_restart_safe(tmp_path: Path) -> None:

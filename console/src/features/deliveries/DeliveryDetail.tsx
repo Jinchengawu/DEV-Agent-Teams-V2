@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { CheckCircle2, CircleAlert, Copy, GitCommitHorizontal, ShieldCheck } from "lucide-react";
+import { CheckCircle2, CircleAlert, Copy, GitCommitHorizontal, RefreshCw, ShieldCheck } from "lucide-react";
 import { artifactTypeLabel, identityLabel, statusLabel } from "../../i18n";
 import type { Delivery, EvidenceRecord, ProductEvent } from "../../entities/delivery/model";
 import { ConflictState, ErrorState } from "../../shared/feedback/AsyncState";
@@ -16,9 +16,24 @@ type Props = {
   eventsError?: Error | null;
   evidence: EvidenceRecord[];
   evidenceError?: Error | null;
+  publications?: PublicationView[];
+  publicationsError?: Error | null;
+  publicationRetryPending?: boolean;
+  publicationRetryError?: Error | null;
+  onRetryPublication?: (publicationId: string, expectedVersion: number) => void;
   decisionPending: boolean;
   decisionError?: Error | null;
   onDecision: (decision: DeliveryDecision) => void;
+};
+
+type PublicationView = {
+  id: string;
+  artifact_key: string;
+  contract_id: string;
+  status: "pending" | "publishing" | "published" | "failed";
+  attempt_count: number;
+  error_code?: string | null;
+  version: number;
 };
 
 type InspectorSelection =
@@ -34,6 +49,11 @@ export function DeliveryDetail({
   eventsError,
   evidence,
   evidenceError,
+  publications = [],
+  publicationsError,
+  publicationRetryPending = false,
+  publicationRetryError,
+  onRetryPublication,
   decisionPending,
   decisionError,
   onDecision,
@@ -44,6 +64,7 @@ export function DeliveryDetail({
   const verified = evidence.filter((item) => item.status === "verified");
   const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   const narrative = statusNarrative(delivery);
+  const blockingPublications = publications.filter((publication) => publication.status !== "published");
 
   const copyHash = async (value?: string | null) => {
     if (!value) return;
@@ -75,6 +96,16 @@ export function DeliveryDetail({
       {decisionError && <ErrorState error={decisionError}/>}
     </ConflictState>
     {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>修正需求或运行依赖后重新创建交付；失败运行不会覆盖沙箱主分支。</span></div></div>}
+    {publicationsError && <ErrorState error={publicationsError}/>}
+    {publicationRetryError && <ErrorState error={publicationRetryError}/>}
+    {blockingPublications.length > 0 && <section className="knowledge-publication-blocker surface-card">
+      <div><CircleAlert size={19}/><div><b>知识发布阻塞</b><p>AgentRun 与 Stage 已成功；系统保持 Delivery 非终态和项目租约，不会重跑 Agent，也不会提前打开下一 Gate。</p></div></div>
+      <div className="knowledge-publication-list">{blockingPublications.map((publication) => <article key={publication.id}>
+        <span><b>{publication.contract_id}</b><small>Artifact {publication.artifact_key} · 尝试 {publication.attempt_count} · {publication.error_code ?? publication.status}</small></span>
+        <StatusBadge value={publication.status}/>
+        {publication.status === "failed" && <button className="secondary button-icon" disabled={publicationRetryPending || !onRetryPublication} onClick={() => onRetryPublication?.(publication.id, publication.version)}><RefreshCw size={14}/>{publicationRetryPending ? "正在重试发布…" : "只重试发布"}</button>}
+      </article>)}</div>
+    </section>}
 
     <div className="run-room-grid">
       <div className="run-primary-column">

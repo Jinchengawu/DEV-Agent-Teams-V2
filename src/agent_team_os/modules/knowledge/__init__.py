@@ -1,18 +1,23 @@
 from .application import WikiService
 from .domain import (
+    AssetReference,
     Comment,
     CommentCreate,
     CommentPatch,
     Document,
     DocumentCreate,
+    DocumentKind,
     DocumentPatch,
     KnowledgeActor,
+    KnowledgeLifecycleStatus,
     PermissionGrant,
     Revision,
+    RevisionProducerKind,
+    RevisionProvenance,
     RevisionRestoreRequest,
     Space,
     SpaceCreate,
-    SystemKnowledgeArtifact,
+    SpaceKind,
     WikiAccess,
 )
 from .http import create_wiki_router
@@ -40,18 +45,31 @@ from .provider_ports import (
     ProviderKnowledgeRepository,
 )
 from .provider_repository import SQLiteProviderKnowledgeRepository
+from .publication import (
+    KnowledgePublication,
+    KnowledgePublicationLedger,
+    KnowledgePublicationStatus,
+    KnowledgePublisher,
+)
 from .repository import SQLiteWikiRepository
 from .search import KnowledgeSearchHit, KnowledgeSearchIndex
 
 __all__ = [
+    "AssetReference",
     "Comment",
     "CommentCreate",
     "CommentPatch",
     "Document",
     "DocumentCreate",
+    "DocumentKind",
     "DocumentPatch",
+    "KnowledgeLifecycleStatus",
     "KnowledgeActor",
     "KnowledgeProvider",
+    "KnowledgePublication",
+    "KnowledgePublicationLedger",
+    "KnowledgePublicationStatus",
+    "KnowledgePublisher",
     "KnowledgeProviderResolver",
     "ProviderActorResolver",
     "KnowledgeProviderKind",
@@ -72,12 +90,14 @@ __all__ = [
     "ProviderSyncRequest",
     "ProviderSyncStatus",
     "Revision",
+    "RevisionProducerKind",
+    "RevisionProvenance",
     "RevisionRestoreRequest",
     "SQLiteWikiRepository",
     "SQLiteProviderKnowledgeRepository",
     "Space",
     "SpaceCreate",
-    "SystemKnowledgeArtifact",
+    "SpaceKind",
     "WikiAccess",
     "WikiService",
     "create_wiki_router",

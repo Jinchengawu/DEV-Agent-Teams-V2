@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from typing import Literal, Protocol
 
 from ...shared.events import ProductEvent
@@ -60,6 +61,16 @@ class PipelineRunRepository(Protocol):
 
     def compare_and_swap(
         self, expected_version: int, run: PipelineRunRecord, event: ProductEvent
+    ) -> bool: ...
+
+    def get_on(self, connection: sqlite3.Connection, run_id: str) -> PipelineRunRecord: ...
+
+    def compare_and_swap_on(
+        self,
+        connection: sqlite3.Connection,
+        expected_version: int,
+        run: PipelineRunRecord,
+        event: ProductEvent,
     ) -> bool: ...
 
     def list_events(self, run_id: str) -> tuple[ProductEvent, ...]: ...

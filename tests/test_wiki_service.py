@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -24,7 +22,6 @@ from agent_team_os.modules.knowledge import (
     Revision,
     SpaceCreate,
     SQLiteWikiRepository,
-    SystemKnowledgeArtifact,
     WikiAccess,
     WikiService,
 )
@@ -205,67 +202,3 @@ def test_system_evidence_document_cannot_be_overwritten(tmp_path: Path) -> None:
             DocumentPatch(expected_version=1, title="伪造证据"),
         )
     assert immutable.value.code == "WIKI_SYSTEM_DOCUMENT_IMMUTABLE"
-
-
-def test_delivery_artifact_sync_is_idempotent_and_source_immutable(tmp_path: Path) -> None:
-    wiki, admin, _editor, viewer = _services(tmp_path)
-    artifact = SystemKnowledgeArtifact(
-        source_id="delivery-1:requirement",
-        title="增加 health 接口 · 需求",
-        content={"summary": "增加 health 接口", "acceptance": ["status=ok"]},
-    )
-
-    first = wiki.sync_system_artifacts(admin, (artifact,))
-    second = wiki.sync_system_artifacts(admin, (artifact,))
-
-    assert first == second
-    assert first[0].source_kind == "delivery-evidence"
-    assert wiki.search(viewer, "health") == first
-
-    with pytest.raises(ProductError) as conflict:
-        wiki.sync_system_artifacts(
-            admin,
-            (
-                artifact.model_copy(
-                    update={"content": {"summary": "伪造的同源内容"}}
-                ),
-            ),
-        )
-    assert conflict.value.code == "WIKI_SYSTEM_SOURCE_CONFLICT"
-
-
-def test_delivery_artifact_sync_is_idempotent_across_concurrent_requests(
-    tmp_path: Path,
-) -> None:
-    wiki, admin, _editor, _viewer = _services(tmp_path)
-    artifact = SystemKnowledgeArtifact(
-        source_id="delivery-concurrent:requirement",
-        title="并发交付需求",
-        content={"summary": "并发请求只归档一次"},
-    )
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        results = tuple(
-            executor.map(
-                lambda _index: wiki.sync_system_artifacts(admin, (artifact,)),
-                range(24),
-            )
-        )
-
-    document_ids = {result[0].id for result in results}
-    documents = wiki.list_documents(admin, WikiService.SYSTEM_SPACE_ID)
-    assert len(document_ids) == 1
-    assert len(documents) == 1
-    assert documents[0].source_id == artifact.source_id
-    with sqlite3.connect(tmp_path / "wiki.sqlite") as connection:
-        event_counts = dict(
-            connection.execute(
-                """SELECT event_type,COUNT(*) FROM product_events
-                WHERE event_type IN ('knowledge.space-created','knowledge.document-created')
-                GROUP BY event_type"""
-            ).fetchall()
-        )
-    assert event_counts == {
-        "knowledge.document-created": 1,
-        "knowledge.space-created": 1,
-    }

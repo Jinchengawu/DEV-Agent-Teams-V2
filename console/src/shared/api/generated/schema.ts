@@ -421,6 +421,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deliveries/{delivery_id}/knowledge-publications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Delivery Knowledge Publications */
+        get: operations["list_delivery_knowledge_publications_v1_deliveries__delivery_id__knowledge_publications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/knowledge/publications/{publication_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Knowledge Publication */
+        post: operations["retry_knowledge_publication_v1_knowledge_publications__publication_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/readiness": {
         parameters: {
             query?: never;
@@ -1941,12 +1975,28 @@ export interface components {
             id?: string;
             /** Contract Id */
             contract_id: string;
+            /**
+             * Artifact Key
+             * @default primary
+             */
+            artifact_key: string;
             /** Content */
             content: {
                 [key: string]: unknown;
             };
             /** Sha256 */
             sha256: string;
+        };
+        /** AssetReference */
+        AssetReference: {
+            /** Kind */
+            kind: string;
+            /** Url */
+            url?: string | null;
+            /** Provider Snapshot Id */
+            provider_snapshot_id?: string | null;
+            /** Project Artifact Id */
+            project_artifact_id?: string | null;
         };
         /** BindingRequest */
         BindingRequest: {
@@ -2184,8 +2234,16 @@ export interface components {
             source_kind: string;
             /** Source Id */
             source_id?: string | null;
+            /** @default project-general */
+            document_kind: components["schemas"]["DocumentKind"];
+            /** Role Key */
+            role_key?: string | null;
+            /** Delivery Id */
+            delivery_id?: string | null;
+            /** @default active */
+            lifecycle_status: components["schemas"]["KnowledgeLifecycleStatus"];
             /** Created By */
-            created_by: string;
+            created_by: string | null;
             /**
              * Created At
              * Format: date-time
@@ -2205,8 +2263,24 @@ export interface components {
             parent_id?: string | null;
             /** Title */
             title: string;
+            /** @default project-general */
+            document_kind: components["schemas"]["DocumentKind"];
+            /** Role Key */
+            role_key?: string | null;
+            /** Delivery Id */
+            delivery_id?: string | null;
             content: components["schemas"]["JsonValue"];
+            /**
+             * Asset References
+             * @default []
+             */
+            asset_references: components["schemas"]["AssetReference"][];
         };
+        /**
+         * DocumentKind
+         * @enum {string}
+         */
+        DocumentKind: "product-requirement" | "delivery-plan" | "design-spec" | "frontend-technical" | "backend-api" | "test-plan" | "test-report" | "project-general";
         /** DocumentPatch */
         DocumentPatch: {
             /** Expected Version */
@@ -2216,6 +2290,8 @@ export interface components {
             /** Parent Id */
             parent_id?: string | null;
             content?: components["schemas"]["JsonValue"] | null;
+            /** Asset References */
+            asset_references?: components["schemas"]["AssetReference"][] | null;
         };
         /** DraftVersionRequest */
         DraftVersionRequest: {
@@ -2226,7 +2302,7 @@ export interface components {
          * EvidenceKind
          * @enum {string}
          */
-        EvidenceKind: "journey" | "plan-gate" | "candidate" | "diff" | "verification" | "candidate-gate" | "apply-receipt";
+        EvidenceKind: "journey" | "plan-gate" | "candidate" | "diff" | "verification" | "candidate-gate" | "apply-receipt" | "evaluation-report";
         /** EvidenceRecord */
         EvidenceRecord: {
             /** Id */
@@ -2470,39 +2546,6 @@ export interface components {
             published_at?: string;
         };
         JsonValue: unknown;
-        /** KnowledgeDocument */
-        KnowledgeDocument: {
-            /** Id */
-            id: string;
-            /** Title */
-            title: string;
-            /**
-             * Media Type
-             * @enum {string}
-             */
-            media_type: "text/plain" | "text/markdown" | "application/json";
-            /** Artifact Type */
-            artifact_type: string;
-            /** Content */
-            content: string;
-            /** Sha256 */
-            sha256: string;
-            /**
-             * Revision
-             * @default 1
-             */
-            revision: number;
-            /**
-             * Sources
-             * @default []
-             */
-            sources: components["schemas"]["SourceLink"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-        };
         /** KnowledgeDocumentCreate */
         KnowledgeDocumentCreate: {
             /** Title */
@@ -2515,18 +2558,94 @@ export interface components {
             /** Content */
             content: string;
         };
+        /**
+         * KnowledgeLifecycleStatus
+         * @enum {string}
+         */
+        KnowledgeLifecycleStatus: "active" | "archived";
+        /** KnowledgePublication */
+        KnowledgePublication: {
+            /** Id */
+            id: string;
+            /** Publication Key */
+            publication_key: string;
+            /** Project Id */
+            project_id: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Node Id */
+            node_id: string;
+            /** Binding Site */
+            binding_site: string;
+            /** Agent Run Id */
+            agent_run_id: string;
+            /** Artifact Id */
+            artifact_id: string;
+            /** Artifact Key */
+            artifact_key: string;
+            /** Contract Id */
+            contract_id: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /** Runtime Identity */
+            runtime_identity?: string | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            status: components["schemas"]["KnowledgePublicationStatus"];
+            /** Attempt Count */
+            attempt_count: number;
+            /** Target Space Id */
+            target_space_id?: string | null;
+            /** Target Document Id */
+            target_document_id?: string | null;
+            /** Target Revision */
+            target_revision?: number | null;
+            /** Expected Document Version */
+            expected_document_version?: number | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Published At */
+            published_at?: string | null;
+        };
+        /** KnowledgePublicationRetryRequest */
+        KnowledgePublicationRetryRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /**
+         * KnowledgePublicationStatus
+         * @enum {string}
+         */
+        KnowledgePublicationStatus: "pending" | "publishing" | "published" | "failed";
         /** KnowledgeSearchHit */
         KnowledgeSearchHit: {
             /** Project Id */
-            project_id: string | null;
+            project_id: string;
+            /** Group */
+            group: string;
             /** Source Kind */
             source_kind: string;
             /** Source Id */
             source_id: string;
             /** Title */
             title: string;
-            /** Searchable Text */
-            searchable_text: string;
+            /** Summary */
+            summary: string;
             /** Revision */
             revision: string;
             /** Content Sha256 */
@@ -3133,13 +3252,44 @@ export interface components {
             search_text: string;
             /** Content Sha256 */
             content_sha256: string;
+            provenance?: components["schemas"]["RevisionProvenance"];
+            /**
+             * Asset References
+             * @default []
+             */
+            asset_references: components["schemas"]["AssetReference"][];
             /** Created By */
-            created_by: string;
+            created_by: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * RevisionProducerKind
+         * @enum {string}
+         */
+        RevisionProducerKind: "human" | "agent" | "legacy" | "legacy-migration";
+        /** RevisionProvenance */
+        RevisionProvenance: {
+            producer_kind: components["schemas"]["RevisionProducerKind"];
+            /** Producer Id */
+            producer_id: string;
+            /** Agent Run Id */
+            agent_run_id?: string | null;
+            /** Binding Site */
+            binding_site?: string | null;
+            /** Contract Id */
+            contract_id?: string | null;
+            /** Artifact Id */
+            artifact_id?: string | null;
+            /** Artifact Key */
+            artifact_key?: string | null;
+            /** Runtime Identity */
+            runtime_identity?: string | null;
+            /** Source Artifact Sha256 */
+            source_artifact_sha256?: string | null;
         };
         /** RevisionRestoreRequest */
         RevisionRestoreRequest: {
@@ -3175,15 +3325,6 @@ export interface components {
             /** Error Code */
             error_code?: string | null;
         };
-        /** SourceLink */
-        SourceLink: {
-            /** Source Kind */
-            source_kind: string;
-            /** Source Id */
-            source_id: string;
-            /** Delivery Id */
-            delivery_id?: string | null;
-        };
         /** Space */
         Space: {
             /** Id */
@@ -3198,6 +3339,10 @@ export interface components {
              * @default legacy-default
              */
             project_id: string | null;
+            /** @default custom */
+            space_kind: components["schemas"]["SpaceKind"];
+            /** @default active */
+            lifecycle_status: components["schemas"]["KnowledgeLifecycleStatus"];
             /** Name */
             name: string;
             /** Description */
@@ -3205,7 +3350,7 @@ export interface components {
             /** Version */
             version: number;
             /** Created By */
-            created_by: string;
+            created_by: string | null;
             /**
              * Created At
              * Format: date-time
@@ -3237,6 +3382,11 @@ export interface components {
              */
             project_id: string | null;
         };
+        /**
+         * SpaceKind
+         * @enum {string}
+         */
+        SpaceKind: "project-documents" | "custom" | "legacy-archive";
         /** SystemPolicy */
         SystemPolicy: {
             /**
@@ -5371,6 +5521,126 @@ export interface operations {
             };
         };
     };
+    list_delivery_knowledge_publications_v1_deliveries__delivery_id__knowledge_publications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgePublication"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    retry_knowledge_publication_v1_knowledge_publications__publication_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                publication_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgePublicationRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgePublication"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     get_readiness_v1_readiness_get: {
         parameters: {
             query?: never;
@@ -6567,6 +6837,7 @@ export interface operations {
             query?: {
                 project_id?: string | null;
                 include_global?: boolean;
+                include_archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -6685,6 +6956,11 @@ export interface operations {
         parameters: {
             query?: {
                 space_id?: string | null;
+                document_kind?: components["schemas"]["DocumentKind"] | null;
+                role_key?: string | null;
+                delivery_id?: string | null;
+                source_kind?: string | null;
+                include_archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -8646,7 +8922,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KnowledgeDocument"][];
+                    "application/json": components["schemas"]["Document"][];
                 };
             };
             /** @description 目标资源不存在 */
@@ -8700,15 +8976,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnowledgeDocument"];
-                };
-            };
             /** @description 目标资源不存在 */
             404: {
                 headers: {
@@ -8725,6 +8992,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Successful Response */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description 输入校验失败 */
@@ -8764,7 +9040,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KnowledgeDocument"];
+                    "application/json": components["schemas"]["Document"];
                 };
             };
             /** @description 目标资源不存在 */

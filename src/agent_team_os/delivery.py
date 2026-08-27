@@ -9,7 +9,7 @@ import sqlite3
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
 from acwm.domain import (
@@ -27,6 +27,13 @@ from .modules.agents import AgentRunLedger
 from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
+
+if TYPE_CHECKING:
+    from .modules.delivery.publication import (
+        PublicationBarrier,
+        RoleDocumentPublicationPort,
+        RoleDocumentPublisher,
+    )
 
 
 class ImmutableModel(BaseModel):
@@ -242,6 +249,8 @@ class PipelineExecution(Protocol):
 
     async def recover_applying(self, delivery: DeliveryRun) -> None: ...
 
+    async def recover_publications(self, delivery_id: str) -> bool: ...
+
 
 class InMemoryDeliveryRepository:
     def __init__(self) -> None:
@@ -398,6 +407,9 @@ class DeliveryCoordinator:
         catalog: PipelineCatalog,
         runs: PipelineRunLedger,
         agent_runs: AgentRunLedger | None = None,
+        publications: RoleDocumentPublicationPort | None = None,
+        publication_barrier: PublicationBarrier | None = None,
+        document_publisher: RoleDocumentPublisher | None = None,
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
         from .modules.delivery import PipelineExecutionModule
@@ -411,6 +423,9 @@ class DeliveryCoordinator:
             catalog=catalog,
             runs=runs,
             agent_runs=agent_runs,
+            publications=publications,
+            publication_barrier=publication_barrier,
+            document_publisher=document_publisher,
         )
 
     def enqueue(
@@ -972,6 +987,8 @@ class DeliveryCoordinator:
                 if delivery.pipeline_revision_id is not None:
                     if self._pipeline_execution is None:
                         raise DeliveryStateConflictError("pipeline runtime is unavailable")
+                    if await self._pipeline_execution.recover_publications(delivery.id):
+                        continue
                     self._pipeline_execution.fail(
                         delivery.id,
                         ProcessInterruptedError("pipeline node was interrupted"),
@@ -1021,6 +1038,15 @@ class DeliveryCoordinator:
                     )
                 except Exception as error:
                     self._save_failed(delivery, error, "APPLY_RECOVERY_FAILED")
+
+    async def resume_publications(self, delivery_id: str) -> DeliveryRun:
+        delivery = self.get(delivery_id)
+        if delivery.pipeline_revision_id is None or self._pipeline_execution is None:
+            raise DeliveryStateConflictError("pipeline publication runtime is unavailable")
+        handled = await self._pipeline_execution.recover_publications(delivery_id)
+        if not handled:
+            raise DeliveryStateConflictError("Delivery has no role document publications")
+        return self.get(delivery_id)
 
 
 def _sha256(value: object) -> str:

@@ -16,6 +16,7 @@ class EvidenceKind(StrEnum):
     VERIFICATION = "verification"
     CANDIDATE_GATE = "candidate-gate"
     APPLY_RECEIPT = "apply-receipt"
+    EVALUATION_REPORT = "evaluation-report"
 
 
 class EvidenceStatus(StrEnum):

@@ -337,16 +337,29 @@ class SQLitePipelineRunRepository:
     def get_for_delivery(self, delivery_id: str) -> PipelineRunRecord:
         return self._find("delivery_id", delivery_id)
 
+    def get_on(
+        self, connection: sqlite3.Connection, run_id: str
+    ) -> PipelineRunRecord:
+        return self._find_on(connection, "id", run_id)
+
     def _find(self, field: str, value: str) -> PipelineRunRecord:
         if field not in {"id", "delivery_id"}:
             raise ValueError("Unsafe pipeline run lookup")
         with sqlite3.connect(self.database) as connection:
-            row = connection.execute(
-                f"""SELECT id,delivery_id,pipeline_id,pipeline_revision,
-                graph_fingerprint,status,version,snapshot_json,created_at,updated_at
-                FROM pipeline_runs WHERE {field}=?""",  # noqa: S608
-                (value,),
-            ).fetchone()
+            return self._find_on(connection, field, value)
+
+    @staticmethod
+    def _find_on(
+        connection: sqlite3.Connection, field: str, value: str
+    ) -> PipelineRunRecord:
+        if field not in {"id", "delivery_id"}:
+            raise ValueError("Unsafe pipeline run lookup")
+        row = connection.execute(
+            f"""SELECT id,delivery_id,pipeline_id,pipeline_revision,
+            graph_fingerprint,status,version,snapshot_json,created_at,updated_at
+            FROM pipeline_runs WHERE {field}=?""",  # noqa: S608
+            (value,),
+        ).fetchone()
         if row is None:
             raise KeyError(value)
         values = dict(zip(_PIPELINE_RUN_FIELDS, row, strict=True))
@@ -362,22 +375,32 @@ class SQLitePipelineRunRepository:
         with sqlite3.connect(self.database, timeout=5) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")
-            cursor = connection.execute(
-                """UPDATE pipeline_runs SET status=?,version=?,snapshot_json=?,updated_at=?
-                WHERE id=? AND version=?""",
-                (
-                    run.status,
-                    run.version,
-                    _json(run.snapshot),
-                    run.updated_at.isoformat(),
-                    run.id,
-                    expected_version,
-                ),
+            return self.compare_and_swap_on(
+                connection, expected_version, run, event
             )
-            if cursor.rowcount != 1:
-                connection.rollback()
-                return False
-            _append_pipeline_run_event(connection, event)
+
+    def compare_and_swap_on(
+        self,
+        connection: sqlite3.Connection,
+        expected_version: int,
+        run: PipelineRunRecord,
+        event: ProductEvent,
+    ) -> bool:
+        cursor = connection.execute(
+            """UPDATE pipeline_runs SET status=?,version=?,snapshot_json=?,updated_at=?
+            WHERE id=? AND version=?""",
+            (
+                run.status,
+                run.version,
+                _json(run.snapshot),
+                run.updated_at.isoformat(),
+                run.id,
+                expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            return False
+        _append_pipeline_run_event(connection, event)
         return True
 
     def list_events(self, run_id: str) -> tuple[ProductEvent, ...]:

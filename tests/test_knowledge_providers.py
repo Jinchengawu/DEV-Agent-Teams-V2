@@ -258,6 +258,26 @@ def test_node_listing_uses_current_users_provider_identity_and_fails_closed(
     assert revoked.value.status_code == 503
 
 
+def test_snapshot_search_visibility_is_reconfirmed_and_revocation_fails_closed(
+    tmp_path: Path,
+) -> None:
+    manager, _repository, provider, _actor_resolver, admin, editor, _viewer = _manager(
+        tmp_path
+    )
+    binding = _create_binding(manager, admin)
+    synced = manager.sync(editor, binding.id, "docx:doc-feishu")
+    assert synced.snapshot is not None
+    assert manager.can_read_snapshot(editor, synced.snapshot.id) is True
+
+    provider.failure = ProviderFailure(
+        "FEISHU_PERMISSION_REVOKED",
+        "provider access revoked",
+        unavailable=True,
+    )
+
+    assert manager.can_read_snapshot(editor, synced.snapshot.id) is False
+
+
 def test_revision_conflict_unavailable_and_permission_fail_closed(tmp_path: Path) -> None:
     manager, repository, provider, actor_resolver, admin, editor, viewer = _manager(
         tmp_path

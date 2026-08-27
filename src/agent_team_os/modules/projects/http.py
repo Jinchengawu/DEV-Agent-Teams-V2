@@ -30,6 +30,8 @@ def create_project_router(
     *,
     actor_id: Callable[[Request], str],
     authorize_manage: Callable[[Request], None],
+    after_create: Callable[[ProjectDetail], None] | None = None,
+    after_archive: Callable[[Project], None] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -40,7 +42,10 @@ def create_project_router(
     @router.post("/v1/projects", response_model=ProjectDetail, status_code=201)
     def create_project(body: ProjectCreate, request: Request) -> ProjectDetail:
         authorize_manage(request)
-        return catalog.create(body, actor_id(request))
+        created = catalog.create(body, actor_id(request))
+        if after_create is not None:
+            after_create(created)
+        return created
 
     @router.get("/v1/projects/{project_id}", response_model=ProjectDetail)
     def get_project(project_id: str) -> ProjectDetail:
@@ -54,7 +59,10 @@ def create_project_router(
     @router.post("/v1/projects/{project_id}/archive", response_model=Project)
     def archive_project(project_id: str, body: ProjectVersionRequest, request: Request) -> Project:
         authorize_manage(request)
-        return catalog.archive(project_id, body.expected_version)
+        archived = catalog.archive(project_id, body.expected_version)
+        if after_archive is not None:
+            after_archive(archived)
+        return archived
 
     @router.post("/v1/projects/{project_id}/workspace/retry", response_model=ProjectDetail)
     def retry_workspace(project_id: str, request: Request) -> ProjectDetail:

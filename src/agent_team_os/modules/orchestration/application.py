@@ -126,6 +126,65 @@ class PipelineRunLedger:
             self._raise_version_conflict(expected_version, latest.version)
         return updated
 
+    def transition_on(
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        *,
+        command: str,
+        node_id: str,
+        expected_version: int,
+        body_node_id: str | None = None,
+        activated_conditions: tuple[str, ...] = (),
+        exit_condition_met: bool | None = None,
+    ) -> PipelineRunRecord:
+        """Apply a GraphRun transition inside a caller-owned SQLite UnitOfWork."""
+        current = self.repository.get_on(connection, run_id)
+        if current.version != expected_version:
+            self._raise_version_conflict(expected_version, current.version)
+        snapshot = self.runtime.transition(
+            current.snapshot,
+            command=command,
+            node_id=node_id,
+            body_node_id=body_node_id,
+            activated_conditions=activated_conditions,
+            exit_condition_met=exit_condition_met,
+        )
+        updated = current.model_copy(
+            update={
+                "status": self._status(snapshot),
+                "version": self._version(snapshot),
+                "snapshot": snapshot,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        event_type = (
+            "pipeline-run.cancelled"
+            if command == "cancel"
+            else f"pipeline-node.{_COMMAND_EVENT_SUFFIX.get(command, command)}"
+        )
+        updated_ok = self.repository.compare_and_swap_on(
+            connection,
+            current.version,
+            updated,
+            self._event(
+                updated,
+                event_type,
+                {
+                    "node_id": node_id,
+                    **(
+                        {"body_node_id": body_node_id}
+                        if body_node_id is not None
+                        else {}
+                    ),
+                },
+            ),
+        )
+        if not updated_ok:
+            latest = self.repository.get_on(connection, run_id)
+            self._raise_version_conflict(expected_version, latest.version)
+        return updated
+
     @staticmethod
     def _event(
         run: PipelineRunRecord, event_type: str, payload: dict[str, object]

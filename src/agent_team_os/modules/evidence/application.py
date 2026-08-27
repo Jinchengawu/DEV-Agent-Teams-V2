@@ -138,6 +138,25 @@ class EvidenceLedger:
             )
         return self.repository.append_verification(evidence_id, EvidenceStatus.VERIFIED, None)
 
+    def record_evaluation_report(self, payload: Mapping[str, object]) -> EvidenceRecord:
+        """Archive one immutable evaluation report without pretending it is Delivery evidence."""
+        run_id = str(payload["run_id"])
+        content_sha256 = _text(payload.get("evidence_sha256"))
+        valid = is_valid_sha256(content_sha256)
+        record = EvidenceRecord(
+            id=str(uuid5(NAMESPACE_URL, f"agent-team-os:evaluation:{run_id}")),
+            delivery_id=f"evaluation:{run_id}",
+            kind=EvidenceKind.EVALUATION_REPORT,
+            source_kind="evaluation-report",
+            source_id=run_id,
+            producer_identity=str(payload.get("proof_scope") or "unknown-evaluation-producer"),
+            content_sha256=(Sha256.validate(content_sha256) if valid and content_sha256 else None),
+            status=EvidenceStatus.VERIFIED if valid else EvidenceStatus.INVALID,
+            payload=dict(payload),
+            verification_error=None if valid else "MISSING_OR_ZERO_SHA256",
+        )
+        return self.repository.append(record)
+
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) else None

@@ -33,9 +33,16 @@ from .modules.agents import (
     ensure_builtin_agent_deployments,
 )
 from .modules.delivery import BackendDeliveryPipelinePolicy
+from .modules.evaluation import EvaluationService, SQLiteEvaluationRepository
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.identity import IdentityService, SQLiteIdentityRepository
-from .modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
+from .modules.knowledge import (
+    KnowledgePublicationLedger,
+    KnowledgePublisher,
+    KnowledgeSearchIndex,
+    SQLiteWikiRepository,
+    WikiService,
+)
 from .modules.orchestration import (
     PipelineCatalog,
     PipelineCreate,
@@ -135,7 +142,6 @@ def build_gate_app() -> FastAPI:
         ),
         actor_id="system",
     )
-
     def validate_project_pipeline(revision_id: str) -> None:
         pipeline_catalog.resolve_revision(revision_id)
 
@@ -153,15 +159,22 @@ def build_gate_app() -> FastAPI:
             f"backend-delivery:{builtin_pipeline.active_revision}",
             tuple(sorted(set(builtin_assignments.values()))),
         )
+    evidence_ledger = EvidenceLedger(SQLiteEvidenceRepository(database))
+    knowledge_publications = KnowledgePublicationLedger(database)
+    wiki_service = WikiService(
+        SQLiteWikiRepository(database), project_guard=projects.assert_writable
+    )
+    for project in projects.list():
+        wiki_service.reconcile_project_space(
+            project.id, project.name, project.lifecycle_status
+        )
     result = create_app(
         coordinator,
         control_plane=control_plane,
-        evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
+        evidence=evidence_ledger,
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
-        knowledge=WikiService(
-            SQLiteWikiRepository(database), project_guard=projects.assert_writable
-        ),
+        knowledge=wiki_service,
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
@@ -172,6 +185,15 @@ def build_gate_app() -> FastAPI:
         agent_runs=AgentRunLedger(database),
         projects=projects,
         knowledge_search=KnowledgeSearchIndex(database),
+        knowledge_publications=knowledge_publications,
+        knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
+        evaluations=EvaluationService(
+            SQLiteEvaluationRepository(database),
+            pipeline_catalog,
+            report_dir=data_dir / "reports" / "evaluations",
+            project_root=project_root,
+            evidence=evidence_ledger,
+        ),
     )
     install_preview_ui(result, project_root / "console" / "dist")
     return result
