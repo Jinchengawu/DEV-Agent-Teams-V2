@@ -1,0 +1,64 @@
+name: Manual evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Reproducible evaluation seed
+        required: true
+        default: "20260824"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  offline-standard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Configure evaluation data directory
+        run: echo "AGENT_TEAM_OS_DATA_DIR=${RUNNER_TEMP}/agent-team-os-evaluation" >> "$GITHUB_ENV"
+      - name: Install locked development dependencies
+        run: uv sync --extra dev --extra live --locked
+      - name: Validate versioned dataset
+        run: uv run agent-team-os-dev eval validate-dataset
+      - name: Calibration run 1
+        run: >-
+          uv run agent-team-os-dev eval run --mode offline --profile standard
+          --seed "${{ inputs.seed }}" --bootstrap-fixture
+      - name: Calibration run 2
+        run: >-
+          uv run agent-team-os-dev eval run --mode offline --profile standard
+          --seed "${{ inputs.seed }}" --bootstrap-fixture
+      - name: Calibration run 3
+        run: >-
+          uv run agent-team-os-dev eval run --mode offline --profile standard
+          --seed "${{ inputs.seed }}" --bootstrap-fixture
+      - name: Calibrated gate run
+        run: >-
+          uv run agent-team-os-dev eval run --mode offline --profile standard
+          --seed "${{ inputs.seed }}" --bootstrap-fixture --require-gate-passed
+      - name: Export calibration summary
+        env:
+          CALIBRATION_OUTPUT: ${{ runner.temp }}/agent-team-os-evaluation/reports/evaluations/calibration.json
+        run: >-
+          uv run python -c "import json, os, sqlite3; from pathlib import Path;
+          database=Path(os.environ['AGENT_TEAM_OS_DATA_DIR'])/'agent-team-os.sqlite';
+          columns=('id','suite_sha256','subject_fingerprint','sample_count','metric_medians','metric_mad','evidence_sha256','created_at');
+          rows=sqlite3.connect(database).execute('SELECT id,suite_sha256,subject_fingerprint,sample_count,metric_medians_json,metric_mad_json,evidence_sha256,created_at FROM evaluation_calibrations ORDER BY created_at').fetchall();
+          payload=[dict(zip(columns,(row[0],row[1],row[2],row[3],json.loads(row[4]),json.loads(row[5]),row[6],row[7]),strict=True)) for row in rows];
+          Path(os.environ['CALIBRATION_OUTPUT']).write_text(json.dumps(payload, indent=2), encoding='utf-8')"
+      - name: Upload immutable evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-team-os-evaluation-${{ github.sha }}
+          path: ${{ runner.temp }}/agent-team-os-evaluation
+          if-no-files-found: error
+          retention-days: 30

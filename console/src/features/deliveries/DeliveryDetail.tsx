@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Button, Tabs } from "antd";
-import { CheckCircle2, CircleAlert, GitCommitHorizontal, PackageCheck, Palette, ShieldCheck } from "lucide-react";
+import { CheckCircle2, CircleAlert, GitCommitHorizontal, PackageCheck, Palette, RefreshCw, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { artifactTypeLabel, identityLabel, repositoryRoleLabel, statusLabel } from "../../i18n";
 import { projectPath } from "../../entities/project/api";
 import type { Delivery, EvidenceRecord, ProductEvent } from "../../entities/delivery/model";
-import { ConflictState } from "../../shared/feedback/AsyncState";
+import { ConflictState, ErrorState } from "../../shared/feedback/AsyncState";
 import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import type { DeliveryDecision, PipelineRun } from "./api";
@@ -15,6 +15,12 @@ type Props = {
   pipelineRun?: PipelineRun;
   events: ProductEvent[];
   evidence: EvidenceRecord[];
+  evidenceError?: Error | null;
+  publications?: PublicationView[];
+  publicationsError?: Error | null;
+  publicationRetryPending?: boolean;
+  publicationRetryError?: Error | null;
+  onRetryPublication?: (publicationId: string, expectedVersion: number) => void;
   decisionPending: boolean;
   decisionError?: Error | null;
   onDecision: (decision: DeliveryDecision) => void;
@@ -22,13 +28,38 @@ type Props = {
 
 type RepositoryCandidate = Delivery["repository_candidates"][number];
 
-export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisionPending, decisionError, onDecision }: Props) {
+type PublicationView = {
+  id: string;
+  artifact_key: string;
+  contract_id: string;
+  status: "pending" | "publishing" | "published" | "failed";
+  attempt_count: number;
+  error_code?: string | null;
+  version: number;
+};
+
+export function DeliveryDetail({
+  delivery,
+  pipelineRun,
+  events,
+  evidence,
+  evidenceError,
+  publications = [],
+  publicationsError,
+  publicationRetryPending = false,
+  publicationRetryError,
+  onRetryPublication,
+  decisionPending,
+  decisionError,
+  onDecision,
+}: Props) {
   const [pendingDecision, setPendingDecision] = useState<DeliveryDecision>();
   const verified = evidence.filter((item) => item.status === "verified");
   const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   const repositoryCandidates = delivery.repository_candidates ?? [];
   const designCandidate = repositoryCandidates.find((item) => item.role === "design");
   const confirmation = decisionConfirmation(pendingDecision, Boolean(delivery.release_bundle));
+  const blockingPublications = publications.filter((publication) => publication.status !== "published");
 
   return <div className="delivery-detail">
     <section className="detail-hero">
@@ -38,6 +69,17 @@ export function DeliveryDetail({ delivery, pipelineRun, events, evidence, decisi
 
     <ConflictState error={decisionError}/>
     {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>请根据失败代码修正需求或运行依赖，再创建新的交付。失败运行不会污染任何项目仓库的 Main。</span></div></div>}
+    {evidenceError && <ErrorState error={evidenceError}/>}
+    {publicationsError && <ErrorState error={publicationsError}/>}
+    {publicationRetryError && <ErrorState error={publicationRetryError}/>}
+    {blockingPublications.length > 0 && <section className="knowledge-publication-blocker surface-card">
+      <div><CircleAlert size={19}/><div><b>知识发布阻塞</b><p>AgentRun 与 Stage 已成功；系统保持 Delivery 非终态和项目租约，不会重跑 Agent，也不会提前打开下一 Gate。</p></div></div>
+      <div className="knowledge-publication-list">{blockingPublications.map((publication) => <article key={publication.id}>
+        <span><b>{publication.contract_id}</b><small>Artifact {publication.artifact_key} · 尝试 {publication.attempt_count} · {publication.error_code ?? publication.status}</small></span>
+        <StatusBadge value={publication.status}/>
+        {publication.status === "failed" && <Button className="button-icon" disabled={publicationRetryPending || !onRetryPublication} onClick={() => onRetryPublication?.(publication.id, publication.version)}><RefreshCw size={14}/>{publicationRetryPending ? "正在重试发布…" : "只重试发布"}</Button>}
+      </article>)}</div>
+    </section>}
 
     {pipelineRun && <section className="panel pipeline-run-ledger"><div className="panel-head"><span>ACWM DAG 运行账本</span><small>GraphRun V{pipelineRun.version} · {pipelineRun.status}</small></div><div className="pipeline-run-meta"><span>不可变图指纹</span><code>{pipelineRun.graph_fingerprint}</code></div><div className="pipeline-node-projections">{graphNodes.map((node) => <article key={node.node_id}><i data-status={node.status}/><b>{node.node_id}</b><StatusBadge value={node.status}/><small>尝试 {node.attempt}</small></article>)}</div></section>}
 

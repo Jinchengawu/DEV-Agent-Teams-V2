@@ -51,6 +51,7 @@ from .modules.agents import (
     create_agent_profile_router,
 )
 from .modules.board import BoardProjector, WorkItem
+from .modules.evaluation import EvaluationService, create_evaluation_router
 from .modules.evidence import (
     EvidenceKind,
     EvidenceLedger,
@@ -68,10 +69,14 @@ from .modules.identity import (
     ensure_same_origin,
 )
 from .modules.knowledge import (
+    Document,
     KnowledgeActivityItem,
     KnowledgeActor,
     KnowledgeDerivationCreate,
     KnowledgeDerivationResult,
+    KnowledgePublication,
+    KnowledgePublicationLedger,
+    KnowledgePublisher,
     KnowledgeSearchHit,
     KnowledgeSearchIndex,
     ProviderKnowledgeManager,
@@ -85,14 +90,14 @@ from .modules.orchestration import (
     PipelineRunRecord,
     create_pipeline_router,
 )
-from .modules.projects import ProjectCatalog, create_project_router
+from .modules.projects import Project, ProjectCatalog, ProjectDetail, create_project_router
 from .modules.settings import SettingsManager, create_settings_router
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
 from .shared.errors import ProblemDetail, ProductError
 from .shared.events import ProductEvent
 from .shared.ids import new_id
-from .shared.permissions import Permission
+from .shared.permissions import Permission, permits
 
 
 class DeliveryRequest(BaseModel):
@@ -141,6 +146,12 @@ class CancelRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class KnowledgePublicationRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 def create_app(
     coordinator: DeliveryCoordinator,
     *,
@@ -163,6 +174,9 @@ def create_app(
     knowledge_search: KnowledgeSearchIndex | None = None,
     runtime_extensions: RuntimeExtensionCatalog | None = None,
     release_applier: ReleaseApplier | None = None,
+    knowledge_publications: KnowledgePublicationLedger | None = None,
+    knowledge_publisher: KnowledgePublisher | None = None,
+    evaluations: EvaluationService | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
         coordinator.configure_pipeline_runtime(
@@ -170,6 +184,9 @@ def create_app(
             pipeline_runs,
             agent_runs,
             release_applier=release_applier,
+            publications=knowledge_publications,
+            publication_barrier=knowledge_publications,
+            document_publisher=knowledge_publisher,
         )
     app = FastAPI(
         title="Agent-Team-OS",
@@ -231,6 +248,26 @@ def create_app(
             actor = getattr(request.state, "identity_user", None)
             return actor.id if isinstance(actor, User) else "local-system"
 
+        def reconcile_created_project(detail: ProjectDetail) -> None:
+            if knowledge is None:
+                return
+            knowledge.reconcile_project_space(
+                detail.project.id,
+                detail.project.name,
+                detail.project.lifecycle_status,
+                actor_id=detail.project.created_by,
+            )
+
+        def reconcile_archived_project(project: Project) -> None:
+            if knowledge is None:
+                return
+            knowledge.reconcile_project_space(
+                project.id,
+                project.name,
+                project.lifecycle_status,
+                actor_id=project.created_by,
+            )
+
         app.include_router(
             create_project_router(
                 projects,
@@ -238,6 +275,8 @@ def create_app(
                 authorize_manage=lambda request: require_permission(
                     request, Permission.PROJECT_MANAGE
                 ),
+                after_create=None if knowledge is None else reconcile_created_project,
+                after_archive=None if knowledge is None else reconcile_archived_project,
             )
         )
 
@@ -302,6 +341,85 @@ def create_app(
         def list_delivery_agent_runs(delivery_id: str) -> tuple[AgentRun, ...]:
             coordinator.get(delivery_id)
             return agent_runs.list(delivery_id)
+
+    if knowledge_publications is not None:
+
+        @app.get(
+            "/v1/deliveries/{delivery_id}/knowledge-publications",
+            response_model=tuple[KnowledgePublication, ...],
+        )
+        def list_delivery_knowledge_publications(
+            delivery_id: str,
+        ) -> tuple[KnowledgePublication, ...]:
+            try:
+                coordinator.get(delivery_id)
+            except DeliveryNotFoundError as error:
+                raise ProductError(
+                    code="DELIVERY_NOT_FOUND",
+                    title="交付不存在",
+                    detail="指定的交付已不存在。",
+                    repair="刷新交付列表后重试。",
+                    status_code=404,
+                ) from error
+            return knowledge_publications.list_for_delivery(delivery_id)
+
+        @app.post(
+            "/v1/knowledge/publications/{publication_id}/retry",
+            response_model=KnowledgePublication,
+        )
+        async def retry_knowledge_publication(
+            publication_id: str,
+            request_body: KnowledgePublicationRetryRequest,
+            request: Request,
+        ) -> KnowledgePublication:
+            require_permission(request, Permission.WIKI_EDIT)
+            if knowledge_publisher is None:
+                raise ProductError(
+                    code="KNOWLEDGE_PUBLISHER_UNAVAILABLE",
+                    title="知识发布器不可用",
+                    detail="当前进程未配置知识发布器。",
+                    repair="恢复 Knowledge Publisher 后重试。",
+                    status_code=503,
+                )
+            try:
+                current = knowledge_publications.get(publication_id)
+            except KeyError as error:
+                raise ProductError(
+                    code="KNOWLEDGE_PUBLICATION_NOT_FOUND",
+                    title="知识发布记录不存在",
+                    detail="指定的知识发布记录已不存在。",
+                    repair="刷新交付发布列表后重试。",
+                    status_code=404,
+                ) from error
+            if projects is not None:
+                projects.assert_writable(current.project_id)
+            published = knowledge_publisher.publish(
+                publication_id,
+                expected_version=request_body.expected_version,
+            )
+            try:
+                delivery = coordinator.get(published.delivery_id)
+            except DeliveryNotFoundError:
+                return published
+            if (
+                delivery.pipeline_revision_id is not None
+                and knowledge_publications.is_satisfied(delivery.id)
+            ):
+                await coordinator.resume_publications(delivery.id)
+            return knowledge_publications.get(publication_id)
+
+    if evaluations is not None:
+        app.include_router(
+            create_evaluation_router(
+                evaluations,
+                authorize_run=lambda request: require_permission(
+                    request, Permission.EVALUATION_RUN
+                ),
+                authorize_review=lambda request: require_permission(
+                    request, Permission.EVALUATION_REVIEW
+                ),
+            )
+        )
 
     @app.exception_handler(ProductError)
     async def product_error_handler(_request: Request, error: ProductError) -> JSONResponse:
@@ -384,8 +502,7 @@ def create_app(
             actor = getattr(request.state, "identity_user", None)
             if not isinstance(actor, User):
                 raise IdentityService.authentication_required()
-            knowledge_actor = KnowledgeActor(user_id=actor.id, role=actor.role)
-            return knowledge_actor
+            return KnowledgeActor(user_id=actor.id, role=actor.role)
 
         def resolve_knowledge_mutation_actor(request: Request) -> KnowledgeActor:
             require_permission(request, Permission.WIKI_EDIT)
@@ -688,34 +805,84 @@ def create_app(
             except (DeliveryVersionConflictError, DeliveryStateConflictError) as error:
                 raise HTTPException(status_code=409, detail="work item command conflict") from error
 
-        @app.post("/v1/knowledge/documents", response_model=KnowledgeDocument, status_code=201)
+        @app.post("/v1/knowledge/documents", status_code=410)
         def create_knowledge_document(
-            request_body: KnowledgeDocumentCreate,
+            _request_body: KnowledgeDocumentCreate,
             request: Request,
-        ) -> KnowledgeDocument:
+        ) -> JSONResponse:
             require_permission(request, Permission.WIKI_EDIT)
-            return control_plane.create_document(request_body)
+            error = ProductError(
+                code="KNOWLEDGE_LEGACY_WRITE_REMOVED",
+                title="旧知识写入接口已移除",
+                detail="旧 ControlPlane Knowledge 不再承载项目协作文档。",
+                repair="改用 /v1/wiki/documents 创建项目文档。",
+                status_code=410,
+            )
+            return JSONResponse(
+                status_code=410,
+                content=error.problem(new_id()).model_dump(mode="json", exclude_none=True),
+                media_type="application/problem+json",
+                headers={
+                    "Deprecation": "true",
+                    "X-Successor-Path": "/v1/wiki/documents",
+                    "Link": '</v1/wiki/documents>; rel="successor-version"',
+                },
+            )
 
-        @app.get("/v1/knowledge/documents", response_model=list[KnowledgeDocument])
-        def list_knowledge_documents() -> tuple[KnowledgeDocument, ...]:
-            if projects is None:
-                for delivery in coordinator.list():
-                    control_plane.sync_delivery_documents(delivery)
-            return control_plane.list_documents()
+        @app.get("/v1/knowledge/documents", response_model=list[Document])
+        def list_knowledge_documents(
+            request: Request, response: Response
+        ) -> tuple[Document, ...]:
+            require_permission(request, Permission.USER_MANAGE)
+            response.headers["Deprecation"] = "true"
+            response.headers["X-Successor-Path"] = "/v1/wiki/documents"
+            response.headers["Link"] = '</v1/wiki/documents>; rel="successor-version"'
+            if knowledge is None:
+                return ()
+            actor = resolve_knowledge_actor(request)
+            return knowledge.list_documents(
+                actor,
+                space_id="project-docs:legacy-default",
+                source_kind="legacy-migrated",
+            )
 
-        @app.get("/v1/knowledge/documents/{document_id}", response_model=KnowledgeDocument)
-        def get_knowledge_document(document_id: str) -> KnowledgeDocument:
+        @app.get("/v1/knowledge/documents/{document_id}", response_model=Document)
+        def get_knowledge_document(
+            document_id: str, request: Request, response: Response
+        ) -> Document:
+            require_permission(request, Permission.USER_MANAGE)
+            response.headers["Deprecation"] = "true"
+            response.headers["X-Successor-Path"] = "/v1/wiki/documents"
+            if knowledge is None:
+                raise ProductError(
+                    code="KNOWLEDGE_LEGACY_DOCUMENT_NOT_FOUND",
+                    title="旧知识映射不存在",
+                    detail="指定的旧知识映射不存在。",
+                    repair="改用 /v1/wiki/documents 查询项目文档。",
+                    status_code=404,
+                )
+            actor = resolve_knowledge_actor(request)
             try:
-                return control_plane.get_document(document_id)
-            except KeyError as error:
-                raise HTTPException(status_code=404, detail="document not found") from error
+                document = knowledge.get_document(actor, document_id)
+            except ProductError:
+                raise
+            if (
+                document.space_id != "project-docs:legacy-default"
+                or document.source_kind != "legacy-migrated"
+            ):
+                raise ProductError(
+                    code="KNOWLEDGE_LEGACY_DOCUMENT_NOT_FOUND",
+                    title="旧知识映射不存在",
+                    detail="该文档不属于 legacy-default 迁移映射。",
+                    repair="改用 /v1/wiki/documents 查询项目文档。",
+                    status_code=404,
+                )
+            return document
 
         if knowledge_search is None:
 
             @app.get("/v1/knowledge/search", response_model=list[KnowledgeDocument])
             def search_knowledge(q: str) -> tuple[KnowledgeDocument, ...]:
-                for delivery in coordinator.list():
-                    control_plane.sync_delivery_documents(delivery)
                 return control_plane.search_documents(q)
 
         @app.get("/v1/events/stream", include_in_schema=True)
@@ -756,11 +923,32 @@ def create_app(
                 limit=limit,
             )
 
+    if knowledge_search is not None and knowledge is not None:
+
         @app.get("/v1/knowledge/search", response_model=list[KnowledgeSearchHit])
         def search_project_knowledge(
-            project_id: str, q: str = "", include_global: bool = True
+            request: Request,
+            project_id: str,
+            q: str = "",
+            include_global: bool = True,
         ) -> tuple[KnowledgeSearchHit, ...]:
-            return knowledge_search.search(project_id, q, include_global=include_global)
+            actor = resolve_knowledge_actor(request)
+            provider_authorizer = (
+                None
+                if provider_knowledge is None
+                else lambda snapshot_id: provider_knowledge.can_read_snapshot(
+                    actor, snapshot_id
+                )
+            )
+            return knowledge_search.search(
+                actor,
+                project_id,
+                q,
+                wiki=knowledge,
+                include_global=include_global,
+                can_read_evidence=permits(actor.role, Permission.EVIDENCE_READ),
+                provider_snapshot_authorizer=provider_authorizer,
+            )
 
     @app.post("/v1/deliveries", response_model=DeliveryRun, status_code=status.HTTP_202_ACCEPTED)
     async def create_delivery(

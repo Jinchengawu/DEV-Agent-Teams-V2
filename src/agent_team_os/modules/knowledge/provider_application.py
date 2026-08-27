@@ -141,6 +141,7 @@ class ProviderKnowledgeManager:
             failed = _failed_run(running, error.code, self.clock.now(), status)
             self.repository.fail_sync(failed)
             return ProviderSyncResult(run=failed)
+
         except ProductError:
             raise
         except Exception:
@@ -151,6 +152,20 @@ class ProviderKnowledgeManager:
             )
             self.repository.fail_sync(failed)
             return ProviderSyncResult(run=failed)
+
+    def can_read_snapshot(self, actor: KnowledgeActor, snapshot_id: str) -> bool:
+        """Reconfirm current Provider visibility; uncertainty is intentionally denied."""
+        snapshot = self.repository.get_snapshot(snapshot_id)
+        if snapshot is None:
+            return False
+        try:
+            binding = self._enabled_binding(snapshot.binding_id)
+            provider_actor = self._provider_actor(binding, actor)
+            provider = self.resolver.resolve(binding)
+            nodes = provider.list_nodes(provider_actor, binding.external_space_id)
+        except Exception:
+            return False
+        return any(node.source_id == snapshot.source_id for node in nodes)
 
     def _enabled_binding(self, binding_id: str) -> ProviderBinding:
         binding = self.repository.get_binding(binding_id)

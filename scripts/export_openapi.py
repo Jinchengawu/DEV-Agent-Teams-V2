@@ -22,7 +22,13 @@ from agent_team_os.modules.agents import (
 )
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
-from agent_team_os.modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
+from agent_team_os.modules.knowledge import (
+    KnowledgePublicationLedger,
+    KnowledgePublisher,
+    KnowledgeSearchIndex,
+    SQLiteWikiRepository,
+    WikiService,
+)
 from agent_team_os.modules.orchestration import PipelineCatalog, SQLitePipelineRepository
 from agent_team_os.modules.projects import ProjectCatalog, SQLiteProjectRepository
 from agent_team_os.modules.settings import SettingsManager, SQLiteSettingsRepository
@@ -46,6 +52,7 @@ def main() -> None:
         control_plane = ControlPlaneService(database, config_root=project_root / "config")
         agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
         providers = ProviderManifestCatalog()
+        knowledge_publications = KnowledgePublicationLedger(database)
         projects = ProjectCatalog(
             SQLiteProjectRepository(database), ProjectGitWorkspaces(Path(directory) / "workspaces")
         )
@@ -68,6 +75,8 @@ def main() -> None:
             agent_runs=AgentRunLedger(database),
             projects=projects,
             knowledge_search=KnowledgeSearchIndex(database),
+            knowledge_publications=knowledge_publications,
+            knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

@@ -10,20 +10,26 @@ from ...shared.hashes import sha256_json
 from ...shared.ids import new_id
 from ...shared.permissions import Role
 from .domain import (
+    AssetReference,
     Comment,
     CommentCreate,
     CommentPatch,
     Document,
     DocumentCreate,
+    DocumentKind,
     DocumentPatch,
     KnowledgeActor,
     KnowledgeDerivation,
     KnowledgeDerivationCreate,
     KnowledgeDerivationResult,
+    KnowledgeLifecycleStatus,
     PermissionGrant,
     Revision,
+    RevisionProducerKind,
+    RevisionProvenance,
     Space,
     SpaceCreate,
+    SpaceKind,
     SystemKnowledgeArtifact,
     WikiAccess,
 )
@@ -57,6 +63,35 @@ class WikiService:
         self.clock = clock or SystemClock()
         self.project_guard = project_guard
 
+    def reconcile_project_space(
+        self,
+        project_id: str,
+        project_name: str,
+        lifecycle_status: str,
+        *,
+        actor_id: str | None = None,
+    ) -> Space:
+        now = self.clock.now()
+        return self.repository.reconcile_project_space(
+            Space(
+                id=f"project-docs:{project_id}",
+                scope_kind="project",
+                project_id=project_id,
+                space_kind=SpaceKind.PROJECT_DOCUMENTS,
+                lifecycle_status=(
+                    KnowledgeLifecycleStatus.ARCHIVED
+                    if lifecycle_status == "archived"
+                    else KnowledgeLifecycleStatus.ACTIVE
+                ),
+                name=f"{project_name} · 项目文档",
+                description="项目角色在交付过程中发布的可协作文档。",
+                version=1,
+                created_by=actor_id,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
     def create_space(self, actor: KnowledgeActor, request: SpaceCreate) -> Space:
         self._require_role(actor, Role.ADMINISTRATOR)
         if request.project_id is not None and self.project_guard is not None:
@@ -77,12 +112,22 @@ class WikiService:
         )
 
     def list_spaces(
-        self, actor: KnowledgeActor, project_id: str | None = None, include_global: bool = True
+        self,
+        actor: KnowledgeActor,
+        project_id: str | None = None,
+        include_global: bool = True,
+        include_archived: bool = False,
     ) -> tuple[Space, ...]:
+        if include_archived:
+            self._require_role(actor, Role.ADMINISTRATOR)
         return tuple(
             space
             for space in self.repository.list_spaces()
             if self._effective_access(actor, space.id, None) != WikiAccess.NONE
+            and (
+                include_archived
+                or space.lifecycle_status != KnowledgeLifecycleStatus.ARCHIVED
+            )
             and (
                 project_id is None
                 or space.project_id == project_id
@@ -92,8 +137,7 @@ class WikiService:
 
     def create_document(self, actor: KnowledgeActor, request: DocumentCreate) -> Document:
         space = self._space(request.space_id)
-        if space.project_id is not None and self.project_guard is not None:
-            self.project_guard(space.project_id)
+        self._assert_project_writable(space.id)
         self._require_access(actor, space.id, None, WikiAccess.EDIT)
         if request.parent_id is not None:
             self._validate_parent(request.space_id, "", request.parent_id)
@@ -107,11 +151,20 @@ class WikiService:
             current_revision=1,
             version=1,
             source_kind="manual",
+            document_kind=request.document_kind,
+            role_key=request.role_key,
+            delivery_id=request.delivery_id,
             created_by=actor.user_id,
             created_at=now,
             updated_at=now,
         )
-        revision = self._revision(document, 1, request.content, actor.user_id)
+        revision = self._revision(
+            document,
+            1,
+            request.content,
+            actor.user_id,
+            request.asset_references,
+        )
         return self.repository.create_document(document, revision)
 
     def derive_source(
@@ -242,12 +295,29 @@ class WikiService:
         return tuple(synced)
 
     def list_documents(
-        self, actor: KnowledgeActor, space_id: str | None = None
+        self,
+        actor: KnowledgeActor,
+        space_id: str | None = None,
+        document_kind: DocumentKind | None = None,
+        role_key: str | None = None,
+        delivery_id: str | None = None,
+        source_kind: str | None = None,
+        include_archived: bool = False,
     ) -> tuple[Document, ...]:
+        if include_archived:
+            self._require_role(actor, Role.ADMINISTRATOR)
         return tuple(
             document
             for document in self.repository.list_documents(space_id)
             if self._effective_access(actor, document.space_id, document.id) != WikiAccess.NONE
+            and (
+                include_archived
+                or document.lifecycle_status != KnowledgeLifecycleStatus.ARCHIVED
+            )
+            and (document_kind is None or document.document_kind == document_kind)
+            and (role_key is None or document.role_key == role_key)
+            and (delivery_id is None or document.delivery_id == delivery_id)
+            and (source_kind is None or document.source_kind == source_kind)
         )
 
     def get_document(self, actor: KnowledgeActor, document_id: str) -> Document:
@@ -282,7 +352,7 @@ class WikiService:
         if space.project_id is not None and self.project_guard is not None:
             self.project_guard(space.project_id)
         self._require_access(actor, current.space_id, current.id, WikiAccess.EDIT)
-        if current.source_kind != "manual":
+        if current.source_kind not in {"manual", "legacy-migrated", "agent-publication"}:
             raise ProductError(
                 code="WIKI_SYSTEM_DOCUMENT_IMMUTABLE",
                 title="系统证据不可编辑",
@@ -300,6 +370,11 @@ class WikiService:
             self._validate_parent(current.space_id, current.id, next_parent)
         previous = self.get_revision(actor, current.id, current.current_revision)
         content = previous.content if request.content is None else request.content
+        asset_references = (
+            previous.asset_references
+            if request.asset_references is None
+            else request.asset_references
+        )
         now = self.clock.now()
         updated = current.model_copy(
             update={
@@ -310,7 +385,13 @@ class WikiService:
                 "updated_at": now,
             }
         )
-        revision = self._revision(updated, updated.current_revision, content, actor.user_id)
+        revision = self._revision(
+            updated,
+            updated.current_revision,
+            content,
+            actor.user_id,
+            asset_references,
+        )
         result = self.repository.compare_and_swap_document(
             request.expected_version, updated, revision
         )
@@ -342,6 +423,7 @@ class WikiService:
             if (
                 document is not None
                 and self._effective_access(actor, document.space_id, document.id) != WikiAccess.NONE
+                and document.lifecycle_status != KnowledgeLifecycleStatus.ARCHIVED
             ):
                 found.append(document)
         return tuple(found)
@@ -429,6 +511,14 @@ class WikiService:
 
     def _assert_project_writable(self, space_id: str) -> None:
         space = self._space(space_id)
+        if space.lifecycle_status == KnowledgeLifecycleStatus.ARCHIVED:
+            raise ProductError(
+                code="WIKI_ARCHIVED_READ_ONLY",
+                title="归档知识只读",
+                detail="归档空间不允许新增或修改内容。",
+                repair="在当前项目文档空间中创建新文档。",
+                status_code=409,
+            )
         if space.project_id is not None and self.project_guard is not None:
             self.project_guard(space.project_id)
 
@@ -502,6 +592,7 @@ class WikiService:
         revision_number: int,
         content: JsonValue,
         actor_id: str,
+        asset_references: tuple[AssetReference, ...] = (),
     ) -> Revision:
         now = self.clock.now()
         return Revision(
@@ -510,6 +601,11 @@ class WikiService:
             content=content,
             search_text=" ".join(_text_fragments(content)),
             content_sha256=sha256_json(content),
+            provenance=RevisionProvenance(
+                producer_kind=RevisionProducerKind.HUMAN,
+                producer_id=actor_id,
+            ),
+            asset_references=asset_references,
             created_by=actor_id,
             created_at=now,
         )

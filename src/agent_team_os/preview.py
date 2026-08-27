@@ -52,13 +52,20 @@ from .modules.agents import (
     ensure_builtin_fullstack_agent_deployments,
 )
 from .modules.delivery import BackendDeliveryPipelinePolicy
+from .modules.evaluation import EvaluationService, SQLiteEvaluationRepository
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.extensions import (
     RuntimeExtensionCatalog,
     SQLiteRuntimeExtensionRepository,
 )
 from .modules.identity import IdentityService, SQLiteIdentityRepository
-from .modules.knowledge import KnowledgeSearchIndex, SQLiteWikiRepository, WikiService
+from .modules.knowledge import (
+    KnowledgePublicationLedger,
+    KnowledgePublisher,
+    KnowledgeSearchIndex,
+    SQLiteWikiRepository,
+    WikiService,
+)
 from .modules.orchestration import (
     Pipeline,
     PipelineCatalog,
@@ -245,18 +252,32 @@ def build_preview_app() -> FastAPI:
             f"backend-delivery:{builtin_pipeline.active_revision}",
             tuple(sorted(set(builtin_assignments.values()))),
         )
+    evidence_ledger = EvidenceLedger(SQLiteEvidenceRepository(database))
+    knowledge_publications = KnowledgePublicationLedger(database)
+    wiki_service = WikiService(
+        SQLiteWikiRepository(database), project_guard=projects.assert_writable
+    )
+    for project in projects.list():
+        wiki_service.reconcile_project_space(
+            project.id, project.name, project.lifecycle_status
+        )
+    evaluations = EvaluationService(
+        SQLiteEvaluationRepository(database),
+        pipeline_catalog,
+        report_dir=data_dir / "reports" / "evaluations",
+        project_root=project_root,
+        evidence=evidence_ledger,
+    )
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
         report_dir=data_dir / "reports",
         workspace_reset=reset_workspace,
         control_plane=control_plane,
-        evidence=EvidenceLedger(SQLiteEvidenceRepository(database)),
+        evidence=evidence_ledger,
         settings=SettingsManager(SQLiteSettingsRepository(database)),
         identity=IdentityService(SQLiteIdentityRepository(database)),
-        knowledge=WikiService(
-            SQLiteWikiRepository(database), project_guard=projects.assert_writable
-        ),
+        knowledge=wiki_service,
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
@@ -269,12 +290,19 @@ def build_preview_app() -> FastAPI:
         knowledge_search=KnowledgeSearchIndex(database),
         runtime_extensions=runtime_extensions,
         release_applier=ReleaseCoordinator(SQLiteReleaseRepository(database), candidate_applier),
+        knowledge_publications=knowledge_publications,
+        knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
+        evaluations=evaluations,
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         projects.recover_provisioning()
+        for project in projects.list():
+            wiki_service.reconcile_project_space(
+                project.id, project.name, project.lifecycle_status
+            )
         delivery_repository.reconcile_leases()
         await coordinator.recover()
         try:

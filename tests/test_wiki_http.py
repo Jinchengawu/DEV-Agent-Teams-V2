@@ -36,8 +36,16 @@ class DummyWikiService:
         self.calls: list[tuple[object, ...]] = []
         self.fail_on_search = False
 
-    def list_spaces(self, actor: KnowledgeActor) -> tuple[Space, ...]:
-        self.calls.append(("list_spaces", actor))
+    def list_spaces(
+        self,
+        actor: KnowledgeActor,
+        project_id: str | None = None,
+        include_global: bool = True,
+        include_archived: bool = False,
+    ) -> tuple[Space, ...]:
+        self.calls.append(
+            ("list_spaces", actor, project_id, include_global, include_archived)
+        )
         return (
             Space(
                 id="space-id",
@@ -63,9 +71,27 @@ class DummyWikiService:
         )
 
     def list_documents(
-        self, actor: KnowledgeActor, space_id: str | None = None
+        self,
+        actor: KnowledgeActor,
+        space_id: str | None = None,
+        document_kind: object | None = None,
+        role_key: str | None = None,
+        delivery_id: str | None = None,
+        source_kind: str | None = None,
+        include_archived: bool = False,
     ) -> tuple[Document, ...]:
-        self.calls.append(("list_documents", actor, space_id))
+        self.calls.append(
+            (
+                "list_documents",
+                actor,
+                space_id,
+                document_kind,
+                role_key,
+                delivery_id,
+                source_kind,
+                include_archived,
+            )
+        )
         return (
             Document(
                 id="doc-id",

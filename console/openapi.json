@@ -2550,6 +2550,158 @@
         }
       }
     },
+    "/v1/deliveries/{delivery_id}/knowledge-publications": {
+      "get": {
+        "summary": "List Delivery Knowledge Publications",
+        "operationId": "list_delivery_knowledge_publications_v1_deliveries__delivery_id__knowledge_publications_get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgePublication"
+                  },
+                  "title": "Response List Delivery Knowledge Publications V1 Deliveries  Delivery Id  Knowledge Publications Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/publications/{publication_id}/retry": {
+      "post": {
+        "summary": "Retry Knowledge Publication",
+        "operationId": "retry_knowledge_publication_v1_knowledge_publications__publication_id__retry_post",
+        "parameters": [
+          {
+            "name": "publication_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Publication Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgePublicationRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgePublication"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/readiness": {
       "get": {
         "summary": "Get Readiness",
@@ -4068,6 +4220,16 @@
               "default": true,
               "title": "Include Global"
             }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
+            }
           }
         ],
         "responses": {
@@ -4213,6 +4375,80 @@
                 }
               ],
               "title": "Space Id"
+            }
+          },
+          {
+            "name": "document_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DocumentKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Kind"
+            }
+          },
+          {
+            "name": "role_key",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role Key"
+            }
+          },
+          {
+            "name": "delivery_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Delivery Id"
+            }
+          },
+          {
+            "name": "source_kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Kind"
+            }
+          },
+          {
+            "name": "include_archived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Archived"
             }
           }
         ],
@@ -6774,7 +7010,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/KnowledgeDocument"
+                    "$ref": "#/components/schemas/Document"
                   },
                   "type": "array",
                   "title": "Response List Knowledge Documents V1 Knowledge Documents Get"
@@ -6838,13 +7074,11 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "410": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeDocument"
-                }
+                "schema": {}
               }
             }
           },
@@ -6912,7 +7146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KnowledgeDocument"
+                  "$ref": "#/components/schemas/Document"
                 }
               }
             }
@@ -9440,6 +9674,13 @@
             "type": "string",
             "title": "Contract Id"
           },
+          "artifact_key": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Artifact Key",
+            "default": "primary"
+          },
           "content": {
             "anyOf": [
               {
@@ -9505,6 +9746,54 @@
           "size_bytes"
         ],
         "title": "ArtifactReference"
+      },
+      "AssetReference": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^(external-link|provider-snapshot|project-artifact)$",
+            "title": "Kind"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "provider_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Snapshot Id"
+          },
+          "project_artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Artifact Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "AssetReference"
       },
       "BindingRequest": {
         "properties": {
@@ -10277,8 +10566,45 @@
             ],
             "title": "Source Id"
           },
+          "document_kind": {
+            "$ref": "#/components/schemas/DocumentKind",
+            "default": "project-general"
+          },
+          "role_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Key"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Id"
+          },
+          "lifecycle_status": {
+            "$ref": "#/components/schemas/KnowledgeLifecycleStatus",
+            "default": "active"
+          },
           "created_by": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Created By"
           },
           "created_at": {
@@ -10330,8 +10656,46 @@
             "minLength": 1,
             "title": "Title"
           },
+          "document_kind": {
+            "$ref": "#/components/schemas/DocumentKind",
+            "default": "project-general"
+          },
+          "role_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Key"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Id"
+          },
           "content": {
             "$ref": "#/components/schemas/JsonValue"
+          },
+          "asset_references": {
+            "items": {
+              "$ref": "#/components/schemas/AssetReference"
+            },
+            "type": "array",
+            "title": "Asset References",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -10342,6 +10706,20 @@
           "content"
         ],
         "title": "DocumentCreate"
+      },
+      "DocumentKind": {
+        "type": "string",
+        "enum": [
+          "product-requirement",
+          "delivery-plan",
+          "design-spec",
+          "frontend-technical",
+          "backend-api",
+          "test-plan",
+          "test-report",
+          "project-general"
+        ],
+        "title": "DocumentKind"
       },
       "DocumentPatch": {
         "properties": {
@@ -10383,6 +10761,20 @@
                 "type": "null"
               }
             ]
+          },
+          "asset_references": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AssetReference"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset References"
           }
         },
         "additionalProperties": false,
@@ -10421,7 +10813,8 @@
           "candidate-gate",
           "apply-receipt",
           "release-bundle",
-          "release-manifest"
+          "release-manifest",
+          "evaluation-report"
         ],
         "title": "EvidenceKind"
       },
@@ -11252,69 +11645,6 @@
         ],
         "title": "KnowledgeDerivationResult"
       },
-      "KnowledgeDocument": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "media_type": {
-            "type": "string",
-            "enum": [
-              "text/plain",
-              "text/markdown",
-              "application/json"
-            ],
-            "title": "Media Type"
-          },
-          "artifact_type": {
-            "type": "string",
-            "title": "Artifact Type"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Sha256"
-          },
-          "revision": {
-            "type": "integer",
-            "title": "Revision",
-            "default": 1
-          },
-          "sources": {
-            "items": {
-              "$ref": "#/components/schemas/SourceLink"
-            },
-            "type": "array",
-            "title": "Sources",
-            "default": []
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "title",
-          "media_type",
-          "artifact_type",
-          "content",
-          "sha256"
-        ],
-        "title": "KnowledgeDocument"
-      },
       "KnowledgeDocumentCreate": {
         "properties": {
           "title": {
@@ -11348,9 +11678,61 @@
         ],
         "title": "KnowledgeDocumentCreate"
       },
-      "KnowledgeSearchHit": {
+      "KnowledgeLifecycleStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "archived"
+        ],
+        "title": "KnowledgeLifecycleStatus"
+      },
+      "KnowledgePublication": {
         "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "publication_key": {
+            "type": "string",
+            "title": "Publication Key"
+          },
           "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "binding_site": {
+            "type": "string",
+            "title": "Binding Site"
+          },
+          "agent_run_id": {
+            "type": "string",
+            "title": "Agent Run Id"
+          },
+          "artifact_id": {
+            "type": "string",
+            "title": "Artifact Id"
+          },
+          "artifact_key": {
+            "type": "string",
+            "title": "Artifact Key"
+          },
+          "contract_id": {
+            "type": "string",
+            "title": "Contract Id"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "title": "Artifact Sha256"
+          },
+          "runtime_identity": {
             "anyOf": [
               {
                 "type": "string"
@@ -11359,7 +11741,162 @@
                 "type": "null"
               }
             ],
+            "title": "Runtime Identity"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/KnowledgePublicationStatus"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt Count"
+          },
+          "target_space_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Space Id"
+          },
+          "target_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Document Id"
+          },
+          "target_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Revision"
+          },
+          "expected_document_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Document Version"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "publication_key",
+          "project_id",
+          "delivery_id",
+          "node_id",
+          "binding_site",
+          "agent_run_id",
+          "artifact_id",
+          "artifact_key",
+          "contract_id",
+          "artifact_sha256",
+          "status",
+          "attempt_count",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "KnowledgePublication"
+      },
+      "KnowledgePublicationRetryRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "KnowledgePublicationRetryRequest"
+      },
+      "KnowledgePublicationStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "publishing",
+          "published",
+          "failed"
+        ],
+        "title": "KnowledgePublicationStatus"
+      },
+      "KnowledgeSearchHit": {
+        "properties": {
+          "project_id": {
+            "type": "string",
             "title": "Project Id"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
           },
           "source_kind": {
             "type": "string",
@@ -11373,9 +11910,9 @@
             "type": "string",
             "title": "Title"
           },
-          "searchable_text": {
+          "summary": {
             "type": "string",
-            "title": "Searchable Text"
+            "title": "Summary"
           },
           "revision": {
             "type": "string",
@@ -11401,10 +11938,11 @@
         "type": "object",
         "required": [
           "project_id",
+          "group",
           "source_kind",
           "source_id",
           "title",
-          "searchable_text",
+          "summary",
           "revision",
           "content_sha256",
           "source_link"
@@ -13138,8 +13676,26 @@
             "type": "string",
             "title": "Content Sha256"
           },
+          "provenance": {
+            "$ref": "#/components/schemas/RevisionProvenance"
+          },
+          "asset_references": {
+            "items": {
+              "$ref": "#/components/schemas/AssetReference"
+            },
+            "type": "array",
+            "title": "Asset References",
+            "default": []
+          },
           "created_by": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Created By"
           },
           "created_at": {
@@ -13160,6 +13716,112 @@
           "created_at"
         ],
         "title": "Revision"
+      },
+      "RevisionProducerKind": {
+        "type": "string",
+        "enum": [
+          "human",
+          "agent",
+          "legacy",
+          "legacy-migration"
+        ],
+        "title": "RevisionProducerKind"
+      },
+      "RevisionProvenance": {
+        "properties": {
+          "producer_kind": {
+            "$ref": "#/components/schemas/RevisionProducerKind"
+          },
+          "producer_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Producer Id"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          },
+          "binding_site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Site"
+          },
+          "contract_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Id"
+          },
+          "artifact_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "artifact_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Key"
+          },
+          "runtime_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Identity"
+          },
+          "source_artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Artifact Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "producer_kind",
+          "producer_id"
+        ],
+        "title": "RevisionProvenance"
       },
       "RevisionRestoreRequest": {
         "properties": {
@@ -13251,36 +13913,6 @@
         ],
         "title": "RuntimeAdapterDescriptor"
       },
-      "SourceLink": {
-        "properties": {
-          "source_kind": {
-            "type": "string",
-            "title": "Source Kind"
-          },
-          "source_id": {
-            "type": "string",
-            "title": "Source Id"
-          },
-          "delivery_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "source_kind",
-          "source_id"
-        ],
-        "title": "SourceLink"
-      },
       "Space": {
         "properties": {
           "id": {
@@ -13304,6 +13936,14 @@
             "title": "Project Id",
             "default": "legacy-default"
           },
+          "space_kind": {
+            "$ref": "#/components/schemas/SpaceKind",
+            "default": "custom"
+          },
+          "lifecycle_status": {
+            "$ref": "#/components/schemas/KnowledgeLifecycleStatus",
+            "default": "active"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -13318,7 +13958,14 @@
             "title": "Version"
           },
           "created_by": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Created By"
           },
           "created_at": {
@@ -13384,6 +14031,15 @@
           "name"
         ],
         "title": "SpaceCreate"
+      },
+      "SpaceKind": {
+        "type": "string",
+        "enum": [
+          "project-documents",
+          "custom",
+          "legacy-archive"
+        ],
+        "title": "SpaceKind"
       },
       "SystemPolicy": {
         "properties": {

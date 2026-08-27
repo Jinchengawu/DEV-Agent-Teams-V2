@@ -1,0 +1,31 @@
+{
+  "snapshot_schema_version": "1.0",
+  "run_id": "43303b10-4558-456f-8015-2dbf026d7eb1",
+  "created_at": "2026-08-24T04:46:57.661805Z",
+  "suite_id": "agent-team-os-mvp",
+  "suite_version": "1.2.0",
+  "mode": "offline",
+  "profile": "standard",
+  "seed": 20260824,
+  "gate_status": "passed",
+  "proof_scope": "fixture_harness_only",
+  "official_benchmark": false,
+  "evidence_sha256": "d9e2019fa6e86f632e0d3d513f04cf7a73d3de55065e05f845919080ead3e2c6",
+  "dimensions": {
+    "tool_call": {"evaluated": 300, "total": 300, "passed": 300, "failed": 0, "blocked": 0},
+    "general_agent": {"evaluated": 180, "total": 180, "passed": 180, "failed": 0, "blocked": 0},
+    "data_generation": {"evaluated": 60, "total": 60, "passed": 60, "failed": 0, "blocked": 0, "ties": 60, "non_loss_rate": 1.0},
+    "control_plane": {"evaluated": 60, "total": 60, "passed": 60, "failed": 0, "blocked": 0}
+  },
+  "control_plane_metrics_ms": {
+    "candidate_http_latency": {"p50": 2.3585419985465705, "p95": 6.293714320054278, "p99": 9.432762786746007},
+    "candidate_graph_total_latency": {"p50": 8.796478970907629, "p95": 101.03213498950936, "p99": 121.80663447943502}
+  },
+  "software_test_baseline": {"passed": 134, "skipped": 1},
+  "limitations": [
+    "fixture harness only",
+    "not an official BFCL or GAIA result",
+    "same-subject generation comparison only",
+    "in-process ASGI and local SQLite, not a production network SLA"
+  ]
+}

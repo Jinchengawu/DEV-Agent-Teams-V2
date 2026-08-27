@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.13.1"
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: console/pnpm-lock.yaml
+      - name: Install locked development dependencies
+        run: uv sync --extra dev --extra live --locked
+      - name: Install locked console dependencies
+        run: pnpm --dir console install --frozen-lockfile
+      - name: Validate evaluation dataset
+        run: uv run agent-team-os-dev eval validate-dataset
+      - name: Validate migrations on a fresh database
+        env:
+          MIGRATION_CHECK_DB: ${{ runner.temp }}/migration-check.sqlite
+        run: >-
+          uv run python -c "import os; from pathlib import Path;
+          from agent_team_os.infrastructure.database import MigrationRunner;
+          MigrationRunner(Path(os.environ['MIGRATION_CHECK_DB']), Path('migrations')).migrate()"
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Mypy
+        run: uv run mypy
+      - name: Pytest
+        run: uv run pytest -q
+      - name: Build Python package
+        run: uv build
+      - name: Verify generated OpenAPI contract
+        run: >-
+          uv run python scripts/export_openapi.py --output console/openapi.json
+          && pnpm --dir console api:check
+      - name: Type-check console
+        run: pnpm --dir console typecheck
+      - name: Test console
+        run: pnpm --dir console test
+      - name: Build console
+        run: pnpm --dir console build

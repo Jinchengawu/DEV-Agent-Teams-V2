@@ -1,0 +1,19 @@
+{
+  "suite_id": "agent-team-os-mvp",
+  "version": "1.3.0",
+  "source": "project-owned-bfcl-and-gaia-compatible-fixtures",
+  "license": "repository-license",
+  "official": false,
+  "scorer_version": "agent-team-os-eval-v1.3",
+  "required_runtime_features": [],
+  "cases_file": "cases.jsonl",
+  "schema_file": "schema.json",
+  "cases_sha256": "7265bf692c18a9961ffc27efc7a6eca8a36275a95a633bf91f09e1cdc85a2466",
+  "schema_sha256": "6946107ae5f52cd208018a8a66a329fef7a33071002750e67f600715eaed6f47",
+  "case_counts": {
+    "tool_call": 5,
+    "general_agent": 3,
+    "data_generation": 1,
+    "control_plane": 1
+  }
+}
