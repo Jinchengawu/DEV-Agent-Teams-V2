@@ -99,6 +99,46 @@ class ConcurrentPlanningService(DeterministicPlanningService):
         )
 
 
+class BlockingPlanningService(DeterministicPlanningService):
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.released = asyncio.Event()
+        self.quiesced = asyncio.Event()
+
+    async def analyze(self, user_request: str) -> RequirementArtifact:
+        self.started.set()
+        try:
+            await self.released.wait()
+        finally:
+            self.quiesced.set()
+        return await super().analyze(user_request)
+
+
+def test_cancel_and_wait_quiesces_the_background_delivery() -> None:
+    async def scenario() -> None:
+        planning = BlockingPlanningService()
+        coordinator = DeliveryCoordinator(
+            planning=planning,
+            executor=DeterministicCodeExecutor(),
+            resolved_journey_sha256="a" * 64,
+        )
+        created = coordinator.enqueue(
+            workspace_id="backend-demo",
+            user_request="Block until the delivery is cancelled.",
+        )
+        await asyncio.wait_for(planning.started.wait(), timeout=1)
+
+        cancelled = await coordinator.cancel_and_wait(
+            created.id,
+            expected_version=coordinator.get(created.id).version,
+        )
+
+        assert cancelled.status == "cancelled"
+        assert planning.quiesced.is_set()
+
+    asyncio.run(scenario())
+
+
 def _revision() -> PipelineRevision:
     definition: dict[str, object] = {
         "id": "backend-delivery",

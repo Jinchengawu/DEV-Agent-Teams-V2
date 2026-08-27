@@ -155,6 +155,17 @@ class GateBindingResolver:
         }
 
 
+def _live_gate_codex_config(
+    sandbox: Literal["read-only", "workspace-write"],
+) -> CodexCLIConfig:
+    return CodexCLIConfig(sandbox=sandbox, timeout_seconds=300)
+
+
+def _live_gate_planning_timeout_seconds() -> int:
+    """覆盖 requirements 与 tasking 两个串行规划回合及收尾开销。"""
+    return 2 * _live_gate_codex_config("read-only").timeout_seconds + 30
+
+
 async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateReport:
     kind = "live" if live else "deterministic"
     created_at = datetime.now(UTC)
@@ -173,10 +184,13 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
             sandbox = GitSandbox(runtime / "workspaces")
             sandbox.ensure_initialized()
             if live:
-                runner = ACWMCodexRoleRunner(workspace=project_root)
+                runner = ACWMCodexRoleRunner(
+                    workspace=project_root,
+                    config=_live_gate_codex_config("read-only"),
+                )
                 planning: PlanningService = CodexSimulatedHermesPlanning(runner)
                 code_agent = ACWMCodexWorkspaceAgent(
-                    CodexCLIConfig(sandbox="workspace-write", timeout_seconds=300)
+                    _live_gate_codex_config("workspace-write")
                 )
                 agent: WorkspaceAgent = code_agent
             else:
@@ -243,6 +257,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 pipeline_revision,
                 workspace_id="backend-demo",
                 user_request=reject_request,
+                timeout_seconds=(
+                    _live_gate_planning_timeout_seconds() if live else 180
+                ),
             )
             if rejected_plan.plan_gate is None:
                 raise RuntimeError("reject journey did not open the plan gate")
@@ -269,6 +286,9 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 pipeline_revision,
                 workspace_id="backend-demo",
                 user_request=accept_request,
+                timeout_seconds=(
+                    _live_gate_planning_timeout_seconds() if live else 180
+                ),
             )
             if accepted_plan.plan_gate is None:
                 raise RuntimeError("accept journey did not open the plan gate")
@@ -538,6 +558,7 @@ async def _enqueue_gate_delivery(
     *,
     workspace_id: str,
     user_request: str,
+    timeout_seconds: float = 180,
 ) -> DeliveryRun:
     created = coordinator.enqueue(
         workspace_id=workspace_id,
@@ -547,7 +568,7 @@ async def _enqueue_gate_delivery(
         resolved_journey_sha256=revision.fingerprint,
         resolved_pipeline_sha256=revision.fingerprint,
     )
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         current = coordinator.get(created.id)
         if current.status == "awaiting_plan_decision":
@@ -557,6 +578,11 @@ async def _enqueue_gate_delivery(
                 f"Pipeline planning failed: {current.error_code or current.status}"
             )
         await asyncio.sleep(0.05)
+    current = coordinator.get(created.id)
+    await coordinator.cancel_and_wait(
+        current.id,
+        expected_version=current.version,
+    )
     raise TimeoutError("Pipeline planning gate timed out")
 
 

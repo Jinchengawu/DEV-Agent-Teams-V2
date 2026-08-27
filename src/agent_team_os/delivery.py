@@ -937,6 +937,16 @@ class DeliveryCoordinator:
         self._repository.save(updated)
         return updated
 
+    async def cancel_and_wait(
+        self, delivery_id: str, *, expected_version: int
+    ) -> DeliveryRun:
+        """取消交付并等待其后台任务完全退出。"""
+        task = self._background.get(delivery_id)
+        self.cancel(delivery_id, expected_version=expected_version)
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        return self.get(delivery_id)
+
     async def recover(self) -> None:
         for delivery in self.list():
             if delivery.status in {"planning", "executing", "verifying"}:

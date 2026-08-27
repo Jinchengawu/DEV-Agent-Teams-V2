@@ -35,12 +35,13 @@ def main() -> None:
             context_options["storage_state"] = str(args.state)
         context = browser.new_context(**context_options)
         page = context.new_page()
-        console_errors = _capture_console_errors(page)
+        console_errors, authentication = _capture_console_errors(page)
         try:
             if args.phase == "recover":
                 _verify_recovery(page, context, args.url, _read_checkpoint(args.checkpoint))
             else:
                 _authenticate(page, args.url)
+                authentication["in_progress"] = False
                 _verify_navigation(page)
                 if not args.smoke_only:
                     checkpoint = _execute_control_plane_loop(page, context, args.url)
@@ -53,13 +54,15 @@ def main() -> None:
                     if args.state is not None:
                         args.state.parent.mkdir(parents=True, exist_ok=True)
                         context.storage_state(path=str(args.state))
+            authentication["in_progress"] = False
+            _save_screenshot(page, args.screenshot)
+            assert not console_errors, console_errors
         except Exception:
             if console_errors:
                 print("Browser console errors:", *console_errors, sep="\n")
             raise
-        _save_screenshot(page, args.screenshot)
-        assert not console_errors, console_errors
-        browser.close()
+        finally:
+            browser.close()
 
 
 def _authenticate(page: Page, url: str) -> None:
@@ -72,159 +75,112 @@ def _authenticate(page: Page, url: str) -> None:
         )
         page.get_by_label("密码").fill(password)
         page.get_by_role("button", name="创建并登录").click()
-        page.get_by_role("link", name="交付", exact=True).wait_for()
+        page.get_by_role("link", name="交付工作台", exact=True).wait_for()
     elif page.get_by_role("heading", name="登录 Agent-Team-OS").count():
         existing_password = os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD")
         if not existing_password:
             raise AssertionError(
                 "existing browser-test database requires AGENT_TEAM_OS_TEST_PASSWORD"
             )
-        page.get_by_label("用户名").fill(
-            os.environ.get("AGENT_TEAM_OS_TEST_USERNAME", "admin")
-        )
+        page.get_by_label("用户名").fill(os.environ.get("AGENT_TEAM_OS_TEST_USERNAME", "admin"))
         page.get_by_label("密码").fill(existing_password)
         page.get_by_role("button", name="登录控制平面").click()
-        page.get_by_role("link", name="交付", exact=True).wait_for()
+        page.get_by_role("link", name="交付工作台", exact=True).wait_for()
     assert page.locator("body").inner_text().strip(), "rendered page is blank"
     assert not page.locator(".vite-error-overlay").count(), "Vite error overlay found"
 
 
 def _verify_navigation(page: Page) -> None:
     for navigation in (
-        "交付", "看板", "可视化编排", "智能体实例", "知识中心", "证据", "设置"
+        "交付工作台",
+        "交付看板",
+        "证据",
+        "知识中心",
+        "智能体实例",
+        "可视化编排",
+        "设置",
     ):
         page.get_by_role("link", name=navigation, exact=True).click()
         page.get_by_role("heading", name=navigation, exact=True).wait_for()
 
 
-def _execute_control_plane_loop(
-    page: Page, context: BrowserContext, url: str
-) -> dict[str, str]:
-    page.get_by_role("link", name="智能体实例").click()
-    page.get_by_label("实例名称").fill("Browser 确定性执行器")
-    with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/agent-instances")
-    ) as created_response:
-        page.get_by_role("button", name="注册实例").click()
-    created = created_response.value.json()
-    instance_id = str(created["id"])
-    instance_card = page.locator(".instance-grid article").filter(
-        has_text="Browser 确定性执行器"
-    )
-    instance_card.wait_for()
-    with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith(f"/v1/agent-instances/{instance_id}/health-check")
-    ) as health_response:
-        instance_card.get_by_role("button", name="健康检查").click()
-    health = health_response.value.json()
-    assert health["health"]["status"] == "ready", health
-    instance_card.get_by_text("就绪", exact=True).wait_for()
-
-    binding_selector = page.get_by_label("为 后端代码交付 选择实例")
-    binding_selector.select_option(instance_id)
-    with page.expect_response(
-        lambda response: response.request.method == "PUT"
-        and response.url.endswith("/v1/capability-bindings/codex-backend")
-    ) as binding_response:
-        binding_selector.locator("xpath=ancestor::article").get_by_role(
-            "button", name="保存能力绑定"
-        ).click()
-    binding = binding_response.value.json()
-    assert binding["instance_id"] == instance_id, binding
-
-    page.get_by_role("link", name="可视化编排").click()
-    page.get_by_role("button", name="克隆为可编辑草稿", exact=True).click()
-    page.get_by_role("button", name="添加角色阶段").wait_for()
-    page.get_by_role("button", name="添加角色阶段").click()
-    page.get_by_label("Capability").select_option("hermes-project-admin")
-    with page.expect_response(
-        lambda response: response.request.method == "PATCH"
-        and "/v1/journey-drafts/" in response.url
-    ) as save_response:
-        page.get_by_role("button", name="保存语义与顺序").click()
-    saved = save_response.value.json()
-    saved_steps = saved["definition"]["steps"]
-    assert any(step["id"] == "role-1" for step in saved_steps), saved_steps
-
-    with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/validate")
-    ) as validate_response:
-        page.get_by_role("button", name="ACWM 校验").click()
-    validated = validate_response.value.json()
-    assert validated["validation_status"] == "valid", validated
-    publish_button = page.get_by_role("button", name="发布不可变版本")
-    publish_button.wait_for()
-    with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/publish")
-    ) as publish_response:
-        publish_button.click()
-    revision = publish_response.value.json()
-    assert revision["revision"] >= 2, revision
-    assert revision["binding_snapshot"]["codex-backend"]["instance_id"] == instance_id
-    journey_revision_id = f"{revision['journey_id']}:{revision['revision']}"
-    page.get_by_text(f"发布版本 {revision['revision']}", exact=True).wait_for()
-
-    page.get_by_role("link", name="交付", exact=True).click()
-    page.get_by_label("交付需求").fill(
+def _execute_control_plane_loop(page: Page, context: BrowserContext, url: str) -> dict[str, str]:
+    page.get_by_role("link", name="交付工作台", exact=True).click()
+    pipeline_selector = page.get_by_label("执行 Pipeline")
+    pipeline_selector.wait_for(timeout=30_000)
+    page.wait_for_function("document.querySelector('#delivery-pipeline')?.value.length > 0")
+    pipeline_revision_id = pipeline_selector.input_value()
+    assert pipeline_revision_id, "no active Pipeline Revision is selected"
+    page.get_by_label("交付目标").fill(
         "增加 health_status 函数，返回 status=ok 和 version=0.1，并补充 unittest。"
     )
+    page.get_by_role("button", name="生成交付计划").click()
+    page.get_by_role("region", name="确认交付边界").wait_for()
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/deliveries")
+        lambda response: (
+            response.request.method == "POST" and response.url.endswith("/v1/deliveries")
+        )
     ) as delivery_response:
-        page.get_by_role("button", name="启动真实闭环").click()
+        page.get_by_role("button", name="确认并启动").click()
+    assert delivery_response.value.status == 202, delivery_response.value.text()
     created_delivery = delivery_response.value.json()
     delivery_id = str(created_delivery["id"])
-    assert created_delivery["journey_revision_id"] == journey_revision_id
-    assert (
-        created_delivery["journey_binding_snapshot"]["codex-backend"]["instance_id"]
-        == instance_id
-    )
-    page.locator(".map-label b").filter(has_text="等待计划审批").wait_for(
-        timeout=60_000
-    )
+    assert created_delivery["pipeline_revision_id"] == pipeline_revision_id
+    page.locator(".run-hero").wait_for(timeout=30_000)
 
-    page.get_by_role("link", name="看板", exact=True).click()
-    _drag_delivery(page, delivery_id, target_column=2)
-    _confirm_board_command(page, delivery_id, "批准计划")
-    _wait_for_board_column(page, delivery_id, column=3, timeout=120_000)
+    page.get_by_role("button", name="审查计划").wait_for(timeout=60_000)
+    page.get_by_role("button", name="审查计划").click()
+    plan_inspector = page.get_by_role("dialog", name="审查计划与执行边界")
+    plan_inspector.wait_for()
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/v1/deliveries/{delivery_id}/plan-decision")
+        )
+    ) as plan_response:
+        plan_inspector.get_by_role("button", name="批准计划并开始执行").click()
+    assert plan_response.value.status == 202, plan_response.value.text()
+    page.get_by_role("button", name="关闭检查器").click()
 
-    page.get_by_role("link", name="交付", exact=True).click()
-    page.locator(".unified-diff").wait_for(timeout=30_000)
-    assert page.locator(".unified-diff").inner_text().strip(), "candidate diff is empty"
-    page.get_by_text("固定机器测试：通过", exact=True).wait_for()
+    page.get_by_role("button", name="审查候选").wait_for(timeout=300_000)
+    page.get_by_role("button", name="审查候选").click()
+    candidate_inspector = page.get_by_role("dialog", name="审查候选、Diff 与验证")
+    candidate_inspector.wait_for()
+    candidate_inspector.get_by_role("tab", name="变更").click()
+    assert candidate_inspector.locator(".diff-block").inner_text().strip(), (
+        "candidate diff is empty"
+    )
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/v1/deliveries/{delivery_id}/candidate-decision")
+        )
+    ) as candidate_response:
+        candidate_inspector.get_by_role("button", name="接受候选并原子应用").click()
+    assert candidate_response.value.status == 202, candidate_response.value.text()
+    page.get_by_role("button", name="关闭检查器").click()
+
+    page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for(timeout=60_000)
+    page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
     detail = _delivery_json(context, url, delivery_id)
     assert detail["candidate"]["candidate_revision"]
     assert detail["candidate"]["diff_sha256"]
     assert detail["verification"]["exit_code"] == 0
-
-    page.get_by_role("link", name="看板", exact=True).click()
-    _wait_for_board_column(page, delivery_id, column=3, timeout=30_000)
-    _drag_delivery(page, delivery_id, target_column=4)
-    _confirm_board_command(page, delivery_id, "接受候选")
-    _wait_for_board_column(page, delivery_id, column=4, timeout=60_000)
-
-    page.get_by_role("link", name="交付", exact=True).click()
-    page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
-    completed = _delivery_json(context, url, delivery_id)
-    receipt = completed["apply_receipt"]
-    candidate = completed["candidate"]
-    assert completed["status"] == "completed", completed
+    receipt = detail["apply_receipt"]
+    candidate = detail["candidate"]
+    assert detail["status"] == "completed", detail
     assert receipt["after_revision"] == candidate["candidate_revision"]
 
-    page.get_by_role("link", name="证据").click()
-    page.get_by_text("应用回执", exact=True).first.wait_for()
-    page.get_by_role("link", name="知识中心").click()
+    page.get_by_role("link", name="证据", exact=True).click()
+    page.get_by_label("按交付、证据或哈希筛选").fill(delivery_id)
+    page.locator(".evidence-table button").first.wait_for(timeout=30_000)
+    assert page.locator(".evidence-table button").count() >= 7
+    page.get_by_role("link", name="知识中心", exact=True).click()
     page.get_by_label("全文搜索").fill("health")
-    page.get_by_text("需求", exact=False).first.wait_for(timeout=15_000)
+    page.locator(".document-list button").filter(has_text="需求").first.wait_for(timeout=30_000)
     return {
         "delivery_id": delivery_id,
-        "journey_revision_id": journey_revision_id,
-        "instance_id": instance_id,
+        "pipeline_revision_id": pipeline_revision_id,
         "candidate_revision": str(candidate["candidate_revision"]),
         "diff_sha256": str(candidate["diff_sha256"]),
         "apply_after_revision": str(receipt["after_revision"]),
@@ -236,36 +192,32 @@ def _verify_recovery(
 ) -> None:
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    page.get_by_role("link", name="交付", exact=True).wait_for(timeout=15_000)
+    page.get_by_role("link", name="交付工作台", exact=True).wait_for(timeout=15_000)
     delivery_id = checkpoint["delivery_id"]
     recovered = _delivery_json(context, url, delivery_id)
     assert recovered["status"] == "completed", recovered
-    assert recovered["journey_revision_id"] == checkpoint["journey_revision_id"]
+    assert recovered["pipeline_revision_id"] == checkpoint["pipeline_revision_id"]
     assert recovered["candidate"]["candidate_revision"] == checkpoint["candidate_revision"]
     assert recovered["candidate"]["diff_sha256"] == checkpoint["diff_sha256"]
-    assert recovered["apply_receipt"]["after_revision"] == checkpoint[
-        "apply_after_revision"
-    ]
+    assert recovered["apply_receipt"]["after_revision"] == checkpoint["apply_after_revision"]
 
     evidence_response = context.request.get(f"{url}/v1/deliveries/{delivery_id}/evidence")
     assert evidence_response.ok, evidence_response.text()
     evidence = evidence_response.json()
     assert any(
-        item["kind"] == "apply-receipt" and item["status"] == "verified"
-        for item in evidence
+        item["kind"] == "apply-receipt" and item["status"] == "verified" for item in evidence
     ), evidence
     events_response = context.request.get(f"{url}/v1/deliveries/{delivery_id}/events")
     assert events_response.ok, events_response.text()
-    assert any(
-        item["event_type"] == "delivery.completed" for item in events_response.json()
-    )
+    assert any(item["event_type"] == "delivery.completed" for item in events_response.json())
 
-    page.get_by_role("link", name="交付", exact=True).click()
-    page.locator(".delivery-list button").filter(has_text=delivery_id[:8]).click()
-    page.locator(".status-completed").first.wait_for(timeout=15_000)
+    page.goto(f"{url}/deliveries/{delivery_id}")
+    page.wait_for_load_state("networkidle")
+    page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for(timeout=15_000)
     page.get_by_text("应用回执已核验", exact=True).wait_for()
-    page.get_by_role("link", name="证据").click()
-    page.get_by_text("应用回执", exact=True).first.wait_for()
+    page.get_by_role("link", name="证据", exact=True).click()
+    page.get_by_label("按交付、证据或哈希筛选").fill(delivery_id)
+    page.locator(".evidence-table button").first.wait_for(timeout=15_000)
 
 
 def _drag_delivery(page: Page, delivery_id: str, target_column: int) -> None:
@@ -297,8 +249,10 @@ def _confirm_board_command(page: Page, delivery_id: str, command_text: str) -> N
     # dnd-kit suppresses the click immediately following a completed pointer drag.
     page.wait_for_timeout(750)
     with page.expect_request(
-        lambda request: request.method == "POST"
-        and request.url.endswith(f"/v1/work-items/{delivery_id}/command")
+        lambda request: (
+            request.method == "POST"
+            and request.url.endswith(f"/v1/work-items/{delivery_id}/command")
+        )
     ) as command_request:
         button.click()
     response = command_request.value.response()
@@ -307,9 +261,7 @@ def _confirm_board_command(page: Page, delivery_id: str, command_text: str) -> N
     )
 
 
-def _wait_for_board_column(
-    page: Page, delivery_id: str, *, column: int, timeout: int
-) -> None:
+def _wait_for_board_column(page: Page, delivery_id: str, *, column: int, timeout: int) -> None:
     page.locator(".board-column").nth(column).locator(".work-card").filter(
         has_text=delivery_id[:8]
     ).wait_for(timeout=timeout)
@@ -322,14 +274,20 @@ def _delivery_json(context: BrowserContext, url: str, delivery_id: str) -> dict[
     return result
 
 
-def _capture_console_errors(page: Page) -> list[str]:
+def _capture_console_errors(page: Page) -> tuple[list[str], dict[str, bool]]:
     errors: list[str] = []
-    page.on(
-        "console",
-        lambda message: errors.append(message.text) if message.type == "error" else None,
-    )
+    authentication = {"in_progress": True}
+
+    def capture_console(message: Any) -> None:
+        if message.type != "error":
+            return
+        if authentication["in_progress"] and "401 (Unauthorized)" in message.text:
+            return
+        errors.append(message.text)
+
+    page.on("console", capture_console)
     page.on("pageerror", lambda error: errors.append(str(error)))
-    return errors
+    return errors, authentication
 
 
 def _read_checkpoint(path: Path) -> dict[str, str]:

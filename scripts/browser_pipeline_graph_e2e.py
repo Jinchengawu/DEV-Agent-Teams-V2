@@ -31,34 +31,36 @@ def main() -> None:
             ),
         )
         page = context.new_page()
-        console_errors: list[str] = []
-        page.on(
-            "console",
-            lambda message: console_errors.append(message.text)
-            if message.type == "error"
-            else None,
-        )
-        if args.phase == "execute":
-            _authenticate(page, args.url)
-            checkpoint = _create_and_publish_graph(page, args.url)
-            if args.state is not None:
-                args.state.parent.mkdir(parents=True, exist_ok=True)
-                context.storage_state(path=str(args.state))
-            if args.checkpoint is not None:
-                args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-                args.checkpoint.write_text(
-                    json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-        else:
-            if args.checkpoint is None:
-                raise ValueError("recover phase requires --checkpoint")
-            _verify_recovered_graph(page, args.url, args.checkpoint)
-        if args.screenshot is not None:
-            args.screenshot.parent.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=args.screenshot, full_page=True)
-        assert not console_errors, console_errors
-        browser.close()
+        console_errors, authentication = _capture_console_errors(page)
+        try:
+            if args.phase == "execute":
+                _authenticate(page, args.url)
+                authentication["in_progress"] = False
+                checkpoint = _create_and_publish_graph(page, args.url)
+                if args.state is not None:
+                    args.state.parent.mkdir(parents=True, exist_ok=True)
+                    context.storage_state(path=str(args.state))
+                if args.checkpoint is not None:
+                    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+                    args.checkpoint.write_text(
+                        json.dumps(checkpoint, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+            else:
+                if args.checkpoint is None:
+                    raise ValueError("recover phase requires --checkpoint")
+                _verify_recovered_graph(page, args.url, args.checkpoint)
+            authentication["in_progress"] = False
+            if args.screenshot is not None:
+                args.screenshot.parent.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=args.screenshot, full_page=True)
+            assert not console_errors, console_errors
+        except Exception:
+            if console_errors:
+                print("Browser console errors:", *console_errors, sep="\n")
+            raise
+        finally:
+            browser.close()
 
 
 def _authenticate(page: Page, url: str) -> None:
@@ -70,17 +72,28 @@ def _authenticate(page: Page, url: str) -> None:
         )
         page.get_by_label("密码").fill(password)
         page.get_by_role("button", name="创建并登录").click()
+    elif page.get_by_role("heading", name="登录 Agent-Team-OS").count():
+        password = os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD")
+        if not password:
+            raise AssertionError(
+                "existing browser-test database requires AGENT_TEAM_OS_TEST_PASSWORD"
+            )
+        page.get_by_label("用户名").fill(os.environ.get("AGENT_TEAM_OS_TEST_USERNAME", "admin"))
+        page.get_by_label("密码").fill(password)
+        page.get_by_role("button", name="登录控制平面").click()
     page.get_by_role("link", name="可视化编排", exact=True).wait_for()
 
 
 def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="可视化编排", exact=True).click()
     page.get_by_label("流水线 ID").wait_for(timeout=30_000)
-    page.get_by_label("流水线 ID").fill("browser-dag-loop")
+    pipeline_id = f"browser-dag-loop-{secrets.token_hex(4)}"
+    page.get_by_label("流水线 ID").fill(pipeline_id)
     page.get_by_label("流水线名称").fill("浏览器 DAG LOOP 验收")
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/pipelines")
+        lambda response: (
+            response.request.method == "POST" and response.url.endswith("/v1/pipelines")
+        )
     ) as created_response:
         page.get_by_role("button", name="创建流水线").click()
     assert created_response.value.status == 201, created_response.value.text()
@@ -90,49 +103,34 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("button", name="审批 Gate").click()
     page.get_by_role("button", name="有限 LOOP").click()
 
-    page.locator(".flow > .react-flow .react-flow__node").filter(
-        has_text="stage-2"
-    ).click()
+    page.locator(".flow > .react-flow .react-flow__node").filter(has_text="stage-2").click()
     page.get_by_label("Capability").fill("hermes-project-admin")
-    page.get_by_label("Agent Deployment stage-2.actor").select_option(
-        "builtin-planning-deployment"
-    )
-    page.locator(".flow > .react-flow .react-flow__node").filter(
-        has_text="stage-1"
-    ).click()
-    page.get_by_label("Agent Deployment stage-1.actor").select_option(
-        "builtin-planning-deployment"
-    )
+    page.get_by_label("Agent Deployment stage-2.actor").select_option("builtin-planning-deployment")
+    page.locator(".flow > .react-flow .react-flow__node").filter(has_text="stage-1").click()
+    page.get_by_label("Agent Deployment stage-1.actor").select_option("builtin-planning-deployment")
     _add_dependency(page, "主图", "stage-1", "stage-2")
     _add_dependency(page, "主图", "stage-2", "gate-1")
     _add_dependency(page, "主图", "gate-1", "loop-1", "approved")
     _add_dependency(page, "主图", "loop-1", "gate-2")
 
-    page.locator(".flow > .react-flow .react-flow__node").filter(
-        has_text="loop-1"
-    ).click()
+    page.locator(".flow > .react-flow .react-flow__node").filter(has_text="loop-1").click()
     page.get_by_label("退出条件策略").fill("machine-tests-passed")
     page.get_by_label("最大轮次").fill("4")
-    page.locator(".loop-body-editor").get_by_role(
-        "button", name="角色 Stage"
-    ).click()
-    page.locator(".loop-body-editor .react-flow__node").filter(
-        has_text="loop-1-work"
-    ).click()
-    page.get_by_label(
-        "Agent Deployment loop-1/loop-1-work.developer"
-    ).select_option("builtin-backend-deployment")
-    page.locator(".loop-body-editor .react-flow__node").filter(
-        has_text="stage-1"
-    ).click()
+    page.locator(".loop-body-editor").get_by_role("button", name="角色 Stage").click()
+    page.locator(".loop-body-editor .react-flow__node").filter(has_text="loop-1-work").click()
+    page.get_by_label("Agent Deployment loop-1/loop-1-work.developer").select_option(
+        "builtin-backend-deployment"
+    )
+    page.locator(".loop-body-editor .react-flow__node").filter(has_text="stage-1").click()
     page.get_by_label("Agent Deployment loop-1/stage-1.actor").select_option(
         "builtin-planning-deployment"
     )
     _add_dependency(page, "循环体", "loop-1-work", "stage-1")
 
     with page.expect_response(
-        lambda response: response.request.method == "PATCH"
-        and "/v1/pipeline-drafts/" in response.url
+        lambda response: (
+            response.request.method == "PATCH" and "/v1/pipeline-drafts/" in response.url
+        )
     ) as saved_response:
         page.get_by_role("button", name="保存图与布局").click()
     assert saved_response.value.status == 200, saved_response.value.text()
@@ -144,51 +142,77 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     assert len(loop["nodes"]) == 2 and len(loop["edges"]) == 1, loop
 
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/validate")
+        lambda response: response.request.method == "POST" and response.url.endswith("/validate")
     ) as validated_response:
         page.get_by_role("button", name="ACWM 图校验").click()
     validated = validated_response.value.json()
     assert validated["validation_status"] == "valid", validated
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/publish")
+        lambda response: response.request.method == "POST" and response.url.endswith("/publish")
     ) as published_response:
         page.get_by_role("button", name="发布不可变版本").click()
     published = published_response.value.json()
     assert published["fingerprint"], published
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/activate")
+        lambda response: response.request.method == "POST" and response.url.endswith("/activate")
     ) as activated_response:
         page.get_by_role("button", name=f"激活 R{published['revision']}").click()
     assert activated_response.value.json()["active_revision"] == published["revision"]
 
-    page.get_by_role("link", name="交付", exact=True).click()
-    page.get_by_label("执行流水线").select_option(
+    page.get_by_role("link", name="交付工作台", exact=True).click()
+    page.get_by_label("执行 Pipeline").select_option(
         f"{published['pipeline_id']}:{published['revision']}"
     )
-    page.get_by_label("交付需求").fill("增加可审计的健康检查。")
+    page.get_by_label("交付目标").fill("增加可审计的健康检查。")
+    page.get_by_role("button", name="生成交付计划").click()
+    page.get_by_role("region", name="确认交付边界").wait_for()
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/deliveries")
+        lambda response: (
+            response.request.method == "POST" and response.url.endswith("/v1/deliveries")
+        )
     ) as delivery_response:
-        page.get_by_role("button", name="按所选流水线启动闭环").click()
+        page.get_by_role("button", name="确认并启动").click()
+    assert delivery_response.value.status == 202, delivery_response.value.text()
     delivery = delivery_response.value.json()
     assert delivery["pipeline_revision_id"] == (
         f"{published['pipeline_id']}:{published['revision']}"
     )
     assert delivery["pipeline_run_id"]
-    page.get_by_text("ACWM DAG 运行账本", exact=True).wait_for()
-    page.get_by_text("不可变图指纹", exact=True).wait_for()
-    page.get_by_role("button", name="批准计划并开始执行").wait_for(timeout=30_000)
-    page.get_by_role("button", name="批准计划并开始执行").click()
-    page.get_by_role("button", name="接受候选并原子应用").wait_for(timeout=30_000)
-    page.get_by_role("button", name="接受候选并原子应用").click()
-    page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
-    page.locator(".detail-hero").get_by_text("已完成", exact=True).wait_for(
-        timeout=30_000
+    page.locator(".run-hero").wait_for(timeout=30_000)
+    page.get_by_text("Pipeline Run Ledger", exact=True).wait_for()
+    page.get_by_text("图指纹", exact=True).wait_for()
+    page.get_by_role("button", name="审查计划").wait_for(timeout=30_000)
+    page.get_by_role("button", name="审查计划").click()
+    plan_inspector = page.get_by_role("dialog", name="审查计划与执行边界")
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/v1/deliveries/{delivery['id']}/plan-decision")
+        )
+    ) as plan_response:
+        plan_inspector.get_by_role("button", name="批准计划并开始执行").click()
+    assert plan_response.value.status == 202, plan_response.value.text()
+    page.get_by_role("button", name="关闭检查器").click()
+
+    page.get_by_role("button", name="审查候选").wait_for(timeout=120_000)
+    page.get_by_role("button", name="审查候选").click()
+    candidate_inspector = page.get_by_role("dialog", name="审查候选、Diff 与验证")
+    candidate_inspector.get_by_role("tab", name="变更").click()
+    assert candidate_inspector.locator(".diff-block").inner_text().strip(), (
+        "candidate diff is empty"
     )
+    with page.expect_response(
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/v1/deliveries/{delivery['id']}/candidate-decision")
+        )
+    ) as candidate_response:
+        candidate_inspector.get_by_role("button", name="接受候选并原子应用").click()
+    assert candidate_response.value.status == 202, candidate_response.value.text()
+    page.get_by_role("button", name="关闭检查器").click()
+
+    page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
+    page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for(timeout=30_000)
     completed = page.context.request.get(f"{url}/v1/deliveries/{delivery['id']}")
     assert completed.ok, completed.text()
     completed_payload = completed.json()
@@ -201,18 +225,16 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
         == candidate["candidate_revision"]
     )
     assert candidate_matches_main, completed_payload
-    graph = page.context.request.get(
-        f"{url}/v1/deliveries/{delivery['id']}/pipeline-run"
-    )
+    graph = page.context.request.get(f"{url}/v1/deliveries/{delivery['id']}/pipeline-run")
     assert graph.ok, graph.text()
     graph_payload = graph.json()
     assert graph_payload["status"] == "completed", graph_payload
     page.get_by_role("link", name="证据", exact=True).click()
-    page.get_by_text("全局证据账本", exact=True).wait_for(timeout=30_000)
-    page.get_by_label("按交付筛选").fill(delivery["id"])
+    page.get_by_text("证据目录", exact=True).wait_for(timeout=30_000)
+    page.get_by_label("按交付、证据或哈希筛选").fill(delivery["id"])
     page.get_by_label("按完整性筛选").select_option("verified")
     page.wait_for_timeout(300)
-    verified_evidence_count = page.locator(".ledger-table button").count()
+    verified_evidence_count = page.locator(".evidence-table button").count()
     assert verified_evidence_count >= 7, verified_evidence_count
     return {
         "delivery_id": delivery["id"],
@@ -231,41 +253,54 @@ def _verify_recovered_graph(page: Page, url: str, checkpoint_path: Path) -> None
     checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    delivery = page.context.request.get(
-        f"{url}/v1/deliveries/{checkpoint['delivery_id']}"
-    )
+    delivery = page.context.request.get(f"{url}/v1/deliveries/{checkpoint['delivery_id']}")
     assert delivery.ok, delivery.text()
     delivery_payload = delivery.json()
     assert delivery_payload["status"] == "completed", delivery_payload
     assert delivery_payload["pipeline_run_id"] == checkpoint["pipeline_run_id"]
     assert delivery_payload["pipeline_revision_id"] == checkpoint["pipeline_revision_id"]
-    graph = page.context.request.get(
-        f"{url}/v1/pipeline-runs/{checkpoint['pipeline_run_id']}"
-    )
+    graph = page.context.request.get(f"{url}/v1/pipeline-runs/{checkpoint['pipeline_run_id']}")
     assert graph.ok, graph.text()
     graph_payload = graph.json()
     assert graph_payload["status"] == "completed", graph_payload
     assert graph_payload["graph_fingerprint"] == checkpoint["pipeline_fingerprint"]
-    page.get_by_role("link", name="交付", exact=True).click()
+    page.goto(f"{url}/deliveries/{checkpoint['delivery_id']}")
+    page.wait_for_load_state("networkidle")
+    page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for(timeout=30_000)
     page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
     page.get_by_role("link", name="证据", exact=True).click()
-    page.get_by_label("按交付筛选").fill(checkpoint["delivery_id"])
+    page.get_by_label("按交付、证据或哈希筛选").fill(checkpoint["delivery_id"])
     page.get_by_label("按完整性筛选").select_option("verified")
     page.wait_for_timeout(300)
-    assert page.locator(".ledger-table button").count() == checkpoint[
-        "browser_evidence"
-    ]["verified_evidence_count"]
+    assert (
+        page.locator(".evidence-table button").count()
+        == checkpoint["browser_evidence"]["verified_evidence_count"]
+    )
 
 
-def _add_dependency(
-    page: Page, label: str, source: str, target: str, condition: str = ""
-) -> None:
+def _add_dependency(page: Page, label: str, source: str, target: str, condition: str = "") -> None:
     editor = page.locator(".dependency-creator").filter(has_text=f"{label}依赖编辑器")
     editor.get_by_label(f"{label}上游节点").select_option(source)
     editor.get_by_label(f"{label}下游节点").select_option(target)
     if condition:
         editor.get_by_label(f"{label}分支条件").fill(condition)
     editor.get_by_role("button", name="添加依赖边").click()
+
+
+def _capture_console_errors(page: Page) -> tuple[list[str], dict[str, bool]]:
+    errors: list[str] = []
+    authentication = {"in_progress": True}
+
+    def capture_console(message: Any) -> None:
+        if message.type != "error":
+            return
+        if authentication["in_progress"] and "401 (Unauthorized)" in message.text:
+            return
+        errors.append(message.text)
+
+    page.on("console", capture_console)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    return errors, authentication
 
 
 if __name__ == "__main__":

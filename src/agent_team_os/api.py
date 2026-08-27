@@ -76,6 +76,7 @@ from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
 from .shared.errors import ProblemDetail, ProductError
 from .shared.events import ProductEvent
+from .shared.hashes import sha256_json
 from .shared.ids import new_id
 from .shared.permissions import Permission
 
@@ -154,9 +155,7 @@ def create_app(
         identity.require(actor, permission)
 
     @app.middleware("http")
-    async def identity_guard(
-        request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def identity_guard(request: Request, call_next: RequestResponseEndpoint) -> Response:
         public_paths = {
             "/v1/readiness",
             "/v1/auth/bootstrap-status",
@@ -175,9 +174,7 @@ def create_app(
                 actor = identity.authenticate(bearer)
             else:
                 ensure_same_origin(request)
-                actor = identity.authenticate_mutation(
-                    bearer, request.headers.get(CSRF_HEADER)
-                )
+                actor = identity.authenticate_mutation(bearer, request.headers.get(CSRF_HEADER))
             request.state.identity_user = actor
         except ProductError as error:
             return JSONResponse(
@@ -301,9 +298,7 @@ def create_app(
             create_pipeline_router(
                 pipeline_catalog,
                 actor_id=pipeline_actor_id,
-                authorize_edit=lambda request: require_permission(
-                    request, Permission.JOURNEY_EDIT
-                ),
+                authorize_edit=lambda request: require_permission(request, Permission.JOURNEY_EDIT),
                 authorize_publish=lambda request: require_permission(
                     request, Permission.JOURNEY_PUBLISH
                 ),
@@ -340,15 +335,20 @@ def create_app(
                     ("candidate-gate", delivery.candidate_gate),
                     ("apply-receipt", delivery.apply_receipt),
                 )
-                artifacts.extend(
-                    SystemKnowledgeArtifact(
-                        source_id=f"{delivery.id}:{artifact_kind}",
-                        title=f"{delivery.user_request} · {labels[artifact_kind]}",
-                        content=artifact.model_dump(mode="json"),
+                for artifact_kind, artifact in values:
+                    if artifact is None:
+                        continue
+                    content = artifact.model_dump(mode="json")
+                    source_id = f"{delivery.id}:{artifact_kind}"
+                    if artifact_kind in {"plan-gate", "candidate-gate"}:
+                        source_id = f"{source_id}:{sha256_json(content)}"
+                    artifacts.append(
+                        SystemKnowledgeArtifact(
+                            source_id=source_id,
+                            title=f"{delivery.user_request} · {labels[artifact_kind]}",
+                            content=content,
+                        )
                     )
-                    for artifact_kind, artifact in values
-                    if artifact is not None
-                )
             knowledge.sync_system_artifacts(knowledge_actor, tuple(artifacts))
             return knowledge_actor
 
@@ -390,9 +390,7 @@ def create_app(
                 and (evidence_status is None or item.status == evidence_status)
             )
 
-        @app.get(
-            "/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord]
-        )
+        @app.get("/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord])
         def get_delivery_evidence(delivery_id: str) -> tuple[EvidenceRecord, ...]:
             try:
                 delivery = coordinator.get(delivery_id)
@@ -442,9 +440,7 @@ def create_app(
             "/v1/agent-instances/{instance_id}/health-check",
             response_model=AgentInstance,
         )
-        async def health_check_agent_instance(
-            instance_id: str, request: Request
-        ) -> AgentInstance:
+        async def health_check_agent_instance(instance_id: str, request: Request) -> AgentInstance:
             require_permission(request, Permission.AGENT_MANAGE)
             try:
                 return await control_plane.check_instance(instance_id)
@@ -575,9 +571,7 @@ def create_app(
                     return coordinator.start_plan_decision(
                         work_item_id,
                         decision=(
-                            "approve"
-                            if request_body.command == "approve-plan"
-                            else "reject"
+                            "approve" if request_body.command == "approve-plan" else "reject"
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.plan_gate.subject_sha256,
@@ -588,9 +582,7 @@ def create_app(
                     return coordinator.start_candidate_decision(
                         work_item_id,
                         decision=(
-                            "accept"
-                            if request_body.command == "accept-candidate"
-                            else "reject"
+                            "accept" if request_body.command == "accept-candidate" else "reject"
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.candidate_gate.subject_sha256,
@@ -679,11 +671,8 @@ def create_app(
                 )
             pipeline_revision = (
                 None
-                if pipeline_catalog is None
-                or request_body.pipeline_revision_id is None
-                else pipeline_catalog.resolve_active_revision(
-                    request_body.pipeline_revision_id
-                )
+                if pipeline_catalog is None or request_body.pipeline_revision_id is None
+                else pipeline_catalog.resolve_active_revision(request_body.pipeline_revision_id)
             )
             revision = None
             if control_plane is not None and pipeline_revision is None:
@@ -700,9 +689,7 @@ def create_app(
                 except ValueError as error:
                     raise HTTPException(status_code=409, detail=str(error)) from error
             pipeline_run_id = (
-                new_id()
-                if pipeline_revision is not None and pipeline_runs is not None
-                else None
+                new_id() if pipeline_revision is not None and pipeline_runs is not None else None
             )
             if pipeline_revision is not None and pipeline_runs is None:
                 raise ProductError(
@@ -717,10 +704,7 @@ def create_app(
                 pipeline_revision_id=(
                     None
                     if pipeline_revision is None
-                    else (
-                        f"{pipeline_revision.pipeline_id}:"
-                        f"{pipeline_revision.revision}"
-                    )
+                    else (f"{pipeline_revision.pipeline_id}:{pipeline_revision.revision}")
                 ),
                 pipeline_run_id=pipeline_run_id,
                 journey_revision_id=(
@@ -729,7 +713,9 @@ def create_app(
                 journey_binding_snapshot=(
                     pipeline_revision.binding_snapshot
                     if pipeline_revision is not None
-                    else None if revision is None else revision.binding_snapshot
+                    else None
+                    if revision is None
+                    else revision.binding_snapshot
                 ),
                 resolved_provider_bindings=(
                     pipeline_revision.resolved_provider_bindings
@@ -739,7 +725,9 @@ def create_app(
                 resolved_journey_sha256=(
                     pipeline_revision.fingerprint
                     if pipeline_revision is not None
-                    else None if revision is None else revision.fingerprint
+                    else None
+                    if revision is None
+                    else revision.fingerprint
                 ),
                 resolved_pipeline_sha256=(
                     None if pipeline_revision is None else pipeline_revision.fingerprint

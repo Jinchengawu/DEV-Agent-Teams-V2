@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 
 from agent_team_os.readiness import imported_acwm_revision
 from agent_team_os.release import (
     GateReport,
+    _enqueue_gate_delivery,
+    _live_gate_codex_config,
+    _live_gate_planning_timeout_seconds,
     _report,
     combined_gate_status,
     latest_reports,
@@ -74,6 +78,68 @@ def test_clean_same_revision_reports_are_publishable() -> None:
 
     assert combined.status == "passed"
     assert combined.code == "RELEASE_GATE_PASSED"
+
+
+def test_live_gate_gives_each_real_codex_turn_a_five_minute_budget() -> None:
+    planning = _live_gate_codex_config("read-only")
+    execution = _live_gate_codex_config("workspace-write")
+
+    assert planning.timeout_seconds == 300
+    assert execution.timeout_seconds == 300
+    assert planning.sandbox == "read-only"
+    assert execution.sandbox == "workspace-write"
+
+
+def test_live_gate_budget_covers_both_serial_planning_turns() -> None:
+    assert _live_gate_planning_timeout_seconds() == 630
+
+
+def test_planning_gate_timeout_cancels_and_quiesces_the_delivery() -> None:
+    class StalledCoordinator:
+        def __init__(self) -> None:
+            self.delivery = SimpleNamespace(
+                id="stalled-delivery",
+                status="planning",
+                version=3,
+                error_code=None,
+            )
+            self.cancelled: tuple[str, int] | None = None
+
+        def enqueue(self, **_values: object) -> SimpleNamespace:
+            return self.delivery
+
+        def get(self, _delivery_id: str) -> SimpleNamespace:
+            return self.delivery
+
+        async def cancel_and_wait(
+            self, delivery_id: str, *, expected_version: int
+        ) -> SimpleNamespace:
+            self.cancelled = (delivery_id, expected_version)
+            self.delivery.status = "cancelled"
+            return self.delivery
+
+    async def scenario() -> None:
+        coordinator = StalledCoordinator()
+        revision = SimpleNamespace(
+            pipeline_id="backend-delivery",
+            revision=1,
+            binding_snapshot={},
+            fingerprint="a" * 64,
+        )
+
+        with raises(TimeoutError, match="Pipeline planning gate timed out"):
+            await _enqueue_gate_delivery(  # type: ignore[arg-type]
+                coordinator,  # type: ignore[arg-type]
+                revision,  # type: ignore[arg-type]
+                workspace_id="backend-demo",
+                user_request="stalled",
+                timeout_seconds=0,
+            )
+
+        assert coordinator.cancelled == ("stalled-delivery", 3)
+        assert coordinator.delivery.status == "cancelled"
+
+    asyncio.run(scenario())
 
 
 def test_combined_gate_rejects_revision_mismatch_and_tampered_evidence() -> None:
