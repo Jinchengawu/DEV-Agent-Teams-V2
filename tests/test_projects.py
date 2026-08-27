@@ -307,7 +307,7 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             ) VALUES('evidence-1','legacy-delivery','journey','delivery','legacy-delivery',
             'legacy','verified','{}',CURRENT_TIMESTAMP)"""
         )
-    assert MigrationRunner(database, ROOT / "migrations").migrate() == (19, 20)
+    assert MigrationRunner(database, ROOT / "migrations").migrate() == (20, 21)
     with sqlite3.connect(database) as connection:
         snapshot, project_id = connection.execute(
             "SELECT snapshot_json,project_id FROM deliveries WHERE id='legacy-delivery'"

@@ -14,13 +14,13 @@ const sections = [
 export function ProjectOverviewPage() {
   const projectId = useProjectId();
   const detail = useProject(projectId);
+  const retry = useRetryProjectWorkspace(projectId);
+  const reset = useResetProjectWorkspace(projectId);
+  const archive = useArchiveProject(projectId, detail.data?.project.version ?? 1);
   if (detail.isLoading) return <LoadingState label="正在读取项目执行上下文…"/>;
   if (detail.error) return <ErrorState error={detail.error} retry={() => detail.refetch()}/>;
   if (!detail.data) return <EmptyState title="项目不存在" detail="返回项目目录重新选择。"/>;
   const { project, workspace } = detail.data;
-  const retry = useRetryProjectWorkspace(projectId);
-  const reset = useResetProjectWorkspace(projectId);
-  const archive = useArchiveProject(projectId, project.version);
   const actionError = retry.error ?? reset.error ?? archive.error;
   return <div className="project-overview">
     <section className="panel project-hero"><div><span className="eyebrow">项目执行边界</span><h2>{project.name}</h2><p>{project.description || "尚未填写项目说明。"}</p></div><StatusBadge value={project.lifecycle_status}/><dl><dt>项目 ID</dt><dd><code>{project.id}</code></dd><dt>工作区状态</dt><dd><StatusBadge value={workspace.status}/></dd><dt>种子 Revision</dt><dd><code>{workspace.seed_revision ?? "尚未生成"}</code></dd><dt>活动交付租约</dt><dd>{detail.data.active_delivery_id ?? "无"}</dd></dl></section>

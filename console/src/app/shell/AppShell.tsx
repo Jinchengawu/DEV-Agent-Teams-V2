@@ -4,7 +4,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import mark from "../../assets/agent-team-os-mark.svg";
 import inverseMark from "../../assets/agent-team-os-mark-inverse.svg";
 import { useIdentity } from "../../features/identity/AuthGate";
-import { LEGACY_PROJECT_ID, projectPath, readActiveProjectId, rememberActiveProjectId, useProjects, useRouteProjectId } from "../../features/projects/api";
+import { LEGACY_PROJECT_ID, projectIdFromPath, projectPath, readActiveProjectId, rememberActiveProjectId, useProjects } from "../../features/projects/api";
 import { ThemeToggle } from "../../shared/ui/ThemeToggle";
 
 const projectSections = [
@@ -25,7 +25,7 @@ export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, loggingOut } = useIdentity();
-  const routeProjectId = useRouteProjectId();
+  const routeProjectId = projectIdFromPath(location.pathname);
   const [rememberedProjectId, setRememberedProjectId] = useState(readActiveProjectId);
   const projects = useProjects();
   const projectId = routeProjectId ?? rememberedProjectId ?? projects.data?.[0]?.id ?? LEGACY_PROJECT_ID;

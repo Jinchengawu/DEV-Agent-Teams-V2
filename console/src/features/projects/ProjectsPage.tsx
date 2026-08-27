@@ -45,7 +45,7 @@ export function ProjectsPage() {
       <label>默认流水线<select value={pipelineRevisionId} onChange={(event) => setPipelineRevisionId(event.target.value)}><option value="">请选择已激活的固定版本</option>{activePipelines.map((pipeline) => <option key={pipeline.id} value={`${pipeline.id}:${pipeline.active_revision}`}>{pipeline.name} · R{pipeline.active_revision}</option>)}</select></label>
       <fieldset><legend>允许的 Agent 部署</legend>{usableDeployments.length ? usableDeployments.map((deployment) => <label className="check-row" key={deployment.id}><input type="checkbox" checked={deploymentIds.includes(deployment.id)} onChange={(event) => setDeploymentIds((current) => event.target.checked ? [...current, deployment.id] : current.filter((value) => value !== deployment.id))}/><span>{deployment.name}<small>{deployment.id}</small></span></label>) : <p className="field-warning">没有已启用且资格通过的部署。请先在“智能体实例”中完成部署。</p>}</fieldset>
       <button className="primary" disabled={create.isPending || !id || !name.trim() || !pipelineRevisionId} onClick={() => create.mutate({ id, name: name.trim(), description: description.trim(), default_pipeline_revision_id: pipelineRevisionId, deployment_ids: deploymentIds })}><Plus size={16}/>{create.isPending ? "正在初始化项目…" : "创建并初始化独立工作区"}</button>
-      {create.error && <ErrorState error={create.error}/>} 
+      {create.error && <ErrorState error={create.error}/>}
     </section>
   </div>;
 }

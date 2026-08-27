@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DeliveriesPage } from "./DeliveriesPage";
 
@@ -23,14 +23,23 @@ beforeEach(() => {
       body: init?.body?.toString(),
     };
     calls.push(call);
-    if (call.url === "/v1/deliveries" && call.method === "GET") return response([]);
+    if (call.url === "/v1/deliveries?project_id=pj1" && call.method === "GET") return response([]);
+    if (call.url === "/v1/projects/pj1" && call.method === "GET") return response({
+      project: { id: "pj1", name: "项目一", description: "", lifecycle_status: "active", version: 1 },
+      workspace: { workspace_id: "project:pj1", status: "ready" },
+      pipeline_bindings: [{ pipeline_id: "backend-delivery", pipeline_revision: 1, enabled: true, is_default: true }],
+      deployment_access: [{ deployment_id: "builtin-backend-deployment", enabled: true }],
+      knowledge_sources: [],
+      active_delivery_id: null,
+    });
     if (call.url === "/v1/pipelines" && call.method === "GET") {
       return response([{ id: "backend-delivery", name: "内置后端交付闭环", active_revision: 1 }]);
     }
     if (call.url === "/v1/deliveries" && call.method === "POST") {
       return response({
         id: "delivery-created",
-        workspace_id: "backend-demo",
+        project_id: "pj1",
+        workspace_id: "project:pj1",
         user_request: "增加一个 GET /health 接口，返回服务状态和版本号，并补充机器测试。",
         status: "queued",
         version: 1,
@@ -49,7 +58,7 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter><DeliveriesPage/></MemoryRouter>
+      <MemoryRouter initialEntries={["/projects/pj1/deliveries"]}><Routes><Route path="/projects/:projectId/deliveries" element={<DeliveriesPage/>}/><Route path="/projects/:projectId/deliveries/:deliveryId" element={<div>交付详情</div>}/></Routes></MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -67,7 +76,7 @@ describe("交付工作台", () => {
     await waitFor(() => expect(calls.some((call) => call.url === "/v1/deliveries" && call.method === "POST")).toBe(true));
     const created = calls.find((call) => call.url === "/v1/deliveries" && call.method === "POST");
     expect(JSON.parse(created?.body ?? "{}")).toEqual({
-      workspace_id: "backend-demo",
+      project_id: "pj1",
       user_request: "增加一个 GET /health 接口，返回服务状态和版本号，并补充机器测试。",
       pipeline_revision_id: "backend-delivery:1",
     });

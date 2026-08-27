@@ -29,7 +29,6 @@ class ProjectGitWorkspaces:
         if not project_id or "/" in project_id or ".." in project_id:
             raise ValueError("invalid product workspace reference")
         return GitSandbox(self.root / "projects" / project_id)
-
     def _for_repository_ref(self, repository_ref: str) -> GitSandbox:
         if repository_ref == "legacy/backend-demo":
             return GitSandbox(self.root)
@@ -40,4 +39,3 @@ class ProjectGitWorkspaces:
         if not project_id or "/" in project_id or ".." in project_id:
             raise ValueError("invalid repository reference")
         return GitSandbox(self.root / "projects" / project_id)
-

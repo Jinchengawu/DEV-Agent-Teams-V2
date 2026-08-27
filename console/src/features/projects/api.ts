@@ -23,6 +23,16 @@ export function useRouteProjectId() {
   return useParams<{ projectId: string }>().projectId;
 }
 
+export function projectIdFromPath(pathname: string) {
+  const match = /^\/projects\/([^/]+)(?:\/|$)/.exec(pathname);
+  if (!match) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
 export function readActiveProjectId() {
   try {
     return window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) ?? undefined;
