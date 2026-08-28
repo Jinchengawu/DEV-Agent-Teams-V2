@@ -6,6 +6,7 @@ import { PageErrorBoundary } from "../shared/feedback/PageErrorBoundary";
 import { AuthGate } from "../features/identity/AuthGate";
 
 const DeliveriesPage = lazy(() => import("../features/deliveries/DeliveriesPage").then((module) => ({ default: module.DeliveriesPage })));
+const DeliveryRunPage = lazy(() => import("../features/deliveries/DeliveryRunPage").then((module) => ({ default: module.DeliveryRunPage })));
 const BoardPage = lazy(() => import("../features/board/BoardPage").then((module) => ({ default: module.BoardPage })));
 const EvidencePage = lazy(() => import("../features/evidence/EvidencePage").then((module) => ({ default: module.EvidencePage })));
 const SettingsPage = lazy(() => import("../features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
@@ -21,10 +22,12 @@ export function App() {
     <Route path="projects" element={<ProjectsPage/>}/>
     <Route path="projects/:projectId/overview" element={<ProjectOverviewPage/>}/>
     <Route path="projects/:projectId/deliveries" element={<DeliveriesPage/>}/>
+    <Route path="projects/:projectId/deliveries/:deliveryId" element={<DeliveryRunPage/>}/>
     <Route path="projects/:projectId/board" element={<BoardPage/>}/>
     <Route path="projects/:projectId/knowledge" element={<KnowledgePage/>}/>
     <Route path="projects/:projectId/evidence" element={<EvidencePage/>}/>
     <Route path="deliveries" element={<Navigate to="/projects/legacy-default/deliveries" replace/>}/>
+    <Route path="deliveries/:deliveryId" element={<DeliveryRunPage/>}/>
     <Route path="board" element={<Navigate to="/projects/legacy-default/board" replace/>}/>
     <Route path="orchestration" element={<OrchestrationPage/>}/>
     <Route path="agents" element={<AgentsPage/>}/>
