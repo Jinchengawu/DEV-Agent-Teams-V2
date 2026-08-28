@@ -5,6 +5,10 @@ import "@xyflow/react/dist/style.css";
 import "./styles.css";
 import "./orchestration.css";
 import "./app/console-theme.css";
+import "./design-system/foundations.css";
+import "./design-system/tokens.css";
+import "./design-system/product.css";
+import "./design-system/compatibility.css";
 import { App } from "./app/App";
 import { DesignSystemProvider } from "./app/design-system/DesignSystemProvider";
 

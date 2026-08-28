@@ -1,10 +1,15 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1825" />
+    <meta name="theme-color" content="#f5f5f7" />
     <title>Agent-Team-OS · 控制平面</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("agent-team-os-theme") === "dark" ? "dark" : "light";
+      } catch (_) {}
+    </script>
   </head>
   <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
 </html>

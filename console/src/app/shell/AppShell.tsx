@@ -1,22 +1,25 @@
 import { useEffect, useState } from "react";
-import { Button, Select, Tooltip } from "antd";
-import { Activity, Bot, Boxes, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, Settings, Workflow } from "lucide-react";
+import { Button, Select } from "antd";
+import { Bot, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import mark from "../../assets/agent-team-os-mark.svg";
+import inverseMark from "../../assets/agent-team-os-mark-inverse.svg";
 import { useIdentity } from "../../features/identity/AuthGate";
 import { LEGACY_PROJECT_ID, projectPath, readActiveProjectId, rememberActiveProjectId, useProjects, useRouteProjectId } from "../../entities/project/api";
-
-const globalSections = [
-  { path: "/projects", label: "项目", icon: FolderGit2, description: "项目治理、独立工作区与资源授权" },
-  { path: "/orchestration", label: "可视化编排", icon: Workflow, description: "ACWM 线性旅程" },
-  { path: "/agents", label: "智能体实例", icon: Bot, description: "实例与能力绑定" },
-  { path: "/settings", label: "设置", icon: Settings, description: "安全运营参数" },
-] as const;
+import { ThemeToggle } from "../../shared/ui/ThemeToggle";
 
 const projectSections = [
-  { section: "deliveries", label: "交付", icon: GitBranch, description: "当前项目的真实 Git 候选与双审批" },
-  { section: "board", label: "看板", icon: LayoutDashboard, description: "当前项目的事件投影与合法命令" },
-  { section: "knowledge", label: "知识中心", icon: Database, description: "项目知识、全局知识与来源检索" },
+  { section: "deliveries", label: "交付工作台", icon: GitBranch, description: "从目标进入当前项目的可审批交付闭环" },
+  { section: "board", label: "交付看板", icon: LayoutDashboard, description: "当前项目的事件投影与合法状态命令" },
   { section: "evidence", label: "证据", icon: FileCheck2, description: "当前项目的不可变完整性账本" },
+  { section: "knowledge", label: "知识中心", icon: Database, description: "当前项目与授权全局来源的可追溯内容" },
+] as const;
+
+const systemSections = [
+  { path: "/projects", label: "项目", icon: FolderGit2, description: "项目治理、独立工作区与资源授权" },
+  { path: "/agents", label: "智能体实例", icon: Bot, description: "角色、部署与运行实例" },
+  { path: "/orchestration", label: "可视化编排", icon: Workflow, description: "Pipeline、DAG 与人工 Gate" },
+  { path: "/settings", label: "设置", icon: Settings, description: "安全运营参数与发布门禁" },
 ] as const;
 
 export function AppShell() {
@@ -27,50 +30,46 @@ export function AppShell() {
   const [rememberedProjectId, setRememberedProjectId] = useState(readActiveProjectId);
   const projects = useProjects();
   const projectId = routeProjectId ?? rememberedProjectId ?? projects.data?.[0]?.id ?? LEGACY_PROJECT_ID;
+
   useEffect(() => {
     if (!routeProjectId) return;
     setRememberedProjectId(routeProjectId);
     rememberActiveProjectId(routeProjectId);
   }, [routeProjectId]);
+
   useEffect(() => {
     if (routeProjectId || !projects.data?.length || projects.data.some((project) => project.id === projectId)) return;
     const fallback = projects.data[0].id;
     setRememberedProjectId(fallback);
     rememberActiveProjectId(fallback);
   }, [projectId, projects.data, routeProjectId]);
-  const scopedSection = projectSections.find((section) => location.pathname.endsWith(`/${section.section}`));
-  const globalSection = globalSections.find((section) => location.pathname === section.path || location.pathname.startsWith(`${section.path}/`));
-  const current = scopedSection ?? globalSection ?? globalSections[0];
+
+  const scopedSection = projectSections.find((section) => location.pathname.includes(`/${section.section}`));
+  const globalSection = systemSections.find((section) => location.pathname === section.path || location.pathname.startsWith(`${section.path}/`));
+  const current = scopedSection ?? globalSection ?? systemSections[0];
   const scopedPaths = projectSections.map((section) => ({ ...section, path: projectPath(projectId, section.section) }));
   const switchProject = (nextProjectId: string) => {
     setRememberedProjectId(nextProjectId);
     rememberActiveProjectId(nextProjectId);
     navigate(projectPath(nextProjectId, scopedSection?.section ?? "overview"));
   };
+
   return <div className="app-shell">
     <aside className="main-sidebar">
-      <div className="brand"><span className="brand-mark"><Boxes size={20}/></span><div><b>Agent-Team-OS</b><small>交付控制平面 · V0.4.0</small></div></div>
-      <nav>
-        <NavLink to="/projects"><FolderGit2 size={17}/><span>项目</span></NavLink>
-        <div className="project-switcher"><ProjectSelect projectId={projectId} projects={projects.data} onChange={switchProject}/></div>
-        {scopedPaths.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}
-        <span className="nav-separator">全局目录</span>
-        {globalSections.filter((section) => section.path !== "/projects").map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}
-      </nav>
-      <div className="system-state"><span className="pulse"/>{user.display_name}<small>{roleLabel(user.role)} · {user.username}</small><Button type="link" onClick={logout} loading={loggingOut}>退出登录</Button></div>
+      <NavLink className="brand" to="/projects" aria-label="Agent-Team-OS 项目目录">
+        <span className="brand-mark"><img className="brand-mark-light" src={mark} alt=""/><img className="brand-mark-dark" src={inverseMark} alt=""/></span>
+        <span><b>Agent-Team-OS</b><small>交付控制平面 · V0.4.0</small></span>
+      </NavLink>
+      <nav aria-label="项目工作区导航"><span className="nav-label">项目工作区</span>{scopedPaths.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
+      <div className="workspace-card project-switcher"><label>当前项目</label><Select id="active-project" aria-label="当前项目" value={projectId} disabled={!projects.data?.length} onChange={switchProject} options={projects.data?.map((project) => ({ value: project.id, label: project.name }))}/><small>{projects.error ? "项目目录暂不可用" : "切换后同步隔离交付、看板、知识与证据"}</small></div>
+      <nav aria-label="系统目录"><span className="nav-label">系统目录</span>{systemSections.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
+      <div className="system-state"><span className="identity-state"><i/>{user.display_name}</span><small>{roleLabel(user.role)} · {user.username}</small><Button type="text" className="text-button" onClick={logout} loading={loggingOut} icon={<LogOut size={14}/>}>{loggingOut ? "正在退出…" : "退出登录"}</Button></div>
     </aside>
-    <main>
-      <header><div><p className="kicker">团队协作控制层</p><h1>{current.label}</h1><p className="page-description">{current.description}</p></div><div className="identity-chip"><Activity size={16}/><span>规划身份<br/><b>Codex 模拟 Hermes</b></span><span>执行身份<br/><b>Codex 命令行</b></span></div></header>
-      <div className="mobile-project-switcher" aria-label="移动端项目切换">
-        <ProjectSelect projectId={projectId} projects={projects.data} onChange={switchProject}/>
-      </div>
+    <main className="app-main">
+      <header className="app-context-bar"><div className="route-context"><span>控制平面　／</span><h1>{current.label}</h1><small>{current.description}</small></div><div className="context-actions"><ThemeToggle/><div className="identity-strip"><span>规划身份<b>Codex 模拟 Hermes</b></span><span>执行身份<b>Codex CLI</b></span></div></div></header>
       <Outlet key={location.pathname.startsWith("/projects/") ? projectId : "global"}/>
     </main>
   </div>;
-}
-
-function ProjectSelect({ projectId, projects, onChange }: { projectId: string; projects: Array<{ id: string; name: string }> | undefined; onChange: (projectId: string) => void }) {
-  return <label>当前项目<Tooltip title={projects?.length ? "切换后，交付、看板、知识与证据会同步切换项目作用域。" : "尚无可用项目"}><Select className="shell-project-select" aria-label="当前项目" value={projectId} onChange={onChange} disabled={!projects?.length} options={projects?.map((project) => ({ value: project.id, label: project.name }))}/></Tooltip></label>;
 }
 
 function roleLabel(role: string) {

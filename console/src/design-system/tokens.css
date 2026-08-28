@@ -1,0 +1,114 @@
+:root,
+[data-theme="light"],
+[data-theme="dark"] {
+  color-scheme: light;
+  --role-canvas: var(--surface);
+  --role-surface: var(--bg);
+  --role-surface-subtle: var(--surface-warm);
+  --role-surface-raised: var(--surface-raised);
+  --role-surface-hover: color-mix(in oklab, var(--fg) 5%, var(--bg));
+  --role-surface-selected: color-mix(in oklab, var(--accent) 7%, var(--bg));
+  --role-surface-inverse: var(--fg);
+  --role-text-primary: var(--fg);
+  --role-text-secondary: var(--fg-2);
+  --role-text-muted: var(--muted);
+  --role-text-meta: color-mix(in oklab, var(--meta), var(--fg) 18%);
+  --role-text-on-inverse: var(--bg);
+  --role-text-disabled: color-mix(in oklab, var(--fg) 45%, transparent);
+  --role-border: var(--border);
+  --role-border-subtle: var(--border-soft);
+  --role-border-strong: color-mix(in oklab, var(--fg) 24%, transparent);
+  --role-focus: var(--accent);
+  --role-action-primary: var(--accent);
+  --role-action-primary-hover: var(--accent-hover);
+  --role-action-primary-active: var(--accent-active);
+  --role-action-on-primary: var(--accent-on);
+  --role-code-surface: var(--surface);
+  --role-backdrop: color-mix(in oklab, var(--fg) 42%, transparent);
+  --role-status-success: color-mix(in oklab, var(--success), var(--fg) 30%);
+  --role-status-warning: color-mix(in oklab, var(--warn), var(--fg) 45%);
+  --role-status-danger: var(--danger);
+
+  --control-height: 44px;
+  --button-primary-bg: var(--role-action-primary);
+  --button-primary-fg: var(--role-action-on-primary);
+  --button-primary-hover-bg: var(--role-action-primary-hover);
+  --button-primary-active-bg: var(--role-action-primary-active);
+  --button-secondary-bg: var(--role-surface);
+  --button-secondary-fg: var(--role-text-primary);
+  --button-secondary-border: var(--role-border);
+  --button-secondary-hover-bg: var(--role-surface-subtle);
+  --button-danger-fg: var(--role-status-danger);
+  --button-disabled-bg: var(--role-surface-subtle);
+  --button-disabled-fg: var(--role-text-disabled);
+  --button-disabled-border: var(--role-border-subtle);
+
+  --field-bg: var(--role-surface);
+  --field-fg: var(--role-text-primary);
+  --field-placeholder: var(--role-text-meta);
+  --field-border: var(--role-border);
+  --field-border-hover: var(--role-text-meta);
+  --field-border-focus: var(--role-focus);
+  --field-readonly-bg: var(--role-surface-subtle);
+  --field-disabled-bg: var(--role-surface-subtle);
+  --field-error-border: var(--role-status-danger);
+  --field-error-ring: 0 0 0 4px color-mix(in oklab, var(--danger), transparent 76%);
+
+  --nav-item-fg: var(--role-text-secondary);
+  --nav-item-hover-bg: var(--role-surface-hover);
+  --nav-item-selected-bg: var(--role-surface-selected);
+  --nav-item-selected-fg: var(--role-text-primary);
+
+  --status-success-fg: var(--role-status-success);
+  --status-success-dot: var(--success);
+  --status-warning-fg: var(--role-status-warning);
+  --status-warning-dot: var(--warn);
+  --status-danger-fg: var(--role-status-danger);
+  --status-danger-dot: var(--danger);
+  --status-neutral-fg: var(--role-text-secondary);
+  --status-neutral-dot: var(--role-text-meta);
+
+  --stage-complete-bg: var(--role-text-primary);
+  --stage-complete-fg: var(--role-surface);
+  --stage-current-bg: var(--role-action-primary);
+  --stage-current-fg: var(--role-action-on-primary);
+  --stage-current-ring: 0 0 0 4px color-mix(in oklab, var(--accent), transparent 84%);
+  --stage-upcoming-bg: var(--role-surface);
+  --stage-upcoming-fg: var(--role-text-muted);
+  --stage-upcoming-border: var(--role-border);
+
+  --inspector-bg: var(--role-surface-raised);
+  --inspector-border: var(--role-border);
+  --inspector-shadow: var(--elev-raised);
+  --code-bg: var(--role-code-surface);
+  --code-fg: var(--role-text-secondary);
+  --code-border: var(--role-border-subtle);
+  --toast-bg: var(--role-surface-inverse);
+  --toast-fg: var(--role-text-on-inverse);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.215 0.006 286);
+  --surface-raised: oklch(0.275 0.008 286);
+  --surface: oklch(0.155 0.006 286);
+  --surface-warm: oklch(0.25 0.008 286);
+  --fg: oklch(0.95 0.004 286);
+  --fg-2: oklch(0.825 0.006 286);
+  --muted: oklch(0.72 0.008 286);
+  --meta: oklch(0.64 0.008 286);
+  --border: oklch(0.36 0.008 286);
+  --border-soft: oklch(0.285 0.008 286);
+  --accent: oklch(0.72 0.17 250);
+  --accent-on: oklch(0.155 0.02 255);
+  --accent-hover: oklch(0.78 0.145 250);
+  --accent-active: oklch(0.66 0.175 250);
+  --success: oklch(0.76 0.15 145);
+  --warn: oklch(0.84 0.145 88);
+  --danger: oklch(0.74 0.175 25);
+  --role-surface-inverse: oklch(0.105 0.006 286);
+  --role-text-on-inverse: oklch(0.955 0.004 286);
+  --role-code-surface: var(--bg);
+  --elev-raised: 0 16px 44px oklch(0 0 0 / 0.38);
+  --focus-ring: 0 0 0 4px color-mix(in oklab, var(--accent), transparent 58%);
+}
