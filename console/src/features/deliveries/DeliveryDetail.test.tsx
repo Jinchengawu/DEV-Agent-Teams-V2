@@ -84,4 +84,46 @@ describe("交付黄金纵切", () => {
     await userEvent.click(screen.getByRole("button", { name: "只重试发布" }));
     expect(retryPublication).toHaveBeenCalledWith("publication-1", 2);
   });
+
+  it("External V2 发布明确表达 Forward-only 且不承诺回滚", async () => {
+    const onDecision = vi.fn();
+    const candidateRevision = "b".repeat(40);
+    const baseRevision = "c".repeat(40);
+    const externalDelivery: Delivery = {
+      ...delivery(),
+      status: "awaiting_candidate_decision",
+      version: 8,
+      plan_gate: undefined,
+      release_bundle_v2_sha256: hash,
+      workcell_candidates: {
+        design: {
+          candidate_id: "candidate-design",
+          workcell_key: "design",
+          workspace_binding_id: "workspace-design",
+          base_revision: baseRevision,
+          candidate_revision: candidateRevision,
+          diff_sha256: hash,
+          verification_sha256: hash,
+          review_artifact_ids: ["review-design"],
+          evidence_sha256: hash,
+        },
+      },
+      candidate_gate: {
+        gate_id: "approve-release",
+        subject_kind: "release-bundle",
+        artifact_id: "bundle-v2",
+        subject_sha256: hash,
+        revision: 7,
+      },
+    };
+    render(<MemoryRouter><DeliveryDetail delivery={externalDelivery} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/></MemoryRouter>);
+
+    expect(screen.getByText("External ReleaseBundleV2 已通过系统校验")).toBeTruthy();
+    expect(screen.getAllByText("Candidate bbbbbbbbbbbb").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "批准四仓 Forward-only 发布" }));
+    expect(screen.getByRole("alertdialog", { name: "批准四仓 Forward-only ReleaseBundleV2" })).toBeTruthy();
+    expect(screen.getByText(/已成功仓库不回滚/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "确认 Forward-only 发布" }));
+    expect(onDecision).toHaveBeenCalledWith("accept-candidate");
+  });
 });

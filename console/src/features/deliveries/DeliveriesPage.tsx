@@ -47,6 +47,7 @@ export function DeliveriesPage() {
   const selectedPipeline = activePipelines.find(
     (pipeline) => `${pipeline.id}:${pipeline.active_revision}` === pipelineRevisionId,
   );
+  const workcellProject = project.data?.workspace.repository_ref?.startsWith("workspace-set/") ?? false;
 
   const review = (event: FormEvent) => {
     event.preventDefault();
@@ -94,8 +95,8 @@ export function DeliveriesPage() {
 
         <div className="composer-config">
           <label className="field"><span>执行 Pipeline</span><Select id="delivery-pipeline" aria-label="执行 Pipeline" value={pipelineRevisionId || undefined} placeholder="请选择已激活版本" onChange={(value) => { setPipelineRevisionId(value); setReviewing(false); setProblem(""); }} options={activePipelines.map((pipeline) => ({ value: `${pipeline.id}:${pipeline.active_revision}`, label: `${pipeline.name} · R${pipeline.active_revision}` }))}/></label>
-          <div className="readonly-field"><span>项目工作区</span><b>{project.data?.workspace.workspace_id ?? projectId}</b><small>独立 Git Main，候选应用受 CAS 保护</small></div>
-          <div className="readonly-field"><span>Agent 授权</span><b>{project.data?.deployment_access.filter((access) => access.enabled).length ?? 0} 个 Deployment</b><small>创建时与 Pipeline Revision 一并冻结</small></div>
+          <div className="readonly-field"><span>项目工作区</span><b>{workcellProject ? "Repository Workcell Set" : project.data?.workspace.workspace_id ?? projectId}</b><small>{workcellProject ? "每个 Workcell 独占 Primary Repository；跨 Workcell 只传 Artifact" : "独立 Git Main，候选应用受 CAS 保护"}</small></div>
+          <div className="readonly-field"><span>Agent 授权</span><b>{workcellProject ? "Pipeline 冻结 Slot" : `${project.data?.deployment_access.filter((access) => access.enabled).length ?? 0} 个 Deployment`}</b><small>{workcellProject ? "Provider Binding 已在 Published Revision 预解析" : "创建时与 Pipeline Revision 一并冻结"}</small></div>
         </div>
 
         {pipelines.error && <ErrorState error={pipelines.error} retry={() => pipelines.refetch()}/>}
@@ -105,7 +106,7 @@ export function DeliveriesPage() {
         {!reviewing ? <div className="composer-actions"><span>提交后先检查边界，再创建真实交付运行。</span><Button className="primary" htmlType="submit" disabled={pipelines.isLoading || activePipelines.length === 0}>生成交付计划</Button></div> :
           <section className="delivery-confirmation" aria-label="确认交付边界">
             <div><span className="eyebrow">提交前确认</span><h3>目标与执行边界</h3></div>
-            <dl><dt>目标</dt><dd>{requestText.trim()}</dd><dt>Pipeline</dt><dd>{selectedPipeline?.name} · R{selectedPipeline?.active_revision}</dd><dt>执行方式</dt><dd>隔离工作区 · 计划与候选双审批</dd></dl>
+            <dl><dt>目标</dt><dd>{requestText.trim()}</dd><dt>Pipeline</dt><dd>{selectedPipeline?.name} · R{selectedPipeline?.active_revision}</dd><dt>执行方式</dt><dd>{workcellProject ? "四个隔离 Repository Workcell · 计划 / 设计 / 发布 Gate" : "隔离工作区 · 计划与候选双审批"}</dd></dl>
             <div className="confirm-actions"><Button className="secondary" onClick={() => { setReviewing(false); document.getElementById("delivery-goal")?.focus(); }}>继续编辑</Button><Button className="primary" loading={create.isPending} onClick={() => create.mutate({ userRequest: requestText.trim(), pipelineRevisionId })}>{create.isPending ? "正在创建交付…" : "确认并启动"}</Button></div>
           </section>}
         {create.error && <ErrorState error={create.error}/>}

@@ -3,11 +3,38 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+class WorkcellStageBinding(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    workcell_key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", max_length=120)
+    slot_bindings: dict[
+        Literal["main", "delegate_1", "delegate_2", "delegate_3"], str
+    ] = Field(min_length=1, max_length=4)
+    delegate_methods: dict[
+        Literal["delegate_1", "delegate_2", "delegate_3"], str
+    ] = Field(default_factory=dict)
+    delegate_purposes: dict[
+        Literal["delegate_1", "delegate_2", "delegate_3"],
+        Literal["workspace_write", "artifact", "review"],
+    ] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def main_slot_is_required(self) -> WorkcellStageBinding:
+        required = {"main", "delegate_1", "delegate_2", "delegate_3"}
+        if set(self.slot_bindings) != required:
+            raise ValueError("workcell stage binding requires all four frozen slots")
+        if len(set(self.slot_bindings.values())) != len(self.slot_bindings):
+            raise ValueError("provider binding sites must be unique within a stage")
+        if set(self.delegate_methods) != set(self.delegate_purposes):
+            raise ValueError("delegate method and purpose slots must match")
+        return self
 
 
 class Pipeline(BaseModel):
@@ -33,6 +60,8 @@ class PipelineDraft(BaseModel):
     layout: dict[str, object] = Field(default_factory=dict)
     input_schema: dict[str, object] = Field(default_factory=dict)
     agent_assignments: dict[str, str] = Field(default_factory=dict)
+    workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
+    release_contract_snapshot: tuple[str, ...] = ()
     version: int = Field(default=1, ge=1)
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
     validation_errors: tuple[str, ...] = ()
@@ -51,6 +80,8 @@ class PipelineRevision(BaseModel):
     binding_snapshot: dict[str, dict[str, object]]
     binding_model: Literal["legacy-v0", "provider-v1"] = "legacy-v0"
     resolved_provider_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
+    workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
+    release_contract_snapshot: tuple[str, ...] = ()
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     published_by: str
     published_at: datetime = Field(default_factory=utc_now)
@@ -88,6 +119,8 @@ class PipelineCreate(BaseModel):
     layout: dict[str, object] = Field(default_factory=dict)
     input_schema: dict[str, object] = Field(default_factory=dict)
     agent_assignments: dict[str, str] = Field(default_factory=dict)
+    workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
+    release_contract_snapshot: tuple[str, ...] = ()
 
 
 class PipelineDraftPatch(BaseModel):
@@ -99,6 +132,8 @@ class PipelineDraftPatch(BaseModel):
     layout: dict[str, object] | None = None
     input_schema: dict[str, object] | None = None
     agent_assignments: dict[str, str] | None = None
+    workcell_stage_map: dict[str, WorkcellStageBinding] | None = None
+    release_contract_snapshot: tuple[str, ...] | None = None
 
 
 class PipelineWithDraft(BaseModel):

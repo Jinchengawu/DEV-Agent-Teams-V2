@@ -20,6 +20,7 @@ from agent_team_os.modules.agents import (
     SQLiteAgentDeploymentRepository,
     SQLiteAgentProfileRepository,
 )
+from agent_team_os.modules.artifacts import ContentAddressedArtifactStorage
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
 from agent_team_os.modules.knowledge import (
@@ -31,8 +32,29 @@ from agent_team_os.modules.knowledge import (
 )
 from agent_team_os.modules.orchestration import PipelineCatalog, SQLitePipelineRepository
 from agent_team_os.modules.projects import ProjectCatalog, SQLiteProjectRepository
+from agent_team_os.modules.releases import (
+    ExternalForwardReleaseCoordinator,
+    SQLiteExternalReleaseRepository,
+)
 from agent_team_os.modules.settings import SettingsManager, SQLiteSettingsRepository
+from agent_team_os.modules.workcells import (
+    ProjectWorkcellGovernance,
+    SQLiteProjectWorkcellRepository,
+    SQLiteTeamTemplateRepository,
+    SQLiteWorkcellExecutionRepository,
+    TeamTemplateCatalog,
+    WorkcellExecutionModule,
+)
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
+
+
+class _SchemaOnlyRemote:
+    def revision(self, _candidate: object) -> str:
+        raise RuntimeError("OpenAPI schema remote must not be called")
+
+    def apply(self, _candidate: object, *, ordinal: int) -> object:
+        del ordinal
+        raise RuntimeError("OpenAPI schema remote must not be called")
 
 
 def main() -> None:
@@ -53,8 +75,29 @@ def main() -> None:
         agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
         providers = ProviderManifestCatalog()
         knowledge_publications = KnowledgePublicationLedger(database)
+        project_repository = SQLiteProjectRepository(database)
+        managed_git = ProjectGitWorkspaces(Path(directory) / "workspaces")
+        team_templates = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database))
+        project_workcells = ProjectWorkcellGovernance(
+            SQLiteProjectWorkcellRepository(database),
+            teams=team_templates,
+            projects=project_repository,
+            managed_git=managed_git,
+        )
         projects = ProjectCatalog(
-            SQLiteProjectRepository(database), ProjectGitWorkspaces(Path(directory) / "workspaces")
+            project_repository,
+            managed_git,
+            team_governance=project_workcells,
+        )
+        artifacts = ContentAddressedArtifactStorage(Path(directory) / "artifacts")
+        workcell_execution = WorkcellExecutionModule(
+            SQLiteWorkcellExecutionRepository(database),
+            artifact_storage=artifacts,
+        )
+        external_release_repository = SQLiteExternalReleaseRepository(database)
+        external_release = ExternalForwardReleaseCoordinator(
+            external_release_repository,
+            _SchemaOnlyRemote(),  # type: ignore[arg-type]
         )
         app = create_app(
             coordinator,
@@ -77,6 +120,10 @@ def main() -> None:
             knowledge_search=KnowledgeSearchIndex(database),
             knowledge_publications=knowledge_publications,
             knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
+            team_templates=team_templates,
+            project_workcells=project_workcells,
+            workcell_execution=workcell_execution,
+            external_release=external_release,
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

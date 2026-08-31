@@ -91,7 +91,22 @@ from .modules.orchestration import (
     create_pipeline_router,
 )
 from .modules.projects import Project, ProjectCatalog, ProjectDetail, create_project_router
+from .modules.releases import (
+    ExternalForwardReleaseCoordinator,
+    create_external_release_router,
+)
 from .modules.settings import SettingsManager, create_settings_router
+from .modules.workcells import (
+    DeliveryExecutionSnapshotCompiler,
+    ProjectWorkcellGovernance,
+    TeamTemplateCatalog,
+    WorkcellExecutionModule,
+    WorkcellRunTree,
+    WorkcellStageDriver,
+    create_project_workcell_router,
+    create_team_template_router,
+    create_workcell_execution_router,
+)
 from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
 from .shared.errors import ProblemDetail, ProductError
@@ -177,6 +192,12 @@ def create_app(
     knowledge_publications: KnowledgePublicationLedger | None = None,
     knowledge_publisher: KnowledgePublisher | None = None,
     evaluations: EvaluationService | None = None,
+    team_templates: TeamTemplateCatalog | None = None,
+    project_workcells: ProjectWorkcellGovernance | None = None,
+    workcell_execution: WorkcellExecutionModule | None = None,
+    delivery_snapshot_compiler: DeliveryExecutionSnapshotCompiler | None = None,
+    external_release: ExternalForwardReleaseCoordinator | None = None,
+    workcell_stage_driver: WorkcellStageDriver | None = None,
 ) -> FastAPI:
     if pipeline_catalog is not None and pipeline_runs is not None:
         coordinator.configure_pipeline_runtime(
@@ -187,10 +208,12 @@ def create_app(
             publications=knowledge_publications,
             publication_barrier=knowledge_publications,
             document_publisher=knowledge_publisher,
+            workcell_stage_driver=workcell_stage_driver,
+            external_release=external_release,
         )
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.4.0",
+        version="0.5.0",
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},
@@ -329,6 +352,65 @@ def create_app(
                 authorize_manage=lambda request: require_permission(
                     request, Permission.RUNTIME_EXTENSION_MANAGE
                 ),
+            )
+        )
+
+    if team_templates is not None:
+
+        def team_template_actor_id(request: Request) -> str:
+            actor = getattr(request.state, "identity_user", None)
+            return actor.id if isinstance(actor, User) else "local-system"
+
+        app.include_router(
+            create_team_template_router(
+                team_templates,
+                actor_id=team_template_actor_id,
+                authorize_edit=lambda request: require_permission(
+                    request, Permission.JOURNEY_EDIT
+                ),
+                authorize_publish=lambda request: require_permission(
+                    request, Permission.JOURNEY_PUBLISH
+                ),
+            )
+        )
+
+    if project_workcells is not None:
+        app.include_router(
+            create_project_workcell_router(
+                project_workcells,
+                authorize_manage=lambda request: require_permission(
+                    request, Permission.PROJECT_MANAGE
+                ),
+            )
+        )
+
+    if workcell_execution is not None:
+
+        def cancel_workcell_delivery(tree: WorkcellRunTree) -> None:
+            delivery = coordinator.get(tree.workcell_run.delivery_id)
+            if delivery.status not in {"completed", "rejected", "failed", "cancelled"}:
+                coordinator.cancel(delivery.id, expected_version=delivery.version)
+
+        app.include_router(
+            create_workcell_execution_router(
+                workcell_execution,
+                authorize_cancel=lambda request: require_permission(
+                    request, Permission.WORKCELL_CANCEL
+                ),
+                after_cancel=(
+                    cancel_workcell_delivery if workcell_stage_driver is not None else None
+                ),
+            )
+        )
+
+    if external_release is not None:
+        app.include_router(
+            create_external_release_router(
+                external_release,
+                authorize_apply=lambda request: require_permission(
+                    request, Permission.CANDIDATE_APPLY
+                ),
+                after_resume=coordinator.finalize_external_release,
             )
         )
 
@@ -1005,7 +1087,11 @@ def create_app(
                 if pipeline_catalog is None or effective_pipeline_revision_id is None
                 else pipeline_catalog.resolve_active_revision(effective_pipeline_revision_id)
             )
-            if pipeline_revision is not None and project_context is not None:
+            if (
+                pipeline_revision is not None
+                and project_context is not None
+                and not pipeline_revision.workcell_stage_map
+            ):
                 assigned: set[str] = set()
                 for value in pipeline_revision.resolved_provider_bindings.values():
                     deployment = value.get("deployment")
@@ -1019,6 +1105,20 @@ def create_app(
                         detail="未授权部署：" + "、".join(forbidden),
                         repair="在项目智能体授权中启用这些 Deployment 后重试。",
                     )
+            delivery_execution_snapshot = None
+            if pipeline_revision is not None and pipeline_revision.workcell_stage_map:
+                if delivery_snapshot_compiler is None:
+                    raise ProductError(
+                        code="DELIVERY_EXECUTION_SNAPSHOT_COMPILER_UNAVAILABLE",
+                        title="Workcell Delivery Snapshot Compiler 未配置",
+                        detail="无法冻结 Team、Pipeline、Provider、Workspace 与 Method Revision。",
+                        repair="配置 DeliveryExecutionSnapshotCompiler 后重新创建交付。",
+                        status_code=503,
+                    )
+                delivery_execution_snapshot = delivery_snapshot_compiler.compile(
+                    effective_project_id,
+                    f"{pipeline_revision.pipeline_id}:{pipeline_revision.revision}",
+                )
             revision = None
             if control_plane is not None and pipeline_revision is None:
                 try:
@@ -1052,6 +1152,7 @@ def create_app(
                     if project_context is None
                     else ProjectExecutionSnapshot.model_validate(project_context.model_dump())
                 ),
+                delivery_execution_snapshot=delivery_execution_snapshot,
                 user_request=request_body.user_request,
                 pipeline_revision_id=(
                     None

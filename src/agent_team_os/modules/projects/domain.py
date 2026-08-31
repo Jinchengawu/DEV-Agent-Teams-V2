@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...shared.hashes import Sha256
 from ...shared.repositories import RepositoryRole, RepositorySnapshot
@@ -74,7 +74,19 @@ class ProjectCreate(BaseModel):
     description: str = Field(default="", max_length=2_000)
     default_pipeline_revision_id: str
     deployment_ids: tuple[str, ...] = ()
-    repository_mode: Literal["backend", "fullstack"] = "backend"
+    team_template_revision_id: str | None = Field(default=None, min_length=3, max_length=180)
+    repository_mode: Literal["backend", "fullstack"] = Field(
+        default="backend",
+        json_schema_extra={"deprecated": True},
+    )
+
+    @model_validator(mode="after")
+    def legacy_repository_mode_is_not_mixed_with_workcells(self) -> ProjectCreate:
+        if self.team_template_revision_id is not None and self.repository_mode != "backend":
+            raise ValueError(
+                "repository_mode cannot be combined with team_template_revision_id"
+            )
+        return self
 
 
 class ProjectPatch(BaseModel):

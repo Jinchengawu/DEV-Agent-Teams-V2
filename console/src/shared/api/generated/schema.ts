@@ -438,6 +438,297 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/team-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Team Templates */
+        get: operations["list_team_templates_v1_team_templates_get"];
+        put?: never;
+        /** Create Team Template */
+        post: operations["create_team_template_v1_team_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/team-template-drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Team Template Draft */
+        get: operations["get_team_template_draft_v1_team_template_drafts__draft_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Team Template Draft */
+        patch: operations["patch_team_template_draft_v1_team_template_drafts__draft_id__patch"];
+        trace?: never;
+    };
+    "/v1/team-templates/{template_id}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Team Template Drafts */
+        get: operations["list_team_template_drafts_v1_team_templates__template_id__drafts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/team-template-drafts/{draft_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate Team Template Draft */
+        post: operations["validate_team_template_draft_v1_team_template_drafts__draft_id__validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/team-template-drafts/{draft_id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Team Template Draft */
+        post: operations["publish_team_template_draft_v1_team_template_drafts__draft_id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/team-templates/{template_id}/revisions/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Team Template Revision */
+        get: operations["get_team_template_revision_v1_team_templates__template_id__revisions__revision__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/workcells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Project Workcells */
+        get: operations["get_project_workcells_v1_projects__project_id__workcells_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/workspace-bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Workspace Binding */
+        post: operations["create_workspace_binding_v1_projects__project_id__workspace_bindings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace-bindings/{workspace_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Workspace Binding */
+        post: operations["verify_workspace_binding_v1_workspace_bindings__workspace_id__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/team-activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate Project Team */
+        post: operations["activate_project_team_v1_projects__project_id__team_activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/deliveries/{delivery_id}/workcell-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Delivery Workcell Runs */
+        get: operations["list_delivery_workcell_runs_v1_deliveries__delivery_id__workcell_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workcell-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workcell Run */
+        get: operations["get_workcell_run_v1_workcell_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workcell-runs/{run_id}/agent-attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workcell Agent Attempts */
+        get: operations["list_workcell_agent_attempts_v1_workcell_runs__run_id__agent_attempts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workcell-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Workcell Run */
+        post: operations["cancel_workcell_run_v1_workcell_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/releases/{delivery_id}/resume-forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Forward */
+        post: operations["resume_forward_v1_releases__delivery_id__resume_forward_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/release-health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Release Health */
+        get: operations["get_release_health_v1_projects__project_id__release_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/releases/{delivery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get External Release */
+        get: operations["get_external_release_v1_releases__delivery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deliveries/{delivery_id}/agent-runs": {
         parameters: {
             query?: never;
@@ -1568,6 +1859,40 @@ export interface components {
             /** Statement */
             statement: string;
         };
+        /** AgentAttempt */
+        AgentAttempt: {
+            /** Id */
+            id?: string;
+            /** Agent Run Id */
+            agent_run_id: string;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "planning" | "delegate" | "synthesis" | "legacy";
+            /** Ordinal */
+            ordinal: number;
+            /** Provider Binding Hash */
+            provider_binding_hash: string;
+            /** Runtime Identity */
+            runtime_identity?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted";
+            /** Error Code */
+            error_code?: string | null;
+            /** Result Artifact Sha256 */
+            result_artifact_sha256?: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at?: string;
+            /** Finished At */
+            finished_at?: string | null;
+        };
         /** AgentCapabilityRequirement */
         AgentCapabilityRequirement: {
             /** Id */
@@ -1952,6 +2277,31 @@ export interface components {
             runtime_identity?: string | null;
             /** Status */
             status: string;
+            /** Workcell Run Id */
+            workcell_run_id?: string | null;
+            /** Parent Agent Run Id */
+            parent_agent_run_id?: string | null;
+            /** Root Agent Run Id */
+            root_agent_run_id?: string | null;
+            /**
+             * Depth
+             * @default 0
+             */
+            depth: number;
+            /**
+             * Run Role
+             * @default main
+             */
+            run_role: string;
+            /** Delegate Purpose */
+            delegate_purpose?: string | null;
+            /**
+             * Workspace Access
+             * @default legacy
+             */
+            workspace_access: string;
+            /** Slot Key */
+            slot_key?: string | null;
             /**
              * Artifact Envelopes
              * @default []
@@ -2126,6 +2476,15 @@ export interface components {
             /** Expected Version */
             expected_version: number;
         };
+        /** BlockingFinding */
+        BlockingFinding: {
+            /** Code */
+            code: string;
+            /** Summary */
+            summary: string;
+            /** Evidence Sha256 */
+            evidence_sha256: string;
+        };
         /** BootstrapRequest */
         BootstrapRequest: {
             /**
@@ -2183,6 +2542,35 @@ export interface components {
             expected_version: number;
             /** Expected Subject Sha256 */
             expected_subject_sha256: string;
+        };
+        /** CandidateVerification */
+        CandidateVerification: {
+            /** Id */
+            id?: string;
+            /** Workcell Run Id */
+            workcell_run_id: string;
+            /** Writer Agent Run Id */
+            writer_agent_run_id: string;
+            /** Candidate Sha */
+            candidate_sha: string;
+            /** Diff Sha256 */
+            diff_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed";
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
         };
         /** CapabilityBinding */
         CapabilityBinding: {
@@ -2255,6 +2643,140 @@ export interface components {
             /** Resolved */
             resolved?: boolean | null;
         };
+        /** DelegationAssignment */
+        DelegationAssignment: {
+            /**
+             * Slot Key
+             * @enum {string}
+             */
+            slot_key: "delegate_1" | "delegate_2" | "delegate_3";
+            /**
+             * Delegate Purpose
+             * @enum {string}
+             */
+            delegate_purpose: "workspace_write" | "artifact" | "review";
+            /**
+             * Workspace Access
+             * @enum {string}
+             */
+            workspace_access: "none" | "workspace_write" | "candidate_read" | "artifact_only" | "legacy";
+            /** Method Id */
+            method_id?: string | null;
+            /**
+             * Input Artifacts
+             * @default []
+             */
+            input_artifacts: components["schemas"]["ArtifactReference"][];
+        };
+        /** DelegationPlan */
+        DelegationPlan: {
+            /** Id */
+            id?: string;
+            /** Workcell Run Id */
+            workcell_run_id: string;
+            /** Main Agent Run Id */
+            main_agent_run_id: string;
+            /** Assignments */
+            assignments: components["schemas"]["DelegationAssignment"][];
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** DelegationPolicy */
+        DelegationPolicy: {
+            /**
+             * Max Children
+             * @default 3
+             */
+            max_children: number;
+            /**
+             * Max Concurrency
+             * @default 2
+             */
+            max_concurrency: number;
+            /**
+             * Max Writers
+             * @default 1
+             */
+            max_writers: number;
+            /**
+             * Max Depth
+             * @default 1
+             * @constant
+             */
+            max_depth: 1;
+            /**
+             * Wall Clock Budget Seconds
+             * @default 900
+             */
+            wall_clock_budget_seconds: number;
+        };
+        /** DeliveryExecutionSnapshot */
+        DeliveryExecutionSnapshot: {
+            /** Project Id */
+            project_id: string;
+            /** Project Version */
+            project_version: number;
+            /** Team Template Revision Id */
+            team_template_revision_id: string;
+            /** Team Template Sha256 */
+            team_template_sha256: string;
+            /** Team Workcells */
+            team_workcells: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Pipeline Revision Sha256 */
+            pipeline_revision_sha256: string;
+            /** Workcell Stage Map */
+            workcell_stage_map: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Release Contract Snapshot */
+            release_contract_snapshot: string[];
+            /** Resolved Provider Bindings */
+            resolved_provider_bindings: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+            /** Workspaces */
+            workspaces: components["schemas"]["DeliveryWorkspaceSnapshot"][];
+            method_snapshot: components["schemas"]["DeliveryMethodSnapshot"];
+            /** Snapshot Sha256 */
+            snapshot_sha256: string;
+            /**
+             * Compiled At
+             * Format: date-time
+             */
+            compiled_at?: string;
+        };
+        /** DeliveryMethodSnapshot */
+        DeliveryMethodSnapshot: {
+            /** Snapshot Id */
+            snapshot_id: string;
+            /** Qualification Sha256 */
+            qualification_sha256: string;
+            /** Packages */
+            packages: {
+                [key: string]: unknown;
+            }[];
+            /** Method Entries */
+            method_entries: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         /** DeliveryRequest */
         DeliveryRequest: {
             /** Project Id */
@@ -2280,13 +2802,14 @@ export interface components {
             /** Workspace Id */
             workspace_id: string;
             project_execution_snapshot?: components["schemas"]["ProjectExecutionSnapshot"] | null;
+            delivery_execution_snapshot?: components["schemas"]["DeliveryExecutionSnapshot"] | null;
             /** User Request */
             user_request: string;
             /**
              * Status
              * @enum {string}
              */
-            status: "queued" | "planning" | "awaiting_plan_decision" | "awaiting_design_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "completed" | "rejected" | "failed" | "cancelled";
+            status: "queued" | "planning" | "awaiting_plan_decision" | "awaiting_design_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "needs_attention" | "completed" | "rejected" | "failed" | "cancelled";
             /** Version */
             version: number;
             requirements?: components["schemas"]["RequirementArtifact"] | null;
@@ -2298,8 +2821,16 @@ export interface components {
              * @default []
              */
             repository_candidates: components["schemas"]["RepositoryCandidate"][];
+            /** Workcell Candidates */
+            workcell_candidates?: {
+                [key: string]: components["schemas"]["WorkcellCandidateProjection"];
+            };
             release_bundle?: components["schemas"]["ReleaseBundle"] | null;
+            /** Release Bundle V2 Sha256 */
+            release_bundle_v2_sha256?: string | null;
             release_manifest?: components["schemas"]["ReleaseManifest"] | null;
+            /** Release Manifest V2 Sha256 */
+            release_manifest_v2_sha256?: string | null;
             apply_receipt?: components["schemas"]["ApplyReceipt"] | null;
             plan_gate?: components["schemas"]["GateRecord"] | null;
             design_gate?: components["schemas"]["GateRecord"] | null;
@@ -2344,6 +2875,29 @@ export interface components {
             planning_identity: string;
             /** Execution Identity */
             execution_identity?: string | null;
+        };
+        /** DeliveryWorkspaceSnapshot */
+        DeliveryWorkspaceSnapshot: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** Workspace Binding Id */
+            workspace_binding_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "git_repository_v1";
+            /**
+             * Adapter Type
+             * @enum {string}
+             */
+            adapter_type: "managed-bare-git" | "external-git";
+            /** Repository Uri */
+            repository_uri: string;
+            /** Base Revision */
+            base_revision: string;
+            /** Verification Sha256 */
+            verification_sha256: string;
         };
         /** DesignDecisionRequest */
         DesignDecisionRequest: {
@@ -2499,6 +3053,50 @@ export interface components {
              */
             verified_at: string;
         };
+        /**
+         * ExternalReleaseView
+         * @description Observable projection for PR, partial Apply receipts and Manifest evidence.
+         */
+        ExternalReleaseView: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id?: string | null;
+            /**
+             * Candidates
+             * @default []
+             */
+            candidates: components["schemas"]["WorkspaceCandidateV2"][];
+            /**
+             * Pull Requests
+             * @default []
+             */
+            pull_requests: components["schemas"]["GitHubPRReceipt"][];
+            bundle?: components["schemas"]["ReleaseBundleV2"] | null;
+            apply_attempt?: components["schemas"]["ReleaseApplyAttemptV2"] | null;
+            /**
+             * Remote Apply Receipts
+             * @default []
+             */
+            remote_apply_receipts: components["schemas"]["RemoteApplyReceipt"][];
+            manifest?: components["schemas"]["ReleaseManifestV2"] | null;
+        };
+        /** FrozenSlotBinding */
+        FrozenSlotBinding: {
+            /**
+             * Slot Key
+             * @enum {string}
+             */
+            slot_key: "main" | "delegate_1" | "delegate_2" | "delegate_3";
+            /** Deployment Id */
+            deployment_id: string;
+            /** Resolved Provider Binding Hash */
+            resolved_provider_binding_hash: string;
+            /** Deployment Snapshot */
+            deployment_snapshot: {
+                [key: string]: unknown;
+            };
+        };
         /** GateRecord */
         GateRecord: {
             /** Gate Id */
@@ -2588,6 +3186,43 @@ export interface components {
             browser_candidate_matches_main: boolean;
             /** Error */
             error?: string | null;
+        };
+        /** GitHubPRReceipt */
+        GitHubPRReceipt: {
+            /** Candidate Id */
+            candidate_id: string;
+            /**
+             * Provider
+             * @default github
+             * @constant
+             */
+            provider: "github";
+            /** Pull Request Id */
+            pull_request_id: number;
+            /** Url */
+            url: string;
+            /**
+             * Base Branch
+             * @default main
+             * @constant
+             */
+            base_branch: "main";
+            /** Head Branch */
+            head_branch: string;
+            /** Head Candidate Sha */
+            head_candidate_sha: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "open" | "draft" | "closed" | "merged";
+            /** Receipt Sha256 */
+            receipt_sha256: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at?: string;
         };
         /** HealthResult */
         HealthResult: {
@@ -2969,6 +3604,15 @@ export interface components {
             agent_assignments?: {
                 [key: string]: string;
             };
+            /** Workcell Stage Map */
+            workcell_stage_map?: {
+                [key: string]: components["schemas"]["WorkcellStageBinding"];
+            };
+            /**
+             * Release Contract Snapshot
+             * @default []
+             */
+            release_contract_snapshot: string[];
         };
         /** PipelineDraft */
         PipelineDraft: {
@@ -2994,6 +3638,15 @@ export interface components {
             agent_assignments?: {
                 [key: string]: string;
             };
+            /** Workcell Stage Map */
+            workcell_stage_map?: {
+                [key: string]: components["schemas"]["WorkcellStageBinding"];
+            };
+            /**
+             * Release Contract Snapshot
+             * @default []
+             */
+            release_contract_snapshot: string[];
             /**
              * Version
              * @default 1
@@ -3045,6 +3698,12 @@ export interface components {
             agent_assignments?: {
                 [key: string]: string;
             } | null;
+            /** Workcell Stage Map */
+            workcell_stage_map?: {
+                [key: string]: components["schemas"]["WorkcellStageBinding"];
+            } | null;
+            /** Release Contract Snapshot */
+            release_contract_snapshot?: string[] | null;
         };
         /** PipelineRevision */
         PipelineRevision: {
@@ -3078,6 +3737,15 @@ export interface components {
                     [key: string]: unknown;
                 };
             };
+            /** Workcell Stage Map */
+            workcell_stage_map?: {
+                [key: string]: components["schemas"]["WorkcellStageBinding"];
+            };
+            /**
+             * Release Contract Snapshot
+             * @default []
+             */
+            release_contract_snapshot: string[];
             /** Fingerprint */
             fingerprint: string;
             /** Published By */
@@ -3243,8 +3911,11 @@ export interface components {
              * @default []
              */
             deployment_ids: string[];
+            /** Team Template Revision Id */
+            team_template_revision_id?: string | null;
             /**
              * Repository Mode
+             * @deprecated
              * @default backend
              * @enum {string}
              */
@@ -3432,10 +4103,68 @@ export interface components {
              */
             updated_at?: string;
         };
+        /** ProjectTeamBinding */
+        ProjectTeamBinding: {
+            /** Project Id */
+            project_id: string;
+            /** Template Id */
+            template_id: string;
+            /** Template Revision */
+            template_revision: number;
+            /** Template Sha256 */
+            template_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "provisioning" | "active" | "legacy_projected";
+            /** Version */
+            version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
         /** ProjectVersionRequest */
         ProjectVersionRequest: {
             /** Expected Version */
             expected_version: number;
+        };
+        /** ProjectWorkcellBinding */
+        ProjectWorkcellBinding: {
+            /** Project Id */
+            project_id: string;
+            /** Workcell Key */
+            workcell_key: string;
+            /** Workspace Binding Id */
+            workspace_binding_id: string;
+            /** Version */
+            version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** ProjectWorkcellTopology */
+        ProjectWorkcellTopology: {
+            /** Project Id */
+            project_id: string;
+            /** Project Status */
+            project_status: string;
+            team_binding: components["schemas"]["ProjectTeamBinding"];
+            team_revision: components["schemas"]["TeamTemplateRevision"];
+            /**
+             * Workcell Bindings
+             * @default []
+             */
+            workcell_bindings: components["schemas"]["ProjectWorkcellBinding"][];
+            /**
+             * Workspace Bindings
+             * @default []
+             */
+            workspace_bindings: components["schemas"]["WorkspaceBinding"][];
         };
         /** ProjectWorkspace */
         ProjectWorkspace: {
@@ -3505,6 +4234,34 @@ export interface components {
              */
             permission_requirements: string[];
         };
+        /** ReleaseApplyAttemptV2 */
+        ReleaseApplyAttemptV2: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Bundle Sha256 */
+            bundle_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "applying" | "needs_attention" | "completed";
+            /** Error Code */
+            error_code?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
         /** ReleaseBundle */
         ReleaseBundle: {
             /** Delivery Id */
@@ -3531,6 +4288,55 @@ export interface components {
              */
             verified_at?: string;
         };
+        /** ReleaseBundleV2 */
+        ReleaseBundleV2: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Release Contract Snapshot */
+            release_contract_snapshot: string[];
+            /** Candidates */
+            candidates: components["schemas"]["WorkspaceCandidateV2"][];
+            /** Bundle Sha256 */
+            bundle_sha256: string;
+            /**
+             * Status
+             * @default verified
+             * @constant
+             */
+            status: "verified";
+            /**
+             * Verified At
+             * Format: date-time
+             */
+            verified_at?: string;
+        };
+        /** ReleaseHealthV2 */
+        ReleaseHealthV2: {
+            /** Project Id */
+            project_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "healthy" | "release_drifted";
+            /** Delivery Id */
+            delivery_id?: string | null;
+            /** Bundle Sha256 */
+            bundle_sha256?: string | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
         /** ReleaseManifest */
         ReleaseManifest: {
             /** Delivery Id */
@@ -3556,6 +4362,63 @@ export interface components {
              * Format: date-time
              */
             activated_at?: string;
+        };
+        /** ReleaseManifestV2 */
+        ReleaseManifestV2: {
+            /** Project Id */
+            project_id: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Bundle Sha256 */
+            bundle_sha256: string;
+            /** Repositories */
+            repositories: components["schemas"]["RemoteApplyReceipt"][];
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /**
+             * Status
+             * @default active
+             * @constant
+             */
+            status: "active";
+            /**
+             * Activated At
+             * Format: date-time
+             */
+            activated_at?: string;
+        };
+        /** RemoteApplyReceipt */
+        RemoteApplyReceipt: {
+            /** Delivery Id */
+            delivery_id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Candidate Id */
+            candidate_id: string;
+            /** Workcell Key */
+            workcell_key: string;
+            /** Repository Uri */
+            repository_uri: string;
+            /** Before Revision */
+            before_revision: string;
+            /** Candidate Revision */
+            candidate_revision: string;
+            /** After Revision */
+            after_revision: string;
+            /**
+             * Recovered
+             * @default false
+             */
+            recovered: boolean;
+            /** Receipt Sha256 */
+            receipt_sha256: string;
+            /**
+             * Applied At
+             * Format: date-time
+             */
+            applied_at?: string;
         };
         /** RepositoryApplyReceipt */
         RepositoryApplyReceipt: {
@@ -3624,6 +4487,34 @@ export interface components {
             risks: string[];
             /** Acceptance Criteria */
             acceptance_criteria: components["schemas"]["AcceptanceCriterion"][];
+        };
+        /** ReviewArtifact */
+        ReviewArtifact: {
+            /** Id */
+            id?: string;
+            /** Workcell Run Id */
+            workcell_run_id: string;
+            /** Reviewer Agent Run Id */
+            reviewer_agent_run_id: string;
+            /** Candidate Sha */
+            candidate_sha: string;
+            /** Diff Sha256 */
+            diff_sha256: string;
+            /** Reviewer Binding Hash */
+            reviewer_binding_hash: string;
+            /**
+             * Blocking Findings
+             * @default []
+             */
+            blocking_findings: components["schemas"]["BlockingFinding"][];
+            artifact_reference: components["schemas"]["ArtifactReference"];
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
         };
         /** Revision */
         Revision: {
@@ -3810,6 +4701,175 @@ export interface components {
              */
             system_policy: components["schemas"]["SystemPolicy"];
         };
+        /** TeamActivationRequest */
+        TeamActivationRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** TeamTemplate */
+        TeamTemplate: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Latest Revision */
+            latest_revision?: number | null;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** TeamTemplateCreate */
+        TeamTemplateCreate: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Workcells */
+            workcells: components["schemas"]["WorkcellDefinition"][];
+            topology: components["schemas"]["TeamTopology"];
+        };
+        /** TeamTemplateDraft */
+        TeamTemplateDraft: {
+            /** Id */
+            id: string;
+            /** Template Id */
+            template_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Workcells */
+            workcells: components["schemas"]["WorkcellDefinition"][];
+            topology: components["schemas"]["TeamTopology"];
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /**
+             * Validation Status
+             * @default unknown
+             * @enum {string}
+             */
+            validation_status: "unknown" | "valid" | "invalid";
+            /**
+             * Validation Errors
+             * @default []
+             */
+            validation_errors: string[];
+            /** Created By */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** TeamTemplateDraftPatch */
+        TeamTemplateDraftPatch: {
+            /** Expected Version */
+            expected_version: number;
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Workcells */
+            workcells?: components["schemas"]["WorkcellDefinition"][] | null;
+            topology?: components["schemas"]["TeamTopology"] | null;
+        };
+        /** TeamTemplateRevision */
+        TeamTemplateRevision: {
+            /** Template Id */
+            template_id: string;
+            /** Revision */
+            revision: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Workcells */
+            workcells: components["schemas"]["WorkcellDefinition"][];
+            topology: components["schemas"]["TeamTopology"];
+            /** Sha256 */
+            sha256: string;
+            /** Published By */
+            published_by: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at?: string;
+        };
+        /** TeamTemplateVersionRequest */
+        TeamTemplateVersionRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** TeamTemplateWithDraft */
+        TeamTemplateWithDraft: {
+            template: components["schemas"]["TeamTemplate"];
+            draft: components["schemas"]["TeamTemplateDraft"];
+        };
+        /** TeamTopology */
+        TeamTopology: {
+            /** Nodes */
+            nodes: components["schemas"]["TopologyNode"][];
+            /**
+             * Links
+             * @default []
+             */
+            links: components["schemas"]["TopologyLink"][];
+        };
+        /** TopologyLink */
+        TopologyLink: {
+            /** Source Workcell Key */
+            source_workcell_key: string;
+            /** Target Workcell Key */
+            target_workcell_key: string;
+            /**
+             * Label
+             * @default artifact
+             */
+            label: string;
+        };
+        /** TopologyNode */
+        TopologyNode: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
         /** User */
         User: {
             /** Id */
@@ -3927,6 +4987,369 @@ export interface components {
             command: "approve-plan" | "reject-plan" | "approve-design" | "reject-design" | "accept-candidate" | "reject-candidate" | "cancel";
             /** Expected Version */
             expected_version: number;
+        };
+        /** WorkcellCandidateProjection */
+        WorkcellCandidateProjection: {
+            /** Candidate Id */
+            candidate_id: string;
+            /** Workcell Key */
+            workcell_key: string;
+            /** Workspace Binding Id */
+            workspace_binding_id: string;
+            /** Base Revision */
+            base_revision: string;
+            /** Candidate Revision */
+            candidate_revision: string;
+            /** Diff Sha256 */
+            diff_sha256: string;
+            /** Verification Sha256 */
+            verification_sha256: string;
+            /** Review Artifact Ids */
+            review_artifact_ids: string[];
+            /** Evidence Sha256 */
+            evidence_sha256: string;
+        };
+        /** WorkcellDefinition */
+        WorkcellDefinition: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** Name */
+            name: string;
+            /** Responsibility */
+            responsibility: string;
+            primary_workspace: components["schemas"]["WorkspaceRequirement"];
+            /** Delegate Purposes */
+            delegate_purposes: ("workspace_write" | "artifact" | "review")[];
+            delegation_policy?: components["schemas"]["DelegationPolicy"];
+        };
+        /** WorkcellExecutionSnapshot */
+        WorkcellExecutionSnapshot: {
+            /** Team Template Revision Id */
+            team_template_revision_id: string;
+            /** Team Template Sha256 */
+            team_template_sha256: string;
+            /** Pipeline Revision Id */
+            pipeline_revision_id: string;
+            /** Pipeline Revision Sha256 */
+            pipeline_revision_sha256: string;
+            /** Stage Path */
+            stage_path: string;
+            /** Workcell Key */
+            workcell_key: string;
+            workspace: components["schemas"]["WorkcellWorkspaceSnapshot"];
+            delegation_policy: components["schemas"]["DelegationPolicy"];
+            /** Slot Bindings */
+            slot_bindings: components["schemas"]["FrozenSlotBinding"][];
+            /** Slot Method Bindings */
+            slot_method_bindings?: {
+                [key: string]: string;
+            };
+            /** Slot Purpose Bindings */
+            slot_purpose_bindings?: {
+                [key: string]: "workspace_write" | "artifact" | "review";
+            };
+            /** Method Snapshot Sha256 */
+            method_snapshot_sha256: string;
+            /**
+             * Input Artifacts
+             * @default []
+             */
+            input_artifacts: components["schemas"]["ArtifactReference"][];
+        };
+        /** WorkcellResult */
+        WorkcellResult: {
+            /** Id */
+            id?: string;
+            /** Workcell Run Id */
+            workcell_run_id: string;
+            /** Candidate Sha */
+            candidate_sha?: string | null;
+            /** Diff Sha256 */
+            diff_sha256?: string | null;
+            /** Verification Sha256 */
+            verification_sha256: string;
+            /**
+             * Review Artifact Ids
+             * @default []
+             */
+            review_artifact_ids: string[];
+            /**
+             * Output Artifact References
+             * @default []
+             */
+            output_artifact_references: components["schemas"]["ArtifactReference"][];
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** WorkcellResultValidation */
+        WorkcellResultValidation: {
+            /** Id */
+            id?: string;
+            /** Workcell Run Id */
+            workcell_run_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed";
+            /** Artifact References */
+            artifact_references: components["schemas"]["ArtifactReference"][];
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            };
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** WorkcellRun */
+        WorkcellRun: {
+            /** Id */
+            id?: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Pipeline Run Id */
+            pipeline_run_id: string;
+            /** Stage Attempt Id */
+            stage_attempt_id: string;
+            /** Stage Path */
+            stage_path: string;
+            /** Loop Iteration */
+            loop_iteration: number;
+            /** Workcell Key */
+            workcell_key: string;
+            workcell_snapshot: components["schemas"]["WorkcellExecutionSnapshot"];
+            /** Workcell Snapshot Sha256 */
+            workcell_snapshot_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "planning" | "delegating" | "verifying" | "reviewing" | "synthesizing" | "succeeded" | "failed" | "cancelled" | "timed_out" | "interrupted";
+            /** Main Agent Run Id */
+            main_agent_run_id?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Deadline At
+             * Format: date-time
+             */
+            deadline_at: string;
+            /** Error Code */
+            error_code?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** WorkcellRunCancelRequest */
+        WorkcellRunCancelRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** WorkcellRunTree */
+        WorkcellRunTree: {
+            workcell_run: components["schemas"]["WorkcellRun"];
+            delegation_plan?: components["schemas"]["DelegationPlan"] | null;
+            /**
+             * Agent Runs
+             * @default []
+             */
+            agent_runs: components["schemas"]["AgentRun"][];
+            /**
+             * Attempts
+             * @default []
+             */
+            attempts: components["schemas"]["AgentAttempt"][];
+            verification?: components["schemas"]["CandidateVerification"] | null;
+            result_validation?: components["schemas"]["WorkcellResultValidation"] | null;
+            /**
+             * Reviews
+             * @default []
+             */
+            reviews: components["schemas"]["ReviewArtifact"][];
+            result?: components["schemas"]["WorkcellResult"] | null;
+        };
+        /** WorkcellStageBinding */
+        WorkcellStageBinding: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** Slot Bindings */
+            slot_bindings: {
+                [key: string]: string;
+            };
+            /** Delegate Methods */
+            delegate_methods?: {
+                [key: string]: string;
+            };
+            /** Delegate Purposes */
+            delegate_purposes?: {
+                [key: string]: "workspace_write" | "artifact" | "review";
+            };
+        };
+        /** WorkcellWorkspaceSnapshot */
+        WorkcellWorkspaceSnapshot: {
+            /** Workspace Binding Id */
+            workspace_binding_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "git_repository_v1";
+            /**
+             * Adapter Type
+             * @enum {string}
+             */
+            adapter_type: "managed-bare-git" | "external-git";
+            /** Repository Uri */
+            repository_uri: string;
+            /** Base Revision */
+            base_revision: string;
+            /** Verification Sha256 */
+            verification_sha256: string;
+        };
+        /** WorkspaceBinding */
+        WorkspaceBinding: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "git_repository_v1";
+            /**
+             * Adapter Type
+             * @enum {string}
+             */
+            adapter_type: "managed-bare-git" | "external-git";
+            /** Repository Uri */
+            repository_uri: string;
+            /** Credential Reference */
+            credential_reference?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "ready" | "failed";
+            /** Verification Sha256 */
+            verification_sha256?: string | null;
+            /** Verification */
+            verification?: {
+                [key: string]: unknown;
+            };
+            /** Error Code */
+            error_code?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        /** WorkspaceBindingAssignment */
+        WorkspaceBindingAssignment: {
+            workcell_binding: components["schemas"]["ProjectWorkcellBinding"];
+            workspace_binding: components["schemas"]["WorkspaceBinding"];
+        };
+        /** WorkspaceBindingCreate */
+        WorkspaceBindingCreate: {
+            /** Workcell Key */
+            workcell_key: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "git_repository_v1";
+            /**
+             * Adapter Type
+             * @enum {string}
+             */
+            adapter_type: "managed-bare-git" | "external-git";
+            /** Repository Uri */
+            repository_uri: string;
+            /** Credential Reference */
+            credential_reference?: string | null;
+        };
+        /** WorkspaceBindingVerificationRequest */
+        WorkspaceBindingVerificationRequest: {
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** WorkspaceCandidateV2 */
+        WorkspaceCandidateV2: {
+            /** Id */
+            id?: string;
+            /** Delivery Id */
+            delivery_id: string;
+            /** Project Id */
+            project_id: string;
+            /** Workcell Key */
+            workcell_key: string;
+            /** Workspace Binding Id */
+            workspace_binding_id: string;
+            /** Repository Uri */
+            repository_uri: string;
+            /**
+             * Adapter Type
+             * @enum {string}
+             */
+            adapter_type: "managed-bare-git" | "external-git";
+            /** Base Revision */
+            base_revision: string;
+            /** Candidate Revision */
+            candidate_revision: string;
+            /** Diff Sha256 */
+            diff_sha256: string;
+            /** Candidate Branch */
+            candidate_branch: string;
+            /** Verification Sha256 */
+            verification_sha256: string;
+            /** Review Artifact Ids */
+            review_artifact_ids: string[];
+            /** Evidence Sha256 */
+            evidence_sha256: string;
+            /**
+             * Status
+             * @default verified
+             * @constant
+             */
+            status: "verified";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+        };
+        /** WorkspaceRequirement */
+        WorkspaceRequirement: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "git_repository_v1";
         };
     };
     responses: never;
@@ -5923,6 +7346,1137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentDeployment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_team_templates_v1_team_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplate"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_team_template_v1_team_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateWithDraft"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_team_template_draft_v1_team_template_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateDraft"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    patch_team_template_draft_v1_team_template_drafts__draft_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamTemplateDraftPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateDraft"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_team_template_drafts_v1_team_templates__template_id__drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateDraft"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    validate_team_template_draft_v1_team_template_drafts__draft_id__validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamTemplateVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateDraft"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    publish_team_template_draft_v1_team_template_drafts__draft_id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamTemplateVersionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateRevision"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_team_template_revision_v1_team_templates__template_id__revisions__revision__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+                revision: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamTemplateRevision"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_project_workcells_v1_projects__project_id__workcells_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkcellTopology"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    create_workspace_binding_v1_projects__project_id__workspace_bindings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBindingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBindingAssignment"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    verify_workspace_binding_v1_workspace_bindings__workspace_id__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBindingVerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBinding"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    activate_project_team_v1_projects__project_id__team_activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamActivationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectWorkcellTopology"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_delivery_workcell_runs_v1_deliveries__delivery_id__workcell_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkcellRunTree"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_workcell_run_v1_workcell_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkcellRunTree"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_workcell_agent_attempts_v1_workcell_runs__run_id__agent_attempts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentAttempt"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    cancel_workcell_run_v1_workcell_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkcellRunCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkcellRunTree"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    resume_forward_v1_releases__delivery_id__resume_forward_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseManifestV2"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_release_health_v1_projects__project_id__release_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseHealthV2"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_external_release_v1_releases__delivery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalReleaseView"];
                 };
             };
             /** @description 目标资源不存在 */

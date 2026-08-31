@@ -15,6 +15,7 @@ const AgentsPage = lazy(() => import("../features/agents/AgentsPage").then((modu
 const KnowledgePage = lazy(() => import("../features/knowledge/KnowledgePage").then((module) => ({ default: module.KnowledgePage })));
 const ProjectsPage = lazy(() => import("../features/projects/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
 const ProjectOverviewPage = lazy(() => import("../features/projects/ProjectOverviewPage").then((module) => ({ default: module.ProjectOverviewPage })));
+const TeamTemplatesPage = lazy(() => import("../features/teams/TeamTemplatesPage").then((module) => ({ default: module.TeamTemplatesPage })));
 
 export function App() {
   return <BrowserRouter><AuthGate><PageErrorBoundary><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
@@ -31,6 +32,7 @@ export function App() {
     <Route path="board" element={<Navigate to="/projects/legacy-default/board" replace/>}/>
     <Route path="orchestration" element={<OrchestrationPage/>}/>
     <Route path="agents" element={<AgentsPage/>}/>
+    <Route path="teams" element={<TeamTemplatesPage/>}/>
     <Route path="knowledge" element={<Navigate to="/projects/legacy-default/knowledge" replace/>}/>
     <Route path="evidence" element={<Navigate to="/projects/legacy-default/evidence" replace/>}/>
     <Route path="settings" element={<SettingsPage/>}/>

@@ -72,4 +72,35 @@ describe("项目治理目录", () => {
       expect(screen.getAllByRole("checkbox").filter((item) => (item as HTMLInputElement).checked)).toHaveLength(5);
     });
   });
+
+  it("创建 Workcell 项目时冻结 TeamTemplate Revision 且不重复授权 Deployment", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url === "/v1/projects" && (init?.method ?? "GET") === "GET") return response([]);
+      if (url === "/v1/pipelines") return response([{ id: "agent-workcell-delivery", name: "Agent Workcell 四仓交付", description: "", active_revision: 1, version: 1, created_by: "system" }]);
+      if (url === "/v1/agent-deployments") return response([]);
+      if (url === "/v1/team-templates") return response([{ id: "software-delivery-team", name: "四仓软件交付团队", description: "", latest_revision: 1, version: 1, created_by: "system" }]);
+      if (url === "/v1/projects" && init?.method === "POST") return response({ project: { id: "workcell-project", slug: "workcell-project", name: "Workcell 项目", description: "", lifecycle_status: "provisioning", version: 1, created_by: "admin" }, workspace: { project_id: "workcell-project", workspace_id: "project:workcell-project", repository_ref: "workspace-set/workcell-project", status: "provisioning", provision_attempt: 1 }, pipeline_bindings: [], deployment_access: [], knowledge_sources: [], repositories: [], active_delivery_id: null }, 201);
+      return response({}, 404);
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/projects"]}><Routes><Route path="/projects" element={<ProjectsPage/>}/><Route path="/projects/:projectId/overview" element={<div>项目概览已打开</div>}/></Routes></MemoryRouter></QueryClientProvider>);
+    await screen.findByText("还没有项目");
+    await userEvent.type(screen.getByPlaceholderText("例如：pj1"), "workcell-project");
+    await userEvent.type(screen.getByPlaceholderText("例如：客户门户后端"), "Workcell 项目");
+    const pipelineSelect = screen.getByRole("combobox", { name: "默认流水线" });
+    fireEvent.keyDown(pipelineSelect, { key: "ArrowDown", code: "ArrowDown", keyCode: 40 });
+    fireEvent.keyDown(pipelineSelect, { key: "Enter", code: "Enter", keyCode: 13 });
+    await screen.findByRole("combobox", { name: "组织模板 Revision" });
+    await userEvent.click(screen.getByRole("button", { name: "创建项目并接入四个仓库" }));
+    await screen.findByText("项目概览已打开");
+    const create = calls.find((call) => call.url === "/v1/projects" && call.init?.method === "POST");
+    expect(JSON.parse(String(create?.init?.body))).toMatchObject({
+      default_pipeline_revision_id: "agent-workcell-delivery:1",
+      team_template_revision_id: "software-delivery-team:1",
+      deployment_ids: [],
+      repository_mode: "backend",
+    });
+  });
 });

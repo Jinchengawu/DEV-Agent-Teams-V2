@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Literal
 
 from ...shared.events import ProductEvent
-from .domain import Pipeline, PipelineDraft, PipelineRevision, PipelineRunRecord
+from .domain import (
+    Pipeline,
+    PipelineDraft,
+    PipelineRevision,
+    PipelineRunRecord,
+    WorkcellStageBinding,
+)
 
 
 class SQLitePipelineRepository:
@@ -43,9 +49,10 @@ class SQLitePipelineRepository:
             connection.execute(
                 """INSERT INTO pipeline_drafts(
                 id,pipeline_id,name,definition_json,layout_json,input_schema_json,
-                agent_assignments_json,version,
+                agent_assignments_json,workcell_stage_map_json,
+                release_contract_snapshot_json,version,
                 validation_status,validation_errors_json,created_by,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     draft.id,
                     draft.pipeline_id,
@@ -54,6 +61,13 @@ class SQLitePipelineRepository:
                     _json(draft.layout),
                     _json(draft.input_schema),
                     _json(draft.agent_assignments),
+                    _json(
+                        {
+                            key: value.model_dump(mode="json")
+                            for key, value in draft.workcell_stage_map.items()
+                        }
+                    ),
+                    _json(draft.release_contract_snapshot),
                     draft.version,
                     draft.validation_status,
                     _json(draft.validation_errors),
@@ -105,8 +119,9 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database) as connection:
             row = connection.execute(
                 """SELECT id,pipeline_id,name,definition_json,layout_json,input_schema_json,
-                agent_assignments_json,version,validation_status,validation_errors_json,
-                created_by,created_at,updated_at
+                agent_assignments_json,workcell_stage_map_json,
+                release_contract_snapshot_json,version,validation_status,
+                validation_errors_json,created_by,created_at,updated_at
                 FROM pipeline_drafts WHERE id=?""",
                 (draft_id,),
             ).fetchone()
@@ -114,7 +129,13 @@ class SQLitePipelineRepository:
             raise KeyError(draft_id)
         values = dict(zip(_DRAFT_FIELDS, row, strict=True))
         for field in (
-            "definition", "layout", "input_schema", "agent_assignments", "validation_errors"
+            "definition",
+            "layout",
+            "input_schema",
+            "agent_assignments",
+            "workcell_stage_map",
+            "release_contract_snapshot",
+            "validation_errors",
         ):
             values[field] = json.loads(str(values[field]))
         return PipelineDraft.model_validate(values)
@@ -123,8 +144,9 @@ class SQLitePipelineRepository:
         with sqlite3.connect(self.database) as connection:
             rows = connection.execute(
                 """SELECT id,pipeline_id,name,definition_json,layout_json,input_schema_json,
-                agent_assignments_json,version,validation_status,validation_errors_json,
-                created_by,created_at,updated_at
+                agent_assignments_json,workcell_stage_map_json,
+                release_contract_snapshot_json,version,validation_status,
+                validation_errors_json,created_by,created_at,updated_at
                 FROM pipeline_drafts WHERE pipeline_id=? ORDER BY updated_at DESC,id""",
                 (pipeline_id,),
             ).fetchall()
@@ -132,7 +154,13 @@ class SQLitePipelineRepository:
         for row in rows:
             values = dict(zip(_DRAFT_FIELDS, row, strict=True))
             for field in (
-                "definition", "layout", "input_schema", "agent_assignments", "validation_errors"
+                "definition",
+                "layout",
+                "input_schema",
+                "agent_assignments",
+                "workcell_stage_map",
+                "release_contract_snapshot",
+                "validation_errors",
             ):
                 values[field] = json.loads(str(values[field]))
             drafts.append(PipelineDraft.model_validate(values))
@@ -159,7 +187,8 @@ class SQLitePipelineRepository:
             connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 """UPDATE pipeline_drafts SET name=?,definition_json=?,layout_json=?,
-                input_schema_json=?,agent_assignments_json=?,version=?,validation_status=?,
+                input_schema_json=?,agent_assignments_json=?,workcell_stage_map_json=?,
+                release_contract_snapshot_json=?,version=?,validation_status=?,
                 validation_errors_json=?,
                 updated_at=?
                 WHERE id=? AND version=?""",
@@ -169,6 +198,13 @@ class SQLitePipelineRepository:
                     _json(updated.layout),
                     _json(updated.input_schema),
                     _json(updated.agent_assignments),
+                    _json(
+                        {
+                            key: value.model_dump(mode="json")
+                            for key, value in updated.workcell_stage_map.items()
+                        }
+                    ),
+                    _json(updated.release_contract_snapshot),
                     updated.version,
                     updated.validation_status,
                     _json(updated.validation_errors),
@@ -192,6 +228,8 @@ class SQLitePipelineRepository:
         binding_snapshot: dict[str, dict[str, object]],
         binding_model: Literal["legacy-v0", "provider-v1"],
         resolved_provider_bindings: dict[str, dict[str, object]],
+        workcell_stage_map: dict[str, WorkcellStageBinding],
+        release_contract_snapshot: tuple[str, ...],
         fingerprint: str,
         published_by: str,
     ) -> PipelineRevision:
@@ -216,14 +254,17 @@ class SQLitePipelineRepository:
                 binding_snapshot=binding_snapshot,
                 binding_model=binding_model,
                 resolved_provider_bindings=resolved_provider_bindings,
+                workcell_stage_map=workcell_stage_map,
+                release_contract_snapshot=release_contract_snapshot,
                 fingerprint=fingerprint,
                 published_by=published_by,
             )
             connection.execute(
                 """INSERT INTO pipeline_revisions(
                 pipeline_id,revision,definition_json,compiled_graph_json,binding_snapshot_json,
-                binding_model,resolved_provider_bindings_json,fingerprint,published_by,published_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                binding_model,resolved_provider_bindings_json,workcell_stage_map_json,
+                release_contract_snapshot_json,fingerprint,published_by,published_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     revision.pipeline_id,
                     revision.revision,
@@ -232,6 +273,13 @@ class SQLitePipelineRepository:
                     _json(revision.binding_snapshot),
                     revision.binding_model,
                     _json(revision.resolved_provider_bindings),
+                    _json(
+                        {
+                            key: value.model_dump(mode="json")
+                            for key, value in revision.workcell_stage_map.items()
+                        }
+                    ),
+                    _json(revision.release_contract_snapshot),
                     revision.fingerprint,
                     revision.published_by,
                     revision.published_at.isoformat(),
@@ -257,6 +305,7 @@ class SQLitePipelineRepository:
             row = connection.execute(
                 """SELECT pipeline_id,revision,definition_json,compiled_graph_json,
                 binding_snapshot_json,binding_model,resolved_provider_bindings_json,
+                workcell_stage_map_json,release_contract_snapshot_json,
                 fingerprint,published_by,published_at
                 FROM pipeline_revisions WHERE pipeline_id=? AND revision=?""",
                 (pipeline_id, revision),
@@ -265,7 +314,12 @@ class SQLitePipelineRepository:
             raise KeyError(f"{pipeline_id}:{revision}")
         values = dict(zip(_REVISION_FIELDS, row, strict=True))
         for field in (
-            "definition", "compiled_graph", "binding_snapshot", "resolved_provider_bindings"
+            "definition",
+            "compiled_graph",
+            "binding_snapshot",
+            "resolved_provider_bindings",
+            "workcell_stage_map",
+            "release_contract_snapshot",
         ):
             values[field] = json.loads(str(values[field]))
         return PipelineRevision.model_validate(values)
@@ -443,6 +497,8 @@ _DRAFT_FIELDS = (
     "layout",
     "input_schema",
     "agent_assignments",
+    "workcell_stage_map",
+    "release_contract_snapshot",
     "version",
     "validation_status",
     "validation_errors",
@@ -458,6 +514,8 @@ _REVISION_FIELDS = (
     "binding_snapshot",
     "binding_model",
     "resolved_provider_bindings",
+    "workcell_stage_map",
+    "release_contract_snapshot",
     "fingerprint",
     "published_by",
     "published_at",

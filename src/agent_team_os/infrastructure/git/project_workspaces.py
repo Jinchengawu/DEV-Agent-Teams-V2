@@ -28,6 +28,12 @@ class ProjectGitWorkspaces:
     def revision(self, repository_ref: str) -> str:
         return self._for_repository_ref(repository_ref).main_revision()
 
+    def remote_uri(self, repository_ref: str) -> str:
+        """Resolve a managed repository reference to its product-owned bare Git remote."""
+        sandbox = self._for_repository_ref(repository_ref)
+        sandbox.ensure_initialized()
+        return str(sandbox.bare_repo)
+
     def for_workspace(self, workspace_id: str) -> GitSandbox:
         if workspace_id == "backend-demo":
             return GitSandbox(self.root, "backend")

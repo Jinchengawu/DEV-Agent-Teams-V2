@@ -12,6 +12,7 @@ import {
   useRetryKnowledgePublication,
 } from "./api";
 import { projectPath, useProjectId } from "../../entities/project/api";
+import { WorkcellExecutionPanel } from "../workcells/WorkcellExecutionPanel";
 
 export function DeliveryRunPage() {
   const { deliveryId } = useParams<{ deliveryId: string }>();
@@ -48,5 +49,8 @@ export function DeliveryRunPage() {
       decisionError={decision.error}
       onDecision={(value) => decision.mutate({ delivery: delivery.data!, decision: value })}
     />
+    {delivery.data.delivery_execution_snapshot && (
+      <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId}/>
+    )}
   </div>;
 }

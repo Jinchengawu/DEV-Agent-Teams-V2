@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -18,8 +19,15 @@ from .infrastructure.acwm import (
     ControlPlaneBindingResolver,
 )
 from .infrastructure.database import MigrationRunner
-from .infrastructure.git import ProjectGitWorkspaces
+from .infrastructure.git import (
+    ExternalForwardGitRemote,
+    ExternalGitBinding,
+    ExternalGitCapabilityProbe,
+    ExternalGitWorkspaceManager,
+    ProjectGitWorkspaces,
+)
 from .journey import (
+    load_agent_workcell_delivery_definition,
     load_backend_delivery_definition,
     load_fullstack_delivery_definition,
     resolve_backend_delivery_fingerprint,
@@ -33,11 +41,18 @@ from .modules.agents import (
     SQLiteAgentProfileRepository,
     ensure_builtin_agent_deployments,
     ensure_builtin_fullstack_agent_deployments,
+    ensure_builtin_workcell_agent_deployments,
 )
+from .modules.artifacts import ContentAddressedArtifactStorage
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evaluation import EvaluationService, SQLiteEvaluationRepository
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
-from .modules.extensions import RuntimeExtensionCatalog, SQLiteRuntimeExtensionRepository
+from .modules.extensions import (
+    ContentAddressedMethodPackStore,
+    FrozenMethodPackSet,
+    RuntimeExtensionCatalog,
+    SQLiteRuntimeExtensionRepository,
+)
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import (
     KnowledgePublicationLedger,
@@ -58,10 +73,34 @@ from .modules.projects import (
     ProjectLeaseDeliveryRepository,
     SQLiteProjectRepository,
 )
-from .modules.releases import ReleaseCoordinator, SQLiteReleaseRepository
+from .modules.releases import (
+    ExternalForwardReleaseCoordinator,
+    ExternalReleaseCatalog,
+    ReleaseCoordinator,
+    SQLiteExternalReleaseRepository,
+    SQLiteReleaseRepository,
+)
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
+from .modules.workcells import (
+    CommandWorkcellMachineVerifier,
+    ContentAddressedMethodRuntime,
+    DeliveryExecutionSnapshotCompiler,
+    ProjectWorkcellGovernance,
+    SQLiteProjectWorkcellRepository,
+    SQLiteTeamTemplateRepository,
+    SQLiteWorkcellExecutionRepository,
+    TeamTemplateCatalog,
+    WorkcellExecutionModule,
+    WorkcellStageDriver,
+    builtin_release_contract,
+    builtin_workcell_stage_map,
+)
 from .release import DeterministicWorkspaceAgent
-from .testing import DeterministicPlanningService
+from .testing import (
+    DeterministicPlanningService,
+    DeterministicPullRequestSurface,
+    DeterministicWorkcellAgent,
+)
 from .ui import install_preview_ui
 
 
@@ -90,7 +129,24 @@ def build_gate_app() -> FastAPI:
     project_workspaces = ProjectGitWorkspaces(data_dir / "browser-workspaces")
     sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
-    projects = ProjectCatalog(SQLiteProjectRepository(database), project_workspaces)
+    project_repository = SQLiteProjectRepository(database)
+    team_templates = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database))
+    project_workcell_repository = SQLiteProjectWorkcellRepository(database)
+    project_workcells = ProjectWorkcellGovernance(
+        project_workcell_repository,
+        teams=team_templates,
+        projects=project_repository,
+        managed_git=project_workspaces,
+        external_git=ExternalGitCapabilityProbe(
+            data_dir / "external-git-probe",
+            allow_local_test_transport=True,
+        ),
+    )
+    projects = ProjectCatalog(
+        project_repository,
+        project_workspaces,
+        team_governance=project_workcells,
+    )
     delivery_repository = ProjectLeaseDeliveryRepository(
         SQLiteDeliveryRepository(database), projects
     )
@@ -134,6 +190,12 @@ def build_gate_app() -> FastAPI:
         planning_instance_id="builtin:deterministic-test",
         execution_instance_id="builtin:deterministic-model-boundary",
     )
+    workcell_assignments = ensure_builtin_workcell_agent_deployments(
+        agent_profiles,
+        agent_deployments,
+        planning_instance_id="builtin:deterministic-test",
+        execution_instance_id="builtin:deterministic-model-boundary",
+    )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
         graph_compiler=ACWMGraphCompiler(),
@@ -165,6 +227,18 @@ def build_gate_app() -> FastAPI:
         ),
         actor_id="system",
     )
+    pipeline_catalog.ensure_builtin_pipeline(
+        PipelineCreate(
+            id="agent-workcell-delivery",
+            name="v0.5 Agent Workcell 四仓交付",
+            description="可观察 Main/Child Workcell、BMAD/TEA 与 Forward-only Release",
+            definition=load_agent_workcell_delivery_definition(project_root / "config"),
+            agent_assignments=workcell_assignments,
+            workcell_stage_map=builtin_workcell_stage_map(),
+            release_contract_snapshot=builtin_release_contract(),
+        ),
+        actor_id="system",
+    )
 
     def validate_project_pipeline(revision_id: str) -> None:
         pipeline_catalog.resolve_revision(revision_id)
@@ -185,6 +259,54 @@ def build_gate_app() -> FastAPI:
         )
     evidence_ledger = EvidenceLedger(SQLiteEvidenceRepository(database))
     knowledge_publications = KnowledgePublicationLedger(database)
+    artifact_storage = ContentAddressedArtifactStorage(data_dir / "artifacts")
+    workcell_execution = WorkcellExecutionModule(
+        SQLiteWorkcellExecutionRepository(database),
+        artifact_storage=artifact_storage,
+    )
+    method_store = ContentAddressedMethodPackStore(data_dir / "method-packs")
+    method_set = FrozenMethodPackSet(
+        project_root / "config" / "method-packs-v050.json",
+        method_store,
+    )
+
+    def resolve_workspace_binding(workspace_id: str) -> ExternalGitBinding:
+        workspace = project_workcell_repository.get_workspace(workspace_id)
+        return ExternalGitBinding(
+            remote_uri=(
+                project_workspaces.remote_uri(workspace.repository_uri)
+                if workspace.adapter_type == "managed-bare-git"
+                else workspace.repository_uri
+            ),
+            credential_reference=workspace.credential_reference,
+        )
+
+    release_v2_repository = SQLiteExternalReleaseRepository(database)
+    external_release = ExternalForwardReleaseCoordinator(
+        release_v2_repository,
+        ExternalForwardGitRemote(resolve_workspace_binding),
+    )
+    workcell_stage_driver = WorkcellStageDriver(
+        kernel=workcell_execution,
+        artifacts=artifact_storage,
+        methods=ContentAddressedMethodRuntime(method_store),
+        agent=DeterministicWorkcellAgent(),
+        workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
+        binding_resolver=resolve_workspace_binding,
+        verifier=CommandWorkcellMachineVerifier(
+            lambda _workcell: (
+                (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
+            )
+        ),
+        releases=ExternalReleaseCatalog(release_v2_repository),
+        pull_requests=DeterministicPullRequestSurface(),
+    )
+    delivery_snapshot_compiler = DeliveryExecutionSnapshotCompiler(
+        governance=project_workcells,
+        projects=project_repository,
+        pipelines=pipeline_catalog,
+        method_snapshot=method_set.snapshot,
+    )
     wiki_service = WikiService(
         SQLiteWikiRepository(database), project_guard=projects.assert_writable
     )
@@ -220,6 +342,12 @@ def build_gate_app() -> FastAPI:
             project_root=project_root,
             evidence=evidence_ledger,
         ),
+        team_templates=team_templates,
+        project_workcells=project_workcells,
+        workcell_execution=workcell_execution,
+        delivery_snapshot_compiler=delivery_snapshot_compiler,
+        external_release=external_release,
+        workcell_stage_driver=workcell_stage_driver,
     )
     install_preview_ui(result, project_root / "console" / "dist")
     return result

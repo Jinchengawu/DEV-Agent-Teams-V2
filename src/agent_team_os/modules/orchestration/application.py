@@ -223,6 +223,69 @@ class PipelineRunLedger:
         )
 
 
+def _workcell_contract_errors(
+    draft: PipelineDraft,
+    resolved_provider_bindings: dict[str, dict[str, object]] | None,
+) -> tuple[str, ...]:
+    if not draft.workcell_stage_map and not draft.release_contract_snapshot:
+        return ()
+    errors: list[str] = []
+    stages = _stage_workflow_modes(draft.definition)
+    workcell_stages = {
+        path for path, mode in stages.items() if mode == "agentscope.workcell-team"
+    }
+    mapped_stages = set(draft.workcell_stage_map)
+    for path in sorted(workcell_stages - mapped_stages):
+        errors.append(f"PIPELINE_WORKCELL_STAGE_MAPPING_MISSING:{path}")
+    for path in sorted(mapped_stages - workcell_stages):
+        errors.append(f"PIPELINE_WORKCELL_STAGE_MAPPING_INVALID:{path}")
+    if resolved_provider_bindings is None:
+        errors.append("PIPELINE_WORKCELL_PROVIDER_BINDINGS_REQUIRED")
+    else:
+        for stage_path, binding in draft.workcell_stage_map.items():
+            for slot, site in binding.slot_bindings.items():
+                if site not in resolved_provider_bindings:
+                    errors.append(
+                        f"PIPELINE_WORKCELL_SLOT_BINDING_MISSING:{stage_path}:{slot}:{site}"
+                    )
+    contract = draft.release_contract_snapshot
+    if not contract:
+        errors.append("PIPELINE_RELEASE_CONTRACT_REQUIRED")
+    if len(set(contract)) != len(contract):
+        errors.append("PIPELINE_RELEASE_CONTRACT_DUPLICATE_WORKCELL")
+    mapped_workcells = {
+        binding.workcell_key for binding in draft.workcell_stage_map.values()
+    }
+    for workcell_key in sorted(set(contract) - mapped_workcells):
+        errors.append(f"PIPELINE_RELEASE_CONTRACT_WORKCELL_UNMAPPED:{workcell_key}")
+    return tuple(dict.fromkeys(errors))
+
+
+def _stage_workflow_modes(definition: dict[str, object]) -> dict[str, str]:
+    result: dict[str, str] = {}
+
+    def visit(nodes: object, prefix: str = "") -> None:
+        if not isinstance(nodes, list):
+            return
+        for item in nodes:
+            if not isinstance(item, dict):
+                continue
+            node_id = item.get("id")
+            kind = item.get("kind")
+            if not isinstance(node_id, str):
+                continue
+            node_path = f"{prefix}/{node_id}" if prefix else node_id
+            if kind == "stage":
+                mode = item.get("workflow_mode")
+                if isinstance(mode, str):
+                    result[node_path] = mode
+            elif kind == "loop":
+                visit(item.get("nodes"), node_path)
+
+    visit(definition.get("nodes"))
+    return result
+
+
 class PipelineCatalog:
     def __init__(
         self,
@@ -256,6 +319,8 @@ class PipelineCatalog:
             layout=request.layout,
             input_schema=request.input_schema,
             agent_assignments=request.agent_assignments,
+            workcell_stage_map=request.workcell_stage_map,
+            release_contract_snapshot=request.release_contract_snapshot,
             created_by=created_by,
         )
         try:
@@ -308,6 +373,8 @@ class PipelineCatalog:
                         layout=request.layout,
                         input_schema=request.input_schema,
                         agent_assignments=request.agent_assignments,
+                        workcell_stage_map=request.workcell_stage_map,
+                        release_contract_snapshot=request.release_contract_snapshot,
                     ),
                 )
         validated = self.validate_draft(
@@ -344,13 +411,18 @@ class PipelineCatalog:
             errors = (str(error),)
         if self.definition_policy is not None:
             errors = (*errors, *self.definition_policy.validate(draft.definition))
+        resolved_provider_bindings: dict[str, dict[str, object]] | None = None
         if self.provider_binding_resolver is not None:
             try:
-                self.provider_binding_resolver.snapshot(
+                resolved_provider_bindings = self.provider_binding_resolver.snapshot(
                     draft.definition, draft.agent_assignments
                 )
             except ValueError as error:
                 errors = (*errors, str(error))
+        errors = (
+            *errors,
+            *_workcell_contract_errors(draft, resolved_provider_bindings),
+        )
         updated = draft.model_copy(
             update={
                 "version": draft.version + 1,
@@ -410,12 +482,22 @@ class PipelineCatalog:
             binding_model = "legacy-v0"
         else:
             raise RuntimeError("Pipeline publication binding adapter is not configured")
+        workcell_errors = _workcell_contract_errors(draft, resolved_provider_bindings)
+        if workcell_errors:
+            raise ProductError(
+                code="PIPELINE_WORKCELL_CONTRACT_INVALID",
+                title="Pipeline Workcell Contract 已漂移",
+                detail="；".join(workcell_errors),
+                repair="重新校验 Pipeline 草稿与 Provider Binding 后发布。",
+            )
         return self.repository.publish(
             draft,
             compiled_graph=compilation.graph,
             binding_snapshot=bindings,
             binding_model=binding_model,
             resolved_provider_bindings=resolved_provider_bindings,
+            workcell_stage_map=draft.workcell_stage_map,
+            release_contract_snapshot=draft.release_contract_snapshot,
             fingerprint=compilation.fingerprint,
             published_by=published_by,
         )

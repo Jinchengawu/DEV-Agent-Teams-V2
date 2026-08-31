@@ -283,3 +283,138 @@ def ensure_builtin_fullstack_agent_deployments(
         "implementation-repair/frontend.developer": "builtin-frontend-deployment",
         "implementation-repair/qa.developer": "builtin-qa-deployment",
     }
+
+
+def ensure_builtin_workcell_agent_deployments(
+    profiles: AgentProfileCatalog,
+    deployments: AgentDeploymentCatalog,
+    *,
+    planning_instance_id: str = "builtin:codex-simulated-hermes",
+    execution_instance_id: str = "builtin:codex-cli",
+) -> dict[str, str]:
+    """Create v0.5 Workcell Main/Delegate deployments and return all frozen Stage slots."""
+    base = ensure_builtin_agent_deployments(
+        profiles,
+        deployments,
+        planning_instance_id=planning_instance_id,
+        execution_instance_id=execution_instance_id,
+    )
+    method_lock = {
+        "policy_version": "method-pack-set-v1",
+        "packages": {
+            "bmad-method": "6.11.0",
+            "bmad-method-test-architecture-enterprise": "1.23.4",
+        },
+    }
+    policies = {
+        "tool_policy_ref": "policy://builtin-tools@1",
+        "resource_policy_ref": "policy://artifact-envelope-only@1",
+        "approval_policy_ref": "policy://release-gate@2",
+        "memory_policy_ref": "policy://session-isolated@1",
+        "delegation_policy_ref": "policy://product-workcell-one-level@1",
+    }
+    definitions = (
+        (
+            "builtin-workcell-lead-v1",
+            "Workcell Lead v1",
+            "workcell.lead",
+            "builtin-workcell-lead-deployment",
+            (
+                "只根据冻结 Snapshot 规划最多三个一级 Child；综合机器验证与结构化审查，"
+                "不能覆盖失败或 Blocking Finding。"
+            ),
+        ),
+        (
+            "builtin-workcell-delegate-v1",
+            "Workcell Delegate v1",
+            "workcell.delegate",
+            "builtin-workcell-delegate-deployment",
+            (
+                "只执行产品分配的单一 Method Entry 与 Workspace Access；"
+                "不得派生 Child，不得读取其他 Workcell Repository。"
+            ),
+        ),
+    )
+    existing_profiles = {item.id for item in profiles.list_profiles()}
+    existing_deployments = {item.id for item in deployments.list()}
+    for profile_id, name, capability, deployment_id, instructions in definitions:
+        desired_spec = AgentProfileSpec.model_validate(
+            {
+                "schema_version": "1",
+                "id": profile_id,
+                "name": name,
+                "description": "v0.5 Agent Workcell Kernel 内置角色",
+                "tags": ["builtin", "workcell", "v0.5"],
+                "instructions": {
+                    "custom_text": instructions,
+                    "examples": [],
+                },
+                "capabilities": [{"id": capability, "version": ">=1,<2"}],
+                "policies": policies,
+                "isolation_preference": "shared",
+                "extensions": {
+                    "runtime_extensions": [],
+                    "method_pack_lock": method_lock,
+                    "migration_source": "builtin-workcell-v1",
+                },
+            }
+        )
+        if profile_id not in existing_profiles:
+            created = profiles.create(AgentProfileCreate(spec=desired_spec), actor_id="system")
+            validated = profiles.validate_draft(
+                profile_id,
+                expected_version=created.draft.version,
+                actor_id="system",
+            )
+            profile_revision = profiles.publish(
+                profile_id,
+                expected_version=validated.version,
+                actor_id="system",
+            ).revision
+        else:
+            profile_revision = _ensure_builtin_profile_revision(
+                profiles,
+                profile_id=profile_id,
+                desired_spec=desired_spec,
+            )
+        if deployment_id not in existing_deployments:
+            created_deployment = deployments.create(
+                AgentDeploymentCreate(
+                    id=deployment_id,
+                    name=name,
+                    profile_id=profile_id,
+                    profile_revision=profile_revision,
+                    instance_id=execution_instance_id,
+                    provider_id="codex-cli-provider",
+                ),
+                actor_id="system",
+            )
+            qualified = deployments.qualify(deployment_id, created_deployment.version)
+            if qualified.qualification_status != "qualified":
+                raise RuntimeError(
+                    "built-in Workcell Deployment qualification failed: "
+                    f"{qualified.qualification_errors}"
+                )
+            deployments.set_enabled(deployment_id, qualified.version, True)
+        else:
+            _refresh_builtin_deployment(
+                deployments,
+                profiles,
+                deployment_id=deployment_id,
+                profile_id=profile_id,
+                profile_revision=profile_revision,
+                instance_id=execution_instance_id,
+            )
+    assignments = dict(base)
+    assignments.pop("code-repair/delivery.developer", None)
+    for stage_path in (
+        "design-repair/design",
+        "qa-preparation-repair/qa-preparation",
+        "frontend-repair/frontend",
+        "backend-repair/backend",
+        "qa-delivery-repair/qa-delivery",
+    ):
+        assignments[f"{stage_path}.main"] = "builtin-workcell-lead-deployment"
+        for slot in ("delegate_1", "delegate_2", "delegate_3"):
+            assignments[f"{stage_path}.{slot}"] = "builtin-workcell-delegate-deployment"
+    return assignments

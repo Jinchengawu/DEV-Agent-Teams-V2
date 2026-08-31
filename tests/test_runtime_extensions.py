@@ -1,5 +1,10 @@
+import base64
+import hashlib
+import io
+import tarfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_team_os.api import create_app
@@ -17,11 +22,96 @@ from agent_team_os.modules.agents import (
     SQLiteAgentProfileRepository,
 )
 from agent_team_os.modules.extensions import (
+    ContentAddressedMethodPackStore,
+    MethodEntry,
+    MethodPackInstall,
     RuntimeExtensionCatalog,
     RuntimeExtensionInstall,
     SQLiteRuntimeExtensionRepository,
 )
+from agent_team_os.shared.errors import ProductError
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
+
+
+def test_verified_method_pack_is_materialized_as_a_temporary_read_only_codex_overlay(
+    tmp_path: Path,
+) -> None:
+    archive = _method_pack_archive(
+        {
+            "package/src/bmm-skills/ship/bmad-build/SKILL.md": b"# BMAD Build\n",
+            "package/src/bmm-skills/ship/bmad-build/workflow.md": b"Build workflow\n",
+            "package/package.json": b'{"name":"bmad-method","version":"6.11.0"}\n',
+        }
+    )
+    archive_sha256 = hashlib.sha256(archive).hexdigest()
+    registry_integrity = "sha512-" + base64.b64encode(
+        hashlib.sha512(archive).digest()
+    ).decode("ascii")
+    store = ContentAddressedMethodPackStore(tmp_path / "method-packs")
+
+    snapshot = store.install_archive(
+        MethodPackInstall(
+            package_name="bmad-method",
+            package_version="6.11.0",
+            tarball_uri="https://registry.npmjs.org/bmad-method/-/bmad-method-6.11.0.tgz",
+            registry_integrity=registry_integrity,
+            archive_sha256=archive_sha256,
+            method_entries=(
+                MethodEntry(
+                    method_id="bmad-build",
+                    source_path="src/bmm-skills/ship/bmad-build",
+                ),
+            ),
+        ),
+        archive,
+    )
+
+    assert snapshot.package_name == "bmad-method"
+    assert snapshot.archive_sha256 == archive_sha256
+    assert snapshot.qualification_sha256
+    with store.runtime_overlay((snapshot,)) as overlay:
+        skill = overlay.codex_home / "skills" / "bmad-build" / "SKILL.md"
+        assert skill.read_text(encoding="utf-8") == "# BMAD Build\n"
+        assert overlay.environment == {"CODEX_HOME": str(overlay.codex_home)}
+        assert skill.stat().st_mode & 0o222 == 0
+        overlay_root = overlay.root
+    assert not overlay_root.exists()
+
+
+def _method_pack_archive(files: dict[str, bytes]) -> bytes:
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w:gz") as archive:
+        for name, content in files.items():
+            info = tarfile.TarInfo(name=name)
+            info.size = len(content)
+            info.mode = 0o644
+            archive.addfile(info, io.BytesIO(content))
+    return payload.getvalue()
+
+
+def test_method_pack_rejects_archive_path_traversal(tmp_path: Path) -> None:
+    archive = _method_pack_archive(
+        {
+            "package/../escape.txt": b"escape",
+            "package/package.json": b'{"name":"bmad-method","version":"6.11.0"}\n',
+            "package/src/bmad/SKILL.md": b"# Entry\n",
+        }
+    )
+    request = MethodPackInstall(
+        package_name="bmad-method",
+        package_version="6.11.0",
+        tarball_uri="https://registry.npmjs.org/bmad-method/-/bmad-method-6.11.0.tgz",
+        registry_integrity="sha512-"
+        + base64.b64encode(hashlib.sha512(archive).digest()).decode("ascii"),
+        archive_sha256=hashlib.sha256(archive).hexdigest(),
+        method_entries=(MethodEntry(method_id="bmad", source_path="src/bmad"),),
+    )
+
+    with pytest.raises(ProductError) as error:
+        ContentAddressedMethodPackStore(tmp_path / "store").install_archive(request, archive)
+
+    assert error.value.code == "METHOD_PACK_ARCHIVE_PATH_INVALID"
+    assert not (tmp_path / "escape.txt").exists()
 
 
 class _ReadyProbe:

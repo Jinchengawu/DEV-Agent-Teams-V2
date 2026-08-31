@@ -23,7 +23,7 @@ from .domain import (
 from .domain import (
     ProjectRepository as ProjectRepositoryRecord,
 )
-from .ports import ProjectRepository, ProjectWorkspaceProvisioner
+from .ports import ProjectRepository, ProjectTeamGovernance, ProjectWorkspaceProvisioner
 
 _FULLSTACK_ROLES: tuple[RepositoryRole, ...] = (
     "backend",
@@ -35,12 +35,17 @@ _FULLSTACK_ROLES: tuple[RepositoryRole, ...] = (
 
 class ProjectCatalog:
     def __init__(
-        self, repository: ProjectRepository, provisioner: ProjectWorkspaceProvisioner
+        self,
+        repository: ProjectRepository,
+        provisioner: ProjectWorkspaceProvisioner,
+        *,
+        team_governance: ProjectTeamGovernance | None = None,
     ) -> None:
         self.repository = repository
         self.provisioner = provisioner
         self._pipeline_validator: Callable[[str], None] | None = None
         self._deployment_validator: Callable[[str], None] | None = None
+        self.team_governance = team_governance
 
     def configure_resource_validators(
         self,
@@ -53,6 +58,16 @@ class ProjectCatalog:
 
     def create(self, request: ProjectCreate, actor_id: str) -> ProjectDetail:
         self._validate_pipeline(request.default_pipeline_revision_id)
+        if request.team_template_revision_id is not None:
+            if self.team_governance is None:
+                raise ProductError(
+                    code="PROJECT_TEAM_GOVERNANCE_UNAVAILABLE",
+                    title="项目团队治理模块未配置",
+                    detail="当前运行实例不能创建 Workcell 项目。",
+                    repair="启用 Project Workcell Governance 后重试。",
+                    status_code=503,
+                )
+            self.team_governance.validate_team_revision(request.team_template_revision_id)
         for deployment_id in request.deployment_ids:
             self._validate_deployment(deployment_id)
         if self.repository.get(request.id) is not None:
@@ -69,17 +84,25 @@ class ProjectCatalog:
             created_at=now,
             updated_at=now,
         )
+        workcell_project = request.team_template_revision_id is not None
         workspace = ProjectWorkspace(
             project_id=project.id,
             workspace_id=f"project:{project.id}",
-            repository_ref=f"projects/{project.id}",
+            repository_ref=(
+                f"workspace-set/{project.id}" if workcell_project else f"projects/{project.id}"
+            ),
             status="provisioning",
             provision_attempt=1,
             created_at=now,
             updated_at=now,
         )
-        self.repository.create(project, workspace)
-        self._provision(project, workspace)
+        self.repository.create(project, workspace, legacy_repository=not workcell_project)
+        if workcell_project:
+            assert request.team_template_revision_id is not None
+            assert self.team_governance is not None
+            self.team_governance.bind_project(project.id, request.team_template_revision_id)
+        else:
+            self._provision(project, workspace)
         self.put_pipeline_binding(
             project.id,
             ProjectBindingUpdate(
@@ -90,7 +113,7 @@ class ProjectCatalog:
             self.put_deployment_access(
                 project.id, ProjectDeploymentUpdate(deployment_id=deployment_id)
             )
-        if request.repository_mode == "fullstack":
+        if not workcell_project and request.repository_mode == "fullstack":
             self.provision_fullstack(project.id)
         return self.get(project.id)
 
@@ -104,6 +127,8 @@ class ProjectCatalog:
                 continue
             workspace = self.repository.get_workspace(project.id)
             if workspace is None:
+                continue
+            if self.team_governance is not None and self.team_governance.has_binding(project.id):
                 continue
             self._provision(project, workspace)
 
@@ -124,6 +149,12 @@ class ProjectCatalog:
 
     def provision_fullstack(self, project_id: str) -> ProjectDetail:
         project = self._project(project_id)
+        if self.team_governance is not None and self.team_governance.has_binding(project_id):
+            raise _conflict(
+                "PROJECT_WORKCELL_MANAGED_REPOSITORIES_REQUIRED",
+                "Workcell 项目不使用旧 RepositoryRole 初始化",
+                "通过 Workspace Binding API 为动态 Workcell 绑定独立仓库。",
+            )
         if project.lifecycle_status != "active":
             raise _archived() if project.lifecycle_status == "archived" else _not_ready()
         if self.repository.active_delivery_id(project_id) is not None:

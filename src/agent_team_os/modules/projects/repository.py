@@ -17,7 +17,13 @@ class SQLiteProjectRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
 
-    def create(self, project: Project, workspace: ProjectWorkspace) -> None:
+    def create(
+        self,
+        project: Project,
+        workspace: ProjectWorkspace,
+        *,
+        legacy_repository: bool = True,
+    ) -> None:
         with sqlite3.connect(self.database) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")
@@ -52,24 +58,25 @@ class SQLiteProjectRepository:
                     workspace.updated_at.isoformat(),
                 ),
             )
-            connection.execute(
-                """INSERT INTO project_repositories(
-                project_id,role,workspace_ref,repository_ref,seed_revision,status,
-                provision_attempt,error_code,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    workspace.project_id,
-                    "backend",
-                    workspace.workspace_id,
-                    workspace.repository_ref,
-                    workspace.seed_revision,
-                    workspace.status,
-                    workspace.provision_attempt,
-                    workspace.error_code,
-                    workspace.created_at.isoformat(),
-                    workspace.updated_at.isoformat(),
-                ),
-            )
+            if legacy_repository:
+                connection.execute(
+                    """INSERT INTO project_repositories(
+                    project_id,role,workspace_ref,repository_ref,seed_revision,status,
+                    provision_attempt,error_code,created_at,updated_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        workspace.project_id,
+                        "backend",
+                        workspace.workspace_id,
+                        workspace.repository_ref,
+                        workspace.seed_revision,
+                        workspace.status,
+                        workspace.provision_attempt,
+                        workspace.error_code,
+                        workspace.created_at.isoformat(),
+                        workspace.updated_at.isoformat(),
+                    ),
+                )
 
     def get(self, project_id: str) -> Project | None:
         with sqlite3.connect(self.database) as connection:

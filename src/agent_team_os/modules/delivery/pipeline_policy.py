@@ -17,6 +17,14 @@ class BackendDeliveryPipelinePolicy:
             "testing.review",
         }
     )
+    workcell_capabilities = frozenset(
+        {
+            "hermes-pm",
+            "hermes-project-admin",
+            "workcell.lead",
+            "workcell.delegate",
+        }
+    )
     emitted_conditions = frozenset(
         {
             "requirements-ready",
@@ -41,6 +49,11 @@ class BackendDeliveryPipelinePolicy:
             "frontend-tests-failed",
             "qa-tests-failed",
             "release-bundle-verified",
+            "design-workcell-passed",
+            "qa-preparation-artifacts-passed",
+            "frontend-candidate-passed",
+            "backend-candidate-passed",
+            "qa-candidate-passed",
         }
     )
 
@@ -51,13 +64,18 @@ class BackendDeliveryPipelinePolicy:
             str(node.get("subject_kind")) for node in nodes if node.get("kind") == "approval_gate"
         )
         errors: list[str] = []
+        workcell = bool(capabilities & {"workcell.lead", "workcell.delegate"})
         fullstack = bool(capabilities & (self.fullstack_capabilities - self.legacy_capabilities))
         required_capabilities = (
-            self.fullstack_capabilities if fullstack else self.legacy_capabilities
+            self.workcell_capabilities
+            if workcell
+            else self.fullstack_capabilities
+            if fullstack
+            else self.legacy_capabilities
         )
         required_gate_subjects = (
             frozenset({"delivery-plan", "design-candidate", "release-bundle"})
-            if fullstack
+            if fullstack or workcell
             else frozenset({"delivery-plan", "candidate-change"})
         )
         for capability in sorted(required_capabilities - capabilities):

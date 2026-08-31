@@ -12,6 +12,11 @@
 
 ---
 
+> [!NOTE]
+> This English document still describes the historical v0.4 baseline. The
+> [Chinese README](README.md) is the authoritative v0.5 Agent Workcell Kernel document;
+> an English v0.5 companion has not yet been published.
+
 Agent-Team-OS turns an AI-generated code change into a reviewable software delivery: a request is planned, approved, executed in an isolated Git Worktree, verified by fixed machine checks, reviewed as an immutable candidate, and either applied with compare-and-swap or rejected without changing `main`.
 
 > [!IMPORTANT]

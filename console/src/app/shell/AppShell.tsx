@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Select } from "antd";
-import { Bot, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Settings, Workflow } from "lucide-react";
+import { Bot, Boxes, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import mark from "../../assets/agent-team-os-mark.svg";
 import inverseMark from "../../assets/agent-team-os-mark-inverse.svg";
@@ -18,6 +18,7 @@ const projectSections = [
 const systemSections = [
   { path: "/projects", label: "项目", icon: FolderGit2, description: "项目治理、独立工作区与资源授权" },
   { path: "/agents", label: "智能体实例", icon: Bot, description: "角色、部署与运行实例" },
+  { path: "/teams", label: "组织模板", icon: Boxes, description: "Workcell 身份、委派上限与 Workspace 要求" },
   { path: "/orchestration", label: "可视化编排", icon: Workflow, description: "Pipeline、DAG 与人工 Gate" },
   { path: "/settings", label: "设置", icon: Settings, description: "安全运营参数与发布门禁" },
 ] as const;
@@ -58,7 +59,7 @@ export function AppShell() {
     <aside className="main-sidebar">
       <NavLink className="brand" to="/projects" aria-label="Agent-Team-OS 项目目录">
         <span className="brand-mark"><img className="brand-mark-light" src={mark} alt=""/><img className="brand-mark-dark" src={inverseMark} alt=""/></span>
-        <span><b>Agent-Team-OS</b><small>交付控制平面 · V0.4.0</small></span>
+        <span><b>Agent-Team-OS</b><small>交付控制平面 · V0.5.0</small></span>
       </NavLink>
       <nav aria-label="项目工作区导航"><span className="nav-label">项目工作区</span>{scopedPaths.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
       <div className="workspace-card project-switcher"><label>当前项目</label><Select id="active-project" aria-label="当前项目" value={projectId} disabled={!projects.data?.length} onChange={switchProject} options={projects.data?.map((project) => ({ value: project.id, label: project.name }))}/><small>{projects.error ? "项目目录暂不可用" : "切换后同步隔离交付、看板、知识与证据"}</small></div>

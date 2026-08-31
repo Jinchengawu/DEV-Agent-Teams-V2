@@ -100,3 +100,117 @@ journeys:
       - {source: design, target: approve-design}
       - {source: approve-design, target: implementation-repair, condition: design-approved}
       - {source: implementation-repair, target: approve-release}
+
+  - id: agent-workcell-delivery
+    version: "1.0.0"
+    nodes:
+      - kind: stage
+        id: requirements
+        workflow_mode: agentscope.role-turn
+        bindings: {actor: hermes-pm}
+        output_validator: requirement-artifact-v1
+      - kind: stage
+        id: tasking
+        workflow_mode: agentscope.role-turn
+        bindings: {actor: hermes-project-admin}
+        output_validator: task-contract-v1
+      - kind: approval_gate
+        id: approve-plan
+        subject_kind: delivery-plan
+      - kind: loop
+        id: design-repair
+        policy:
+          exit_condition: design-workcell-passed
+          max_iterations: 3
+          timeout_seconds: 900
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: design
+            workflow_mode: agentscope.workcell-team
+            bindings:
+              {main: workcell.lead, delegate_1: workcell.delegate,
+               delegate_2: workcell.delegate, delegate_3: workcell.delegate}
+            output_validator: workcell-result-v1
+        edges: []
+      - kind: approval_gate
+        id: approve-design
+        subject_kind: design-candidate
+      - kind: loop
+        id: qa-preparation-repair
+        policy:
+          exit_condition: qa-preparation-artifacts-passed
+          max_iterations: 2
+          timeout_seconds: 600
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: qa-preparation
+            workflow_mode: agentscope.workcell-team
+            bindings:
+              {main: workcell.lead, delegate_1: workcell.delegate,
+               delegate_2: workcell.delegate, delegate_3: workcell.delegate}
+            output_validator: workcell-result-v1
+        edges: []
+      - kind: loop
+        id: frontend-repair
+        policy:
+          exit_condition: frontend-candidate-passed
+          max_iterations: 3
+          timeout_seconds: 900
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: frontend
+            workflow_mode: agentscope.workcell-team
+            bindings:
+              {main: workcell.lead, delegate_1: workcell.delegate,
+               delegate_2: workcell.delegate, delegate_3: workcell.delegate}
+            output_validator: workcell-result-v1
+        edges: []
+      - kind: loop
+        id: backend-repair
+        policy:
+          exit_condition: backend-candidate-passed
+          max_iterations: 3
+          timeout_seconds: 900
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: backend
+            workflow_mode: agentscope.workcell-team
+            bindings:
+              {main: workcell.lead, delegate_1: workcell.delegate,
+               delegate_2: workcell.delegate, delegate_3: workcell.delegate}
+            output_validator: workcell-result-v1
+        edges: []
+      - kind: loop
+        id: qa-delivery-repair
+        policy:
+          exit_condition: qa-candidate-passed
+          max_iterations: 3
+          timeout_seconds: 900
+          on_exhausted: fail
+        nodes:
+          - kind: stage
+            id: qa-delivery
+            workflow_mode: agentscope.workcell-team
+            bindings:
+              {main: workcell.lead, delegate_1: workcell.delegate,
+               delegate_2: workcell.delegate, delegate_3: workcell.delegate}
+            output_validator: workcell-result-v1
+        edges: []
+      - kind: approval_gate
+        id: approve-release
+        subject_kind: release-bundle
+    edges:
+      - {source: requirements, target: tasking}
+      - {source: tasking, target: approve-plan}
+      - {source: approve-plan, target: design-repair, condition: plan-approved}
+      - {source: design-repair, target: approve-design}
+      - {source: approve-design, target: qa-preparation-repair, condition: design-approved}
+      - {source: qa-preparation-repair, target: frontend-repair}
+      - {source: qa-preparation-repair, target: backend-repair}
+      - {source: frontend-repair, target: qa-delivery-repair}
+      - {source: backend-repair, target: qa-delivery-repair}
+      - {source: qa-delivery-repair, target: approve-release}
