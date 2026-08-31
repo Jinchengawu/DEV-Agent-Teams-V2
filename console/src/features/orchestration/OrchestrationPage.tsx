@@ -69,7 +69,7 @@ type SemanticEdge = SemanticGraphEdge;
 type StageNode = {
   id: string;
   kind: "stage";
-  workflow_mode: "agentscope.role-turn" | "code-delivery";
+  workflow_mode: "agentscope.role-turn" | "agentscope.workcell-team" | "code-delivery";
   bindings: Record<string, string>;
   output_validator?: string | null;
 };
@@ -132,7 +132,11 @@ function graphNodeKindLabel(node: GraphNode): string {
 const stageSchema = z.object({
   id: z.string(),
   kind: z.literal("stage"),
-  workflow_mode: z.enum(["agentscope.role-turn", "code-delivery"]),
+  workflow_mode: z.enum([
+    "agentscope.role-turn",
+    "agentscope.workcell-team",
+    "code-delivery",
+  ]),
   bindings: z.record(z.string(), z.string()),
   output_validator: z.string().nullable().optional(),
 });
@@ -318,8 +322,8 @@ export function OrchestrationPage() {
         }),
       }),
     onSuccess: async (created) => {
-      await client.invalidateQueries({ queryKey: ["pipelines"] });
       setSelectedPipelineId(created.pipeline.id);
+      await client.invalidateQueries({ queryKey: ["pipelines"] });
     },
   });
   const save = useMutation({
@@ -480,23 +484,37 @@ export function OrchestrationPage() {
           <div className="state-box">
             <b>该流水线没有可编辑草稿</b>
           </div>
+        ) : parsed.error ? (
+          <ErrorState error={new Error(parsed.error)} />
         ) : (
           <>
             <div className="orchestration-toolbar">
               <div className="node-forge" aria-label="新增图节点">
-                <Button onClick={() => addNode("role")}>
+                <Button
+                  disabled={createPipeline.isPending}
+                  onClick={() => addNode("role")}
+                >
                   <Bot size={15} />
                   角色 Stage
                 </Button>
-                <Button onClick={() => addNode("code")}>
+                <Button
+                  disabled={createPipeline.isPending}
+                  onClick={() => addNode("code")}
+                >
                   <Code2 size={15} />
                   交付 Stage
                 </Button>
-                <Button onClick={() => addNode("gate")}>
+                <Button
+                  disabled={createPipeline.isPending}
+                  onClick={() => addNode("gate")}
+                >
                   <ShieldQuestion size={15} />
                   审批 Gate
                 </Button>
-                <Button onClick={() => addNode("loop")}>
+                <Button
+                  disabled={createPipeline.isPending}
+                  onClick={() => addNode("loop")}
+                >
                   <GitBranch size={15} />
                   有限 LOOP
                 </Button>
@@ -915,8 +933,7 @@ function GraphNodeInspector({
         </Button>
       </div>
     );
-  const capability = Object.values(node.bindings)[0] ?? "";
-  const site = `${node.id}.${stageSlot(node)}`;
+  const bindingEntries = Object.entries(node.bindings);
   return (
     <div className="step-editor">
       <StatusBadge value="executing" />
@@ -928,37 +945,53 @@ function GraphNodeInspector({
         <dd>{node.workflow_mode}</dd>
       </dl>
       <label>
-        Capability
-        <Input
-          value={capability}
-          onChange={(event) => {
-            onChange(changeCapability(node, event.target.value));
-            onAssignment(site, "");
-          }}
-        />
-      </label>
-      <label>
         阶段模式
         <Select
           aria-label="阶段模式"
           value={node.workflow_mode}
           onChange={(value: StageNode["workflow_mode"]) => {
-            onChange(
-              changeStageMode(node, value),
-            );
-            onAssignment(site, "");
+            onChange(changeStageMode(node, value));
+            for (const [slot] of bindingEntries)
+              onAssignment(`${node.id}.${slot}`, "");
           }}
-          options={[{ value: "agentscope.role-turn", label: "AgentScope 角色执行" }, { value: "code-delivery", label: "受控代码交付" }]}
+          options={[
+            { value: "agentscope.role-turn", label: "AgentScope 角色执行" },
+            {
+              value: "agentscope.workcell-team",
+              label: "AgentScope Workcell Team",
+            },
+            { value: "code-delivery", label: "受控代码交付" },
+          ]}
         />
       </label>
-      <DeploymentAssignmentEditor
-        site={site}
-        capability={capability}
-        value={assignments[site]}
-        deployments={deployments}
-        providers={providers}
-        onChange={(deploymentId) => onAssignment(site, deploymentId)}
-      />
+      {bindingEntries.map(([slot, capability]) => {
+        const site = `${node.id}.${slot}`;
+        return (
+          <div key={slot} className="stage-binding-editor">
+            <label>
+              Capability · {slot}
+              <Input
+                aria-label={`Capability ${slot}`}
+                value={capability}
+                onChange={(event) => {
+                  onChange(
+                    changeStageCapability(node, slot, event.target.value),
+                  );
+                  onAssignment(site, "");
+                }}
+              />
+            </label>
+            <DeploymentAssignmentEditor
+              site={site}
+              capability={capability}
+              value={assignments[site]}
+              deployments={deployments}
+              providers={providers}
+              onChange={(deploymentId) => onAssignment(site, deploymentId)}
+            />
+          </div>
+        );
+      })}
       <Button danger className="button-icon" onClick={onDelete}>
         <Trash2 size={15} />
         删除 Stage
@@ -1275,10 +1308,10 @@ function LoopBodyEditor({
   const selectedBodyNode = loop.nodes.find(
     (node) => node.id === selectedNodeId,
   );
-  const selectedSite =
+  const selectedBindings =
     selectedBodyNode?.kind === "stage"
-      ? `${loop.id}/${selectedBodyNode.id}.${stageSlot(selectedBodyNode)}`
-      : undefined;
+      ? Object.entries(selectedBodyNode.bindings)
+      : [];
   return (
     <section className="loop-body-editor">
       <div className="loop-body-head">
@@ -1342,16 +1375,21 @@ function LoopBodyEditor({
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
-      {selectedBodyNode?.kind === "stage" && selectedSite && (
-        <DeploymentAssignmentEditor
-          site={selectedSite}
-          capability={Object.values(selectedBodyNode.bindings)[0] ?? ""}
-          value={assignments[selectedSite]}
-          deployments={deployments}
-          providers={providers}
-          onChange={(deploymentId) => onAssignment(selectedSite, deploymentId)}
-        />
-      )}{" "}
+      {selectedBodyNode?.kind === "stage" &&
+        selectedBindings.map(([slot, capability]) => {
+          const site = `${loop.id}/${selectedBodyNode.id}.${slot}`;
+          return (
+            <DeploymentAssignmentEditor
+              key={site}
+              site={site}
+              capability={capability}
+              value={assignments[site]}
+              deployments={deployments}
+              providers={providers}
+              onChange={(deploymentId) => onAssignment(site, deploymentId)}
+            />
+          );
+        })}{" "}
       {selectedNodeId && (
         <Button
           danger
@@ -1392,7 +1430,9 @@ function LoopBodyEditor({
         onConfirm={() => {
           if (!pendingNodeDelete) return;
           const target = loop.nodes.find((item) => item.id === pendingNodeDelete);
-          if (target?.kind === "stage") onAssignment(`${loop.id}/${target.id}.${stageSlot(target)}`, "");
+          if (target?.kind === "stage")
+            for (const slot of Object.keys(target.bindings))
+              onAssignment(`${loop.id}/${target.id}.${slot}`, "");
           onChange(removeLoopBodyNode(loop, pendingNodeDelete));
           setSelectedNodeId(undefined);
           setPendingNodeDelete(undefined);
@@ -1598,11 +1638,19 @@ export function createGraphNode(
       bindings: { developer: "codex-backend" },
       output_validator: "backend-candidate-v1",
     };
+  const roleStageCount = existing.filter(
+    (item) =>
+      item.kind === "stage" && item.workflow_mode === "agentscope.role-turn",
+  ).length;
   return {
     id,
     kind: "stage",
     workflow_mode: "agentscope.role-turn",
     bindings: { actor: "hermes-pm" },
+    output_validator:
+      roleStageCount === 0
+        ? "requirement-artifact-v1"
+        : "task-contract-v1",
   };
 }
 export function canConnectGraph(
@@ -1637,31 +1685,48 @@ export function changeStageMode(
   node: StageNode,
   mode: StageNode["workflow_mode"],
 ): StageNode {
-  return mode === "code-delivery"
-    ? {
-        ...node,
-        workflow_mode: mode,
-        bindings: { developer: "codex-backend" },
-        output_validator: "backend-candidate-v1",
-      }
-    : {
-        ...node,
-        workflow_mode: mode,
-        bindings: { actor: "hermes-pm" },
-        output_validator: undefined,
-      };
+  if (mode === "code-delivery")
+    return {
+      ...node,
+      workflow_mode: mode,
+      bindings: { developer: "codex-backend" },
+      output_validator: "backend-candidate-v1",
+    };
+  if (mode === "agentscope.workcell-team")
+    return {
+      ...node,
+      workflow_mode: mode,
+      bindings: {
+        main: "workcell.lead",
+        delegate_1: "workcell.delegate",
+        delegate_2: "workcell.delegate",
+        delegate_3: "workcell.delegate",
+      },
+      output_validator: "workcell-result-v1",
+    };
+  return {
+    ...node,
+    workflow_mode: mode,
+    bindings: { actor: "hermes-pm" },
+    output_validator: "requirement-artifact-v1",
+  };
+}
+export function changeStageCapability(
+  node: StageNode,
+  slot: string,
+  capability: string,
+): StageNode {
+  if (!(slot in node.bindings)) return node;
+  return {
+    ...node,
+    bindings: { ...node.bindings, [slot]: capability },
+  };
 }
 export function changeCapability(
   node: StageNode,
   capability: string,
 ): StageNode {
-  return {
-    ...node,
-    bindings: {
-      [node.workflow_mode === "code-delivery" ? "developer" : "actor"]:
-        capability,
-    },
-  };
+  return changeStageCapability(node, stageSlot(node), capability);
 }
 export function setEdgeCondition(
   edges: Edge[],
@@ -1716,11 +1781,43 @@ export function parseDefinition(value: unknown): {
   version: string;
   nodes: GraphNode[];
   edges: SemanticEdge[];
+  error?: string;
 } {
   const parsed = definitionSchema.safeParse(value);
-  return parsed.success
-    ? parsed.data
-    : { id: "", version: "4.0.0", nodes: [], edges: [] };
+  if (parsed.success) return parsed.data;
+  const detail = parsed.error.issues
+    .flatMap((issue) => definitionIssueDetails(issue))
+    .join("; ");
+  return {
+    id: "",
+    version: "4.0.0",
+    nodes: [],
+    edges: [],
+    error: `PIPELINE_DEFINITION_INVALID · ${detail}`,
+  };
+}
+function definitionIssueDetails(
+  issue: {
+    path?: PropertyKey[];
+    message?: string;
+    errors?: Array<Array<unknown>>;
+  },
+  parentPath: string[] = [],
+): string[] {
+  const path = [
+    ...parentPath,
+    ...(issue.path ?? []).map((part) => String(part)),
+  ];
+  if (Array.isArray(issue.errors))
+    return issue.errors.flatMap((branch) =>
+      branch.flatMap((child) =>
+        definitionIssueDetails(
+          child as Parameters<typeof definitionIssueDetails>[0],
+          path,
+        ),
+      ),
+    );
+  return [`${path.join(".") || "definition"}: ${issue.message ?? "Invalid input"}`];
 }
 function semanticEdges(edges: Edge[]): SemanticEdge[] {
   return edges.map((edge) => ({
@@ -1768,7 +1865,9 @@ export function createFlowNode(node: GraphNode, position: Position): Node {
         ? "审批 Gate"
         : node.workflow_mode === "code-delivery"
           ? "代码交付 Stage"
-          : "角色 Stage";
+          : node.workflow_mode === "agentscope.workcell-team"
+            ? "Workcell Team Stage"
+            : "角色 Stage";
   return {
     id: node.id,
     position,
