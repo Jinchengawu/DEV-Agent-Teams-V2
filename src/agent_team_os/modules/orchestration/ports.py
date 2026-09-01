@@ -10,6 +10,7 @@ from .domain import (
     PipelineDraft,
     PipelineRevision,
     PipelineRunRecord,
+    WorkcellStageBinding,
 )
 
 
@@ -99,6 +100,8 @@ class PipelineRepository(Protocol):
         binding_snapshot: dict[str, dict[str, object]],
         binding_model: Literal["legacy-v0", "provider-v1"],
         resolved_provider_bindings: dict[str, dict[str, object]],
+        workcell_stage_map: dict[str, WorkcellStageBinding],
+        release_contract_snapshot: tuple[str, ...],
         fingerprint: str,
         published_by: str,
     ) -> PipelineRevision: ...

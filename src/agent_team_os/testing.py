@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from .delivery import (
     AcceptanceCriterion,
     ApplyReceipt,
@@ -10,6 +12,8 @@ from .delivery import (
     TaskContract,
     VerificationRun,
 )
+from .modules.releases import GitHubPRReceiptCreate, WorkspaceCandidateV2
+from .modules.workcells import WorkcellAgentInvocation, WorkcellAgentOutput
 
 
 class DeterministicPlanningService:
@@ -69,4 +73,73 @@ class DeterministicCandidateApplier:
             candidate_revision=candidate.candidate_revision,
             after_revision=candidate.candidate_revision,
             result="applied",
+        )
+
+
+class DeterministicWorkcellAgent:
+    """Fixture-only Agent boundary; never valid Live evidence."""
+
+    async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
+        if invocation.phase == "planning":
+            content: dict[str, object] = {
+                "assignments": json.loads(invocation.instruction.split("：", 1)[1])
+            }
+        elif invocation.phase == "synthesis":
+            content = {"status": "passed", "workcell": invocation.workcell_key}
+        elif invocation.workspace_access == "workspace_write":
+            source, test = {
+                "design": ("design/candidate.md", "tests/test_design_candidate.py"),
+                "frontend": ("src/candidate.txt", "tests/test_frontend_candidate.py"),
+                "backend": ("src/candidate.txt", "tests/test_backend_candidate.py"),
+                "qa": ("reports/candidate.md", "tests/test_qa_candidate.py"),
+            }[invocation.workcell_key]
+            source_path = invocation.workspace / source
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_text(
+                f"{invocation.workcell_key} deterministic candidate\n",
+                encoding="utf-8",
+            )
+            test_path = invocation.workspace / test
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.write_text(
+                "import unittest\n\n"
+                "class CandidateTest(unittest.TestCase):\n"
+                "    def test_candidate(self) -> None:\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+            content = {"changed_files": [source, test]}
+        elif invocation.workspace_access == "candidate_read":
+            content = {"blocking_findings": [], "method_id": invocation.method_id}
+        else:
+            content = {
+                "artifact": invocation.method_id,
+                "acceptance_coverage": ["AC-1"],
+            }
+        return WorkcellAgentOutput(
+            runtime_identity="deterministic-model-boundary",
+            content=content,
+        )
+
+
+class DeterministicPullRequestSurface:
+    """Fixture-only PR review surface with GitHub-shaped immutable receipts."""
+
+    def ensure(
+        self,
+        candidate: WorkspaceCandidateV2,
+        _binding: object,
+    ) -> GitHubPRReceiptCreate:
+        ordinal = {"design": 1, "frontend": 2, "backend": 3, "qa": 4}.get(
+            candidate.workcell_key,
+            99,
+        )
+        return GitHubPRReceiptCreate(
+            pull_request_id=ordinal,
+            url=(
+                f"https://github.com/deterministic/{candidate.workcell_key}/pull/{ordinal}"
+            ),
+            head_branch=candidate.candidate_branch,
+            head_candidate_sha=candidate.candidate_revision,
+            state="open",
         )

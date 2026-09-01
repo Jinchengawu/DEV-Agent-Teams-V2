@@ -8,6 +8,7 @@ from .domain import (
     PipelineRevision,
     PipelineRunRecord,
     PipelineWithDraft,
+    WorkcellStageBinding,
 )
 from .http import create_pipeline_router
 from .repository import SQLitePipelineRepository, SQLitePipelineRunRepository
@@ -23,6 +24,7 @@ __all__ = [
     "PipelineRunLedger",
     "PipelineRunRecord",
     "PipelineWithDraft",
+    "WorkcellStageBinding",
     "SQLitePipelineRepository",
     "SQLitePipelineRunRepository",
     "create_pipeline_router",

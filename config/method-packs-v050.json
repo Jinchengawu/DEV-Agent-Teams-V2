@@ -1,0 +1,67 @@
+{
+  "policy_version": "method-pack-store-v1",
+  "packages": [
+    {
+      "install": {
+        "package_name": "bmad-method",
+        "package_version": "6.11.0",
+        "tarball_uri": "https://registry.npmjs.org/bmad-method/-/bmad-method-6.11.0.tgz",
+        "registry_integrity": "sha512-xP+ZFPa8eA/xa9O9LSW7u8xq3/cVqEaCfdRHYwqti/JFm9+F8/Zmp+UwhHUMPAoBhyOCbDtwOJedCEnFTqqz0Q==",
+        "archive_sha256": "c0101a6061eb4eacaab24ba8ab8f38a749de1bd50338c5f74e51ee3edc0c0fed",
+        "method_entries": [
+          {
+            "method_id": "bmad-ux",
+            "source_path": "src/bmm-skills/plan/bmad-ux"
+          },
+          {
+            "method_id": "bmad-review",
+            "source_path": "src/core-skills/bmad-review"
+          },
+          {
+            "method_id": "bmad-build",
+            "source_path": "src/bmm-skills/ship/bmad-build"
+          },
+          {
+            "method_id": "bmad-code-review",
+            "source_path": "src/bmm-skills/ship/bmad-code-review"
+          }
+        ]
+      },
+      "expected_content_sha256": "f2cd8c5522b2346953d46b06e46e9e6d82e9763f075735ddfa73693fa461f243",
+      "expected_qualification_sha256": "9ab4489da421ff615731c69461f0ea7d4a8c89a7cec47e08e56964f811e0f48c"
+    },
+    {
+      "install": {
+        "package_name": "bmad-method-test-architecture-enterprise",
+        "package_version": "1.23.4",
+        "tarball_uri": "https://registry.npmjs.org/bmad-method-test-architecture-enterprise/-/bmad-method-test-architecture-enterprise-1.23.4.tgz",
+        "registry_integrity": "sha512-D9jEtJ0WlqIudhwOZRLL4xpw2zV/D+tdZGMq29cDI+Ogr0SEWMKqxyrF/NekAELXPYQ8CnS61GjilNkD8kQQFw==",
+        "archive_sha256": "913cbb7f57ad64504c329fa2a650fda870cf1d794f7323de2fc8920b2080568d",
+        "method_entries": [
+          {
+            "method_id": "bmad-testarch-test-design",
+            "source_path": "src/workflows/testarch/bmad-testarch-test-design"
+          },
+          {
+            "method_id": "bmad-testarch-atdd",
+            "source_path": "src/workflows/testarch/bmad-testarch-atdd"
+          },
+          {
+            "method_id": "bmad-testarch-automate",
+            "source_path": "src/workflows/testarch/bmad-testarch-automate"
+          },
+          {
+            "method_id": "bmad-testarch-test-review",
+            "source_path": "src/workflows/testarch/bmad-testarch-test-review"
+          },
+          {
+            "method_id": "bmad-testarch-trace",
+            "source_path": "src/workflows/testarch/bmad-testarch-trace"
+          }
+        ]
+      },
+      "expected_content_sha256": "c7b7ff9f3474362f7f8faf76277a5e7b3123ee0299f950213008de65f81c85e7",
+      "expected_qualification_sha256": "7d6dfa18888bfc577995318592a88aff721a8335fad60c4ca380d03f676116c8"
+    }
+  ]
+}

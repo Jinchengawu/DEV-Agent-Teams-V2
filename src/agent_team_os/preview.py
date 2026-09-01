@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import import_module
@@ -31,12 +32,21 @@ from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
     AgentDeploymentBindingResolver,
+    CodexWorkcellAgent,
     ControlPlaneBindingResolver,
     PipelineBindingResolutionError,
 )
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
-from .infrastructure.git import ProjectGitWorkspaces
+from .infrastructure.git import (
+    ExternalForwardGitRemote,
+    ExternalGitBinding,
+    ExternalGitCapabilityProbe,
+    ExternalGitWorkspaceManager,
+    ProjectGitWorkspaces,
+)
+from .infrastructure.github import GitHubPullRequestProvider
 from .journey import (
+    load_agent_workcell_delivery_definition,
     load_backend_delivery_definition,
     load_fullstack_delivery_definition,
     resolve_backend_delivery_fingerprint,
@@ -50,11 +60,15 @@ from .modules.agents import (
     SQLiteAgentProfileRepository,
     ensure_builtin_agent_deployments,
     ensure_builtin_fullstack_agent_deployments,
+    ensure_builtin_workcell_agent_deployments,
 )
+from .modules.artifacts import ContentAddressedArtifactStorage
 from .modules.delivery import BackendDeliveryPipelinePolicy
 from .modules.evaluation import EvaluationService, SQLiteEvaluationRepository
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.extensions import (
+    ContentAddressedMethodPackStore,
+    FrozenMethodPackSet,
     RuntimeExtensionCatalog,
     SQLiteRuntimeExtensionRepository,
 )
@@ -79,8 +93,28 @@ from .modules.projects import (
     ProjectLeaseDeliveryRepository,
     SQLiteProjectRepository,
 )
-from .modules.releases import ReleaseCoordinator, SQLiteReleaseRepository
+from .modules.releases import (
+    ExternalForwardReleaseCoordinator,
+    ExternalReleaseCatalog,
+    ReleaseCoordinator,
+    SQLiteExternalReleaseRepository,
+    SQLiteReleaseRepository,
+)
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
+from .modules.workcells import (
+    CommandWorkcellMachineVerifier,
+    ContentAddressedMethodRuntime,
+    DeliveryExecutionSnapshotCompiler,
+    ProjectWorkcellGovernance,
+    SQLiteProjectWorkcellRepository,
+    SQLiteTeamTemplateRepository,
+    SQLiteWorkcellExecutionRepository,
+    TeamTemplateCatalog,
+    WorkcellExecutionModule,
+    WorkcellStageDriver,
+    builtin_release_contract,
+    builtin_workcell_stage_map,
+)
 from .readiness import (
     DependencyCheck,
     ReadinessReport,
@@ -88,12 +122,30 @@ from .readiness import (
     inspect_acwm_revision_lock,
 )
 from .release import combined_gate_status, run_gate
+from .shared.errors import ProductError
 from .ui import install_preview_ui
 
 _logger = logging.getLogger(__name__)
 
 
 class CodexPreviewReadiness:
+    def __init__(
+        self,
+        *,
+        project_root: Path | None = None,
+        data_dir: Path | None = None,
+    ) -> None:
+        self.project_root = (project_root or Path(__file__).parents[2]).resolve()
+        self.data_dir = (
+            data_dir
+            or Path(
+                os.environ.get(
+                    "AGENT_TEAM_OS_DATA_DIR",
+                    str(self.project_root / ".agent-team-os"),
+                )
+            )
+        ).resolve()
+
     def inspect(self) -> ReadinessReport:
         checks = tuple(
             check
@@ -115,13 +167,41 @@ class CodexPreviewReadiness:
                 ),
             ),
             inspect_acwm_revision_lock(
-                Path(__file__).parents[2] / "config" / "framework-lock.json"
+                self.project_root / "config" / "framework-lock.json"
+            ),
+            _inspect_method_pack_store(
+                self.project_root / "config" / "method-packs-v050.json",
+                self.data_dir / "method-packs",
             ),
         )
         return ReadinessReport(
             status="ready" if all(check.status == "ready" for check in checks) else "not_ready",
             checks=checks,
         )
+
+
+def _inspect_method_pack_store(lock_file: Path, store_root: Path) -> DependencyCheck:
+    try:
+        FrozenMethodPackSet(
+            lock_file,
+            ContentAddressedMethodPackStore(store_root),
+        ).snapshot()
+    except ProductError as error:
+        return DependencyCheck(
+            name="method-packs:bmad-tea-v050",
+            status=(
+                "missing" if error.code == "METHOD_PACK_SNAPSHOT_MISSING" else "failed"
+            ),
+            repair=(
+                "运行 `.venv/bin/python scripts/install_method_packs.py`，"
+                "安装并验证锁定的 BMAD/TEA Package Snapshot。"
+            ),
+        )
+    return DependencyCheck(
+        name="method-packs:bmad-tea-v050",
+        status="ready",
+        repair=None,
+    )
 
 
 def _has_acwm_graph_runtime() -> bool:
@@ -153,7 +233,21 @@ def build_preview_app() -> FastAPI:
     project_workspaces = ProjectGitWorkspaces(data_dir / "workspaces")
     sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
-    projects = ProjectCatalog(SQLiteProjectRepository(database), project_workspaces)
+    project_repository = SQLiteProjectRepository(database)
+    team_templates = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database))
+    project_workcell_repository = SQLiteProjectWorkcellRepository(database)
+    project_workcells = ProjectWorkcellGovernance(
+        project_workcell_repository,
+        teams=team_templates,
+        projects=project_repository,
+        managed_git=project_workspaces,
+        external_git=ExternalGitCapabilityProbe(data_dir / "external-git-probe"),
+    )
+    projects = ProjectCatalog(
+        project_repository,
+        project_workspaces,
+        team_governance=project_workcells,
+    )
 
     def reset_workspace() -> str:
         active = {
@@ -203,6 +297,10 @@ def build_preview_app() -> FastAPI:
     fullstack_assignments = ensure_builtin_fullstack_agent_deployments(
         agent_profiles, agent_deployments
     )
+    workcell_assignments = ensure_builtin_workcell_agent_deployments(
+        agent_profiles,
+        agent_deployments,
+    )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
         graph_compiler=ACWMGraphCompiler(),
@@ -232,6 +330,18 @@ def build_preview_app() -> FastAPI:
             description="五个 Codex 角色、四个隔离仓库、三道人工审批与 Release Manifest",
             definition=load_fullstack_delivery_definition(project_root / "config"),
             agent_assignments=fullstack_assignments,
+        ),
+    )
+    _ensure_builtin_pipeline_for_preview(
+        pipeline_catalog,
+        PipelineCreate(
+            id="agent-workcell-delivery",
+            name="v0.5 Agent Workcell 四仓交付",
+            description="可观察 Main/Child Workcell、BMAD/TEA 与 Forward-only Release",
+            definition=load_agent_workcell_delivery_definition(project_root / "config"),
+            agent_assignments=workcell_assignments,
+            workcell_stage_map=builtin_workcell_stage_map(),
+            release_contract_snapshot=builtin_release_contract(),
         ),
     )
 
@@ -268,6 +378,55 @@ def build_preview_app() -> FastAPI:
         project_root=project_root,
         evidence=evidence_ledger,
     )
+    artifact_storage = ContentAddressedArtifactStorage(data_dir / "artifacts")
+    workcell_execution = WorkcellExecutionModule(
+        SQLiteWorkcellExecutionRepository(database),
+        artifact_storage=artifact_storage,
+    )
+    method_store = ContentAddressedMethodPackStore(data_dir / "method-packs")
+    method_set = FrozenMethodPackSet(
+        project_root / "config" / "method-packs-v050.json",
+        method_store,
+    )
+
+    def resolve_workspace_binding(workspace_id: str) -> ExternalGitBinding:
+        workspace = project_workcell_repository.get_workspace(workspace_id)
+        return ExternalGitBinding(
+            remote_uri=(
+                project_workspaces.remote_uri(workspace.repository_uri)
+                if workspace.adapter_type == "managed-bare-git"
+                else workspace.repository_uri
+            ),
+            credential_reference=workspace.credential_reference,
+        )
+
+    release_v2_repository = SQLiteExternalReleaseRepository(database)
+    external_release = ExternalForwardReleaseCoordinator(
+        release_v2_repository,
+        ExternalForwardGitRemote(resolve_workspace_binding),
+    )
+    workcell_agent = CodexWorkcellAgent()
+    workcell_stage_driver = WorkcellStageDriver(
+        kernel=workcell_execution,
+        artifacts=artifact_storage,
+        methods=ContentAddressedMethodRuntime(method_store),
+        agent=workcell_agent,
+        workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
+        binding_resolver=resolve_workspace_binding,
+        verifier=CommandWorkcellMachineVerifier(
+            lambda _workcell: (
+                (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
+            )
+        ),
+        releases=ExternalReleaseCatalog(release_v2_repository),
+        pull_requests=GitHubPullRequestProvider(),
+    )
+    delivery_snapshot_compiler = DeliveryExecutionSnapshotCompiler(
+        governance=project_workcells,
+        projects=project_repository,
+        pipelines=pipeline_catalog,
+        method_snapshot=method_set.snapshot,
+    )
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
@@ -293,6 +452,12 @@ def build_preview_app() -> FastAPI:
         knowledge_publications=knowledge_publications,
         knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
         evaluations=evaluations,
+        team_templates=team_templates,
+        project_workcells=project_workcells,
+        workcell_execution=workcell_execution,
+        delivery_snapshot_compiler=delivery_snapshot_compiler,
+        external_release=external_release,
+        workcell_stage_driver=workcell_stage_driver,
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
@@ -304,12 +469,14 @@ def build_preview_app() -> FastAPI:
                 project.id, project.name, project.lifecycle_status
             )
         delivery_repository.reconcile_leases()
+        workcell_execution.recover_interrupted_attempts()
         await coordinator.recover()
         try:
             yield
         finally:
             await runner.close()
             await code_agent.close()
+            await workcell_agent.close()
 
     app.router.lifespan_context = lifespan
 

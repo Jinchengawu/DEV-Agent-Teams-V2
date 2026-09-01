@@ -35,6 +35,8 @@ if TYPE_CHECKING:
         RoleDocumentPublicationPort,
         RoleDocumentPublisher,
     )
+    from .modules.releases import ExternalForwardReleaseCoordinator
+    from .modules.workcells import WorkcellStageDriver
 
 
 class ImmutableModel(BaseModel):
@@ -150,11 +152,58 @@ class ProjectExecutionSnapshot(ImmutableModel):
     repository_set_sha256: Sha256 | None = None
 
 
+class DeliveryWorkspaceSnapshot(ImmutableModel):
+    workcell_key: str
+    workspace_binding_id: str
+    kind: Literal["git_repository_v1"]
+    adapter_type: Literal["managed-bare-git", "external-git"]
+    repository_uri: str
+    base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    verification_sha256: Sha256
+
+
+class DeliveryMethodSnapshot(ImmutableModel):
+    snapshot_id: str
+    qualification_sha256: Sha256
+    packages: tuple[dict[str, object], ...]
+    method_entries: dict[str, dict[str, object]]
+
+
+class DeliveryExecutionSnapshot(ImmutableModel):
+    project_id: str
+    project_version: int = Field(ge=1)
+    team_template_revision_id: str
+    team_template_sha256: Sha256
+    team_workcells: dict[str, dict[str, object]]
+    pipeline_revision_id: str
+    pipeline_revision_sha256: Sha256
+    workcell_stage_map: dict[str, dict[str, object]]
+    release_contract_snapshot: tuple[str, ...]
+    resolved_provider_bindings: dict[str, dict[str, object]]
+    workspaces: tuple[DeliveryWorkspaceSnapshot, ...]
+    method_snapshot: DeliveryMethodSnapshot
+    snapshot_sha256: Sha256
+    compiled_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class WorkcellCandidateProjection(ImmutableModel):
+    candidate_id: str
+    workcell_key: str
+    workspace_binding_id: str
+    base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    candidate_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    diff_sha256: Sha256
+    verification_sha256: Sha256
+    review_artifact_ids: tuple[str, ...]
+    evidence_sha256: Sha256
+
+
 class DeliveryRun(ImmutableModel):
     id: str
     project_id: str = "legacy-default"
     workspace_id: str
     project_execution_snapshot: ProjectExecutionSnapshot | None = None
+    delivery_execution_snapshot: DeliveryExecutionSnapshot | None = None
     user_request: str
     status: Literal[
         "queued",
@@ -165,6 +214,7 @@ class DeliveryRun(ImmutableModel):
         "verifying",
         "awaiting_candidate_decision",
         "applying",
+        "needs_attention",
         "completed",
         "rejected",
         "failed",
@@ -176,8 +226,13 @@ class DeliveryRun(ImmutableModel):
     candidate: CandidateChange | None = None
     verification: VerificationRun | None = None
     repository_candidates: tuple[RepositoryCandidate, ...] = ()
+    workcell_candidates: dict[str, WorkcellCandidateProjection] = Field(
+        default_factory=dict
+    )
     release_bundle: ReleaseBundle | None = None
+    release_bundle_v2_sha256: Sha256 | None = None
     release_manifest: ReleaseManifest | None = None
+    release_manifest_v2_sha256: Sha256 | None = None
     apply_receipt: ApplyReceipt | None = None
     plan_gate: GateRecord | None = None
     design_gate: GateRecord | None = None
@@ -310,6 +365,8 @@ class PipelineExecution(Protocol):
     async def recover_applying(self, delivery: DeliveryRun) -> None: ...
 
     async def recover_publications(self, delivery_id: str) -> bool: ...
+
+    async def finalize_external_release(self, delivery_id: str) -> None: ...
 
 
 class InMemoryDeliveryRepository:
@@ -471,6 +528,8 @@ class DeliveryCoordinator:
         publications: RoleDocumentPublicationPort | None = None,
         publication_barrier: PublicationBarrier | None = None,
         document_publisher: RoleDocumentPublisher | None = None,
+        workcell_stage_driver: WorkcellStageDriver | None = None,
+        external_release: ExternalForwardReleaseCoordinator | None = None,
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
         from .modules.delivery import PipelineExecutionModule
@@ -488,6 +547,8 @@ class DeliveryCoordinator:
             publications=publications,
             publication_barrier=publication_barrier,
             document_publisher=document_publisher,
+            workcell_stage_driver=workcell_stage_driver,
+            external_release=external_release,
         )
 
     def enqueue(
@@ -497,6 +558,7 @@ class DeliveryCoordinator:
         user_request: str,
         project_id: str = "legacy-default",
         project_execution_snapshot: ProjectExecutionSnapshot | None = None,
+        delivery_execution_snapshot: DeliveryExecutionSnapshot | None = None,
         delivery_id: str | None = None,
         journey_revision_id: str | None = None,
         pipeline_revision_id: str | None = None,
@@ -525,6 +587,7 @@ class DeliveryCoordinator:
             project_id=project_id,
             workspace_id=workspace_id,
             project_execution_snapshot=project_execution_snapshot,
+            delivery_execution_snapshot=delivery_execution_snapshot,
             user_request=user_request,
             status="queued",
             version=1,
@@ -727,6 +790,11 @@ class DeliveryCoordinator:
         if self._repository.get(delivery_id) is None:
             raise DeliveryNotFoundError(delivery_id)
         return self._repository.list_events(delivery_id)
+
+    async def finalize_external_release(self, delivery_id: str) -> None:
+        if self._pipeline_execution is None:
+            raise DeliveryStateConflictError("pipeline runtime is unavailable")
+        await self._pipeline_execution.finalize_external_release(delivery_id)
 
     def start_plan_decision(
         self,

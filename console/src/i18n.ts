@@ -31,6 +31,23 @@ const statuses: Record<string, string> = {
   enabled: "已授权",
   disabled: "未授权",
   qualified: "资格通过",
+  delegating: "委派中",
+  reviewing: "审查中",
+  synthesizing: "结果合成中",
+  succeeded: "已成功",
+  interrupted: "已中断",
+  timed_out: "已超时",
+  pending: "等待中",
+  unbound: "未绑定",
+  legacy_projected: "历史兼容投影",
+  healthy: "发布健康",
+  release_drifted: "发布已部分推进",
+  needs_attention: "需要人工处理",
+  applied: "已推进 main",
+  draft: "草稿",
+  open: "开放",
+  closed: "已关闭",
+  merged: "已合并",
 };
 
 const commands: Record<string, string> = {

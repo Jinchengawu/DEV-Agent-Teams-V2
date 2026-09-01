@@ -2,6 +2,7 @@ from .application import AgentProfileCatalog
 from .bootstrap import (
     ensure_builtin_agent_deployments,
     ensure_builtin_fullstack_agent_deployments,
+    ensure_builtin_workcell_agent_deployments,
 )
 from .deployment_application import AgentDeploymentCatalog
 from .deployment_domain import (
@@ -85,4 +86,5 @@ __all__ = [
     "create_agent_profile_router",
     "ensure_builtin_agent_deployments",
     "ensure_builtin_fullstack_agent_deployments",
+    "ensure_builtin_workcell_agent_deployments",
 ]

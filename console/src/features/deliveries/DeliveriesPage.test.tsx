@@ -9,6 +9,8 @@ import { DeliveriesPage } from "./DeliveriesPage";
 type FetchCall = { url: string; method: string; body?: string };
 
 const calls: FetchCall[] = [];
+let projectDetail: Record<string, unknown>;
+let pipelineCatalog: Array<Record<string, unknown>>;
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { "content-type": "application/json" },
@@ -16,6 +18,15 @@ const response = (body: unknown, status = 200) => new Response(JSON.stringify(bo
 
 beforeEach(() => {
   calls.length = 0;
+  projectDetail = {
+    project: { id: "pj1", name: "项目一", description: "", lifecycle_status: "active", version: 1 },
+    workspace: { workspace_id: "project:pj1", repository_ref: "projects/pj1", status: "ready" },
+    pipeline_bindings: [{ pipeline_id: "backend-delivery", pipeline_revision: 1, enabled: true, is_default: true }],
+    deployment_access: [{ deployment_id: "builtin-backend-deployment", enabled: true }],
+    knowledge_sources: [],
+    active_delivery_id: null,
+  };
+  pipelineCatalog = [{ id: "backend-delivery", name: "内置后端交付闭环", active_revision: 1 }];
   vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
     const call = {
       url: String(input),
@@ -24,16 +35,9 @@ beforeEach(() => {
     };
     calls.push(call);
     if (call.url === "/v1/deliveries?project_id=pj1" && call.method === "GET") return response([]);
-    if (call.url === "/v1/projects/pj1" && call.method === "GET") return response({
-      project: { id: "pj1", name: "项目一", description: "", lifecycle_status: "active", version: 1 },
-      workspace: { workspace_id: "project:pj1", status: "ready" },
-      pipeline_bindings: [{ pipeline_id: "backend-delivery", pipeline_revision: 1, enabled: true, is_default: true }],
-      deployment_access: [{ deployment_id: "builtin-backend-deployment", enabled: true }],
-      knowledge_sources: [],
-      active_delivery_id: null,
-    });
+    if (call.url === "/v1/projects/pj1" && call.method === "GET") return response(projectDetail);
     if (call.url === "/v1/pipelines" && call.method === "GET") {
-      return response([{ id: "backend-delivery", name: "内置后端交付闭环", active_revision: 1 }]);
+      return response(pipelineCatalog);
     }
     if (call.url === "/v1/deliveries" && call.method === "POST") {
       return response({
@@ -91,5 +95,29 @@ describe("交付工作台", () => {
     expect(screen.getByRole("alert").textContent).toContain("请输入边界清晰的交付目标");
     expect(document.activeElement).toBe(goal);
     expect(calls.filter((call) => call.url === "/v1/deliveries" && call.method === "POST")).toHaveLength(0);
+  });
+
+  it("Workcell 项目展示四仓与冻结 Slot 语义，不回退为单仓 CAS", async () => {
+    projectDetail = {
+      ...projectDetail,
+      workspace: {
+        workspace_id: "project:pj1",
+        repository_ref: "workspace-set/pj1",
+        status: "ready",
+      },
+      pipeline_bindings: [{ pipeline_id: "agent-workcell-delivery", pipeline_revision: 1, enabled: true, is_default: true }],
+      deployment_access: [],
+    };
+    pipelineCatalog = [{ id: "agent-workcell-delivery", name: "Agent Workcell Delivery", active_revision: 1 }];
+
+    renderPage();
+
+    expect(await screen.findByText("Repository Workcell Set")).toBeTruthy();
+    expect(screen.getByText(/跨 Workcell 只传 Artifact/)).toBeTruthy();
+    expect(screen.getByText("Pipeline 冻结 Slot")).toBeTruthy();
+    expect(screen.queryByText("独立 Git Main，候选应用受 CAS 保护")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "生成交付计划" }));
+    expect(screen.getByText("四个隔离 Repository Workcell · 计划 / 设计 / 发布 Gate")).toBeTruthy();
   });
 });

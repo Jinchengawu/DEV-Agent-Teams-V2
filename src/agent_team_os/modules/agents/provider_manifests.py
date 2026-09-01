@@ -80,9 +80,15 @@ def _codex_provider() -> CapabilityProviderManifest:
                 "testing.review",
                 "product.analysis",
                 "task.planning",
+                "workcell.lead",
+                "workcell.delegate",
             )
         ),
-        workflow_modes=("agentscope.role-turn", "code-delivery"),
+        workflow_modes=(
+            "agentscope.role-turn",
+            "agentscope.workcell-team",
+            "code-delivery",
+        ),
         required_features=frozenset({CapabilityFeature.TEXT_FINAL}),
         optional_features=frozenset({CapabilityFeature.CWD_BINDING, CapabilityFeature.TOOL_EVENTS}),
         output_contracts=(

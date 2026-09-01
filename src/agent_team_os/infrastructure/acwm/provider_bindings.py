@@ -14,6 +14,7 @@ from acwm.domain import (
 from ...modules.agents import AgentDeploymentCatalog, ProviderManifestCatalog
 from ...shared.hashes import sha256_json
 from .graph import PipelineBindingResolutionError
+from .workcell_team import WorkcellTeamWorkflowAdapter
 
 
 class AgentDeploymentBindingResolver:
@@ -31,6 +32,7 @@ class AgentDeploymentBindingResolver:
             for item in (
                 AgentScopeRoleTurnAdapter.manifest,
                 CodeDeliveryWorkflowAdapter.manifest,
+                WorkcellTeamWorkflowAdapter.manifest,
             )
         }
 

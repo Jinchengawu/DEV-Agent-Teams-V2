@@ -12,6 +12,7 @@ class Role(StrEnum):
 class Permission(StrEnum):
     PROJECT_MANAGE = "projects:manage"
     DELIVERY_CREATE = "delivery:create"
+    WORKCELL_CANCEL = "workcell:cancel"
     PLAN_DECIDE = "delivery:plan-decide"
     CANDIDATE_APPLY = "delivery:candidate-apply"
     JOURNEY_PUBLISH = "journey:publish"
@@ -39,6 +40,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.EDITOR: frozenset(
         {
             Permission.DELIVERY_CREATE,
+            Permission.WORKCELL_CANCEL,
             Permission.PLAN_DECIDE,
             Permission.JOURNEY_EDIT,
             Permission.AGENT_PROFILE_EDIT,

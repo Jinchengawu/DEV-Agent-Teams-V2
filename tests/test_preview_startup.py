@@ -1,10 +1,15 @@
 import sys
+from pathlib import Path
 
 import pytest
 from pytest import MonkeyPatch
 
 from agent_team_os.infrastructure.acwm import PipelineBindingResolutionError
-from agent_team_os.preview import _ensure_builtin_pipeline_for_preview, main
+from agent_team_os.preview import (
+    _ensure_builtin_pipeline_for_preview,
+    _inspect_method_pack_store,
+    main,
+)
 from agent_team_os.readiness import DependencyCheck, ReadinessReport
 
 
@@ -53,3 +58,18 @@ def test_preview_stays_available_when_builtin_pipeline_binding_needs_repair(
 
     assert result is None
     assert "codex-backend binding is stale" in caplog.text
+
+
+def test_preview_readiness_blocks_when_locked_method_packs_are_not_installed(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).parents[1]
+
+    check = _inspect_method_pack_store(
+        root / "config" / "method-packs-v050.json",
+        tmp_path / "empty-method-store",
+    )
+
+    assert check.name == "method-packs:bmad-tea-v050"
+    assert check.status == "missing"
+    assert check.repair is not None and "install_method_packs.py" in check.repair

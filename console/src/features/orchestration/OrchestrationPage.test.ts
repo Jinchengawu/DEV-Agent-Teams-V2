@@ -3,6 +3,7 @@ import {
   addLoopBodyNode,
   canConnectGraph,
   changeCapability,
+  changeStageCapability,
   changeStageMode,
   createDependencyEdge,
   createGraphNode,
@@ -17,10 +18,19 @@ import {
 describe("DAG 与 LOOP 流水线编辑控制器", () => {
   it("创建 Stage、Gate 和有界 LOOP 节点", () => {
     const role = createGraphNode("role", []);
+    const tasking = createGraphNode("role", [role]);
     const code = createGraphNode("code", [role]);
     const gate = createGraphNode("gate", [role, code]);
     const loop = createGraphNode("loop", [role, code, gate]);
-    expect(role).toMatchObject({ id: "stage-1", kind: "stage" });
+    expect(role).toMatchObject({
+      id: "stage-1",
+      kind: "stage",
+      output_validator: "requirement-artifact-v1",
+    });
+    expect(tasking).toMatchObject({
+      id: "stage-2",
+      output_validator: "task-contract-v1",
+    });
     expect(code).toMatchObject({ id: "code-1", bindings: { developer: "codex-backend" } });
     expect(gate).toMatchObject({ id: "gate-1", kind: "approval_gate", subject_kind: "delivery-plan" });
     expect(loop).toMatchObject({ id: "loop-1", kind: "loop", policy: { exit_condition: "machine-tests-passed", max_iterations: 3, on_exhausted: "fail" } });
@@ -36,6 +46,79 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     expect(definition.nodes).toHaveLength(2);
     expect(definition.edges).toEqual([{ source: "plan", target: "approve", condition: "ready" }]);
   });
+  it("保留 LOOP 内的 Agent Workcell Team Stage 及全部委派槽位", () => {
+    const definition = parseDefinition({
+      id: "agent-workcell-delivery",
+      version: "4.0.0",
+      nodes: [
+        {
+          id: "requirements",
+          kind: "stage",
+          workflow_mode: "agentscope.role-turn",
+          bindings: { actor: "hermes-pm" },
+        },
+        {
+          id: "frontend-repair",
+          kind: "loop",
+          policy: {
+            exit_condition: "workcell-result-valid",
+            max_iterations: 3,
+            timeout_seconds: 1800,
+            on_exhausted: "fail",
+          },
+          nodes: [
+            {
+              id: "frontend",
+              kind: "stage",
+              workflow_mode: "agentscope.workcell-team",
+              bindings: {
+                main: "workcell.lead",
+                delegate_1: "workcell.delegate",
+                delegate_2: "workcell.delegate",
+                delegate_3: "workcell.delegate",
+              },
+              output_validator: "workcell-result-v1",
+            },
+          ],
+          edges: [],
+        },
+      ],
+      edges: [{ source: "requirements", target: "frontend-repair" }],
+    });
+
+    expect(definition.nodes).toHaveLength(2);
+    expect(definition.edges).toEqual([{ source: "requirements", target: "frontend-repair" }]);
+    const loop = definition.nodes[1];
+    if (loop?.kind !== "loop") throw new Error("测试需要 Workcell LOOP");
+    expect(loop.nodes[0]).toMatchObject({
+      workflow_mode: "agentscope.workcell-team",
+      bindings: {
+        main: "workcell.lead",
+        delegate_1: "workcell.delegate",
+        delegate_2: "workcell.delegate",
+        delegate_3: "workcell.delegate",
+      },
+      output_validator: "workcell-result-v1",
+    });
+  });
+  it("定义不兼容时返回可见诊断，不把解析失败伪装成空图", () => {
+    const definition = parseDefinition({
+      id: "broken",
+      version: "4.0.0",
+      nodes: [
+        {
+          id: "stage-1",
+          kind: "stage",
+          workflow_mode: "agentscope.unknown",
+          bindings: { actor: "hermes-pm" },
+        },
+      ],
+      edges: [],
+    });
+
+    expect(definition.nodes).toEqual([]);
+    expect(definition.error).toContain("workflow_mode");
+  });
   it("切换 Stage 模式时重建 Capability 绑定槽位", () => {
     const node = createGraphNode("role", []);
     if (node.kind !== "stage") throw new Error("测试需要 Stage");
@@ -43,6 +126,30 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
     const admin = changeCapability(changeStageMode(code, "agentscope.role-turn"), "hermes-project-admin");
     expect(code.bindings).toEqual({ developer: "codex-backend" });
     expect(admin.bindings).toEqual({ actor: "hermes-project-admin" });
+    expect(admin.output_validator).toBe("requirement-artifact-v1");
+  });
+  it("切换为 Workcell Team 后保留 Main 与 Delegate 的独立绑定槽位", () => {
+    const node = createGraphNode("role", []);
+    if (node.kind !== "stage") throw new Error("测试需要 Stage");
+    const workcell = changeStageMode(node, "agentscope.workcell-team");
+    const reviewed = changeStageCapability(
+      workcell,
+      "delegate_2",
+      "workcell.security-review",
+    );
+
+    expect(workcell.bindings).toEqual({
+      main: "workcell.lead",
+      delegate_1: "workcell.delegate",
+      delegate_2: "workcell.delegate",
+      delegate_3: "workcell.delegate",
+    });
+    expect(reviewed.bindings).toEqual({
+      main: "workcell.lead",
+      delegate_1: "workcell.delegate",
+      delegate_2: "workcell.security-review",
+      delegate_3: "workcell.delegate",
+    });
   });
   it("编辑条件边并把条件写回语义数据", () => {
     const edges = [{ id: "edge-plan-code", source: "plan", target: "code", data: {} }];

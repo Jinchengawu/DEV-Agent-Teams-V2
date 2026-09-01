@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent-Team-OS",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/v1/projects": {
@@ -2430,6 +2430,1396 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentDeployment"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-templates": {
+      "get": {
+        "summary": "List Team Templates",
+        "operationId": "list_team_templates_v1_team_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TeamTemplate"
+                  },
+                  "type": "array",
+                  "title": "Response List Team Templates V1 Team Templates Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Team Template",
+        "operationId": "create_team_template_v1_team_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateWithDraft"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-template-drafts/{draft_id}": {
+      "get": {
+        "summary": "Get Team Template Draft",
+        "operationId": "get_team_template_draft_v1_team_template_drafts__draft_id__get",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateDraft"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Team Template Draft",
+        "operationId": "patch_team_template_draft_v1_team_template_drafts__draft_id__patch",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamTemplateDraftPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateDraft"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-templates/{template_id}/drafts": {
+      "get": {
+        "summary": "List Team Template Drafts",
+        "operationId": "list_team_template_drafts_v1_team_templates__template_id__drafts_get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamTemplateDraft"
+                  },
+                  "title": "Response List Team Template Drafts V1 Team Templates  Template Id  Drafts Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-template-drafts/{draft_id}/validate": {
+      "post": {
+        "summary": "Validate Team Template Draft",
+        "operationId": "validate_team_template_draft_v1_team_template_drafts__draft_id__validate_post",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamTemplateVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateDraft"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-template-drafts/{draft_id}/publish": {
+      "post": {
+        "summary": "Publish Team Template Draft",
+        "operationId": "publish_team_template_draft_v1_team_template_drafts__draft_id__publish_post",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamTemplateVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team-templates/{template_id}/revisions/{revision}": {
+      "get": {
+        "summary": "Get Team Template Revision",
+        "operationId": "get_team_template_revision_v1_team_templates__template_id__revisions__revision__get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamTemplateRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/workcells": {
+      "get": {
+        "summary": "Get Project Workcells",
+        "operationId": "get_project_workcells_v1_projects__project_id__workcells_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectWorkcellTopology"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/workspace-bindings": {
+      "post": {
+        "summary": "Create Workspace Binding",
+        "operationId": "create_workspace_binding_v1_projects__project_id__workspace_bindings_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceBindingCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBindingAssignment"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspace-bindings/{workspace_id}/verify": {
+      "post": {
+        "summary": "Verify Workspace Binding",
+        "operationId": "verify_workspace_binding_v1_workspace_bindings__workspace_id__verify_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceBindingVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/team-activate": {
+      "post": {
+        "summary": "Activate Project Team",
+        "operationId": "activate_project_team_v1_projects__project_id__team_activate_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamActivationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectWorkcellTopology"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/deliveries/{delivery_id}/workcell-runs": {
+      "get": {
+        "summary": "List Delivery Workcell Runs",
+        "operationId": "list_delivery_workcell_runs_v1_deliveries__delivery_id__workcell_runs_get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkcellRunTree"
+                  },
+                  "title": "Response List Delivery Workcell Runs V1 Deliveries  Delivery Id  Workcell Runs Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workcell-runs/{run_id}": {
+      "get": {
+        "summary": "Get Workcell Run",
+        "operationId": "get_workcell_run_v1_workcell_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkcellRunTree"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workcell-runs/{run_id}/agent-attempts": {
+      "get": {
+        "summary": "List Workcell Agent Attempts",
+        "operationId": "list_workcell_agent_attempts_v1_workcell_runs__run_id__agent_attempts_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentAttempt"
+                  },
+                  "title": "Response List Workcell Agent Attempts V1 Workcell Runs  Run Id  Agent Attempts Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workcell-runs/{run_id}/cancel": {
+      "post": {
+        "summary": "Cancel Workcell Run",
+        "operationId": "cancel_workcell_run_v1_workcell_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkcellRunCancelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkcellRunTree"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/releases/{delivery_id}/resume-forward": {
+      "post": {
+        "summary": "Resume Forward",
+        "operationId": "resume_forward_v1_releases__delivery_id__resume_forward_post",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseManifestV2"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/release-health": {
+      "get": {
+        "summary": "Get Release Health",
+        "operationId": "get_release_health_v1_projects__project_id__release_health_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseHealthV2"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/releases/{delivery_id}": {
+      "get": {
+        "summary": "Get External Release",
+        "operationId": "get_external_release_v1_releases__delivery_id__get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExternalReleaseView"
                 }
               }
             }
@@ -8445,6 +9835,109 @@
         ],
         "title": "AcceptanceCriterion"
       },
+      "AgentAttempt": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "agent_run_id": {
+            "type": "string",
+            "title": "Agent Run Id"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "delegate",
+              "synthesis",
+              "legacy"
+            ],
+            "title": "Phase"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Ordinal"
+          },
+          "provider_binding_hash": {
+            "type": "string",
+            "title": "Provider Binding Hash"
+          },
+          "runtime_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Identity"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out",
+              "interrupted"
+            ],
+            "title": "Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "result_artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Artifact Sha256"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "agent_run_id",
+          "phase",
+          "ordinal",
+          "provider_binding_hash",
+          "status"
+        ],
+        "title": "AgentAttempt"
+      },
       "AgentCapabilityRequirement": {
         "properties": {
           "id": {
@@ -9399,6 +10892,78 @@
             "type": "string",
             "title": "Status"
           },
+          "workcell_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workcell Run Id"
+          },
+          "parent_agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Agent Run Id"
+          },
+          "root_agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Agent Run Id"
+          },
+          "depth": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Depth",
+            "default": 0
+          },
+          "run_role": {
+            "type": "string",
+            "title": "Run Role",
+            "default": "main"
+          },
+          "delegate_purpose": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delegate Purpose"
+          },
+          "workspace_access": {
+            "type": "string",
+            "title": "Workspace Access",
+            "default": "legacy"
+          },
+          "slot_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slot Key"
+          },
           "artifact_envelopes": {
             "items": {
               "$ref": "#/components/schemas/ArtifactEnvelope"
@@ -9815,6 +11380,34 @@
         ],
         "title": "BindingRequest"
       },
+      "BlockingFinding": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Summary"
+          },
+          "evidence_sha256": {
+            "type": "string",
+            "title": "Evidence Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "summary",
+          "evidence_sha256"
+        ],
+        "title": "BlockingFinding"
+      },
       "BootstrapRequest": {
         "properties": {
           "username": {
@@ -9946,6 +11539,65 @@
           "expected_subject_sha256"
         ],
         "title": "CandidateDecisionRequest"
+      },
+      "CandidateVerification": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workcell_run_id": {
+            "type": "string",
+            "title": "Workcell Run Id"
+          },
+          "writer_agent_run_id": {
+            "type": "string",
+            "title": "Writer Agent Run Id"
+          },
+          "candidate_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Candidate Sha"
+          },
+          "diff_sha256": {
+            "type": "string",
+            "title": "Diff Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run_id",
+          "writer_agent_run_id",
+          "candidate_sha",
+          "diff_sha256",
+          "status",
+          "report",
+          "sha256"
+        ],
+        "title": "CandidateVerification"
       },
       "CapabilityBinding": {
         "properties": {
@@ -10139,6 +11791,284 @@
         ],
         "title": "CommentPatch"
       },
+      "DelegationAssignment": {
+        "properties": {
+          "slot_key": {
+            "type": "string",
+            "enum": [
+              "delegate_1",
+              "delegate_2",
+              "delegate_3"
+            ],
+            "title": "Slot Key"
+          },
+          "delegate_purpose": {
+            "type": "string",
+            "enum": [
+              "workspace_write",
+              "artifact",
+              "review"
+            ],
+            "title": "Delegate Purpose"
+          },
+          "workspace_access": {
+            "type": "string",
+            "enum": [
+              "none",
+              "workspace_write",
+              "candidate_read",
+              "artifact_only",
+              "legacy"
+            ],
+            "title": "Workspace Access"
+          },
+          "method_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Id"
+          },
+          "input_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "type": "array",
+            "title": "Input Artifacts",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot_key",
+          "delegate_purpose",
+          "workspace_access"
+        ],
+        "title": "DelegationAssignment"
+      },
+      "DelegationPlan": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workcell_run_id": {
+            "type": "string",
+            "title": "Workcell Run Id"
+          },
+          "main_agent_run_id": {
+            "type": "string",
+            "title": "Main Agent Run Id"
+          },
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/DelegationAssignment"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Assignments"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run_id",
+          "main_agent_run_id",
+          "assignments",
+          "sha256"
+        ],
+        "title": "DelegationPlan"
+      },
+      "DelegationPolicy": {
+        "properties": {
+          "max_children": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Max Children",
+            "default": 3
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Max Concurrency",
+            "default": 2
+          },
+          "max_writers": {
+            "type": "integer",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Max Writers",
+            "default": 1
+          },
+          "max_depth": {
+            "type": "integer",
+            "const": 1,
+            "title": "Max Depth",
+            "default": 1
+          },
+          "wall_clock_budget_seconds": {
+            "type": "integer",
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Wall Clock Budget Seconds",
+            "default": 900
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DelegationPolicy"
+      },
+      "DeliveryExecutionSnapshot": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Project Version"
+          },
+          "team_template_revision_id": {
+            "type": "string",
+            "title": "Team Template Revision Id"
+          },
+          "team_template_sha256": {
+            "type": "string",
+            "title": "Team Template Sha256"
+          },
+          "team_workcells": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Team Workcells"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "pipeline_revision_sha256": {
+            "type": "string",
+            "title": "Pipeline Revision Sha256"
+          },
+          "workcell_stage_map": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Workcell Stage Map"
+          },
+          "release_contract_snapshot": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Release Contract Snapshot"
+          },
+          "resolved_provider_bindings": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Resolved Provider Bindings"
+          },
+          "workspaces": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryWorkspaceSnapshot"
+            },
+            "type": "array",
+            "title": "Workspaces"
+          },
+          "method_snapshot": {
+            "$ref": "#/components/schemas/DeliveryMethodSnapshot"
+          },
+          "snapshot_sha256": {
+            "type": "string",
+            "title": "Snapshot Sha256"
+          },
+          "compiled_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Compiled At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_version",
+          "team_template_revision_id",
+          "team_template_sha256",
+          "team_workcells",
+          "pipeline_revision_id",
+          "pipeline_revision_sha256",
+          "workcell_stage_map",
+          "release_contract_snapshot",
+          "resolved_provider_bindings",
+          "workspaces",
+          "method_snapshot",
+          "snapshot_sha256"
+        ],
+        "title": "DeliveryExecutionSnapshot"
+      },
+      "DeliveryMethodSnapshot": {
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          },
+          "packages": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Packages"
+          },
+          "method_entries": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Method Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "snapshot_id",
+          "qualification_sha256",
+          "packages",
+          "method_entries"
+        ],
+        "title": "DeliveryMethodSnapshot"
+      },
       "DeliveryRequest": {
         "properties": {
           "project_id": {
@@ -10226,6 +12156,16 @@
               }
             ]
           },
+          "delivery_execution_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryExecutionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "user_request": {
             "type": "string",
             "title": "User Request"
@@ -10241,6 +12181,7 @@
               "verifying",
               "awaiting_candidate_decision",
               "applying",
+              "needs_attention",
               "completed",
               "rejected",
               "failed",
@@ -10300,6 +12241,13 @@
             "title": "Repository Candidates",
             "default": []
           },
+          "workcell_candidates": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkcellCandidateProjection"
+            },
+            "type": "object",
+            "title": "Workcell Candidates"
+          },
           "release_bundle": {
             "anyOf": [
               {
@@ -10310,6 +12258,17 @@
               }
             ]
           },
+          "release_bundle_v2_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Bundle V2 Sha256"
+          },
           "release_manifest": {
             "anyOf": [
               {
@@ -10319,6 +12278,17 @@
                 "type": "null"
               }
             ]
+          },
+          "release_manifest_v2_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Manifest V2 Sha256"
           },
           "apply_receipt": {
             "anyOf": [
@@ -10485,6 +12455,56 @@
           "planning_identity"
         ],
         "title": "DeliveryRun"
+      },
+      "DeliveryWorkspaceSnapshot": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "workspace_binding_id": {
+            "type": "string",
+            "title": "Workspace Binding Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "git_repository_v1",
+            "title": "Kind"
+          },
+          "adapter_type": {
+            "type": "string",
+            "enum": [
+              "managed-bare-git",
+              "external-git"
+            ],
+            "title": "Adapter Type"
+          },
+          "repository_uri": {
+            "type": "string",
+            "title": "Repository Uri"
+          },
+          "base_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Base Revision"
+          },
+          "verification_sha256": {
+            "type": "string",
+            "title": "Verification Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "workspace_binding_id",
+          "kind",
+          "adapter_type",
+          "repository_uri",
+          "base_revision",
+          "verification_sha256"
+        ],
+        "title": "DeliveryWorkspaceSnapshot"
       },
       "DesignDecisionRequest": {
         "properties": {
@@ -10958,6 +12978,122 @@
         ],
         "title": "EvidenceVerificationRecord"
       },
+      "ExternalReleaseView": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceCandidateV2"
+            },
+            "type": "array",
+            "title": "Candidates",
+            "default": []
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubPRReceipt"
+            },
+            "type": "array",
+            "title": "Pull Requests",
+            "default": []
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseBundleV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "apply_attempt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseApplyAttemptV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "remote_apply_receipts": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteApplyReceipt"
+            },
+            "type": "array",
+            "title": "Remote Apply Receipts",
+            "default": []
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseManifestV2"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id"
+        ],
+        "title": "ExternalReleaseView",
+        "description": "Observable projection for PR, partial Apply receipts and Manifest evidence."
+      },
+      "FrozenSlotBinding": {
+        "properties": {
+          "slot_key": {
+            "type": "string",
+            "enum": [
+              "main",
+              "delegate_1",
+              "delegate_2",
+              "delegate_3"
+            ],
+            "title": "Slot Key"
+          },
+          "deployment_id": {
+            "type": "string",
+            "title": "Deployment Id"
+          },
+          "resolved_provider_binding_hash": {
+            "type": "string",
+            "title": "Resolved Provider Binding Hash"
+          },
+          "deployment_snapshot": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Deployment Snapshot"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot_key",
+          "deployment_id",
+          "resolved_provider_binding_hash",
+          "deployment_snapshot"
+        ],
+        "title": "FrozenSlotBinding"
+      },
       "GateRecord": {
         "properties": {
           "gate_id": {
@@ -11199,6 +13335,76 @@
           "evidence_sha256"
         ],
         "title": "GateReport"
+      },
+      "GitHubPRReceipt": {
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "provider": {
+            "type": "string",
+            "const": "github",
+            "title": "Provider",
+            "default": "github"
+          },
+          "pull_request_id": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Pull Request Id"
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://github\\.com/",
+            "title": "Url"
+          },
+          "base_branch": {
+            "type": "string",
+            "const": "main",
+            "title": "Base Branch",
+            "default": "main"
+          },
+          "head_branch": {
+            "type": "string",
+            "title": "Head Branch"
+          },
+          "head_candidate_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Head Candidate Sha"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "draft",
+              "closed",
+              "merged"
+            ],
+            "title": "State"
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "title": "Receipt Sha256"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "pull_request_id",
+          "url",
+          "head_branch",
+          "head_candidate_sha",
+          "state",
+          "receipt_sha256"
+        ],
+        "title": "GitHubPRReceipt"
       },
       "HealthResult": {
         "properties": {
@@ -12161,6 +14367,21 @@
             },
             "type": "object",
             "title": "Agent Assignments"
+          },
+          "workcell_stage_map": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkcellStageBinding"
+            },
+            "type": "object",
+            "title": "Workcell Stage Map"
+          },
+          "release_contract_snapshot": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Release Contract Snapshot",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -12209,6 +14430,21 @@
             },
             "type": "object",
             "title": "Agent Assignments"
+          },
+          "workcell_stage_map": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkcellStageBinding"
+            },
+            "type": "object",
+            "title": "Workcell Stage Map"
+          },
+          "release_contract_snapshot": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Release Contract Snapshot",
+            "default": []
           },
           "version": {
             "type": "integer",
@@ -12329,6 +14565,34 @@
               }
             ],
             "title": "Agent Assignments"
+          },
+          "workcell_stage_map": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/WorkcellStageBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workcell Stage Map"
+          },
+          "release_contract_snapshot": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Contract Snapshot"
           }
         },
         "additionalProperties": false,
@@ -12383,6 +14647,21 @@
             },
             "type": "object",
             "title": "Resolved Provider Bindings"
+          },
+          "workcell_stage_map": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkcellStageBinding"
+            },
+            "type": "object",
+            "title": "Workcell Stage Map"
+          },
+          "release_contract_snapshot": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Release Contract Snapshot",
+            "default": []
           },
           "fingerprint": {
             "type": "string",
@@ -12766,6 +15045,19 @@
             "title": "Deployment Ids",
             "default": []
           },
+          "team_template_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 180,
+                "minLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Template Revision Id"
+          },
           "repository_mode": {
             "type": "string",
             "enum": [
@@ -12773,7 +15065,8 @@
               "fullstack"
             ],
             "title": "Repository Mode",
-            "default": "backend"
+            "default": "backend",
+            "deprecated": true
           }
         },
         "additionalProperties": false,
@@ -13220,6 +15513,57 @@
         ],
         "title": "ProjectRepository"
       },
+      "ProjectTeamBinding": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "template_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Template Revision"
+          },
+          "template_sha256": {
+            "type": "string",
+            "title": "Template Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "provisioning",
+              "active",
+              "legacy_projected"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "template_id",
+          "template_revision",
+          "template_sha256",
+          "status",
+          "version"
+        ],
+        "title": "ProjectTeamBinding"
+      },
       "ProjectVersionRequest": {
         "properties": {
           "expected_version": {
@@ -13234,6 +15578,86 @@
           "expected_version"
         ],
         "title": "ProjectVersionRequest"
+      },
+      "ProjectWorkcellBinding": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "workspace_binding_id": {
+            "type": "string",
+            "title": "Workspace Binding Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "workcell_key",
+          "workspace_binding_id",
+          "version"
+        ],
+        "title": "ProjectWorkcellBinding"
+      },
+      "ProjectWorkcellTopology": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_status": {
+            "type": "string",
+            "title": "Project Status"
+          },
+          "team_binding": {
+            "$ref": "#/components/schemas/ProjectTeamBinding"
+          },
+          "team_revision": {
+            "$ref": "#/components/schemas/TeamTemplateRevision"
+          },
+          "workcell_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectWorkcellBinding"
+            },
+            "type": "array",
+            "title": "Workcell Bindings",
+            "default": []
+          },
+          "workspace_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceBinding"
+            },
+            "type": "array",
+            "title": "Workspace Bindings",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_status",
+          "team_binding",
+          "team_revision"
+        ],
+        "title": "ProjectWorkcellTopology"
       },
       "ProjectWorkspace": {
         "properties": {
@@ -13392,6 +15816,67 @@
         ],
         "title": "ProviderManifestView"
       },
+      "ReleaseApplyAttemptV2": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "bundle_sha256": {
+            "type": "string",
+            "title": "Bundle Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "applying",
+              "needs_attention",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "bundle_sha256",
+          "status",
+          "version"
+        ],
+        "title": "ReleaseApplyAttemptV2"
+      },
       "ReleaseBundle": {
         "properties": {
           "delivery_id": {
@@ -13445,6 +15930,131 @@
         ],
         "title": "ReleaseBundle"
       },
+      "ReleaseBundleV2": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "release_contract_snapshot": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Release Contract Snapshot"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceCandidateV2"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Candidates"
+          },
+          "bundle_sha256": {
+            "type": "string",
+            "title": "Bundle Sha256"
+          },
+          "status": {
+            "type": "string",
+            "const": "verified",
+            "title": "Status",
+            "default": "verified"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Verified At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "pipeline_revision_id",
+          "release_contract_snapshot",
+          "candidates",
+          "bundle_sha256"
+        ],
+        "title": "ReleaseBundleV2"
+      },
+      "ReleaseHealthV2": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "release_drifted"
+            ],
+            "title": "Status"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Id"
+          },
+          "bundle_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bundle Sha256"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "status",
+          "version"
+        ],
+        "title": "ReleaseHealthV2"
+      },
       "ReleaseManifest": {
         "properties": {
           "delivery_id": {
@@ -13497,6 +16107,127 @@
           "manifest_sha256"
         ],
         "title": "ReleaseManifest"
+      },
+      "ReleaseManifestV2": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "bundle_sha256": {
+            "type": "string",
+            "title": "Bundle Sha256"
+          },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/RemoteApplyReceipt"
+            },
+            "type": "array",
+            "title": "Repositories"
+          },
+          "manifest_sha256": {
+            "type": "string",
+            "title": "Manifest Sha256"
+          },
+          "status": {
+            "type": "string",
+            "const": "active",
+            "title": "Status",
+            "default": "active"
+          },
+          "activated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Activated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "delivery_id",
+          "pipeline_revision_id",
+          "bundle_sha256",
+          "repositories",
+          "manifest_sha256"
+        ],
+        "title": "ReleaseManifestV2"
+      },
+      "RemoteApplyReceipt": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ordinal"
+          },
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "repository_uri": {
+            "type": "string",
+            "title": "Repository Uri"
+          },
+          "before_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Before Revision"
+          },
+          "candidate_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Candidate Revision"
+          },
+          "after_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "After Revision"
+          },
+          "recovered": {
+            "type": "boolean",
+            "title": "Recovered",
+            "default": false
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "title": "Receipt Sha256"
+          },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Applied At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "ordinal",
+          "candidate_id",
+          "workcell_key",
+          "repository_uri",
+          "before_revision",
+          "candidate_revision",
+          "after_revision",
+          "receipt_sha256"
+        ],
+        "title": "RemoteApplyReceipt"
       },
       "RepositoryApplyReceipt": {
         "properties": {
@@ -13653,6 +16384,67 @@
           "acceptance_criteria"
         ],
         "title": "RequirementArtifact"
+      },
+      "ReviewArtifact": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workcell_run_id": {
+            "type": "string",
+            "title": "Workcell Run Id"
+          },
+          "reviewer_agent_run_id": {
+            "type": "string",
+            "title": "Reviewer Agent Run Id"
+          },
+          "candidate_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Candidate Sha"
+          },
+          "diff_sha256": {
+            "type": "string",
+            "title": "Diff Sha256"
+          },
+          "reviewer_binding_hash": {
+            "type": "string",
+            "title": "Reviewer Binding Hash"
+          },
+          "blocking_findings": {
+            "items": {
+              "$ref": "#/components/schemas/BlockingFinding"
+            },
+            "type": "array",
+            "title": "Blocking Findings",
+            "default": []
+          },
+          "artifact_reference": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run_id",
+          "reviewer_agent_run_id",
+          "candidate_sha",
+          "diff_sha256",
+          "reviewer_binding_hash",
+          "artifact_reference",
+          "sha256"
+        ],
+        "title": "ReviewArtifact"
       },
       "Revision": {
         "properties": {
@@ -14108,6 +16900,446 @@
         ],
         "title": "TaskContract"
       },
+      "TeamActivationRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "TeamActivationRequest"
+      },
+      "TeamTemplate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "latest_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Revision"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "default": 1
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "created_by"
+        ],
+        "title": "TeamTemplate"
+      },
+      "TeamTemplateCreate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Description",
+            "default": ""
+          },
+          "workcells": {
+            "items": {
+              "$ref": "#/components/schemas/WorkcellDefinition"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Workcells"
+          },
+          "topology": {
+            "$ref": "#/components/schemas/TeamTopology"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "workcells",
+          "topology"
+        ],
+        "title": "TeamTemplateCreate"
+      },
+      "TeamTemplateDraft": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "workcells": {
+            "items": {
+              "$ref": "#/components/schemas/WorkcellDefinition"
+            },
+            "type": "array",
+            "title": "Workcells"
+          },
+          "topology": {
+            "$ref": "#/components/schemas/TeamTopology"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "default": 1
+          },
+          "validation_status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "valid",
+              "invalid"
+            ],
+            "title": "Validation Status",
+            "default": "unknown"
+          },
+          "validation_errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Validation Errors",
+            "default": []
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "template_id",
+          "name",
+          "description",
+          "workcells",
+          "topology",
+          "created_by"
+        ],
+        "title": "TeamTemplateDraft"
+      },
+      "TeamTemplateDraftPatch": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "workcells": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WorkcellDefinition"
+                },
+                "type": "array",
+                "maxItems": 32,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workcells"
+          },
+          "topology": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TeamTopology"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "TeamTemplateDraftPatch"
+      },
+      "TeamTemplateRevision": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "workcells": {
+            "items": {
+              "$ref": "#/components/schemas/WorkcellDefinition"
+            },
+            "type": "array",
+            "title": "Workcells"
+          },
+          "topology": {
+            "$ref": "#/components/schemas/TeamTopology"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "published_by": {
+            "type": "string",
+            "title": "Published By"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template_id",
+          "revision",
+          "name",
+          "description",
+          "workcells",
+          "topology",
+          "sha256",
+          "published_by"
+        ],
+        "title": "TeamTemplateRevision"
+      },
+      "TeamTemplateVersionRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "TeamTemplateVersionRequest"
+      },
+      "TeamTemplateWithDraft": {
+        "properties": {
+          "template": {
+            "$ref": "#/components/schemas/TeamTemplate"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/TeamTemplateDraft"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "template",
+          "draft"
+        ],
+        "title": "TeamTemplateWithDraft"
+      },
+      "TeamTopology": {
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyNode"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/TopologyLink"
+            },
+            "type": "array",
+            "title": "Links",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nodes"
+        ],
+        "title": "TeamTopology"
+      },
+      "TopologyLink": {
+        "properties": {
+          "source_workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Source Workcell Key"
+          },
+          "target_workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Target Workcell Key"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "default": "artifact"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_workcell_key",
+          "target_workcell_key"
+        ],
+        "title": "TopologyLink"
+      },
+      "TopologyNode": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "x": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Y"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "x",
+          "y"
+        ],
+        "title": "TopologyNode"
+      },
       "User": {
         "properties": {
           "id": {
@@ -14420,6 +17652,967 @@
           "expected_version"
         ],
         "title": "WorkItemCommand"
+      },
+      "WorkcellCandidateProjection": {
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "title": "Candidate Id"
+          },
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "workspace_binding_id": {
+            "type": "string",
+            "title": "Workspace Binding Id"
+          },
+          "base_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Base Revision"
+          },
+          "candidate_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Candidate Revision"
+          },
+          "diff_sha256": {
+            "type": "string",
+            "title": "Diff Sha256"
+          },
+          "verification_sha256": {
+            "type": "string",
+            "title": "Verification Sha256"
+          },
+          "review_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Artifact Ids"
+          },
+          "evidence_sha256": {
+            "type": "string",
+            "title": "Evidence Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "workcell_key",
+          "workspace_binding_id",
+          "base_revision",
+          "candidate_revision",
+          "diff_sha256",
+          "verification_sha256",
+          "review_artifact_ids",
+          "evidence_sha256"
+        ],
+        "title": "WorkcellCandidateProjection"
+      },
+      "WorkcellDefinition": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "responsibility": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Responsibility"
+          },
+          "primary_workspace": {
+            "$ref": "#/components/schemas/WorkspaceRequirement"
+          },
+          "delegate_purposes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "workspace_write",
+                "artifact",
+                "review"
+              ]
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Delegate Purposes"
+          },
+          "delegation_policy": {
+            "$ref": "#/components/schemas/DelegationPolicy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "name",
+          "responsibility",
+          "primary_workspace",
+          "delegate_purposes"
+        ],
+        "title": "WorkcellDefinition"
+      },
+      "WorkcellExecutionSnapshot": {
+        "properties": {
+          "team_template_revision_id": {
+            "type": "string",
+            "title": "Team Template Revision Id"
+          },
+          "team_template_sha256": {
+            "type": "string",
+            "title": "Team Template Sha256"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "pipeline_revision_sha256": {
+            "type": "string",
+            "title": "Pipeline Revision Sha256"
+          },
+          "stage_path": {
+            "type": "string",
+            "title": "Stage Path"
+          },
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/WorkcellWorkspaceSnapshot"
+          },
+          "delegation_policy": {
+            "$ref": "#/components/schemas/DelegationPolicy"
+          },
+          "slot_bindings": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenSlotBinding"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Slot Bindings"
+          },
+          "slot_method_bindings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "delegate_1",
+                "delegate_2",
+                "delegate_3"
+              ]
+            },
+            "type": "object",
+            "title": "Slot Method Bindings"
+          },
+          "slot_purpose_bindings": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "workspace_write",
+                "artifact",
+                "review"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "delegate_1",
+                "delegate_2",
+                "delegate_3"
+              ]
+            },
+            "type": "object",
+            "title": "Slot Purpose Bindings"
+          },
+          "method_snapshot_sha256": {
+            "type": "string",
+            "title": "Method Snapshot Sha256"
+          },
+          "input_artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "type": "array",
+            "title": "Input Artifacts",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "team_template_revision_id",
+          "team_template_sha256",
+          "pipeline_revision_id",
+          "pipeline_revision_sha256",
+          "stage_path",
+          "workcell_key",
+          "workspace",
+          "delegation_policy",
+          "slot_bindings",
+          "method_snapshot_sha256"
+        ],
+        "title": "WorkcellExecutionSnapshot"
+      },
+      "WorkcellResult": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workcell_run_id": {
+            "type": "string",
+            "title": "Workcell Run Id"
+          },
+          "candidate_sha": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Sha"
+          },
+          "diff_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff Sha256"
+          },
+          "verification_sha256": {
+            "type": "string",
+            "title": "Verification Sha256"
+          },
+          "review_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Artifact Ids",
+            "default": []
+          },
+          "output_artifact_references": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "type": "array",
+            "title": "Output Artifact References",
+            "default": []
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run_id",
+          "verification_sha256",
+          "sha256"
+        ],
+        "title": "WorkcellResult"
+      },
+      "WorkcellResultValidation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "workcell_run_id": {
+            "type": "string",
+            "title": "Workcell Run Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "artifact_references": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Artifact References"
+          },
+          "report": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Report"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run_id",
+          "status",
+          "artifact_references",
+          "report",
+          "sha256"
+        ],
+        "title": "WorkcellResultValidation"
+      },
+      "WorkcellRun": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "pipeline_run_id": {
+            "type": "string",
+            "title": "Pipeline Run Id"
+          },
+          "stage_attempt_id": {
+            "type": "string",
+            "title": "Stage Attempt Id"
+          },
+          "stage_path": {
+            "type": "string",
+            "title": "Stage Path"
+          },
+          "loop_iteration": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Loop Iteration"
+          },
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "workcell_snapshot": {
+            "$ref": "#/components/schemas/WorkcellExecutionSnapshot"
+          },
+          "workcell_snapshot_sha256": {
+            "type": "string",
+            "title": "Workcell Snapshot Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "delegating",
+              "verifying",
+              "reviewing",
+              "synthesizing",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out",
+              "interrupted"
+            ],
+            "title": "Status"
+          },
+          "main_agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Main Agent Run Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "deadline_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Deadline At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "pipeline_run_id",
+          "stage_attempt_id",
+          "stage_path",
+          "loop_iteration",
+          "workcell_key",
+          "workcell_snapshot",
+          "workcell_snapshot_sha256",
+          "status",
+          "version",
+          "deadline_at"
+        ],
+        "title": "WorkcellRun"
+      },
+      "WorkcellRunCancelRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "WorkcellRunCancelRequest"
+      },
+      "WorkcellRunTree": {
+        "properties": {
+          "workcell_run": {
+            "$ref": "#/components/schemas/WorkcellRun"
+          },
+          "delegation_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DelegationPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent_runs": {
+            "items": {
+              "$ref": "#/components/schemas/AgentRun"
+            },
+            "type": "array",
+            "title": "Agent Runs",
+            "default": []
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/AgentAttempt"
+            },
+            "type": "array",
+            "title": "Attempts",
+            "default": []
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateVerification"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result_validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkcellResultValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewArtifact"
+            },
+            "type": "array",
+            "title": "Reviews",
+            "default": []
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkcellResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_run"
+        ],
+        "title": "WorkcellRunTree"
+      },
+      "WorkcellStageBinding": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "slot_bindings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "main",
+                "delegate_1",
+                "delegate_2",
+                "delegate_3"
+              ]
+            },
+            "type": "object",
+            "maxProperties": 4,
+            "minProperties": 1,
+            "title": "Slot Bindings"
+          },
+          "delegate_methods": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "enum": [
+                "delegate_1",
+                "delegate_2",
+                "delegate_3"
+              ]
+            },
+            "type": "object",
+            "title": "Delegate Methods"
+          },
+          "delegate_purposes": {
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "workspace_write",
+                "artifact",
+                "review"
+              ]
+            },
+            "propertyNames": {
+              "enum": [
+                "delegate_1",
+                "delegate_2",
+                "delegate_3"
+              ]
+            },
+            "type": "object",
+            "title": "Delegate Purposes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "slot_bindings"
+        ],
+        "title": "WorkcellStageBinding"
+      },
+      "WorkcellWorkspaceSnapshot": {
+        "properties": {
+          "workspace_binding_id": {
+            "type": "string",
+            "title": "Workspace Binding Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "git_repository_v1",
+            "title": "Kind"
+          },
+          "adapter_type": {
+            "type": "string",
+            "enum": [
+              "managed-bare-git",
+              "external-git"
+            ],
+            "title": "Adapter Type"
+          },
+          "repository_uri": {
+            "type": "string",
+            "title": "Repository Uri"
+          },
+          "base_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Base Revision"
+          },
+          "verification_sha256": {
+            "type": "string",
+            "title": "Verification Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workspace_binding_id",
+          "kind",
+          "adapter_type",
+          "repository_uri",
+          "base_revision",
+          "verification_sha256"
+        ],
+        "title": "WorkcellWorkspaceSnapshot"
+      },
+      "WorkspaceBinding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "git_repository_v1",
+            "title": "Kind"
+          },
+          "adapter_type": {
+            "type": "string",
+            "enum": [
+              "managed-bare-git",
+              "external-git"
+            ],
+            "title": "Adapter Type"
+          },
+          "repository_uri": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Repository Uri"
+          },
+          "credential_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Reference"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "verification_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Sha256"
+          },
+          "verification": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Verification"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "kind",
+          "adapter_type",
+          "repository_uri",
+          "status",
+          "version"
+        ],
+        "title": "WorkspaceBinding"
+      },
+      "WorkspaceBindingAssignment": {
+        "properties": {
+          "workcell_binding": {
+            "$ref": "#/components/schemas/ProjectWorkcellBinding"
+          },
+          "workspace_binding": {
+            "$ref": "#/components/schemas/WorkspaceBinding"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_binding",
+          "workspace_binding"
+        ],
+        "title": "WorkspaceBindingAssignment"
+      },
+      "WorkspaceBindingCreate": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "kind": {
+            "type": "string",
+            "const": "git_repository_v1",
+            "title": "Kind"
+          },
+          "adapter_type": {
+            "type": "string",
+            "enum": [
+              "managed-bare-git",
+              "external-git"
+            ],
+            "title": "Adapter Type"
+          },
+          "repository_uri": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Repository Uri"
+          },
+          "credential_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "kind",
+          "adapter_type",
+          "repository_uri"
+        ],
+        "title": "WorkspaceBindingCreate"
+      },
+      "WorkspaceBindingVerificationRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version"
+        ],
+        "title": "WorkspaceBindingVerificationRequest"
+      },
+      "WorkspaceCandidateV2": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "title": "Workcell Key"
+          },
+          "workspace_binding_id": {
+            "type": "string",
+            "title": "Workspace Binding Id"
+          },
+          "repository_uri": {
+            "type": "string",
+            "title": "Repository Uri"
+          },
+          "adapter_type": {
+            "type": "string",
+            "enum": [
+              "managed-bare-git",
+              "external-git"
+            ],
+            "title": "Adapter Type"
+          },
+          "base_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Base Revision"
+          },
+          "candidate_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Candidate Revision"
+          },
+          "diff_sha256": {
+            "type": "string",
+            "title": "Diff Sha256"
+          },
+          "candidate_branch": {
+            "type": "string",
+            "title": "Candidate Branch"
+          },
+          "verification_sha256": {
+            "type": "string",
+            "title": "Verification Sha256"
+          },
+          "review_artifact_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Review Artifact Ids"
+          },
+          "evidence_sha256": {
+            "type": "string",
+            "title": "Evidence Sha256"
+          },
+          "status": {
+            "type": "string",
+            "const": "verified",
+            "title": "Status",
+            "default": "verified"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "workcell_key",
+          "workspace_binding_id",
+          "repository_uri",
+          "adapter_type",
+          "base_revision",
+          "candidate_revision",
+          "diff_sha256",
+          "candidate_branch",
+          "verification_sha256",
+          "review_artifact_ids",
+          "evidence_sha256"
+        ],
+        "title": "WorkspaceCandidateV2"
+      },
+      "WorkspaceRequirement": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "git_repository_v1",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "WorkspaceRequirement"
       }
     }
   }

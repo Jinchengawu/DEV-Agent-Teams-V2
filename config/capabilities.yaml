@@ -48,3 +48,21 @@ capabilities:
       config:
         sandbox: workspace-write
         timeout_seconds: 180
+
+  - id: workcell.lead
+    version: "1.0.0"
+    labels: [workcell, lead, synthesis]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: read-only
+        timeout_seconds: 300
+
+  - id: workcell.delegate
+    version: "1.0.0"
+    labels: [workcell, delegate, method-pack]
+    adapter:
+      type: codex.cli
+      config:
+        sandbox: workspace-write
+        timeout_seconds: 300

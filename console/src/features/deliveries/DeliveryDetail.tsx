@@ -31,6 +31,7 @@ type Props = {
 };
 
 type RepositoryCandidate = Delivery["repository_candidates"][number];
+type WorkcellCandidate = NonNullable<Delivery["workcell_candidates"]>[string];
 type InspectorSelection = { kind: "plan" } | { kind: "evidence"; record: EvidenceRecord };
 
 type PublicationView = {
@@ -66,7 +67,14 @@ export function DeliveryDetail({
   const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   const repositoryCandidates = delivery.repository_candidates ?? [];
   const designCandidate = repositoryCandidates.find((item) => item.role === "design");
-  const confirmation = decisionConfirmation(pendingDecision, Boolean(delivery.release_bundle));
+  const workcellCandidates = Object.values(delivery.workcell_candidates ?? {});
+  const designWorkcellCandidate = delivery.workcell_candidates?.design;
+  const releaseMode = delivery.release_bundle_v2_sha256
+    ? "external-v2"
+    : delivery.release_bundle
+      ? "managed-v1"
+      : undefined;
+  const confirmation = decisionConfirmation(pendingDecision, releaseMode);
   const blockingPublications = publications.filter((publication) => publication.status !== "published");
   const inspector = inspectorModel(inspectorSelection, delivery);
 
@@ -105,7 +113,11 @@ export function DeliveryDetail({
 
       <section className="panel surface-card artifact-panel design-review-panel">
         <div className="panel-head"><span>UI 设计审查</span><small><Palette size={14}/> Codex 设计角色</small></div>
-        {designCandidate ? <CandidateArtifact item={designCandidate}/> : <p className="muted">五角色流水线会先生成独立设计候选；后端流水线不需要此审批。</p>}
+        {designCandidate
+          ? <CandidateArtifact item={designCandidate}/>
+          : designWorkcellCandidate
+            ? <WorkcellCandidateArtifact item={designWorkcellCandidate}/>
+            : <p className="muted">Workcell 流水线会先生成独立设计候选；后端流水线不需要此审批。</p>}
         {delivery.design_gate && <GateSubject label="设计审批主题" sha={delivery.design_gate.subject_sha256} revision={delivery.design_gate.revision}/>}
         {delivery.status === "awaiting_design_decision" && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-design")}>批准设计并开始前后端实现</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-design")}>拒绝设计</Button></div>}
       </section>
@@ -117,13 +129,21 @@ export function DeliveryDetail({
         key: item.role,
         label: <span className="repository-tab-label">{repositoryRoleLabel(item.role)}<StatusBadge value={item.verification.status}/></span>,
         children: <CandidateArtifact item={item}/>,
-      }))}/> : delivery.candidate ? <LegacyCandidate delivery={delivery}/> : <p className="muted">尚未形成经过验证的 Git Candidate。</p>}
+      }))}/> : workcellCandidates.length ? <div className="workcell-candidate-summary">{workcellCandidates.map((item) => <WorkcellCandidateArtifact key={item.candidate_id} item={item}/>)}</div> : delivery.candidate ? <LegacyCandidate delivery={delivery}/> : <p className="muted">尚未形成经过验证的 Git Candidate。</p>}
 
       {delivery.release_bundle && <div className="release-bundle-proof"><PackageCheck size={22}/><div><b>四仓 Release Bundle 已通过系统校验</b><span>{delivery.release_bundle.candidates.length} 个不可变 Candidate · 仓库集合、基线、路径、Diff 和机器测试均已核验</span><code>{delivery.release_bundle.bundle_sha256}</code></div></div>}
-      {delivery.candidate_gate && <GateSubject label={delivery.release_bundle ? "发布审批主题" : "候选审批主题"} sha={delivery.candidate_gate.subject_sha256} revision={delivery.candidate_gate.revision}/>}
-      {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><Button type="primary" danger disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>{delivery.release_bundle ? "批准四仓发布并执行 CAS" : "接受候选并原子应用"}</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>{delivery.release_bundle ? "拒绝发布包" : "拒绝候选"}</Button></div>}
+      {delivery.release_bundle_v2_sha256 && <div className="release-bundle-proof"><PackageCheck size={22}/><div><b>External ReleaseBundleV2 已通过系统校验</b><span>审批绑定同一 Bundle Hash；逐仓 Forward-only Apply，部分成功不回滚。</span><code>{delivery.release_bundle_v2_sha256}</code></div></div>}
+      {delivery.candidate_gate && (
+        <GateSubject
+          label={releaseMode ? "发布审批主题" : "候选审批主题"}
+          sha={delivery.candidate_gate.subject_sha256}
+          revision={delivery.candidate_gate.revision}
+        />
+      )}
+      {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><Button type="primary" danger disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>{releaseMode === "external-v2" ? "批准四仓 Forward-only 发布" : releaseMode === "managed-v1" ? "批准四仓发布并执行 CAS" : "接受候选并原子应用"}</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>{releaseMode ? "拒绝发布包" : "拒绝候选"}</Button></div>}
       {delivery.apply_receipt && <div className="apply-receipt"><CheckCircle2 size={20}/><div><b>单仓应用回执已核验</b><small>应用前 {delivery.apply_receipt.before_revision}<br/>候选 {delivery.apply_receipt.candidate_revision}<br/>应用后 {delivery.apply_receipt.after_revision}</small></div></div>}
       {delivery.release_manifest && <ReleaseManifest delivery={delivery}/>}
+      {delivery.release_manifest_v2_sha256 && <div className="release-manifest"><div className="release-manifest-head"><CheckCircle2 size={22}/><div><b>ReleaseManifestV2 已激活</b><span>四仓远端 main 已回读为获批 Candidate；详细 RemoteApplyReceipt 见下方 Workcell Release Surface。</span><code>{delivery.release_manifest_v2_sha256}</code></div></div></div>}
     </section>
 
     <div className="detail-grid evidence-rail">
@@ -186,6 +206,14 @@ function LegacyCandidate({ delivery }: { delivery: Delivery }) {
   </div>;
 }
 
+function WorkcellCandidateArtifact({ item }: { item: WorkcellCandidate }) {
+  return <article className="workcell-candidate-proof">
+    <div><span className="eyebrow">{item.workcell_key} Workcell</span><b>Candidate {item.candidate_revision.slice(0, 12)}</b></div>
+    <StatusBadge value="verified"/>
+    <dl><dt>Base</dt><dd><code>{item.base_revision}</code></dd><dt>Diff SHA-256</dt><dd><code>{item.diff_sha256}</code></dd><dt>Verification</dt><dd><code>{item.verification_sha256}</code></dd><dt>ReviewArtifact</dt><dd>{item.review_artifact_ids.length} 份</dd></dl>
+  </article>;
+}
+
 function Verification({ status, commands, exitCode, logSha }: { status: string; commands: string[]; exitCode: number; logSha: string }) {
   return <div className={`verification ${status === "passed" ? "verified" : "invalid"}`}><ShieldCheck size={18}/><div><b>固定机器测试：{statusLabel(status)}</b><code>{commands.join(" && ")}</code><small>退出码 {exitCode} · 日志哈希 {logSha}</small></div></div>;
 }
@@ -196,15 +224,18 @@ function ReleaseManifest({ delivery }: { delivery: Delivery }) {
   return <div className="release-manifest"><div className="release-manifest-head"><CheckCircle2 size={22}/><div><b>Release Manifest 已激活</b><span>只有四个仓库 Main 都精确等于已展示 Candidate 后，交付才会显示完成。</span><code>{manifest.manifest_sha256}</code></div></div><div className="release-receipts">{manifest.repositories.map((item) => <article key={item.role}><b>{repositoryRoleLabel(item.role)}</b><StatusBadge value={item.receipt.recovered ? "recovered" : "applied"}/><small>应用前 <code>{item.receipt.before_revision}</code></small><small>应用后 <code>{item.receipt.after_revision}</code></small></article>)}</div></div>;
 }
 
-function decisionConfirmation(decision: DeliveryDecision | undefined, releaseBundle: boolean) {
+function decisionConfirmation(
+  decision: DeliveryDecision | undefined,
+  releaseMode: "managed-v1" | "external-v2" | undefined,
+) {
   if (decision === "approve-plan") return { title: "批准计划并启动 UI 设计", detail: "系统将按当前不可变 Gate Subject 启动设计角色；后续仍需独立设计审批、机器验证和发布审批。", label: "确认批准计划" };
   if (decision === "reject-plan") return { title: "拒绝当前交付计划", detail: "该交付将进入拒绝终态，所有项目仓库 Main 均不会发生变化。如需调整需求，必须创建新的交付。", label: "确认拒绝计划" };
   if (decision === "approve-design") return { title: "批准 UI 设计候选", detail: "系统将冻结当前设计 Gate Subject，并并行启动前端与后端实现；测试角色会在两者完成后执行独立验收。", label: "确认批准设计" };
   if (decision === "reject-design") return { title: "拒绝 UI 设计候选", detail: "交付进入拒绝终态，设计候选和证据保留审计，前端、后端和测试仓库不会启动修改。", label: "确认拒绝设计" };
-  if (decision === "accept-candidate") return releaseBundle
-    ? { title: "批准四仓 Release Bundle", detail: "系统会逐仓执行基于已展示 Base 的 CAS；任何仓库冲突都会停止发布并安全补偿，只有完整 Release Manifest 激活才算完成。", label: "确认发布四个仓库" }
-    : { title: "接受候选并原子应用", detail: "系统将使用基线 Revision 执行 CAS 更新。只有 Main 仍等于已展示基线时才会指向当前 Candidate；该操作会改变项目 Main。", label: "确认应用 Candidate" };
-  if (decision === "reject-candidate") return { title: releaseBundle ? "拒绝四仓 Release Bundle" : "拒绝当前候选变更", detail: "候选提交与证据会保留用于审计，但所有项目 Main 保持不变。该交付将进入拒绝终态。", label: releaseBundle ? "确认拒绝发布" : "确认拒绝候选" };
+  if (decision === "accept-candidate" && releaseMode === "external-v2") return { title: "批准四仓 Forward-only ReleaseBundleV2", detail: "系统会在重新 Fetch 并确认远端 main 仍等于已审查 Base 后逐仓非 Force Fast-forward。任一仓失败都会停止并进入 needs_attention；已成功仓库不回滚。", label: "确认 Forward-only 发布" };
+  if (decision === "accept-candidate" && releaseMode === "managed-v1") return { title: "批准四仓 Release Bundle", detail: "系统会逐仓执行基于已展示 Base 的 CAS；任何仓库冲突都会停止发布并安全补偿，只有完整 Release Manifest 激活才算完成。", label: "确认发布四个仓库" };
+  if (decision === "accept-candidate") return { title: "接受候选并原子应用", detail: "系统将使用基线 Revision 执行 CAS 更新。只有 Main 仍等于已展示基线时才会指向当前 Candidate；该操作会改变项目 Main。", label: "确认应用 Candidate" };
+  if (decision === "reject-candidate") return { title: releaseMode ? "拒绝四仓 Release Bundle" : "拒绝当前候选变更", detail: "候选提交与证据会保留用于审计，但所有项目 Main 保持不变。该交付将进入拒绝终态。", label: releaseMode ? "确认拒绝发布" : "确认拒绝候选" };
   return { title: "确认交付命令", detail: "请检查当前交付状态和证据后继续。", label: "确认执行" };
 }
 

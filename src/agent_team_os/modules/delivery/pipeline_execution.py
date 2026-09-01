@@ -24,6 +24,7 @@ from ...delivery import (
     RequirementArtifact,
     SystemPolicy,
     TaskContract,
+    WorkcellCandidateProjection,
     _decide_gate,
     _gate_record,
     _pipeline_items,
@@ -41,7 +42,13 @@ from ..agents import (
     RuntimeOutputArtifact,
 )
 from ..orchestration import PipelineCatalog, PipelineRevision, PipelineRunLedger
-from ..releases import FullStackVerificationError, FullStackVerifier
+from ..releases import (
+    ExternalForwardReleaseCoordinator,
+    ExternalReleaseError,
+    FullStackVerificationError,
+    FullStackVerifier,
+)
+from ..workcells import WorkcellStageDriver
 from .publication import (
     PublicationBarrier,
     RoleDocumentPublicationPort,
@@ -75,6 +82,8 @@ class PipelineExecutionModule:
         publications: RoleDocumentPublicationPort | None = None,
         publication_barrier: PublicationBarrier | None = None,
         document_publisher: RoleDocumentPublisher | None = None,
+        workcell_stage_driver: WorkcellStageDriver | None = None,
+        external_release: ExternalForwardReleaseCoordinator | None = None,
     ) -> None:
         self._planning = planning
         self._executor = executor
@@ -96,6 +105,8 @@ class PipelineExecutionModule:
         self._publications = publications
         self._publication_barrier = publication_barrier
         self._document_publisher = document_publisher
+        self._workcell_stage_driver = workcell_stage_driver
+        self._external_release = external_release
 
     def start(self, delivery: DeliveryRun) -> None:
         revision = self._revision(delivery)
@@ -117,7 +128,11 @@ class PipelineExecutionModule:
                         and not self._publication_barrier.is_satisfied(delivery_id)
                     ):
                         return
-                    if delivery.apply_receipt is None and delivery.release_manifest is None:
+                    if (
+                        delivery.apply_receipt is None
+                        and delivery.release_manifest is None
+                        and delivery.release_manifest_v2_sha256 is None
+                    ):
                         raise DeliveryStateConflictError(
                             "pipeline completed without an Apply Receipt"
                         )
@@ -153,9 +168,18 @@ class PipelineExecutionModule:
                     async with asyncio.TaskGroup() as tasks:
                         for node_id, node in role_stages:
                             tasks.create_task(self._execute_stage(delivery_id, node_id, node))
+                workcell_loops = tuple(
+                    (node_id, node)
+                    for node_id, node in nodes
+                    if node.get("kind") == "loop" and _is_workcell_loop(node)
+                )
+                if workcell_loops:
+                    async with asyncio.TaskGroup() as tasks:
+                        for node_id, node in workcell_loops:
+                            tasks.create_task(self._execute_loop(delivery_id, node_id, node))
                 for node_id, node in nodes:
                     kind = node.get("kind")
-                    if (node_id, node) in role_stages:
+                    if (node_id, node) in role_stages or (node_id, node) in workcell_loops:
                         continue
                     if kind == "stage":
                         await self._execute_stage(delivery_id, node_id, node)
@@ -259,7 +283,11 @@ class PipelineExecutionModule:
         if (
             delivery.status != "awaiting_candidate_decision"
             or delivery.candidate_gate is None
-            or (delivery.candidate is None and delivery.release_bundle is None)
+            or (
+                delivery.candidate is None
+                and delivery.release_bundle is None
+                and delivery.release_bundle_v2_sha256 is None
+            )
         ):
             raise DeliveryStateConflictError(delivery.id)
         decided = _decide_gate(
@@ -286,7 +314,12 @@ class PipelineExecutionModule:
             )
             self._repository.save(updated)
             return updated
-        if delivery.release_bundle is None:
+        if delivery.release_bundle_v2_sha256 is not None:
+            if self._external_release is None:
+                raise DeliveryStateConflictError(
+                    "external forward release coordinator is not configured"
+                )
+        elif delivery.release_bundle is None:
             if delivery.verification is None or delivery.verification.status != "passed":
                 raise DeliveryStateConflictError("candidate is not verified")
             if self._applier is None or delivery.candidate is None:
@@ -302,7 +335,20 @@ class PipelineExecutionModule:
             }
         )
         self._repository.save(applying)
-        if delivery.release_bundle is not None:
+        if delivery.release_bundle_v2_sha256 is not None:
+            external_release = self._external_release
+            assert external_release is not None
+            bundle = external_release.repository.get_bundle(delivery.id)
+            if bundle.bundle_sha256 != delivery.release_bundle_v2_sha256:
+                raise DeliveryStateConflictError("ReleaseBundleV2 hash does not match gate")
+            try:
+                await asyncio.to_thread(external_release.apply, bundle)
+            except ExternalReleaseError:
+                current = self._get(delivery.id)
+                if current.status == "needs_attention":
+                    return current
+                raise
+        elif delivery.release_bundle is not None:
             release_applier = self._release_applier
             assert release_applier is not None
             manifest = await release_applier.apply(delivery.release_bundle)
@@ -350,7 +396,13 @@ class PipelineExecutionModule:
             (item for item in delivery.repository_candidates if item.role == "design"),
             None,
         )
-        if design_candidate is None or design_candidate.verification.status != "passed":
+        workcell_candidate = delivery.workcell_candidates.get("design")
+        if (
+            design_candidate is None
+            and workcell_candidate is None
+            or design_candidate is not None
+            and design_candidate.verification.status != "passed"
+        ):
             raise DeliveryStateConflictError("design candidate is not verified")
         decided = _decide_gate(
             delivery.design_gate,
@@ -396,6 +448,19 @@ class PipelineExecutionModule:
         return self._get(delivery.id)
 
     def cancel(self, delivery: DeliveryRun) -> None:
+        if self._workcell_stage_driver is not None:
+            for tree in self._workcell_stage_driver.kernel.list_delivery(delivery.id):
+                if tree.workcell_run.status not in {
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                    "timed_out",
+                    "interrupted",
+                }:
+                    self._workcell_stage_driver.kernel.cancel(
+                        tree.workcell_run.id,
+                        expected_version=tree.workcell_run.version,
+                    )
         run = self._runs.get_for_delivery(delivery.id)
         if run.status == "running":
             self._runs.transition(
@@ -497,6 +562,29 @@ class PipelineExecutionModule:
             await self.advance(delivery_id)
         return True
 
+    async def finalize_external_release(self, delivery_id: str) -> None:
+        delivery = self._get(delivery_id)
+        if delivery.release_manifest_v2_sha256 is None or delivery.candidate_gate is None:
+            raise DeliveryStateConflictError("external ReleaseManifestV2 is incomplete")
+        run = self._runs.get_for_delivery(delivery_id)
+        gate = next(
+            (
+                item
+                for item in _pipeline_items(run.snapshot.get("nodes"))
+                if item.get("node_id") == delivery.candidate_gate.gate_id
+            ),
+            None,
+        )
+        if run.status == "running" and gate is not None and gate.get("status") == "running":
+            self._runs.transition(
+                run.id,
+                command="succeed",
+                node_id=delivery.candidate_gate.gate_id,
+                expected_version=run.version,
+                activated_conditions=("approved", "accepted", "candidate-accepted"),
+            )
+        await self.advance(delivery_id)
+
     async def _execute_stage(
         self, delivery_id: str, node_id: str, node: dict[str, object]
     ) -> None:
@@ -506,6 +594,22 @@ class PipelineExecutionModule:
         )
         delivery = self._get(delivery_id)
         workflow_mode = str(node.get("workflow_mode", ""))
+        if workflow_mode == "agentscope.workcell-team":
+            activated = await self._execute_workcell_stage(
+                delivery,
+                stage_path=node_id,
+                stage_attempt_id=f"{run.id}:{node_id}:1",
+                loop_iteration=1,
+            )
+            run = self._runs.get_for_delivery(delivery_id)
+            self._runs.transition(
+                run.id,
+                command="succeed",
+                node_id=node_id,
+                expected_version=run.version,
+                activated_conditions=activated,
+            )
+            return
         binding_site = f"{node_id}.{self._slot(node)}"
         agent_run = self._start_agent_run(delivery, binding_site)
         updated_delivery: DeliveryRun | None = None
@@ -659,19 +763,36 @@ class PipelineExecutionModule:
                 (item for item in delivery.repository_candidates if item.role == "design"),
                 None,
             )
-            if design_candidate is None:
+            workcell_candidate = delivery.workcell_candidates.get("design")
+            if design_candidate is None and workcell_candidate is None:
                 raise DeliveryStateConflictError("design gate subject is incomplete")
-            if design_candidate.verification.status != "passed":
+            if (
+                design_candidate is not None
+                and design_candidate.verification.status != "passed"
+            ):
                 raise DeliveryStateConflictError("design gate requires passed verification")
-            artifact_id = design_candidate.candidate.candidate_revision
-            subject_hash = _sha256(design_candidate)
+            if workcell_candidate is not None:
+                artifact_id = workcell_candidate.candidate_id
+                subject_hash = _sha256(workcell_candidate)
+            else:
+                assert design_candidate is not None
+                artifact_id = design_candidate.candidate.candidate_revision
+                subject_hash = _sha256(design_candidate)
             field = "design_gate"
             status = "awaiting_design_decision"
         elif subject_kind == "release-bundle":
-            if delivery.release_bundle is None:
+            if (
+                delivery.release_bundle is None
+                and delivery.release_bundle_v2_sha256 is None
+            ):
                 raise DeliveryStateConflictError("release gate subject is incomplete")
-            artifact_id = delivery.release_bundle.bundle_sha256
-            subject_hash = _sha256(delivery.release_bundle)
+            if delivery.release_bundle_v2_sha256 is not None:
+                artifact_id = delivery.release_bundle_v2_sha256
+                subject_hash = delivery.release_bundle_v2_sha256
+            else:
+                assert delivery.release_bundle is not None
+                artifact_id = delivery.release_bundle.bundle_sha256
+                subject_hash = _sha256(delivery.release_bundle)
             field = "candidate_gate"
             status = "awaiting_candidate_decision"
         else:
@@ -796,10 +917,25 @@ class PipelineExecutionModule:
         node: dict[str, object],
     ) -> tuple[str, ...]:
         delivery = self._get(delivery_id)
+        workflow_mode = str(node.get("workflow_mode", ""))
+        if workflow_mode == "agentscope.workcell-team":
+            run = self._runs.get_for_delivery(delivery_id)
+            loop_state = next(
+                item
+                for item in _pipeline_items(run.snapshot.get("nodes"))
+                if item.get("node_id") == loop_node_id
+            )
+            iteration = len(_pipeline_items(loop_state.get("iterations")))
+            stage_path = f"{loop_node_id}/{body_node_id}"
+            return await self._execute_workcell_stage(
+                delivery,
+                stage_path=stage_path,
+                stage_attempt_id=f"{run.id}:{stage_path}:{iteration}",
+                loop_iteration=iteration,
+            )
         binding_site = f"{loop_node_id}/{body_node_id}.{self._slot(node)}"
         agent_run = self._start_agent_run(delivery, binding_site)
         try:
-            workflow_mode = str(node.get("workflow_mode", ""))
             if self._revision(delivery).binding_model == "provider-v1":
                 activated, artifact = await self._execute_resolved_provider(
                     delivery,
@@ -822,6 +958,60 @@ class PipelineExecutionModule:
             raise
         self._finish_agent_run(agent_run, "succeeded", artifact)
         return activated
+
+    async def _execute_workcell_stage(
+        self,
+        delivery: DeliveryRun,
+        *,
+        stage_path: str,
+        stage_attempt_id: str,
+        loop_iteration: int,
+    ) -> tuple[str, ...]:
+        if self._workcell_stage_driver is None:
+            raise DeliveryStateConflictError("Workcell Stage Driver is not configured")
+        inputs = self._workcell_stage_driver.upstream_artifacts(
+            delivery.id,
+            stage_path,
+        )
+        outcome = await self._workcell_stage_driver.execute(
+            delivery,
+            stage_path=stage_path,
+            stage_attempt_id=stage_attempt_id,
+            loop_iteration=loop_iteration,
+            input_artifacts=inputs,
+        )
+        lock = self._projection_locks.setdefault(delivery.id, asyncio.Lock())
+        async with lock:
+            current = self._get(delivery.id)
+            candidates = dict(current.workcell_candidates)
+            if outcome.candidate is not None:
+                candidate = outcome.candidate
+                candidates[candidate.workcell_key] = WorkcellCandidateProjection(
+                    candidate_id=candidate.id,
+                    workcell_key=candidate.workcell_key,
+                    workspace_binding_id=candidate.workspace_binding_id,
+                    base_revision=candidate.base_revision,
+                    candidate_revision=candidate.candidate_revision,
+                    diff_sha256=candidate.diff_sha256,
+                    verification_sha256=candidate.verification_sha256,
+                    review_artifact_ids=candidate.review_artifact_ids,
+                    evidence_sha256=candidate.evidence_sha256,
+                )
+            self._repository.save(
+                current.model_copy(
+                    update={
+                        "status": "verifying",
+                        "workcell_candidates": candidates,
+                        "release_bundle_v2_sha256": (
+                            current.release_bundle_v2_sha256
+                            if outcome.release_bundle is None
+                            else outcome.release_bundle.bundle_sha256
+                        ),
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+        return outcome.activated_conditions
 
     async def _execute_resolved_provider(
         self,
@@ -1331,7 +1521,27 @@ class PipelineExecutionModule:
             "candidate-verified",
         }
         if exit_condition == "release-bundle-verified":
-            return delivery.release_bundle is not None
+            return (
+                delivery.release_bundle is not None
+                or delivery.release_bundle_v2_sha256 is not None
+            )
+        workcell_exit = {
+            "design-workcell-passed": "design",
+            "qa-preparation-artifacts-passed": "qa-preparation-repair/qa-preparation",
+            "frontend-candidate-passed": "frontend",
+            "backend-candidate-passed": "backend",
+            "qa-candidate-passed": "qa",
+        }
+        if exit_condition in workcell_exit and self._workcell_stage_driver is not None:
+            expected = workcell_exit[exit_condition]
+            return any(
+                tree.workcell_run.status == "succeeded"
+                and (
+                    tree.workcell_run.stage_path == expected
+                    or tree.workcell_run.workcell_key == expected
+                )
+                for tree in self._workcell_stage_driver.kernel.list_delivery(delivery_id)
+            )
         if exit_condition.endswith("-candidate-verified"):
             role = exit_condition.removesuffix("-candidate-verified")
             return any(
@@ -1415,3 +1625,12 @@ def _upstream_candidate_context(
             )
         )
     return "\n\n" + "\n\n".join(sections)
+
+
+def _is_workcell_loop(node: dict[str, object]) -> bool:
+    children = _pipeline_items(node.get("nodes"))
+    return bool(children) and all(
+        child.get("kind") == "stage"
+        and child.get("workflow_mode") == "agentscope.workcell-team"
+        for child in children
+    )

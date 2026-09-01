@@ -397,7 +397,19 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             ) VALUES('evidence-1','legacy-delivery','journey','delivery','legacy-delivery',
             'legacy','verified','{}',CURRENT_TIMESTAMP)"""
         )
-    assert MigrationRunner(database, ROOT / "migrations").migrate() == tuple(range(19, 30))
+        connection.execute(
+            """INSERT INTO agent_runs(
+            id,delivery_id,pipeline_revision_id,binding_site,resolved_binding_hash,
+            deployment_snapshot_json,attempt_id,runtime_identity,status,
+            artifact_envelopes_json,created_at,updated_at
+            ) VALUES(
+            'legacy-agent-run','legacy-delivery','backend-delivery:1','implementation',
+            ?, '{}','legacy-attempt','codex-cli:legacy','succeeded','[]',
+            '2026-01-01T00:00:00+00:00','2026-01-01T00:01:00+00:00'
+            )""",
+            ("b" * 64,),
+        )
+    assert MigrationRunner(database, ROOT / "migrations").migrate() == tuple(range(19, 36))
     with sqlite3.connect(database) as connection:
         snapshot, project_id = connection.execute(
             "SELECT snapshot_json,project_id FROM deliveries WHERE id='legacy-delivery'"
@@ -416,9 +428,53 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             """SELECT role,workspace_ref,repository_ref,status
             FROM project_repositories WHERE project_id='legacy-default'"""
         ).fetchall()
+        team_projection = connection.execute(
+            """SELECT template_id,template_revision,status
+            FROM project_team_bindings WHERE project_id='legacy-default'"""
+        ).fetchone()
+        workspace_projection = connection.execute(
+            """SELECT pw.workcell_key,wb.adapter_type,wb.repository_uri,wb.status
+            FROM project_workcell_bindings pw
+            JOIN workspace_bindings wb ON wb.id=pw.workspace_binding_id
+            WHERE pw.project_id='legacy-default'"""
+        ).fetchall()
+        migrated_run = connection.execute(
+            """SELECT parent_agent_run_id,root_agent_run_id,depth,run_role,
+            delegate_purpose,workspace_access,slot_key
+            FROM agent_runs WHERE id='legacy-agent-run'"""
+        ).fetchone()
+        migrated_attempt = connection.execute(
+            """SELECT id,agent_run_id,phase,ordinal,provider_binding_hash,
+            runtime_identity,status,started_at,finished_at
+            FROM agent_attempts WHERE id='legacy-attempt'"""
+        ).fetchone()
     assert json.loads(audit[0]) == original
     assert audit[1] != audit[2]
     assert report[:3] == (1, 1, 1)
     assert len(report[3]) == 64
     assert repositories == [("backend", "backend-demo", "legacy/backend-demo", "ready")]
+    assert team_projection == ("software-delivery-team", 1, "legacy_projected")
+    assert workspace_projection == [
+        ("backend", "managed-bare-git", "legacy/backend-demo", "ready")
+    ]
+    assert migrated_run == (
+        None,
+        "legacy-agent-run",
+        0,
+        "main",
+        None,
+        "legacy",
+        None,
+    )
+    assert migrated_attempt == (
+        "legacy-attempt",
+        "legacy-agent-run",
+        "legacy",
+        1,
+        "b" * 64,
+        "codex-cli:legacy",
+        "succeeded",
+        "2026-01-01T00:00:00+00:00",
+        "2026-01-01T00:01:00+00:00",
+    )
     assert MigrationRunner(database, ROOT / "migrations").migrate() == ()

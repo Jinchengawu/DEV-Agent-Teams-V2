@@ -43,6 +43,14 @@ class AgentRun(BaseModel):
     attempt_id: str
     runtime_identity: str | None = None
     status: str
+    workcell_run_id: str | None = None
+    parent_agent_run_id: str | None = None
+    root_agent_run_id: str | None = None
+    depth: int = Field(default=0, ge=0, le=1)
+    run_role: str = "main"
+    delegate_purpose: str | None = None
+    workspace_access: str = "legacy"
+    slot_key: str | None = None
     artifact_envelopes: tuple[ArtifactEnvelope, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -80,7 +88,9 @@ class AgentRunLedger:
             runtime_identity=runtime_identity,
             status="running",
         )
+        run = run.model_copy(update={"root_agent_run_id": run.id})
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO agent_runs(
                 id,delivery_id,pipeline_revision_id,binding_site,resolved_binding_hash,
@@ -89,6 +99,25 @@ class AgentRunLedger:
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 _values(run),
             )
+            if _table_exists(connection, "agent_attempts"):
+                connection.execute(
+                    "UPDATE agent_runs SET root_agent_run_id=id WHERE id=?",
+                    (run.id,),
+                )
+                connection.execute(
+                    """INSERT INTO agent_attempts(
+                    id,agent_run_id,phase,ordinal,provider_binding_hash,runtime_identity,
+                    status,error_code,result_artifact_sha256,started_at,finished_at)
+                    VALUES(?,?,'legacy',1,?,?,?,NULL,NULL,?,NULL)""",
+                    (
+                        run.attempt_id,
+                        run.id,
+                        run.resolved_binding_hash,
+                        run.runtime_identity,
+                        run.status,
+                        run.created_at.isoformat(),
+                    ),
+                )
         return run
 
     def finish(
@@ -134,6 +163,12 @@ class AgentRunLedger:
         )
         if cursor.rowcount != 1:
             raise RuntimeError("AgentRun is no longer running")
+        if _table_exists(connection, "agent_attempts"):
+            connection.execute(
+                """UPDATE agent_attempts SET status=?,finished_at=?
+                WHERE id=? AND status='running'""",
+                (updated.status, updated.updated_at.isoformat(), run.attempt_id),
+            )
         return updated
 
     def _persist(self, envelope: ArtifactEnvelope) -> ArtifactEnvelope:
@@ -217,3 +252,13 @@ def _run(row: tuple[object, ...]) -> AgentRun:
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    return (
+        connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+        is not None
+    )

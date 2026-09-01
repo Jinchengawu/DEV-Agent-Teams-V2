@@ -4,18 +4,24 @@
 
 **面向本地 AI 软件团队的可信交付控制平面**
 
-`v0.4.0` · `本地 Alpha` · `Python + FastAPI + React`
+`v0.5.0` · `本地 Alpha` · `Python + FastAPI + React`
 
-[English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
+[完整产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md) · [English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
 
 </div>
 
 ---
 
-Agent-Team-OS 把一次 AI 代码修改变成可审查的软件交付：需求经过规划和审批后，由 Codex 在隔离 Git Worktree 中修改代码，系统执行固定机器验证，用户审查不可变候选版本，最终通过 compare-and-swap 精确应用，或在拒绝后保持 `main` 不变。
+Agent-Team-OS 把多 Agent 产生的改动组织成可审查的软件交付。v0.5 中，Design、Frontend、
+Backend 和 QA 是四个独立 `Agent Workcell`，各自绑定一个真实 Git Repository；它们不共享
+Git Workspace，跨 Workcell 只传递内容寻址 Artifact。产品在 Agent Runtime 之外持有调度、验证、
+评审、审批和 Forward-only Apply 权威。
 
 > [!IMPORTANT]
-> Agent-Team-OS 当前是本地 Alpha，不是生产稳定服务。真实代码执行目前只面向内置的纯标准库 Python Backend 沙箱。默认规划身份明确标记为 `codex-simulated-hermes`，不能作为真实 Hermes 调用证据。
+> Agent-Team-OS 当前是本地 Alpha，不是生产稳定服务。Deterministic 四仓闭环只证明产品调度、
+> Git 和证据状态机，不证明真实模型能力。Live 闭环需要已验证的 BMAD/TEA Method Store、Codex
+> 登录、四个私有 GitHub HTTPS 仓库和可直推 `main` 的服务身份；任一缺失都必须标记为
+> `blocked/not_run`。默认规划身份仍是 `codex-simulated-hermes`，不能作为真实 Hermes 证据。
 
 ## 当前架构
 
@@ -27,27 +33,34 @@ Agent-Team-OS 把一次 AI 代码修改变成可审查的软件交付：需求�
 
 ```mermaid
 flowchart LR
-    A[Backend 需求] --> B[项目与已发布流水线]
-    B --> C[需求分析与任务规划]
-    C --> D{计划审批}
-    D -->|拒绝| X[关闭且不执行代码]
-    D -->|接受| E[Codex 隔离 Git Worktree]
-    E --> F[路径、秘密材料与固定测试验证]
-    F --> G[不可变 Candidate 与 Diff]
-    G --> H{候选审批}
-    H -->|拒绝| Y[项目 main 保持不变]
-    H -->|接受| I[Git compare-and-swap 应用]
-    I --> J[回执、事件与可验证证据]
+    A[Requirements] --> B[Tasking]
+    B --> C{Plan Gate}
+    C --> D[Design Workcell]
+    D --> E{Design Gate}
+    E --> F[QA Preparation<br/>Artifact-only]
+    F --> G[Frontend Workcell<br/>Repository A]
+    F --> H[Backend Workcell<br/>Repository B]
+    G --> I[QA Delivery Workcell<br/>Repository C]
+    H --> I
+    D -. Candidate .-> J[Design Repository D]
+    I --> K[ReleaseBundleV2 Verification]
+    J --> K
+    K --> L{Release Gate}
+    L --> M[External Forward-only Apply]
+    M --> N[ReleaseManifestV2]
 ```
 
-产品明确区分四个事实：
+产品明确区分六个事实：
 
 1. Agent 产生了 Artifact；
 2. 机器验证已经通过；
 3. 用户接受了候选版本；
-4. Git 精确应用了已审查的 Revision。
+4. 每个 PR 仍绑定同一 Candidate SHA；
+5. Git 精确应用了已审查的 Revision，并从远端回读相同 SHA；
+6. 四仓 Apply Receipt 合成的 `ReleaseManifestV2` 已激活。
 
-只有完整的 Apply Receipt 才能结束一次已接受交付。
+外部仓库部分 Apply 后会进入 `needs_attention`：不回滚、不激活 Manifest，只能在原 Bundle
+仍满足已应用仓=Candidate、未应用仓=Base 时执行 `resume-forward`。
 
 ## 为什么需要 Agent-Team-OS
 
@@ -59,16 +72,18 @@ Agent 能修改文件，不代表代码已经可以安全交付。Agent-Team-OS 
 | Agent 修改错误文件 | 系统固定允许路径并核对真实 Git Diff |
 | 产物包含凭据或秘密材料 | 进入人工审查前执行候选秘密扫描 |
 | 模型文本声称测试通过 | 固定机器命令、退出码和日志哈希 |
-| Candidate 基线已经变化 | 原子 `git update-ref <candidate> <base>` CAS |
+| Candidate 基线已经变化 | Managed Git 使用 CAS；External Git 在 Apply 前重新 Fetch 并要求 `main == reviewed base` |
 | 重启后任务永久显示运行中 | 持久化状态、执行中断失败与 Apply 恢复 |
 | UI 文本被误认为交付成功 | 不可变 Evidence 与显式 Runtime Identity |
 
 ## 模块总览
 
-| 模块 | V0.4 本地 Alpha 已有能力 | 明确边界 |
+| 模块 | v0.5 本地 Alpha 已有能力 | 明确边界 |
 |---|---|---|
-| **项目** | 项目生命周期、独立 Git 工作区、固定流水线绑定和 Deployment 授权 | 暂无项目级 RBAC |
-| **交付** | 需求、两次审批、真实 Candidate/Diff、固定测试、拒绝/应用和历史 | 仅支持内置 Python Backend |
+| **组织与项目** | TeamTemplate Revision、四 Workcell 拓扑、独立 Repository Binding/验证/激活 | Team 不定义 Stage、Provider 或真实仓库；暂无项目级 RBAC |
+| **Workcell 执行** | 可观察 Main/Child/Attempt、冻结 Slot、取消/超时/中断、机器验证和结构化 Review | Child 深度最多 1；一个 Workcell 最多一个 Writer |
+| **交付与发布** | 四仓 Candidate Lineage、ReleaseBundleV2、GitHub PR、Forward-only Apply、Resume 和 Manifest | GitHub PR 仅是评审面；v0.5 不使用 Provider-native Merge |
+| **Method Pack** | 内容寻址 BMAD/TEA Store、完整性校验、临时只读 Codex Overlay | 不执行不受信安装脚本，不暴露 Party Mode，不污染业务仓库 |
 | **看板** | 可重建的项目级 WorkItem 与合法命令 | 拖动表达命令，不能伪造完成状态 |
 | **可视化编排** | 多流水线、React Flow DAG、条件边和有界 LOOP | LOOP 内禁止人工 Gate |
 | **智能体** | Agent Profile、不可变 Revision、Deployment、运行实例、Provider Manifest 与资格检查 | Runtime Feature 来自可信 Adapter，浏览器不可伪造 |
@@ -123,15 +138,16 @@ Agent-Team-OS 建立了独立 Evaluation 评测域，用于可重复验证能力
 - Node.js 与 pnpm（`console/package.json` 固定 `pnpm@10.13.1`）
 - 已安装并登录 Codex CLI，用于真实代码执行
 
-仓库当前没有发布安装包或 GitHub Release。在默认分支切换到 V0.4 前，请显式克隆已验证分支：
+仓库当前没有发布安装包或 GitHub Release。从源码启动：
 
 ```bash
-git clone --branch codex/v04-experience-completeness \
-  https://github.com/Jinchengawu/DEV-Agent-Teams-V2.git
+git clone https://github.com/Jinchengawu/DEV-Agent-Teams-V2.git
 cd DEV-Agent-Teams-V2
 
 uv sync --extra dev --extra live
 pnpm --dir console install --frozen-lockfile
+.venv/bin/python scripts/install_method_packs.py
+.venv/bin/python scripts/poc_method_pack_overlay.py
 uv run --extra live agent-team-os demo
 ```
 
@@ -146,14 +162,14 @@ AGENT_TEAM_OS_DATA_DIR=/tmp/agent-team-os-demo \
 
 ### 第一次可观察成功
 
-1. 确认 Readiness 中 ACWM、AgentScope、Git 和 Codex 登录状态全部 Ready。
-2. 打开“项目”，选择已初始化项目。
-3. 在“交付”中选择已启用的不可变流水线 Revision，提交一个有边界的 Backend 需求。
-4. 审查 Requirement 与 Task Artifact，批准计划。
-5. 等待真实 Codex Worktree 执行和固定机器验证。
-6. 审查 Unified Diff、Candidate Revision、变更文件、测试命令和哈希。
-7. Reject 可证明项目 `main` 不变；Accept 会应用展示过的精确 Candidate Revision。
-8. 在“证据”和“知识中心”查询 Apply Receipt 与项目知识动态。
+1. 确认 Readiness 中 ACWM、AgentScope、Git、Codex 登录和 `method-packs:bmad-tea-v050` 全部 Ready。
+2. 在“组织模板”查看或发布 TeamTemplate Revision；此处不编辑 Pipeline Stage 顺序。
+3. 创建 Workcell 项目，分别绑定 Design、Frontend、Backend、QA 四个不同仓库并逐仓验证。
+4. 四仓 Ready 后激活 Team，使用 `agent-workcell-delivery` 创建交付。
+5. 审查 Plan Gate 和 Design Gate，在 Delivery 详情查看 Main/Child/Attempt、Method Hash 和 Artifact。
+6. 审查四个 Candidate、机器 Verification、ReviewArtifact 和 GitHub PR，批准同一 ReleaseBundle Hash。
+7. 确认四份 Remote Apply Receipt 与 `ReleaseManifestV2` 一致；部分 Apply 只能按原 Bundle
+   `resume-forward`。
 
 如果缺少依赖，系统会 Fail Closed 并返回修复动作，不会静默切换到确定性模型。
 
@@ -161,7 +177,10 @@ AGENT_TEAM_OS_DATA_DIR=/tmp/agent-team-os-demo \
 
 ### 项目与交付
 
-每个 Active Project 拥有独立的受管 Git Workspace。Delivery 会冻结 Project、Pipeline Revision、Agent Binding Snapshot 和策略指纹。项目级交付租约阻止两个活动 Delivery 同时修改同一项目工作区。
+旧 Project 继续使用单一受管 Git Workspace。Workcell Project 则绑定一个 TeamTemplate Revision 和多个
+`WorkspaceBinding`，每个 Workcell 只有一个可写 Primary Repository。Delivery 会冻结 Project、Team、
+Pipeline、Provider、Workspace 和 Method Pack 五类 Revision。v0.5 的项目级 Lease 仍阻止两个活动
+Delivery 并发，但允许同一 Delivery 内 Frontend/Backend Workcell 和不同 Repository 并行。
 
 进入终态后释放租约。已归档项目可以继续查询，但不能启动 Delivery、重置 Workspace 或修改资源绑定。
 
@@ -206,16 +225,19 @@ AgentProfileSpec
 flowchart TB
     UI[React 控制台] --> API[Agent-Team-OS FastAPI]
     API --> PROJECT[项目治理]
-    API --> DELIVERY[交付与 Git 生命周期]
+    API --> TEAM[TeamTemplate 组织权威]
+    API --> DELIVERY[Workcell 执行与 Release]
     API --> AGENTS[Profile、Deployment 与 AgentRun]
     API --> EVIDENCE[证据账本]
     API --> KNOWLEDGE[Wiki 与知识投影]
     DELIVERY --> ACWM[ACWM 图与 Capability Runtime]
     AGENTS --> ACWM
-    ACWM --> AS[AgentScope Stage 内组合]
-    AS --> H[Hermes 兼容规划 Adapter]
-    AS --> C[Codex CLI 执行]
-    DELIVERY --> GIT[受管 Bare Repo 与 Worktree]
+    ACWM --> AS[AgentScope Workcell Team]
+    AS --> H[Hermes PM / Project Admin]
+    AS --> C[Codex Main / Child Attempt]
+    DELIVERY --> ART[Content-addressed Artifact]
+    DELIVERY --> GIT[4 × 隔离 Repository Workspace]
+    DELIVERY --> GH[GitHub PR Review Surface]
     PROJECT --> DB[(SQLite 迁移与 Product Event)]
     DELIVERY --> DB
     EVIDENCE --> DB
@@ -239,15 +261,18 @@ Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管�
 - [Evidence 可信度](docs/architecture/ADR-0005-EVIDENCE-TRUST.md)；
 - [多流水线 DAG/LOOP](docs/architecture/ADR-0009-MULTI-PIPELINE-DAG-LOOP.md)；
 - [Agent Profile 与 Deployment](docs/architecture/ADR-0010-AGENT-PROFILES-AND-DEPLOYMENTS.md)；
-- [项目治理与 Workspace 隔离](docs/architecture/ADR-0011-PROJECT-GOVERNANCE.md)。
+- [项目治理与 Workspace 隔离](docs/architecture/ADR-0011-PROJECT-GOVERNANCE.md)；
+- [Agent Workcell 权威与隔离工作区](docs/architecture/ADR-0014-AGENT-WORKCELL-AUTHORITY.md)；
+- [外部 Git Forward-only Release](docs/architecture/ADR-0015-EXTERNAL-FORWARD-ONLY-RELEASE.md)；
+- [v0.5.0 交付说明](docs/releases/V0.5.0-AGENT-WORKCELL-KERNEL.md)。
 
 ## 运行身份
 
 | 路径 | 当前身份 | 可以证明什么 |
 |---|---|---|
 | 默认需求/任务规划 | `codex-simulated-hermes` | Codex 执行了结构化规划 Adapter；不能证明调用了 Hermes |
-| 代码交付 | `codex-cli` | Codex 在受管 Worktree 中以 workspace-write 执行 |
-| 确定性门禁 | `deterministic-test` | 只证明产品与 Git 生命周期，不证明真实模型质量 |
+| Workcell Main / Child Attempt | `codex-cli` | Codex 在冻结 Slot、Workspace Access 和临时 Method Overlay 内执行；不允许隐藏派生 |
+| 确定性四仓门禁 | `deterministic-test` | 只证明 Workcell、Artifact、Git、PR Receipt 和 Forward-only 状态机，不证明真实模型质量 |
 | Hermes Adapter | `hermes-acp` / `hermes-http` | 可注册并健康检查；真实使用必须显式配置并产生对应证据 |
 
 未知或未验证 Artifact 可以被审计，但不能驱动 Delivery 成功。
@@ -258,9 +283,11 @@ Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管�
 - 本地身份使用 scrypt 密码哈希、Session、CSRF/Origin 检查和角色权限。
 - 凭据字段接受环境变量或 Keychain 引用；设计上不应把秘密值写入 API 响应或 SQLite。
 - 浏览器不能决定真实 Workspace 路径、机器验证命令或可信 Runtime Feature。
-- Codex 在系统管理的 Worktree 中执行，允许路径由系统生成。
+- Codex Writer 在本 Workcell 的隔离可写 Worktree 中执行；Reviewer 只读同仓的 Detached Candidate View。
+- 其他 Workcell Repository 不会挂载；跨 Workcell 只传递已校验的 Artifact Reference。
+- BMAD/TEA 只从内容寻址 Store 构建临时只读 Overlay，不进入业务仓库 Diff。
 - 空修改、越界修改、秘密材料、非法 Artifact、超时和固定测试失败都会在候选审批前 Fail Closed。
-- Reject 不更新项目 `main`；Accept 使用已审查 Base 与 Candidate Revision 执行 Git CAS。
+- Managed Git V1 保留 CAS Compensation；External Git 只做非 Force Fast-forward，部分 Apply 不自动回滚。
 - Evidence 只追加并进行内容寻址；重新验证追加新结果，不覆盖历史。
 
 本地 Alpha 尚未经过独立安全审计。不要直接暴露到不可信网络，也不要用于敏感真实仓库。
@@ -279,10 +306,30 @@ pnpm --dir console test
 pnpm --dir console build
 ```
 
-交付门禁：
+v0.5 Workcell 门禁：
 
 ```bash
-# 真实 Git 生命周期，确定性模型边界
+# 领域约束、四仓 Pipeline 和 Forward-only 恢复语义
+.venv/bin/python -m pytest -q \
+  tests/test_workcell_execution_kernel.py \
+  tests/test_workcell_pipeline_e2e.py \
+  tests/test_external_forward_release_v2.py
+
+# 真实 BMAD/TEA 归档、Codex Method Entry 发现与业务仓无污染
+.venv/bin/python scripts/install_method_packs.py
+.venv/bin/python scripts/poc_method_pack_overlay.py
+
+# Deterministic 浏览器四仓闭环：使用会话级评测密码与独立数据目录
+.venv/bin/python scripts/browser_workcell_e2e.py --help
+```
+
+`browser_workcell_e2e.py` 需要由门禁驱动器启动 `agent_team_os.gate_app`，并通过
+`AGENT_TEAM_OS_TEST_PASSWORD` 注入独立的会话级评测密码。它使用四个真实本地 Bare Git
+Remote，但 Agent 边界是 Deterministic，不是 Live 模型证据。
+
+保留的 v0.4 单仓回归门禁：
+
+```bash
 uv run --extra live agent-team-os gate
 
 # 真实 Codex 规划 Adapter 与真实 Codex 代码执行
@@ -292,39 +339,47 @@ uv run --extra live agent-team-os gate --live
 uv run --extra live agent-team-os release
 ```
 
-报告包含 DEV/ACWM Revision、Pipeline Revision、Graph Fingerprint、GraphRun 状态、Candidate Revision、Diff SHA-256、机器验证结果、运行身份和 Evidence Hash。缺失、过期、损坏、包含 skipped/WARN 或 Revision 不一致的证据不能形成发布通过状态。
+报告必须绑定同一 DEV/ACWM Revision、Pipeline Revision、Graph Fingerprint、GraphRun、
+Candidate/Bundle/Manifest Hash、机器验证、Runtime Identity 和远端 SHA 回读。缺失、过期、
+损坏、包含 skipped/WARN 或 Revision 不一致的证据不能形成发布通过状态。
 
-本 README 更新前审计的基线为 2026-08-25 的提交 `e3f8d9d`：
+2026-08-31 当前 v0.5 工作树开发验证（尚未生成正式同 Revision Release Report）：
 
 | 检查 | 实际结果 | 证明范围 |
 |---|---:|---|
-| Python 测试 | 134 passed，1 个既有 skipped | 本地自动化行为 |
-| React 测试 | 51 passed | 组件与控制器行为 |
+| Python 测试 | 210 passed，1 skipped | skipped 为需要显式 Live Codex 的原有集成探针 |
+| React 测试 | 66 passed | 组件、控制器和 Workcell 语义 |
 | Ruff / strict Mypy / TypeScript | 通过 | 静态检查 |
 | Vite 生产构建 | 通过 | 本地可构建性 |
-| 浏览器冒烟 | 5 个图节点可见、7 条历史知识、无控制台错误 | 选定本地 UI 路径 |
+| Deterministic 四仓浏览器闭环 | 通过 | 4 个独立 Remote、5 个 WorkcellRun、4 个 PR/Receipt、`main == Candidate` |
+| BMAD/TEA Overlay PoC | 通过 | 归档/内容/资格哈希、Codex 入口发现与无仓库污染 |
+| 真实 Codex 规划探针 | failed: 120s timeout | 不能作为 Live 通过证据 |
+| 四 Workcell Live Release | `blocked/not_run` | 未提供 4 个私有 GitHub 评测仓库和直推 `main` 授权 |
 
-这些结果不能证明生产可用、外部用户采用、真实 Hermes 行为或公开 Benchmark 排名。
+因 Live 条件不满足且当前工作树尚未提交，v0.5 不得声称已完成最终发布验收。
 
 ## 当前限制
 
-- 真实代码执行只支持内置纯标准库 Python Backend 沙箱，不支持任意用户仓库。
+- v0.5 只实现 `git_repository_v1`；Document/Case/Ledger/Dataset 等 Workspace Adapter 尚未实现。
+- 一个 Project 最多一个活动 Delivery；暂无 Workspace-Set 跨 Delivery Lease、Delta Release 和 Manifest Version CAS。
+- Child 深度固定为 1，每个 Workcell 最多 3 个 Child、2 个并发、1 个 Writer。
+- External Git Live 参考实现只支持 GitHub HTTPS 与 `env://` / `keychain://` 凭据引用；不管理 SSH 凭据。
+- 仓库保护若禁止服务身份直推 `main`，该仓库不能通过 v0.5 Live Readiness；v0.5 不使用 Provider-native PR Merge。
 - 默认由 Codex 模拟 Hermes PM/Admin；真实 Hermes 尚不是发布门禁。
-- 不支持 Frontend 代码执行、多任务交付和云部署。
 - 没有 Embedding、RAG 回答生成、共享长期 Agent Memory 或多租户。
 - 尚未实现项目级 RBAC；当前角色作用于整个控制平面。
-- V0.4 没有发布安装包、Git Tag、GitHub Release 或持续维护的 CI 结果。
+- v0.5 当前工作树没有发布安装包、Git Tag 或 GitHub Release。
 - 仓库当前没有 License；公开可见不代表获得复用授权。
 
 ## Roadmap 方向
 
-以下方向仍需架构评审与证据门禁：
+以下能力明确后移到 v0.6：
 
-1. 将交付边界适配到真实用户 Git 仓库；
-2. 把真实 Hermes 规划升级为发布门禁身份；
-3. 将执行范围扩展到 Backend 沙箱之外；
-4. 深化项目授权与运行隔离；
-5. 仅在不复制 ACWM 或产品治理的前提下，引入更丰富的 AgentScope Team、通信与 Memory。
+1. Workspace-Set 跨 Delivery Lease；
+2. Delta ReleaseBundle、Manifest Version CAS 和并行 Manifest 合成；
+3. Document/Case/Ledger/Dataset Workspace Adapter；
+4. 二级子 Agent；
+5. Provider-native PR Merge。
 
 Roadmap 不是当前能力。
 
@@ -340,7 +395,7 @@ Agent-Team-OS 适合：
 当前不适合：
 
 - 需要托管生产 Agent 平台的团队；
-- 需要任意仓库与企业级隔离的用户；
+- 只允许 PR Merge、不允许服务身份直推 `main` 的仓库；
 - 需要通用多 Agent 聊天界面的产品；
 - 需要内置 RAG、向量检索或长期 Memory 的应用；
 - 需要已经具备 OSI License、可以直接再分发的依赖方。
