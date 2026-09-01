@@ -1,5 +1,9 @@
 # Agent-Team-OS Domain Context
 
+> Canonical architecture entry point: [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md).
+> This file remains the domain-language and invariant glossary; it does not duplicate the current
+> architecture snapshot or its accepted-change ledger.
+
 Agent-Team-OS is a delivery control plane. It turns an approved Backend requirement into a
 candidate Git change, machine verification, an explicit human decision, and an atomic apply
 receipt. A successful label is never evidence by itself.
@@ -44,6 +48,13 @@ receipt. A successful label is never evidence by itself.
   are runtime truth and cannot be submitted by the browser.
 - **Agent Assignment**: one Pipeline Stage binding site mapped to a qualified Deployment. Published
   Pipeline Revisions freeze the resulting ACWM Resolved Provider Binding.
+- **Workcell Composition**: the product-owned, observable set of Main and Child AgentRuns for one
+  WorkcellRun, including their parentage, purpose, access and lifecycle. _Avoid_: AgentScope team
+  composition.
+- **Attempt Runtime**: the AgentScope-owned Stage-local session, message and runtime transport used
+  inside one product-created AgentAttempt. It cannot create a new AgentRun identity.
+- **Hidden Child**: a runtime-spawned child without a product-owned AgentRun and AgentAttempt record;
+  this concept is prohibited by the Workcell boundary.
 - **Project Repository Set**: the immutable project-scoped collection of Backend, Frontend, Design
   and QA repository identities frozen when a full-stack Delivery starts.
 - **Release Bundle**: the reviewed collection of per-repository Base, Candidate, Diff and
@@ -55,7 +66,10 @@ receipt. A successful label is never evidence by itself.
 
 - ACWM owns cross-Stage Journey, Capability/Workflow/Provider/Artifact compatibility, immutable
   Resolved Provider Bindings, Handoff, and global Gates.
-- AgentScope owns Stage-local messages, sessions, memory, and role composition.
+- Agent-Team-OS Workcell Execution owns observable Workcell Composition, Main/Child scheduling,
+  cancellation, timeout and lifecycle.
+- AgentScope owns Attempt Runtime inside a product-created AgentAttempt; it does not own Workcell
+  Composition and cannot create Hidden Children.
 - Hermes owns PM and Project Admin role intelligence.
 - Codex owns controlled code execution in an isolated workspace.
 - Agent-Team-OS owns business state, permissions, Git policy, Evidence Records, decisions, and
@@ -78,3 +92,13 @@ receipt. A successful label is never evidence by itself.
 - Secrets are represented only by environment or system credential references.
 - Runtime Features come only from installed ACWM Adapter Manifests and health probes; stored
   historical self-reported Features are never trusted for new qualification.
+- Every Main and Child is created by Agent-Team-OS before execution and has a product-visible
+  AgentRun/AgentAttempt identity; Runtime adapters cannot create hidden descendants.
+
+## Example dialogue
+
+**Developer**: Can AgentScope spawn two reviewers inside its own session?
+
+**Domain expert**: No. Workcell Execution first creates two Child AgentRuns and their AgentAttempts;
+AgentScope may transport each Attempt's Stage-local session and messages, but it cannot create a
+Hidden Child.

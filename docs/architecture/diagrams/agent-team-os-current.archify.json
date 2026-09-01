@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agent-Team-OS 当前架构",
+    "locale": "zh-CN",
+    "output": "../../assets/architecture/agent-team-os-current.html",
+    "quality_profile": "showcase",
+    "viewBox": [1395, 800],
+    "views": [
+      {
+        "id": "control-plane",
+        "label": "交付控制面",
+        "focus": ["operator", "console", "api", "governance", "state"],
+        "note": "产品拥有身份、业务状态、冻结 Snapshot、Evidence、Approval 与 Apply。"
+      },
+      {
+        "id": "workcell-runtime",
+        "label": "Workcell 执行",
+        "focus": ["governance", "acwm", "workcell", "runtime", "methods", "artifacts"],
+        "note": "ACWM 控制跨 Stage；Workcell Kernel 调度可观察 Main、Child 与 Attempt。"
+      },
+      {
+        "id": "four-repository-release",
+        "label": "四仓 Release",
+        "focus": ["workcell", "artifacts", "git"],
+        "note": "四个 Repository 不共享 Workspace；Gate 后执行 Forward-only Apply。"
+      },
+      {
+        "id": "knowledge-boundary",
+        "label": "知识边界",
+        "focus": ["api", "state", "feishu"],
+        "note": "Feishu Adapter 已实现，但 Preview 未注入 ProviderKnowledgeManager。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "管理员 · 交付者 · 审计者",
+      "sublabel": "Admin · Delivery · Audit",
+      "pos": [28, 270],
+      "size": [170, 78]
+    },
+    {
+      "id": "console",
+      "type": "frontend",
+      "label": "React 控制台",
+      "sublabel": "React Console · feature slices",
+      "tag": "UI projection",
+      "pos": [250, 270],
+      "size": [170, 78]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "FastAPI 接口层",
+      "sublabel": "FastAPI API · /v1",
+      "tag": "HTTP adapter",
+      "pos": [472, 270],
+      "size": [170, 78]
+    },
+    {
+      "id": "governance",
+      "type": "security",
+      "label": "治理与交付控制",
+      "sublabel": "Project · Team · Pipeline · Gate",
+      "tag": "Product authority",
+      "pos": [694, 270],
+      "size": [184, 78]
+    },
+    {
+      "id": "workcell",
+      "type": "backend",
+      "label": "Workcell 执行内核",
+      "sublabel": "Main · Child · AgentAttempt",
+      "tag": "Product scheduler",
+      "pos": [930, 270],
+      "size": [184, 78]
+    },
+    {
+      "id": "git",
+      "type": "cloud",
+      "label": "四个独立 Git 仓库",
+      "sublabel": "4× Repository · GitHub PR",
+      "tag": "No shared workspace",
+      "pos": [1185, 270],
+      "size": [190, 78]
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "SQLite · WAL · Event",
+      "sublabel": "UoW · Migration 0001–0035",
+      "tag": "Product state",
+      "pos": [584, 72],
+      "size": [190, 78]
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "内容寻址 Artifact",
+      "sublabel": "Content-Addressed Store",
+      "tag": "SHA-256 references",
+      "pos": [930, 72],
+      "size": [184, 78]
+    },
+    {
+      "id": "acwm",
+      "type": "external",
+      "label": "ACWM GraphRun",
+      "sublabel": "DAG · Gate · Loop · Handoff",
+      "tag": "Cross-Stage authority",
+      "pos": [694, 498],
+      "size": [184, 78]
+    },
+    {
+      "id": "runtime",
+      "type": "external",
+      "label": "Stage Runtime",
+      "sublabel": "AgentScope · Hermes · Codex",
+      "tag": "Live blocked/not_run",
+      "pos": [930, 498],
+      "size": [184, 78]
+    },
+    {
+      "id": "methods",
+      "type": "external",
+      "label": "BMAD · TEA 方法包",
+      "sublabel": "Read-only Method Overlay",
+      "tag": "Frozen hash",
+      "pos": [694, 650],
+      "size": [184, 78]
+    },
+    {
+      "id": "feishu",
+      "type": "external",
+      "label": "飞书知识 Provider",
+      "sublabel": "Feishu Knowledge · Adapter only",
+      "tag": "Preview 未接线",
+      "pos": [28, 72],
+      "size": [190, 78]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Agent-Team-OS 产品边界 / Product Authority",
+      "wraps": ["console", "api", "governance", "workcell", "state", "artifacts"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "外部 Workflow 与 Runtime 权威 / External Runtime",
+      "wraps": ["acwm", "runtime", "methods"],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "独立 Repository 边界 / Isolated Git",
+      "wraps": ["git"],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "id": "operator-console",
+      "from": "operator",
+      "to": "console",
+      "label": "治理 · 交付 · 审计",
+      "variant": "emphasis",
+      "labelDy": -33
+    },
+    {
+      "id": "console-api",
+      "from": "console",
+      "to": "api",
+      "label": "/v1 · Session/CSRF",
+      "variant": "default",
+      "labelDy": -33
+    },
+    {
+      "id": "api-governance",
+      "from": "api",
+      "to": "governance",
+      "label": "Command / Query",
+      "labelDy": -33
+    },
+    {
+      "id": "governance-workcell",
+      "from": "governance",
+      "to": "workcell",
+      "label": "DeliveryExecutionSnapshot",
+      "variant": "emphasis",
+      "labelDy": -33
+    },
+    {
+      "id": "workcell-git",
+      "from": "workcell",
+      "to": "git",
+      "label": "Candidate · PR · Forward-only",
+      "variant": "emphasis",
+      "labelDy": 63
+    },
+    {
+      "id": "api-state",
+      "from": "api",
+      "to": "state",
+      "label": "UoW · Product Event",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "workcell-artifacts",
+      "from": "workcell",
+      "to": "artifacts",
+      "label": "Artifact / Evidence Reference",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "governance-acwm",
+      "from": "governance",
+      "to": "acwm",
+      "label": "Published Revision → GraphRun",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "acwm-workcell",
+      "from": "acwm",
+      "to": "workcell",
+      "label": "Stage Attempt / Signal",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "workcell-runtime",
+      "from": "workcell",
+      "to": "runtime",
+      "label": "Frozen Slot · AgentAttempt",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 52
+    },
+    {
+      "id": "methods-runtime",
+      "from": "methods",
+      "to": "runtime",
+      "label": "只读 Overlay",
+      "fromSide": "right",
+      "toSide": "bottom"
+    },
+    {
+      "id": "api-feishu",
+      "from": "api",
+      "to": "feishu",
+      "label": "Provider Port · Preview 未注入",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "权威边界 / Authority",
+      "items": [
+        "ACWM 控制 cross-Stage；AgentScope 控制 Stage-local",
+        "产品拥有权限、Evidence、Verification、Approval 与 Apply"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "隔离与交付 / Isolation",
+      "items": [
+        "Design、Frontend、Backend、QA 使用四个独立 Repository",
+        "跨 Workcell 只传内容寻址 Artifact，不共享 Git Workspace"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "成熟度 / Maturity",
+      "items": [
+        "Workcell 与 Forward-only 状态机已 Deterministic 验证",
+        "真实 Hermes、AgentScope、GitHub 四仓仍 Live blocked/not_run"
+      ]
+    }
+  ]
+}

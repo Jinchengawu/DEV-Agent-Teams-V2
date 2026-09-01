@@ -9,11 +9,11 @@
 |---|---|
 | 产品版本 | `0.5.0` |
 | 产品阶段 | 本地 Alpha；尚未完成正式 Release 验收 |
-| 文档版本 | `1.0` |
-| 文档日期 | 2026-09-01 |
-| 事实基线 | `codex/v050-agent-workcell-kernel@17eea23a0529d3190770d853ded4abd28c7a63ec` |
-| `main` 对照 | `main@1bfe3ff5e034e1a9cd3048b7b6300889ec7b02af` |
-| 合并状态 | 本文所述 v0.5.0 Workcell 代码位于功能分支，**尚未合入 `main`** |
+| 文档版本 | `1.1` |
+| 文档日期 | 2026-09-02 |
+| 事实基线 | `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` |
+| `main` 对照 | `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` |
+| 合并状态 | v0.5.0 Workcell 代码已经合入 `main`；代码合并不等于正式 Release 验收，Live 四仓 Gate 仍为 `blocked/not_run` |
 | ACWM 锁定版本 | `agent-capability-workflow-matrix==0.5.0`，Revision `65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d` |
 | 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，107 条 Path、132 个 HTTP Operation |
 
@@ -42,14 +42,15 @@
 4. Release Note、README 与设计说明；
 5. Roadmap、讨论记录和界面文案。
 
-因此，历史文档中的 `66 passed`、旧测试总数或“工作树开发证据”不会覆盖本文基线下重新执行的
-`21 files / 69 tests passed`。同理，界面显示“Ready”不等于 Live Release 已验收。
+因此，历史文档中的具体测试总数或“工作树开发证据”不会覆盖绑定当前 Revision 的重新执行结果；本文
+也不把易漂移的测试数量当作长期产品事实。同理，界面显示“Ready”不等于 Live Release 已验收。
 
 ### 0.3 本文不取代的权威材料
 
 - 请求、响应与 Console Client Schema：[`console/openapi.json`](../../console/openapi.json)；
 - 领域不变量：[`src/agent_team_os/`](../../src/agent_team_os/)；
 - 数据演进：[`migrations/`](../../migrations/)；
+- 当前架构入口：[`ARCHITECTURE.md`](../architecture/ARCHITECTURE.md)；
 - 架构决策：[`docs/architecture/`](../architecture/)；
 - v0.5 交付边界：[`V0.5.0-AGENT-WORKCELL-KERNEL.md`](../releases/V0.5.0-AGENT-WORKCELL-KERNEL.md)；
 - ACWM 与 Method Pack 锁：[`framework-lock.json`](../../config/framework-lock.json) 与
@@ -156,7 +157,7 @@ v0.5.0 不承诺：
 
 ### 2.1 当前架构图
 
-![Agent-Team-OS 当前架构中文深色版](../assets/architecture/agent-team-os-current.zh-CN.dark.png)
+[![Agent-Team-OS 当前架构](../assets/architecture/agent-team-os-current.png)](../assets/architecture/agent-team-os-current.html)
 
 图中每个角色 Workcell 的 Repository 是独立代码仓库实体。中央 Artifact Bus 传递内容寻址产物，
 不是把仓库挂载到一个共享 Workspace。
@@ -166,12 +167,12 @@ v0.5.0 不承诺：
 | 领域事实 | 唯一权威 | 明确不拥有的事实 |
 |---|---|---|
 | Stage、DAG、Gate、bounded Loop、Artifact Contract、Provider Binding | **Published Pipeline Revision / ACWM** | 不拥有真实仓库、用户权限或 Apply 决策 |
-| Stage 内通信、角色组合与 Workcell Team Runtime | **AgentScope** | 不拥有跨 Stage Delivery 状态机 |
+| 单个 AgentAttempt 内的 Stage-local Session、消息和 Runtime Transport | **AgentScope** | 不拥有 Workcell Composition、Main/Child 生命周期或跨 Stage Delivery 状态机；不得隐藏派生 |
 | PM / Project Admin 角色智能 | **Hermes 兼容实例** | 不拥有 Git、Verification、Approval 或 Manifest |
 | 受控代码执行 | **Codex** | 不拥有产品状态和发布权威 |
 | Workcell 身份、职责、拓扑、Workspace 要求、Delegation 上限 | **TeamTemplate Revision** | 不定义 Stage 顺序、Provider、凭据、真实仓库或 Release Participant |
 | Team 选择、真实仓库和项目资源授权 | **Project Governance** | 不定义 Pipeline 语义 |
-| Main/Child 调度、取消、超时、Attempt 和结果合成 | **Workcell Execution Module** | 不覆盖 ACWM 的 Loop/Gate，也不拥有 Git Apply |
+| Main/Child 组合、调度、取消、超时、Attempt 生命周期和结果合成 | **Workcell Execution Module** | 不覆盖 ACWM 的 Loop/Gate，也不拥有 Git Apply |
 | Candidate 校验、Approval、PR Receipt、Apply、Release Health、Manifest | **Agent-Team-OS Release Module** | GitHub PR 不是 Apply 权威 |
 | BMAD/TEA 版本、内容、入口与资格 Hash | **Agent Deployment Extension Snapshot** | Method Pack 不定义 Pipeline 或 Git 权威 |
 | 远端分支实际 SHA | **Git Remote** | UI 缓存或模型文本不能替代远端回读 |
@@ -261,8 +262,9 @@ sequenceDiagram
 ```
 
 固定不变量：Child 深度最多 1；每个 Main 最多 3 个 Child、最多 2 个并发、最多 1 个 Writer；Main 的
-planning 与 synthesis 是同一 Main `AgentRun` 下的两个 `AgentAttempt`；Child 不得继续派生；Main 不能
-覆盖机器失败或 Blocking Review；跨 Child 只传 `ArtifactEnvelope`，不传原始 Session、Memory 或聊天历史。
+planning 与 synthesis 是同一 Main `AgentRun` 下的两个 `AgentAttempt`；每个 Main/Child 都必须先由产品
+创建 AgentRun/AgentAttempt，AgentScope 或其他 Runtime Adapter 不得隐藏派生；Main 不能覆盖机器失败
+或 Blocking Review；跨 Child 只传 `ArtifactEnvelope`，不传原始 Session、Memory 或聊天历史。
 
 ### 2.6 状态机
 
@@ -571,6 +573,7 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 | Evaluation Domain、CLI、Runtime Router、Dataset | **[已实现]**；Offline Fixture 可运行，Live 按前置条件决定 `blocked/not_run` |
 | Evaluation Console 与 Console Client Contract | **[未来规划]**；当前不存在 `/evaluation`，Router 未进入 Console OpenAPI |
 | 真实 Hermes PM/Admin | Adapter 可注册；发布级 Live 使用证据 **[Live blocked/not_run]** |
+| AgentScope Attempt Runtime | Workflow Manifest/合同已有；Workcell Live Adapter **[未来规划]**，架构状态为 `Accepted/Not Implemented`；当前 Codex 直连 Attempt 不是 AgentScope Live 证据 |
 
 ### 5.2 Identity 与本地访问控制
 
@@ -923,7 +926,8 @@ AGENT_TEAM_OS_DATA_DIR=/tmp/agent-team-os-demo \
 
 1. 数据库 Migration 成功且没有 Checksum Drift；
 2. ACWM 版本/Revision 与 `config/framework-lock.json` 一致；
-3. AgentScope Runtime/Adapter 可用；
+3. AgentScope Workflow Manifest 与合同可校验；Workcell Live Adapter 尚未接线时，相关 Live
+   Readiness 必须保持 `blocked/not_run`，不得以当前 Codex 直连 Attempt 代替；
 4. Codex CLI 登录与受控执行可用（Live 时）；
 5. `method-packs:bmad-tea-v050` Store、Entry 和资格 Hash 一致；
 6. 四个 Workspace 各自 Verify，Repository URI 互不重复；
@@ -1004,30 +1008,24 @@ WAL/SHM（如存在）、Artifact Store、Method Store 和必要工作区元数�
 
 ## 10. 当前验证证据与成熟度
 
-### 10.1 2026-09-01、Revision `17eea23` 开发验证快照
+### 10.1 当前 Revision 的证据读取规则
 
-| 检查 | 结果 | 能证明什么 | 不能证明什么 |
-|---|---:|---|---|
-| Ruff | 通过 | 当前 Python 源码满足配置的静态规则 | 运行行为正确 |
-| strict Mypy | 通过，146 个 Source File | 当前领域包类型检查通过 | 外部系统可用 |
-| Pytest | `210 passed / 1 skipped` | 单元、合同、集成与本地状态机回归 | 被跳过的真实 Codex 探针、Live Provider |
-| 跳过项 | `tests/integration/test_live_codex_simulated_planning.py` | 只有设置 `AGENT_TEAM_OS_LIVE_CODEX=1` 才显式运行 | 不能把 Skip 当 Pass |
-| Vitest | `21 files / 69 tests passed` | 当前 React 组件、控制器与关键 Workcell UI 语义 | 全浏览器视觉质量、生产兼容性 |
-| TypeScript Typecheck | 通过 | Console 静态类型一致 | HTTP Runtime 一定可用 |
-| Vite Build | 通过，3529 Modules | Console 可产生生产构建产物 | 生产部署可用性 |
-| OpenAPI Sync | 生成结果无漂移 | 107/132 Console Client 契约与生成类型一致 | Evaluation Router 已纳入 Console Contract |
-| Deterministic 浏览器门禁 | 通过 | 内置图 10 节点/10 边、9 条 verified Evidence、重启恢复、`candidate_matches_main=true` | 真实模型质量和 GitHub Live 权限 |
-| BMAD/TEA Overlay PoC | 通过 | 锁定归档、入口发现、只读 Overlay 与业务仓无污染 | 第三方方法的业务效果 |
-| 四 Workcell Live Release | `blocked/not_run` | 准确暴露缺失的 Live 前置条件 | 不能声称 v0.5 Live 通过 |
+本产品文档不硬编码会随 Revision 漂移的测试数量、构建模块数、工作树状态或临时 Gate 观察。当前
+Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evidence 与正式 `Release Report`。
 
-这些结果是当前代码 Revision 的**开发验证快照**，不是正式 `Release Report`。文档修改本身不会把历史
-开发验证升级为发布验收。正式验收仍要求同一 Agent-Team-OS Revision 下 Ruff、Mypy、Pytest、
-TypeScript、Vitest、Build、OpenAPI Sync、浏览器、Deterministic Gate 与四 Workcell Live Gate 全部成立，
-且最终报告 `FAIL=0`、`WARN=0`、`skipped=0`。
+| 检查 | 当前 Revision 必须提供的证据 | 不能替代什么 |
+|---|---|---|
+| Ruff、strict Mypy、TypeScript、Vite Build | 同一 Revision 的成功命令记录 | 运行行为与外部系统可用性 |
+| Pytest、Vitest | 同一 Revision 的完整结果；正式验收不得有 Skip | 浏览器视觉质量与 Live Provider |
+| OpenAPI Sync | 生成契约与 Console Client 无漂移 | 未发布或未装配 Router 的可用性 |
+| 浏览器冒烟 | 核心用户闭环在同一 Revision 可重复完成 | 真实模型质量与外部 Git 权限 |
+| Deterministic Gate | 固定 Adapter 下的状态机、Git、证据链与恢复报告 | Hermes、AgentScope、Codex 或 GitHub Live 通过 |
+| BMAD/TEA Overlay Gate | 包、入口、内容哈希、只读 Overlay 与业务仓无污染证据 | 第三方方法的业务效果 |
+| 四 Workcell Live Release Gate | 真实 Provider、四个远端仓库、Apply 回读与 Manifest 报告 | Deterministic Adapter 结果 |
 
-本快照来自当前工作树中的命令输出与浏览器门禁观察，仓库内没有一份同时绑定这些最新数字、Report
-Hash 和 Evidence ID 的已提交不可变报告。因此它是可复查的开发记录，不是审计级证据入口；文档提交后
-仍应在提交 SHA 上重新运行并生成正式 Report。
+文档治理变更只运行与其范围相称的架构、文档和约束测试，不会把历史开发验证升级为发布验收。正式验收
+仍要求同一 Agent-Team-OS Revision 下的全部门禁成立，且最终报告满足 `FAIL=0`、`WARN=0`、
+`skipped=0`。
 
 ### 10.2 Runtime Identity 边界
 
@@ -1035,6 +1033,7 @@ Hash 和 Evidence ID 的已提交不可变报告。因此它是可复查的开�
 |---|---|---|
 | 默认 Requirements / Tasking | `codex-simulated-hermes` | **[已实现]** 结构化规划 Adapter；不是 Hermes Live 证据 |
 | Workcell Main / Child | `codex-cli` | **[已实现]** 受冻结 Slot/Workspace/Method 控制；Live 仍需凭据与实际门禁 |
+| AgentScope Attempt Runtime | 尚未接线 | **[未来规划]**；架构状态为 `Accepted/Not Implemented`，只承载产品已创建 Attempt，不拥有 Workcell Composition |
 | 本地四仓 E2E | `deterministic-test` | **[Deterministic 已验证]** 产品调度、Git 和证据链 |
 | Hermes Adapter | `hermes-acp` / `hermes-http` | 可注册/健康检查；真实 PM/Admin 使用尚未形成发布证据 |
 | 外部 GitHub 四仓 | GitHub HTTPS | **[Live blocked/not_run]** 缺四个评测仓库与直推 `main` 服务权限 |
@@ -1058,6 +1057,7 @@ Hash 和 Evidence ID 的已提交不可变报告。因此它是可复查的开�
 - 每 Project 最多一个活动 Delivery；没有 Workspace-Set 跨 Delivery 并发 Lease；
 - Child 深度固定为 1；每 Workcell 最多 3 个 Child、2 个并发、1 个 Writer；
 - 默认规划身份是 `codex-simulated-hermes`，真实 Hermes PM/Admin 尚未通过版本门禁；
+- AgentScope Workcell Attempt Runtime 尚未接线；Workflow Manifest 与依赖存在不能作为 Live 证据；
 - Live 四仓需要外部凭据、四个私有 GitHub 仓库和直推 `main` 权限，当前为 `blocked/not_run`；
 - External Git 只支持 GitHub HTTPS 与间接 Credential Reference，不管理 SSH Credential；
 - “只接入已有私有仓库”是产品治理要求，但当前 Capability Probe 不调用 GitHub Visibility API；它也只对
@@ -1309,7 +1309,7 @@ Git、Workcell 不变量等大量代码通过 `_method_pack_error(code, ...)`、
 | **Deterministic** | 使用固定 Adapter/Fixture/本地 Remote 验证产品语义，可重复但不代表真实模型。 |
 | **Live** | 使用真实 Provider、凭据、外部远端和目标权限执行的闭环。缺条件时只能 blocked/not_run。 |
 | **ACWM** | 跨 Stage 的 Workflow、Capability、Artifact、Gate、DAG 与 Loop 权威。 |
-| **AgentScope** | Stage 内 Agent 组合、通信与 Runtime 协作边界。 |
+| **AgentScope** | 产品已创建 AgentAttempt 内的 Stage-local Session、消息与 Runtime Transport；不拥有 Workcell Composition，不能隐藏派生 Child。 |
 | **Hermes** | PM/Project Admin 角色智能的目标 Runtime；默认模拟身份不能冒充真实 Hermes。 |
 | **BMAD/TEA Overlay** | 从锁定内容寻址 Store 构建的临时只读 Method Entry 运行环境。 |
 
