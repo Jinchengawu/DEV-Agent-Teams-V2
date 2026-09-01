@@ -6,7 +6,7 @@
 
 `v0.5.0` · `本地 Alpha` · `Python + FastAPI + React`
 
-[完整产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md) · [English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
+[完整产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md) · [架构事实总览](docs/architecture/ARCHITECTURE.md) · [English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
 
 </div>
 
@@ -25,9 +25,10 @@ Git Workspace，跨 Workcell 只传递内容寻址 Artifact。产品在 Agent Ru
 
 ## 当前架构
 
-![Agent-Team-OS 当前架构深色版](docs/assets/architecture/agent-team-os-current.dark.png)
+[![Agent-Team-OS 当前架构](docs/assets/architecture/agent-team-os-current.png)](docs/assets/architecture/agent-team-os-current.html)
 
-中文节点版本及节点对照见[中文架构图](readme-cn.md)。
+交互图和完整边界说明见[架构事实总览](docs/architecture/ARCHITECTURE.md)；
+兼容入口见[中文架构页](readme-cn.md)。
 
 ## 交付闭环
 
@@ -254,7 +255,8 @@ flowchart TB
 
 Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管跨 Stage 的产品状态机。
 
-详细架构决策位于 [`docs/architecture/`](docs/architecture/)：
+当前架构入口为[架构事实总览](docs/architecture/ARCHITECTURE.md)，详细决策位于
+[`docs/architecture/`](docs/architecture/)：
 
 - [模块化单体边界](docs/architecture/ADR-0002-MODULAR-MONOLITH.md)；
 - [SQLite 事务与 Product Event](docs/architecture/ADR-0003-SQLITE-UOW-EVENTS.md)；
@@ -343,20 +345,11 @@ uv run --extra live agent-team-os release
 Candidate/Bundle/Manifest Hash、机器验证、Runtime Identity 和远端 SHA 回读。缺失、过期、
 损坏、包含 skipped/WARN 或 Revision 不一致的证据不能形成发布通过状态。
 
-2026-08-31 当前 v0.5 工作树开发验证（尚未生成正式同 Revision Release Report）：
-
-| 检查 | 实际结果 | 证明范围 |
-|---|---:|---|
-| Python 测试 | 210 passed，1 skipped | skipped 为需要显式 Live Codex 的原有集成探针 |
-| React 测试 | 66 passed | 组件、控制器和 Workcell 语义 |
-| Ruff / strict Mypy / TypeScript | 通过 | 静态检查 |
-| Vite 生产构建 | 通过 | 本地可构建性 |
-| Deterministic 四仓浏览器闭环 | 通过 | 4 个独立 Remote、5 个 WorkcellRun、4 个 PR/Receipt、`main == Candidate` |
-| BMAD/TEA Overlay PoC | 通过 | 归档/内容/资格哈希、Codex 入口发现与无仓库污染 |
-| 真实 Codex 规划探针 | failed: 120s timeout | 不能作为 Live 通过证据 |
-| 四 Workcell Live Release | `blocked/not_run` | 未提供 4 个私有 GitHub 评测仓库和直推 `main` 授权 |
-
-因 Live 条件不满足且当前工作树尚未提交，v0.5 不得声称已完成最终发布验收。
+README 不保存会随 Revision 漂移的测试数量、构建模块数或临时工作树结论。当前验收状态必须从绑定同一
+Git SHA 的命令输出、Evidence 与 `Release Report` 读取；代码合入 `main` 也不等于正式 Release 通过。
+仓库当前没有可证明真实 Hermes、AgentScope、Codex 与四个 GitHub 仓库全部通过的同 Revision Live
+Report，因此四 Workcell Live Release 仍是 `blocked/not_run`，不得由 Deterministic 结果换算为通过。
+完整证据规则见[产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md#101-当前-revision-的证据读取规则)。
 
 ## 当前限制
 
@@ -407,7 +400,7 @@ src/agent_team_os/       Python 产品与基础设施模块
 console/                 React/Vite 控制台
 config/                  ACWM Capability、Journey 与框架锁
 migrations/              带 Checksum 的 SQLite 迁移
-docs/architecture/       架构决策记录
+docs/architecture/       当前架构总览、图源与架构决策记录
 docs/design/             产品与集成设计
 scripts/                 OpenAPI 与浏览器验证工具
 tests/                   单元、合同、集成和发布行为测试

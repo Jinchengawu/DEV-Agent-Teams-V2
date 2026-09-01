@@ -4,9 +4,9 @@
 
 **An evidence-gated delivery control plane for local AI software teams**
 
-`v0.4.0` · `local alpha` · `Python + FastAPI + React`
+`v0.5.0` · `local alpha` · `Python + FastAPI + React`
 
-[中文](README.md) · [Quickstart](#five-minute-local-start) · [Delivery model](#the-delivery-loop) · [Architecture](#architecture-and-ownership) · [Limits](#current-limitations)
+[中文](README.md) · [Current architecture](docs/architecture/ARCHITECTURE.md) · [Quickstart](#five-minute-local-start) · [Delivery model](#the-delivery-loop) · [Architecture](#architecture-and-ownership) · [Limits](#current-limitations)
 
 </div>
 
@@ -24,9 +24,11 @@ Agent-Team-OS turns an AI-generated code change into a reviewable software deliv
 
 ## Current architecture
 
-![Agent-Team-OS current architecture, dark version](docs/assets/architecture/agent-team-os-current.dark.png)
+[![Agent-Team-OS current architecture](docs/assets/architecture/agent-team-os-current.png)](docs/assets/architecture/agent-team-os-current.html)
 
-See the [Chinese-node architecture](readme-cn.md) for the translated node map.
+The diagram uses Chinese-first bilingual labels so that Canonical Identifiers remain stable.
+See the [current architecture overview](docs/architecture/ARCHITECTURE.md) for ownership,
+maturity and accepted-change boundaries; the surrounding document is Chinese-first.
 
 ## The delivery loop
 
