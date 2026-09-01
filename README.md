@@ -6,7 +6,7 @@
 
 `v0.5.0` · `本地 Alpha` · `Python + FastAPI + React`
 
-[English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
+[完整产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md) · [English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
 
 </div>
 
