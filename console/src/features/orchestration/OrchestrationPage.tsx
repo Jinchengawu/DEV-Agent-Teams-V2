@@ -42,12 +42,15 @@ import {
   appendWorkspaceNode,
   applyWorkspaceLayoutChanges,
   assignWorkspaceDeployment,
+  configureWorkspaceKnowledgeContext,
+  createKnowledgeContextBinding,
   createGraphEditingWorkspace,
   deleteWorkspaceEdge,
   deleteWorkspaceNode,
   updateWorkspaceEdgeCondition,
   updateWorkspaceNode,
   type GraphPosition,
+  type KnowledgeContextBindingDraft,
   type SemanticGraphEdge,
 } from "./GraphEditingWorkspace";
 import {
@@ -66,12 +69,22 @@ type Deployment = components["schemas"]["AgentDeployment"];
 type Provider = components["schemas"]["ProviderManifestView"];
 type Position = GraphPosition;
 type SemanticEdge = SemanticGraphEdge;
-type StageNode = {
+export type ArtifactContract = {
+  id: string;
+  version: string;
+  schema_uri?: string | null;
+  modalities: Array<"text" | "structured" | "file" | "resource" | "image" | "audio">;
+  integrity: string;
+  provenance: string;
+  verification: string;
+};
+export type StageNode = {
   id: string;
   kind: "stage";
   workflow_mode: "agentscope.role-turn" | "agentscope.workcell-team" | "code-delivery";
   bindings: Record<string, string>;
   output_validator?: string | null;
+  input_artifact_contracts?: ArtifactContract[];
 };
 type GateNode = { id: string; kind: "approval_gate"; subject_kind: string };
 export type LoopNode = {
@@ -139,6 +152,15 @@ const stageSchema = z.object({
   ]),
   bindings: z.record(z.string(), z.string()),
   output_validator: z.string().nullable().optional(),
+  input_artifact_contracts: z.array(z.object({
+    id: z.string(),
+    version: z.string(),
+    schema_uri: z.string().nullable().optional(),
+    modalities: z.array(z.enum(["text", "structured", "file", "resource", "image", "audio"])),
+    integrity: z.string(),
+    provenance: z.string(),
+    verification: z.string(),
+  })).optional(),
 });
 const gateSchema = z.object({
   id: z.string(),
@@ -214,7 +236,22 @@ export function OrchestrationPage() {
     () => parseDefinition(draft?.definition),
     [draft?.definition],
   );
-  const savedWorkspace = useMemo(() => createGraphEditingWorkspace(parsed.nodes, parsed.edges, draft?.layout, draft?.agent_assignments), [draft?.agent_assignments, draft?.layout, parsed.edges, parsed.nodes]);
+  const savedWorkspace = useMemo(
+    () => createGraphEditingWorkspace(
+      parsed.nodes,
+      parsed.edges,
+      draft?.layout,
+      draft?.agent_assignments,
+      draft?.knowledge_context_bindings,
+    ),
+    [
+      draft?.agent_assignments,
+      draft?.knowledge_context_bindings,
+      draft?.layout,
+      parsed.edges,
+      parsed.nodes,
+    ],
+  );
   const [history, setHistory] = useState(() => createGraphEditingHistory(savedWorkspace));
   const workspace = history.present;
   const isDirty = JSON.stringify(workspace) !== JSON.stringify(savedWorkspace);
@@ -260,6 +297,7 @@ export function OrchestrationPage() {
         next.edges,
         draft?.layout,
         draft?.agent_assignments,
+        draft?.knowledge_context_bindings,
       )));
     setSelectedNodeId(undefined);
     setSelectedEdgeId(undefined);
@@ -334,12 +372,13 @@ export function OrchestrationPage() {
           expected_version: draft?.version,
           definition: {
             id: selectedPipeline?.id,
-            version: "4.0.0",
+            version: parsed.version || "4.0.0",
             nodes: workspace.nodes,
             edges: workspace.edges,
           },
           layout: workspace.layout,
           agent_assignments: workspace.assignments,
+          knowledge_context_bindings: workspace.knowledgeBindings,
         }),
       }),
     onSuccess: () =>
@@ -686,6 +725,12 @@ export function OrchestrationPage() {
                 assignWorkspaceDeployment(current, site, deploymentId),
               )
             }
+            knowledgeBindings={workspace.knowledgeBindings}
+            onKnowledgeContextChange={(stagePath, binding) =>
+              editWorkspace((current) =>
+                configureWorkspaceKnowledgeContext(current, stagePath, binding),
+              )
+            }
           />
         ) : selectedEdge ? (
           <GraphEdgeInspector
@@ -885,6 +930,8 @@ function GraphNodeInspector({
   deployments,
   providers,
   onAssignment,
+  knowledgeBindings,
+  onKnowledgeContextChange,
 }: {
   node: GraphNode;
   onChange: (node: GraphNode) => void;
@@ -893,6 +940,11 @@ function GraphNodeInspector({
   deployments: Deployment[];
   providers: Provider[];
   onAssignment: (site: string, deploymentId: string) => void;
+  knowledgeBindings: Record<string, KnowledgeContextBindingDraft>;
+  onKnowledgeContextChange: (
+    stagePath: string,
+    binding: KnowledgeContextBindingDraft | null,
+  ) => void;
 }) {
   if (node.kind === "loop")
     return (
@@ -904,6 +956,8 @@ function GraphNodeInspector({
         deployments={deployments}
         providers={providers}
         onAssignment={onAssignment}
+        knowledgeBindings={knowledgeBindings}
+        onKnowledgeContextChange={onKnowledgeContextChange}
       />
     );
   if (node.kind === "approval_gate")
@@ -992,6 +1046,12 @@ function GraphNodeInspector({
           </div>
         );
       })}
+      <KnowledgeContextEditor
+        stagePath={node.id}
+        node={node}
+        binding={knowledgeBindings[node.id]}
+        onChange={(binding) => onKnowledgeContextChange(node.id, binding)}
+      />
       <Button danger className="button-icon" onClick={onDelete}>
         <Trash2 size={15} />
         删除 Stage
@@ -1008,6 +1068,8 @@ function LoopNodeInspector({
   deployments,
   providers,
   onAssignment,
+  knowledgeBindings,
+  onKnowledgeContextChange,
 }: {
   node: LoopNode;
   onChange: (node: LoopNode) => void;
@@ -1016,6 +1078,11 @@ function LoopNodeInspector({
   deployments: Deployment[];
   providers: Provider[];
   onAssignment: (site: string, deploymentId: string) => void;
+  knowledgeBindings: Record<string, KnowledgeContextBindingDraft>;
+  onKnowledgeContextChange: (
+    stagePath: string,
+    binding: KnowledgeContextBindingDraft | null,
+  ) => void;
 }) {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   useEffect(() => {
@@ -1187,6 +1254,8 @@ function LoopNodeInspector({
                 deployments={deployments}
                 providers={providers}
                 onAssignment={onAssignment}
+                knowledgeBindings={knowledgeBindings}
+                onKnowledgeContextChange={onKnowledgeContextChange}
               />
             </div>
           </section>
@@ -1244,6 +1313,8 @@ function LoopBodyEditor({
   deployments,
   providers,
   onAssignment,
+  knowledgeBindings,
+  onKnowledgeContextChange,
 }: {
   loop: LoopNode;
   onChange: (node: LoopNode) => void;
@@ -1251,6 +1322,11 @@ function LoopBodyEditor({
   deployments: Deployment[];
   providers: Provider[];
   onAssignment: (site: string, deploymentId: string) => void;
+  knowledgeBindings: Record<string, KnowledgeContextBindingDraft>;
+  onKnowledgeContextChange: (
+    stagePath: string,
+    binding: KnowledgeContextBindingDraft | null,
+  ) => void;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
@@ -1390,6 +1466,16 @@ function LoopBodyEditor({
             />
           );
         })}{" "}
+      {selectedBodyNode?.kind === "stage" && (
+        <KnowledgeContextEditor
+          stagePath={`${loop.id}/${selectedBodyNode.id}`}
+          node={selectedBodyNode}
+          binding={knowledgeBindings[`${loop.id}/${selectedBodyNode.id}`]}
+          onChange={(binding) =>
+            onKnowledgeContextChange(`${loop.id}/${selectedBodyNode.id}`, binding)
+          }
+        />
+      )}
       {selectedNodeId && (
         <Button
           danger
@@ -1433,11 +1519,111 @@ function LoopBodyEditor({
           if (target?.kind === "stage")
             for (const slot of Object.keys(target.bindings))
               onAssignment(`${loop.id}/${target.id}.${slot}`, "");
+          if (target?.kind === "stage")
+            onKnowledgeContextChange(`${loop.id}/${target.id}`, null);
           onChange(removeLoopBodyNode(loop, pendingNodeDelete));
           setSelectedNodeId(undefined);
           setPendingNodeDelete(undefined);
         }}
       />
+    </section>
+  );
+}
+
+function KnowledgeContextEditor({
+  stagePath,
+  node,
+  binding,
+  onChange,
+}: {
+  stagePath: string;
+  node: StageNode;
+  binding?: KnowledgeContextBindingDraft;
+  onChange: (binding: KnowledgeContextBindingDraft | null) => void;
+}) {
+  const contract = node.input_artifact_contracts?.find(
+    (candidate) => candidate.id === "knowledge-context-v1",
+  );
+  const configured = Boolean(contract && binding);
+  const inconsistent = Boolean(contract) !== Boolean(binding);
+  return (
+    <section className="knowledge-context-contract-editor">
+      <header>
+        <div>
+          <span className="eyebrow">ACWM Stage Input Artifact</span>
+          <b>knowledge-context-v1</b>
+        </div>
+        <StatusBadge value={configured ? "ready" : inconsistent ? "failed" : "disabled"} />
+      </header>
+      <p className="field-hint">
+        Stage Slot 由 ACWM 定义；Retrieval Policy 与大小上限由 Agent-Team-OS 在 Published Pipeline Revision 冻结。
+      </p>
+      {!configured ? (
+        <>
+          {inconsistent && (
+            <div className="validation-errors">
+              <b>合同与产品 Binding 不一致</b>
+              <span>修复后才允许发布；不能只保留其中一侧。</span>
+            </div>
+          )}
+          <Button
+            type="primary"
+            onClick={() =>
+              onChange(
+                binding ?? createKnowledgeContextBinding(stagePath),
+              )
+            }
+          >
+            启用并冻结 Knowledge Context
+          </Button>
+        </>
+      ) : (
+        <>
+          <dl>
+            <dt>Stage Path</dt>
+            <dd><code>{stagePath}</code></dd>
+            <dt>Contract Version</dt>
+            <dd>{contract?.version}</dd>
+            <dt>Contract SHA-256</dt>
+            <dd><code title={binding?.acwm_artifact_contract_sha256}>{binding?.acwm_artifact_contract_sha256.slice(0, 16)}…</code></dd>
+            <dt>接纳语义</dt>
+            <dd>required · Fail Closed</dd>
+          </dl>
+          <label>
+            Retrieval Policy Revision ID
+            <Input
+              aria-label={`Retrieval Policy ${stagePath}`}
+              placeholder="例如 hybrid-rag-v1:1"
+              value={binding?.retrieval_policy_revision_id}
+              onChange={(event) =>
+                onChange({
+                  ...binding!,
+                  retrieval_policy_revision_id: event.target.value,
+                })
+              }
+            />
+          </label>
+          <label>
+            最大 Context Bytes
+            <Input
+              aria-label={`最大 Context Bytes ${stagePath}`}
+              type="number"
+              min={1}
+              max={2_000_000}
+              value={binding?.max_context_bytes}
+              onChange={(event) =>
+                onChange({
+                  ...binding!,
+                  max_context_bytes: Math.max(1, Number(event.target.value)),
+                })
+              }
+            />
+          </label>
+          <Button danger onClick={() => onChange(null)}>
+            移除 Stage Knowledge Context
+          </Button>
+        </>
+      )}
     </section>
   );
 }

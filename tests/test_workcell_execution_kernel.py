@@ -212,6 +212,10 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
     assert completed.workcell_run.status == "succeeded"
     assert completed.result is not None
     assert len(completed.agent_runs) == 4
+    delivery_attempts = kernel.list_delivery_attempts("delivery-workcell")
+    assert {item.id for item in delivery_attempts} == {
+        item.id for item in completed.attempts
+    }
 
 
 def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Path) -> None:

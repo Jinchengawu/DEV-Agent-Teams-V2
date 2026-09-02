@@ -104,6 +104,7 @@ def ensure_builtin_agent_deployments(
         instructions,
         extension_requirements,
     ) in definitions:
+        provider_id = _provider_id_for_instance(deployments, instance_id)
         desired_spec = AgentProfileSpec.model_validate(
             {
                 "schema_version": "1",
@@ -156,7 +157,7 @@ def ensure_builtin_agent_deployments(
                     profile_id=profile_id,
                     profile_revision=profile_revision,
                     instance_id=instance_id,
-                    provider_id="codex-cli-provider",
+                    provider_id=provider_id,
                 ),
                 actor_id="system",
             )
@@ -175,6 +176,7 @@ def ensure_builtin_agent_deployments(
                 profile_id=profile_id,
                 profile_revision=profile_revision,
                 instance_id=instance_id,
+                provider_id=provider_id,
             )
     return {
         "requirements.actor": "builtin-planning-deployment",
@@ -191,17 +193,19 @@ def _refresh_builtin_deployment(
     profile_id: str,
     profile_revision: int,
     instance_id: str,
+    provider_id: str,
 ) -> None:
     current = deployments.get(deployment_id)
     profile = profiles.get_revision(profile_id, profile_revision)
     instance = deployments.instances.get_instance(instance_id)
-    provider = deployments.providers.get("codex-cli-provider")
+    provider = deployments.providers.get(provider_id)
     stale = any(
         (
             current.profile_sha256 != profile.sha256,
             current.instance_version != instance.version,
             current.adapter_id != (instance.adapter_id or "unknown"),
             current.adapter_version != (instance.adapter_version or "unknown"),
+            current.provider_id != provider_id,
             current.provider_fingerprint != provider.manifest_fingerprint,
         )
     )
@@ -213,7 +217,7 @@ def _refresh_builtin_deployment(
                 profile_id=profile_id,
                 profile_revision=profile_revision,
                 instance_id=instance_id,
-                provider_id="codex-cli-provider",
+                provider_id=provider_id,
             ),
         )
     if current.qualification_status != "qualified":
@@ -225,6 +229,16 @@ def _refresh_builtin_deployment(
             )
     if not current.enabled:
         deployments.set_enabled(deployment_id, current.version, True)
+
+
+def _provider_id_for_instance(
+    deployments: AgentDeploymentCatalog,
+    instance_id: str,
+) -> str:
+    runtime_type = deployments.instances.get_instance(instance_id).runtime_type
+    if runtime_type in {"hermes-acp", "hermes-http"}:
+        return "hermes-provider"
+    return "codex-cli-provider"
 
 
 def _ensure_builtin_profile_revision(
@@ -385,7 +399,9 @@ def ensure_builtin_workcell_agent_deployments(
                     profile_id=profile_id,
                     profile_revision=profile_revision,
                     instance_id=execution_instance_id,
-                    provider_id="codex-cli-provider",
+                    provider_id=_provider_id_for_instance(
+                        deployments, execution_instance_id
+                    ),
                 ),
                 actor_id="system",
             )
@@ -404,6 +420,9 @@ def ensure_builtin_workcell_agent_deployments(
                 profile_id=profile_id,
                 profile_revision=profile_revision,
                 instance_id=execution_instance_id,
+                provider_id=_provider_id_for_instance(
+                    deployments, execution_instance_id
+                ),
             )
     assignments = dict(base)
     assignments.pop("code-repair/delivery.developer", None)

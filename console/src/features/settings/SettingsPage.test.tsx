@@ -39,6 +39,14 @@ beforeEach(() => {
     const url = String(input);
     calls.push(url);
     if (url === "/v1/settings") return response(settings);
+    if (url === "/v1/features") return response({
+      feishu_tenant_sync_v1: true,
+      knowledge_hybrid_index_v1: true,
+      delivery_knowledge_context_v1: false,
+    });
+    if (url === "/v1/knowledge/connections") return response([]);
+    if (url === "/v1/knowledge/provider-bindings-v2") return response([]);
+    if (url === "/v1/knowledge/index-catalog") return response({ profiles: [], qualifications: [], retrieval_policies: [], evaluation_policies: [], index_revisions: [], evaluation_reports: [] });
     if (url === "/v1/release-gates/latest") return response({
       deterministic,
       live: { ...live, dev_revision: "f".repeat(40) },
@@ -80,5 +88,17 @@ describe("设置页发布双门禁", () => {
     renderPage();
     expect((await screen.findAllByText("还没有持久化验收记录")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/当前 Demo 数据目录/).length).toBeGreaterThan(0);
+  });
+
+  test("区分知识接入 Feature Flag 与正式验收状态", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "知识接入分阶段开关" })).toBeTruthy();
+    expect(screen.getByText("Gate A · Tenant 同步")).toBeTruthy();
+    expect(screen.getByText("Gate B · Hybrid Index")).toBeTruthy();
+    expect(screen.getByText("Gate C · Delivery Context")).toBeTruthy();
+    expect(screen.getAllByText("已启用")).toHaveLength(2);
+    expect(screen.getByText("未启用")).toBeTruthy();
+    expect(screen.getByText(/开关开启不代表 Live 验收通过/)).toBeTruthy();
   });
 });

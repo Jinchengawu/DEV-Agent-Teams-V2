@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from agent_team_os.delivery import DeliveryMethodSnapshot
+from agent_team_os.delivery import DeliveryBuildIdentitySnapshot, DeliveryMethodSnapshot
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ProjectGitWorkspaces
 from agent_team_os.modules.orchestration import (
@@ -166,11 +166,21 @@ def test_delivery_snapshot_compiles_team_pipeline_provider_workspace_and_method_
         ),
         method_entries={"bmad-build": {"qualification_sha256": "d" * 64}},
     )
+    build_identity = DeliveryBuildIdentitySnapshot(
+        product_revision="1" * 40,
+        product_worktree_clean=True,
+        acwm_version="0.5.1",
+        acwm_revision="2" * 40,
+        framework_lock_sha256="3" * 64,
+        framework_dependency_status="ready",
+        snapshot_sha256="4" * 64,
+    )
     compiler = DeliveryExecutionSnapshotCompiler(
         governance=governance,
         projects=project_repository,
         pipelines=pipeline_catalog,
         method_snapshot=lambda: methods,
+        build_identity=lambda: build_identity,
     )
 
     snapshot = compiler.compile("snapshot-project", "four-workcell-delivery:1")
@@ -181,6 +191,7 @@ def test_delivery_snapshot_compiles_team_pipeline_provider_workspace_and_method_
     assert tuple(item.workcell_key for item in snapshot.workspaces) == roles
     assert len({item.repository_uri for item in snapshot.workspaces}) == 4
     assert snapshot.method_snapshot == methods
+    assert snapshot.build_identity == build_identity
     assert compiler.compile(
         "snapshot-project", "four-workcell-delivery:1"
     ).snapshot_sha256 == snapshot.snapshot_sha256

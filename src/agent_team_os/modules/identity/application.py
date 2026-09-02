@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from collections.abc import Callable
 from datetime import timedelta
 
 from ...shared.clock import Clock, SystemClock
@@ -24,6 +25,12 @@ class IdentityService:
     def __init__(self, repository: IdentityRepository, clock: Clock | None = None) -> None:
         self.repository = repository
         self.clock = clock or SystemClock()
+        self._user_authorization_change_guard: Callable[[str, Role, bool], None] | None = None
+
+    def configure_user_authorization_change_guard(
+        self, guard: Callable[[str, Role, bool], None]
+    ) -> None:
+        self._user_authorization_change_guard = guard
 
     def bootstrap_required(self) -> bool:
         return self.repository.count_users() == 0
@@ -46,9 +53,7 @@ class IdentityService:
 
     def login(self, request: LoginRequest) -> SessionGrant:
         found = self.repository.get_user_by_username(request.username)
-        if found is None or not found[0].enabled or not verify_password(
-            request.password, found[1]
-        ):
+        if found is None or not found[0].enabled or not verify_password(request.password, found[1]):
             raise ProductError(
                 code="IDENTITY_LOGIN_FAILED",
                 title="登录失败",
@@ -134,6 +139,10 @@ class IdentityService:
             )
         next_role = request.role or current.role
         next_enabled = current.enabled if request.enabled is None else request.enabled
+        if self._user_authorization_change_guard is not None and (
+            next_role != current.role or next_enabled != current.enabled
+        ):
+            self._user_authorization_change_guard(user_id, next_role, next_enabled)
         password_hash = None
         if request.password is not None:
             _validate_password(request.password)
@@ -144,6 +153,8 @@ class IdentityService:
                 "display_name": request.display_name or current.display_name,
                 "role": next_role,
                 "enabled": next_enabled,
+                "authorization_version": current.authorization_version
+                + int(next_role != current.role or next_enabled != current.enabled),
                 "version": current.version + 1,
                 "updated_at": now,
             }
@@ -260,8 +271,10 @@ def _token_hash(token: str) -> str:
 
 
 def _validate_password(password: str) -> None:
-    if len(password) < 12 or not any(character.isalpha() for character in password) or not any(
-        character.isdigit() for character in password
+    if (
+        len(password) < 12
+        or not any(character.isalpha() for character in password)
+        or not any(character.isdigit() for character in password)
     ):
         raise ProductError(
             code="IDENTITY_PASSWORD_WEAK",

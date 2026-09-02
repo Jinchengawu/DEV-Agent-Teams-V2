@@ -74,3 +74,30 @@ def test_agent_run_ledger_persists_only_artifact_reference_metadata(
     persisted = json.loads(raw)
     assert "unified_diff" not in raw
     assert persisted[0]["reference"]["uri"].startswith("artifact://sha256/")
+
+
+def test_agent_run_ledger_records_attempt_error_code(tmp_path: Path) -> None:
+    database = tmp_path / "agent-team-os.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    ledger = AgentRunLedger(database)
+    run = ledger.start(
+        delivery_id="delivery-revoked",
+        pipeline_revision_id="pipeline:1",
+        binding_site="design.main",
+        resolved_binding_hash="a" * 64,
+        deployment_snapshot={},
+        runtime_identity="codex-cli",
+    )
+
+    ledger.finish(
+        run,
+        status="failed",
+        error_code="KNOWLEDGE_AUTHORIZATION_REVOKED",
+    )
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT status,error_code FROM agent_attempts WHERE id=?",
+            (run.attempt_id,),
+        ).fetchone()
+    assert row == ("failed", "KNOWLEDGE_AUTHORIZATION_REVOKED")

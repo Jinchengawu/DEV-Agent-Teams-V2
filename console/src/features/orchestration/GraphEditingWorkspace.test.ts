@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createGraphNode } from "./OrchestrationPage";
-import { appendWorkspaceEdge, applyWorkspaceLayoutChanges, createGraphEditingWorkspace, deleteWorkspaceNode } from "./GraphEditingWorkspace";
+import {
+  appendWorkspaceEdge,
+  applyWorkspaceLayoutChanges,
+  configureWorkspaceKnowledgeContext,
+  createGraphEditingWorkspace,
+  createKnowledgeContextBinding,
+  deleteWorkspaceNode,
+} from "./GraphEditingWorkspace";
 
 describe("GraphEditingWorkspace 单一状态 Interface", () => {
   it("删除节点时原子清理语义边、布局和嵌套 Agent Assignment", () => {
@@ -28,5 +35,50 @@ describe("GraphEditingWorkspace 单一状态 Interface", () => {
     expect(moved.layout[stage.id]).toEqual({ x: 420, y: 180 });
     expect(moved.nodes).toEqual(initial.nodes);
     expect(moved.edges).toEqual(initial.edges);
+  });
+
+  it("原子配置 ACWM Stage Contract 与产品 Knowledge Binding", () => {
+    const stage = createGraphNode("role", []);
+    const loop = createGraphNode("loop", [stage]);
+    const initial = createGraphEditingWorkspace(
+      [stage, loop],
+      [],
+      undefined,
+      {},
+    );
+    const stageBinding = createKnowledgeContextBinding(stage.id, "retrieval-v1:1");
+    const innerPath = `${loop.id}/${loop.id}-work`;
+    const innerBinding = createKnowledgeContextBinding(innerPath, "retrieval-v1:1");
+
+    const configured = configureWorkspaceKnowledgeContext(
+      configureWorkspaceKnowledgeContext(initial, stage.id, stageBinding),
+      innerPath,
+      innerBinding,
+    );
+
+    const configuredStage = configured.nodes[0];
+    const configuredLoop = configured.nodes[1];
+    expect(configuredStage?.kind).toBe("stage");
+    expect(
+      configuredStage?.kind === "stage"
+        ? configuredStage.input_artifact_contracts?.[0]?.id
+        : undefined,
+    ).toBe("knowledge-context-v1");
+    expect(
+      configuredLoop?.kind === "loop" && configuredLoop.nodes[0]?.kind === "stage"
+        ? configuredLoop.nodes[0].input_artifact_contracts?.[0]?.id
+        : undefined,
+    ).toBe("knowledge-context-v1");
+    expect(configured.knowledgeBindings).toEqual({
+      [stage.id]: stageBinding,
+      [innerPath]: innerBinding,
+    });
+
+    const removed = deleteWorkspaceNode(configured, loop.id);
+    expect(removed.knowledgeBindings).toEqual({ [stage.id]: stageBinding });
+    expect(
+      configureWorkspaceKnowledgeContext(removed, stage.id, null)
+        .knowledgeBindings,
+    ).toEqual({});
   });
 });

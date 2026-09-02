@@ -1,20 +1,22 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, InputNumber } from "antd";
-import { Clock3, GitCommitHorizontal, LockKeyhole, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Clock3, DatabaseZap, GitCommitHorizontal, Layers3, LockKeyhole, RefreshCw, Save, ShieldCheck, Workflow } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request, type AppSettings, type AppSettingsPatch } from "../../shared/api/client";
 import { ConflictState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { StatusBadge } from "../../shared/ui/StatusBadge";
+import { type FeatureFlags, useFeatureFlags } from "../../shared/features/api";
+import { KnowledgeIntegrationPanel } from "./KnowledgeIntegrationPanel";
 
 type LatestGateReports = components["schemas"]["LatestGateReports"];
 type GateReport = components["schemas"]["GateReport"];
-
 export function SettingsPage() {
   const client = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<AppSettings>("/v1/settings") });
   const releaseGates = useQuery({ queryKey: ["release-gates", "latest"], queryFn: () => request<LatestGateReports>("/v1/release-gates/latest") });
   const releaseHistory = useQuery({ queryKey: ["release-gates", "history"], queryFn: ({ signal }) => request<GateReport[]>("/v1/release-gates/history", { signal }) });
+  const featureFlags = useFeatureFlags();
   const [draft, setDraft] = useState<AppSettings>();
   useEffect(() => { if (settings.data) setDraft(settings.data); }, [settings.data]);
   const save = useMutation({
@@ -29,6 +31,8 @@ export function SettingsPage() {
   return <div className="settings-layout">
     <ReleaseGatePanel reports={releaseGates.data} loading={releaseGates.isLoading} error={releaseGates.error} onRefresh={() => releaseGates.refetch()}/>
     <ReleaseHistoryPanel reports={releaseHistory.data} loading={releaseHistory.isLoading} error={releaseHistory.error} onRefresh={() => releaseHistory.refetch()}/>
+    <KnowledgeFeatureGatePanel flags={featureFlags.data} loading={featureFlags.isLoading} error={featureFlags.error} onRefresh={() => featureFlags.refetch()}/>
+    <KnowledgeIntegrationPanel flags={featureFlags.data}/>
     <section className="panel settings-form">
       <div className="panel-head"><span>安全运营参数</span><small>CAS 版本 {draft.version}</small></div>
       <ConflictState error={save.error}/>
@@ -47,6 +51,20 @@ export function SettingsPage() {
       <div className="policy-note">这些字段属于产品安全边界。Agent、用户需求和批量开发任务均不能覆盖。</div>
     </section>
   </div>;
+}
+
+function KnowledgeFeatureGatePanel({ flags, loading, error, onRefresh }: { flags?: FeatureFlags; loading: boolean; error: Error | null; onRefresh: () => void }) {
+  const gates = flags ? [
+    { key: "A", title: "Gate A · Tenant 同步", enabled: flags.feishu_tenant_sync_v1, icon: DatabaseZap, note: "Tenant App、批准来源与可靠同步" },
+    { key: "B", title: "Gate B · Hybrid Index", enabled: flags.knowledge_hybrid_index_v1, icon: Layers3, note: "不可变索引、模型资格与检索评测" },
+    { key: "C", title: "Gate C · Delivery Context", enabled: flags.delivery_knowledge_context_v1, icon: Workflow, note: "冻结 Context、Citation 与撤权门禁" },
+  ] : [];
+  return <section className="panel knowledge-feature-gates evidence-rail">
+    <div className="panel-head"><div><h2>知识接入分阶段开关</h2><small>运行时接线状态，不是能力验收结论</small></div><Button type="text" icon={<RefreshCw size={13}/>} onClick={onRefresh}>刷新开关</Button></div>
+    {loading && <LoadingState label="正在读取知识接入开关…"/>}
+    {error && <ErrorState error={error} retry={onRefresh}/>}
+    {flags && <><div className="knowledge-gate-rail">{gates.map(({ key, title, enabled, icon: Icon, note }) => <article key={key} data-enabled={enabled}><div className="knowledge-gate-marker"><Icon size={18}/><span>{key}</span></div><div><h3>{title}</h3><p>{note}</p></div><span className="knowledge-gate-state">{enabled ? "已启用" : "未启用"}</span></article>)}</div><p className="knowledge-gate-disclaimer">开关开启不代表 Live 验收通过。Gate C 还必须由上游 ACWM Artifact Contract、真实飞书权限、Ollama 资格和同 Revision Release Report 共同证明。</p></>}
+  </section>;
 }
 
 function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?: GateReport[]; loading: boolean; error: Error | null; onRefresh: () => void }) {

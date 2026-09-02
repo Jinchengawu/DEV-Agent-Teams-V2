@@ -70,18 +70,12 @@ class AgentDeploymentBindingResolver:
                     f"RUNTIME_INSTANCE_VERSION_STALE: {deployment.id}"
                 )
             if not instance.enabled or instance.health.status != "ready":
-                raise PipelineBindingResolutionError(
-                    f"RUNTIME_INSTANCE_NOT_READY: {deployment.id}"
-                )
+                raise PipelineBindingResolutionError(f"RUNTIME_INSTANCE_NOT_READY: {deployment.id}")
             profile = self.deployments.profiles.get_revision(
                 deployment.profile_id, deployment.profile_revision
             )
             requirement = next(
-                (
-                    item
-                    for item in profile.spec.capabilities
-                    if item.id == capability_id
-                ),
+                (item for item in profile.spec.capabilities if item.id == capability_id),
                 None,
             )
             if requirement is None:
@@ -98,17 +92,11 @@ class AgentDeploymentBindingResolver:
                 manifest.mode_id, manifest.mode_version
             )
             provider_version = next(
-                (
-                    item.version
-                    for item in provider.capabilities
-                    if item.id == capability_id
-                ),
+                (item.version for item in provider.capabilities if item.id == capability_id),
                 "0.0.0",
             )
             try:
-                features = frozenset(
-                    CapabilityFeature(value) for value in instance.features
-                )
+                features = frozenset(CapabilityFeature(value) for value in instance.features)
             except ValueError as error:
                 raise PipelineBindingResolutionError(
                     f"RUNTIME_FEATURE_UNKNOWN: {deployment.id}"
@@ -120,12 +108,7 @@ class AgentDeploymentBindingResolver:
                 adapter_version=deployment.adapter_version,
                 features=features,
                 required_features=workflow_requirements.required,
-                config_fingerprint=sha256_json(
-                    {
-                        "instance_id": deployment.instance_id,
-                        "instance_version": deployment.instance_version,
-                    }
-                ),
+                config_fingerprint=sha256_json(instance.connection),
                 policy_version="1",
                 policy_fingerprint=sha256_json(deployment.policy_snapshot),
             )
@@ -148,6 +131,9 @@ class AgentDeploymentBindingResolver:
                 "deployment": deployment.model_dump(mode="json"),
                 "runtime_identity": instance.health.identity,
                 "binding": binding.model_dump(mode="json"),
+                "provider_input_contracts": [
+                    contract.model_dump(mode="json") for contract in provider.input_contracts
+                ],
             }
         return snapshot
 

@@ -89,6 +89,7 @@ def test_approved_plan_executes_once_and_exposes_candidate_evidence() -> None:
         "changed_files": ["src/health.py", "tests/test_health.py"],
         "candidate_ref": "",
         "unified_diff": "",
+        "knowledge_citation_ids": [],
     }
     assert delivery["evidence_identity"] == "deterministic-test"
     assert delivery["planning_identity"] == "deterministic-test"

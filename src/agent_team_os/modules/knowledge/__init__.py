@@ -1,4 +1,23 @@
 from .application import WikiService
+from .context_application import (
+    DeliveryKnowledgeContextPreparationService,
+    KnowledgeAuthorizationResolver,
+    KnowledgeContextRuntimeGuard,
+    KnowledgePreparationInputCompiler,
+)
+from .context_domain import (
+    AdministratorBypassAuthorizationComponent,
+    AuthorizationApprovalComponent,
+    AuthorizationConnectionComponent,
+    DeliveryKnowledgeContextOverview,
+    KnowledgeAuthorizationStampV1,
+    KnowledgeCitationUsage,
+    KnowledgeContextPreparationRun,
+    KnowledgeContextRuntimeView,
+    KnowledgeContextStageResult,
+    MembershipAuthorizationComponent,
+)
+from .context_repository import SQLiteKnowledgeContextRepository
 from .domain import (
     AssetReference,
     Comment,
@@ -25,6 +44,43 @@ from .domain import (
     WikiAccess,
 )
 from .http import create_wiki_router
+from .index_application import KnowledgeIndexManager
+from .index_domain import (
+    EmbeddingModelDescriptor,
+    EmbeddingQualificationRequest,
+    EmbeddingQualificationSnapshot,
+    KnowledgeIndexBuildRequest,
+    KnowledgeIndexCatalog,
+    KnowledgeIndexProfileCreate,
+    KnowledgeIndexProfileRevision,
+    KnowledgeIndexRevision,
+    KnowledgeRetrievalHit,
+    KnowledgeRetrievalReceipt,
+    KnowledgeRetrievalRequest,
+    KnowledgeRetrievalResult,
+    ProjectKnowledgeRetrievalOption,
+    RetrievalEvaluationCase,
+    RetrievalEvaluationPolicyCreate,
+    RetrievalEvaluationPolicyRevision,
+    RetrievalEvaluationReport,
+    RetrievalEvaluationRunRequest,
+    RetrievalPolicyCreate,
+    RetrievalPolicyRevision,
+    RetrievalScore,
+)
+from .index_http import (
+    KnowledgeIndexActivationRequest,
+    ProjectKnowledgeRetrievalRequest,
+    create_knowledge_index_router,
+)
+from .index_ports import (
+    EmbeddingPort,
+    VectorIndexDescriptor,
+    VectorIndexPort,
+    VectorIndexRecord,
+    VectorSearchMatch,
+)
+from .index_repository import SQLiteKnowledgeIndexRepository
 from .provider_application import ProviderKnowledgeManager
 from .provider_domain import (
     KnowledgeProviderKind,
@@ -57,9 +113,34 @@ from .publication import (
 )
 from .repository import SQLiteWikiRepository
 from .search import KnowledgeActivityItem, KnowledgeSearchHit, KnowledgeSearchIndex
+from .sync_runtime import (
+    KNOWLEDGE_SYNC_RUNTIME_CONTRACT,
+    KnowledgeDirectoryReconciler,
+    KnowledgeSyncPolicy,
+    KnowledgeSyncScheduler,
+    KnowledgeSyncSupervisor,
+    KnowledgeSyncWorker,
+)
+from .tenant_application import TenantKnowledgeManager
+from .tenant_domain import (
+    KnowledgeSyncJob,
+    KnowledgeSyncJobRequest,
+    TenantConnection,
+    TenantConnectionCreate,
+    TenantProviderBinding,
+    TenantProviderBindingCreate,
+    TenantProviderSnapshotRecord,
+)
+from .tenant_http import create_tenant_knowledge_router
+from .tenant_ports import TenantKnowledgeProvider, TenantKnowledgeProviderResolver
+from .tenant_repository import SQLiteTenantKnowledgeRepository
 
 __all__ = [
     "AssetReference",
+    "AdministratorBypassAuthorizationComponent",
+    "AuthorizationApprovalComponent",
+    "AuthorizationConnectionComponent",
+    "DeliveryKnowledgeContextOverview",
     "Comment",
     "CommentCreate",
     "CommentPatch",
@@ -72,6 +153,15 @@ __all__ = [
     "KnowledgeDerivationResult",
     "KnowledgeLifecycleStatus",
     "KnowledgeActor",
+    "KnowledgeAuthorizationResolver",
+    "KnowledgePreparationInputCompiler",
+    "KnowledgeAuthorizationStampV1",
+    "KnowledgeCitationUsage",
+    "KnowledgeContextPreparationRun",
+    "KnowledgeContextRuntimeGuard",
+    "KnowledgeContextRuntimeView",
+    "KnowledgeContextStageResult",
+    "DeliveryKnowledgeContextPreparationService",
     "KnowledgeProvider",
     "KnowledgePublication",
     "KnowledgePublicationLedger",
@@ -112,5 +202,56 @@ __all__ = [
     "KnowledgeSearchHit",
     "KnowledgeActivityItem",
     "KnowledgeSearchIndex",
+    "KNOWLEDGE_SYNC_RUNTIME_CONTRACT",
+    "KnowledgeDirectoryReconciler",
+    "KnowledgeSyncPolicy",
+    "KnowledgeSyncScheduler",
+    "KnowledgeSyncSupervisor",
+    "KnowledgeSyncWorker",
+    "KnowledgeSyncJob",
+    "KnowledgeSyncJobRequest",
+    "TenantConnection",
+    "TenantConnectionCreate",
+    "TenantKnowledgeManager",
+    "TenantKnowledgeProvider",
+    "TenantKnowledgeProviderResolver",
+    "TenantProviderBinding",
+    "TenantProviderBindingCreate",
+    "TenantProviderSnapshotRecord",
+    "SQLiteTenantKnowledgeRepository",
+    "create_tenant_knowledge_router",
     "create_provider_knowledge_router",
+    "EmbeddingModelDescriptor",
+    "EmbeddingPort",
+    "VectorIndexDescriptor",
+    "VectorIndexPort",
+    "VectorIndexRecord",
+    "VectorSearchMatch",
+    "EmbeddingQualificationRequest",
+    "EmbeddingQualificationSnapshot",
+    "KnowledgeIndexBuildRequest",
+    "KnowledgeIndexCatalog",
+    "KnowledgeIndexManager",
+    "KnowledgeIndexProfileCreate",
+    "KnowledgeIndexProfileRevision",
+    "KnowledgeIndexRevision",
+    "KnowledgeRetrievalHit",
+    "KnowledgeRetrievalReceipt",
+    "KnowledgeRetrievalRequest",
+    "KnowledgeRetrievalResult",
+    "ProjectKnowledgeRetrievalOption",
+    "RetrievalEvaluationCase",
+    "RetrievalEvaluationPolicyCreate",
+    "RetrievalEvaluationPolicyRevision",
+    "RetrievalEvaluationReport",
+    "RetrievalEvaluationRunRequest",
+    "RetrievalPolicyCreate",
+    "RetrievalPolicyRevision",
+    "RetrievalScore",
+    "SQLiteKnowledgeIndexRepository",
+    "SQLiteKnowledgeContextRepository",
+    "MembershipAuthorizationComponent",
+    "KnowledgeIndexActivationRequest",
+    "ProjectKnowledgeRetrievalRequest",
+    "create_knowledge_index_router",
 ]

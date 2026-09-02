@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from ..orchestration import WorkcellStageBinding
+from ...knowledge_context_contract import (
+    KNOWLEDGE_CONTEXT_CONTRACT_ID,
+    KNOWLEDGE_CONTEXT_CONTRACT_VERSION,
+    KNOWLEDGE_CONTEXT_STAGE_PATHS,
+    knowledge_context_artifact_contract_sha256,
+)
+from ..orchestration import KnowledgeContextBinding, WorkcellStageBinding
 from .application import TeamTemplateCatalog
 from .domain import (
     DelegationPolicy,
@@ -147,6 +153,26 @@ def builtin_workcell_stage_map() -> dict[str, WorkcellStageBinding]:
 
 def builtin_release_contract() -> tuple[str, ...]:
     return ("design", "frontend", "backend", "qa")
+
+
+def builtin_knowledge_context_bindings(
+    retrieval_policy_revision_id: str,
+    *,
+    max_context_bytes: int = 65_536,
+) -> dict[str, KnowledgeContextBinding]:
+    contract_sha256 = knowledge_context_artifact_contract_sha256()
+    return {
+        stage_path: KnowledgeContextBinding(
+            stage_path=stage_path,
+            acwm_artifact_slot=KNOWLEDGE_CONTEXT_CONTRACT_ID,
+            acwm_artifact_contract_version=KNOWLEDGE_CONTEXT_CONTRACT_VERSION,
+            acwm_artifact_contract_sha256=contract_sha256,
+            retrieval_policy_revision_id=retrieval_policy_revision_id,
+            required=True,
+            max_context_bytes=max_context_bytes,
+        )
+        for stage_path in KNOWLEDGE_CONTEXT_STAGE_PATHS
+    }
 
 
 def _stage(

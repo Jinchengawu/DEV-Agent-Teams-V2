@@ -5,19 +5,29 @@ from datetime import UTC, datetime
 
 from ...shared.errors import ProductError
 from ...shared.hashes import sha256_json
+from ...shared.ids import new_id
 from ...shared.repositories import RepositoryRole
+from .authorization import ProjectAccessPolicy
 from .domain import (
     Project,
+    ProjectAccessActor,
+    ProjectAccessAudit,
     ProjectBindingUpdate,
+    ProjectCapability,
     ProjectCreate,
     ProjectDeploymentAccess,
     ProjectDeploymentUpdate,
     ProjectDetail,
     ProjectExecutionContext,
     ProjectKnowledgeSource,
+    ProjectKnowledgeSourceApproval,
+    ProjectKnowledgeSourceApprovalUpdate,
     ProjectKnowledgeSourceUpdate,
+    ProjectMembership,
+    ProjectMembershipUpdate,
     ProjectPatch,
     ProjectPipelineBinding,
+    ProjectRole,
     ProjectWorkspace,
 )
 from .domain import (
@@ -45,7 +55,10 @@ class ProjectCatalog:
         self.provisioner = provisioner
         self._pipeline_validator: Callable[[str], None] | None = None
         self._deployment_validator: Callable[[str], None] | None = None
+        self._knowledge_binding_validator: Callable[[str], None] | None = None
+        self._membership_principal_validator: Callable[[str, ProjectRole], None] | None = None
         self.team_governance = team_governance
+        self.access = ProjectAccessPolicy(repository)
 
     def configure_resource_validators(
         self,
@@ -55,6 +68,14 @@ class ProjectCatalog:
     ) -> None:
         self._pipeline_validator = pipeline
         self._deployment_validator = deployment
+
+    def configure_knowledge_binding_validator(self, validator: Callable[[str], None]) -> None:
+        self._knowledge_binding_validator = validator
+
+    def configure_membership_principal_validator(
+        self, validator: Callable[[str, ProjectRole], None]
+    ) -> None:
+        self._membership_principal_validator = validator
 
     def create(self, request: ProjectCreate, actor_id: str) -> ProjectDetail:
         self._validate_pipeline(request.default_pipeline_revision_id)
@@ -120,6 +141,133 @@ class ProjectCatalog:
     def list(self) -> tuple[Project, ...]:
         return self.repository.list()
 
+    def list_for(self, actor: ProjectAccessActor | None) -> tuple[Project, ...]:
+        projects = self.repository.list()
+        if actor is None:
+            return projects
+        visible = self.access.visible_project_ids(actor)
+        if visible is None:
+            return projects
+        return tuple(project for project in projects if project.id in visible)
+
+    def get_for(self, actor: ProjectAccessActor | None, project_id: str) -> ProjectDetail:
+        self.authorize(
+            actor,
+            project_id,
+            ProjectCapability.READ,
+            resource=f"project:{project_id}",
+            reason="read project detail",
+        )
+        return self.get(project_id)
+
+    def authorize(
+        self,
+        actor: ProjectAccessActor | None,
+        project_id: str,
+        capability: ProjectCapability,
+        *,
+        resource: str,
+        reason: str,
+    ) -> ProjectAccessAudit | None:
+        project = self._project(project_id)
+        if capability != ProjectCapability.READ and project.lifecycle_status == "archived":
+            raise _archived()
+        if actor is not None:
+            return self.access.require(
+                actor,
+                project_id,
+                capability,
+                resource=resource,
+                reason=reason,
+            )
+        return None
+
+    def list_memberships(self, project_id: str) -> tuple[ProjectMembership, ...]:
+        self._project(project_id)
+        return self.repository.list_memberships(project_id)
+
+    def list_access_audits(self, project_id: str) -> tuple[ProjectAccessAudit, ...]:
+        self._project(project_id)
+        return self.repository.list_access_audits(project_id)
+
+    def require_alternative_effective_owner(
+        self,
+        user_id: str,
+        *,
+        is_effective_owner: Callable[[str], bool],
+    ) -> None:
+        for project in self.repository.list():
+            if project.id == "legacy-default" or project.lifecycle_status != "active":
+                continue
+            membership = self.repository.get_membership(project.id, user_id)
+            if membership is None or membership.role != "owner":
+                continue
+            has_alternative = any(
+                candidate.user_id != user_id
+                and candidate.role == "owner"
+                and is_effective_owner(candidate.user_id)
+                for candidate in self.repository.list_memberships(project.id)
+            )
+            if not has_alternative:
+                raise _conflict(
+                    "PROJECT_LAST_OWNER_REQUIRED",
+                    "必须保留项目 Owner",
+                    f"用户仍是项目 {project.id} 的最后有效 Owner；请先完成 Owner 移交。",
+                )
+
+    def put_membership(
+        self, project_id: str, user_id: str, request: ProjectMembershipUpdate
+    ) -> ProjectMembership:
+        self._ensure_mutable(project_id)
+        if self._membership_principal_validator is not None:
+            self._membership_principal_validator(user_id, request.role)
+        current = next(
+            (
+                item
+                for item in self.repository.list_memberships(project_id)
+                if item.user_id == user_id
+            ),
+            None,
+        )
+        membership = ProjectMembership(
+            project_id=project_id,
+            user_id=user_id,
+            role=request.role,
+            version=1 if current is None else current.version + 1,
+        )
+        try:
+            self.repository.put_membership(membership, request.expected_version)
+        except RuntimeError as error:
+            if str(error) == "PROJECT_LAST_OWNER_REQUIRED":
+                raise _conflict(
+                    "PROJECT_LAST_OWNER_REQUIRED",
+                    "必须保留项目 Owner",
+                    "先为另一个启用用户授予 Owner，再降级当前 Owner。",
+                ) from error
+            raise _conflict(
+                "PROJECT_MEMBERSHIP_VERSION_CONFLICT",
+                "项目成员版本冲突",
+                "刷新项目成员列表后重新提交。",
+            ) from error
+        return membership
+
+    def delete_membership(self, project_id: str, user_id: str, expected_version: int) -> None:
+        self._ensure_mutable(project_id)
+        try:
+            self.repository.delete_membership(project_id, user_id, expected_version)
+        except RuntimeError as error:
+            if str(error) == "PROJECT_LAST_OWNER_REQUIRED":
+                raise _conflict(
+                    "PROJECT_LAST_OWNER_REQUIRED",
+                    "必须保留项目 Owner",
+                    "先为另一个启用用户授予 Owner，再移除当前 Owner。",
+                ) from error
+            raise _conflict(
+                "PROJECT_MEMBERSHIP_VERSION_CONFLICT",
+                "项目成员版本冲突",
+                "刷新项目成员列表后重新提交。",
+            ) from error
+
     def recover_provisioning(self) -> None:
         """Resume the database-to-Git provisioning saga after a process interruption."""
         for project in self.repository.list():
@@ -143,6 +291,7 @@ class ProjectCatalog:
             pipeline_bindings=self.repository.list_pipeline_bindings(project_id),
             deployment_access=self.repository.list_deployment_access(project_id),
             knowledge_sources=self.repository.list_knowledge_sources(project_id),
+            knowledge_source_approvals=self.repository.list_knowledge_source_approvals(project_id),
             repositories=self.repository.list_repositories(project_id),
             active_delivery_id=self.repository.active_delivery_id(project_id),
         )
@@ -381,6 +530,87 @@ class ProjectCatalog:
             ) from error
         return source
 
+    def put_knowledge_source_approval(
+        self,
+        project_id: str,
+        binding_id: str,
+        request: ProjectKnowledgeSourceApprovalUpdate,
+        actor_id: str,
+    ) -> ProjectKnowledgeSourceApproval:
+        self._ensure_mutable(project_id)
+        if self._knowledge_binding_validator is None:
+            raise ProductError(
+                code="KNOWLEDGE_CONNECTION_ADAPTER_UNAVAILABLE",
+                title="Tenant Knowledge Governance 未配置",
+                detail="当前运行实例不能批准 Tenant Provider Binding。",
+                repair="配置 Tenant Knowledge Manager 后重试。",
+                status_code=503,
+            )
+        self._knowledge_binding_validator(binding_id)
+        current = next(
+            (
+                item
+                for item in self.repository.list_knowledge_source_approvals(project_id)
+                if item.binding_id == binding_id
+            ),
+            None,
+        )
+        now = datetime.now(UTC)
+        approval = ProjectKnowledgeSourceApproval(
+            id=new_id() if current is None else current.id,
+            project_id=project_id,
+            binding_id=binding_id,
+            enabled=request.enabled,
+            rag_enabled=request.rag_enabled,
+            version=1 if current is None else current.version + 1,
+            created_by=actor_id if current is None else current.created_by,
+            created_at=now if current is None else current.created_at,
+            updated_at=now,
+        )
+        try:
+            self.repository.put_knowledge_source_approval(approval, request.expected_version)
+        except RuntimeError as error:
+            raise _conflict(
+                "PROJECT_KNOWLEDGE_APPROVAL_VERSION_CONFLICT",
+                "项目知识批准版本冲突",
+                "刷新批准来源后重新提交。",
+            ) from error
+        return approval
+
+    def require_knowledge_source_approval(
+        self,
+        project_id: str,
+        binding_id: str,
+        *,
+        rag_required: bool = False,
+    ) -> ProjectKnowledgeSourceApproval:
+        self._project(project_id)
+        approval = next(
+            (
+                item
+                for item in self.repository.list_knowledge_source_approvals(project_id)
+                if item.binding_id == binding_id
+            ),
+            None,
+        )
+        if approval is None or not approval.enabled:
+            raise ProductError(
+                code="KNOWLEDGE_SOURCE_NOT_APPROVED",
+                title="知识来源未获项目批准",
+                detail="该 Tenant Provider Binding 未进入当前项目的 Approved Source Scope。",
+                repair="由 Administrator 与项目 Owner 批准来源后重试。",
+                status_code=403,
+            )
+        if rag_required and not approval.rag_enabled:
+            raise ProductError(
+                code="KNOWLEDGE_RAG_NOT_APPROVED",
+                title="知识来源未获 RAG 授权",
+                detail="该来源仅允许同步，不能进入 Agent 检索上下文。",
+                repair="由 Administrator 与项目 Owner 显式启用 RAG 后重试。",
+                status_code=403,
+            )
+        return approval
+
     def prepare_delivery(
         self, project_id: str, delivery_id: str, requested_pipeline_revision_id: str | None
     ) -> ProjectExecutionContext:
@@ -426,9 +656,7 @@ class ProjectCatalog:
             )
             for item in repository_records
         )
-        repository_set_sha256 = sha256_json(
-            [item.model_dump(mode="json") for item in repositories]
-        )
+        repository_set_sha256 = sha256_json([item.model_dump(mode="json") for item in repositories])
         return ProjectExecutionContext(
             project_id=project_id,
             project_version=project.version,

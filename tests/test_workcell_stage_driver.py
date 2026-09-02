@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import subprocess
@@ -7,8 +8,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+
 from agent_team_os.delivery import (
     DeliveryExecutionSnapshot,
+    DeliveryKnowledgeContextSnapshot,
     DeliveryMethodSnapshot,
     DeliveryRun,
     DeliveryWorkspaceSnapshot,
@@ -16,7 +20,7 @@ from agent_team_os.delivery import (
 )
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ExternalGitBinding, ExternalGitWorkspaceManager
-from agent_team_os.modules.artifacts import ContentAddressedArtifactStorage
+from agent_team_os.modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
 from agent_team_os.modules.releases import (
     ExternalReleaseCatalog,
     GitHubPRReceiptCreate,
@@ -31,6 +35,7 @@ from agent_team_os.modules.workcells import (
     WorkcellMethodContext,
     WorkcellStageDriver,
 )
+from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
 
 
@@ -49,8 +54,9 @@ class StaticMethodRuntime:
 
 
 class DeterministicWorkcellAgent:
-    def __init__(self) -> None:
+    def __init__(self, *, citation_ids: tuple[str, ...] = ()) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
+        self.citation_ids = citation_ids
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -59,11 +65,13 @@ class DeterministicWorkcellAgent:
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"assignments": payload},
+                knowledge_citation_ids=self.citation_ids,
             )
         if invocation.phase == "synthesis":
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"status": "synthesized", "workcell": invocation.workcell_key},
+                knowledge_citation_ids=self.citation_ids,
             )
         if invocation.workspace_access == "workspace_write":
             target = invocation.workspace / "design" / "candidate.md"
@@ -72,11 +80,35 @@ class DeterministicWorkcellAgent:
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"changed": "design/candidate.md"},
+                knowledge_citation_ids=self.citation_ids,
             )
         return WorkcellAgentOutput(
             runtime_identity="deterministic-workcell",
             content={"blocking_findings": [], "method_id": invocation.method_id},
+            knowledge_citation_ids=self.citation_ids,
         )
+
+
+class RecordingKnowledgeGuard:
+    def __init__(self) -> None:
+        self.admissions: list[tuple[str, str]] = []
+        self.validations: list[tuple[str, ...]] = []
+
+    def admit(self, delivery: DeliveryRun, stage_path: str) -> object:
+        self.admissions.append((delivery.id, stage_path))
+        return object()
+
+    def validate_citations(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+        citation_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        self.admit(delivery, stage_path)
+        self.validations.append(citation_ids)
+        if citation_ids != ("citation-allowed",):
+            raise AssertionError("unexpected citation set")
+        return citation_ids
 
 
 class PassedVerifier:
@@ -102,6 +134,89 @@ class DeterministicPRSurface:
         )
 
 
+def test_running_workcell_agent_is_cancelled_when_authorization_is_revoked() -> None:
+    class RevokingGuard:
+        def __init__(self) -> None:
+            self.admission_count = 0
+
+        def admit(self, _delivery: DeliveryRun, _stage_path: str) -> object:
+            self.admission_count += 1
+            if self.admission_count >= 2:
+                raise ProductError(
+                    code="KNOWLEDGE_AUTHORIZATION_REVOKED",
+                    title="authorization revoked",
+                    detail="authorization epoch changed",
+                    repair="start a new Delivery after authorization is restored",
+                )
+            return object()
+
+        def validate_citations(
+            self,
+            _delivery: DeliveryRun,
+            _stage_path: str,
+            citation_ids: tuple[str, ...],
+        ) -> tuple[str, ...]:
+            return citation_ids
+
+    class CancellableAgent:
+        def __init__(self) -> None:
+            self.cancelled: list[str] = []
+
+        async def run(self, _invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
+            await asyncio.Event().wait()
+            raise AssertionError("cancelled Agent should not finish")
+
+        async def cancel(self, agent_run_id: str) -> None:
+            self.cancelled.append(agent_run_id)
+
+    async def scenario() -> None:
+        agent = CancellableAgent()
+        guard = RevokingGuard()
+        driver = WorkcellStageDriver(
+            kernel=object(),  # type: ignore[arg-type]
+            artifacts=object(),  # type: ignore[arg-type]
+            methods=object(),  # type: ignore[arg-type]
+            agent=agent,
+            workspaces=object(),  # type: ignore[arg-type]
+            binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri="unused"),
+            verifier=object(),  # type: ignore[arg-type]
+            releases=object(),  # type: ignore[arg-type]
+            pull_requests=object(),  # type: ignore[arg-type]
+            knowledge_guard=guard,
+            revocation_poll_seconds=0.001,
+        )
+        delivery = DeliveryRun(
+            id="delivery-revoked",
+            project_id="project-revoked",
+            workspace_id="project:project-revoked",
+            user_request="consume approved knowledge",
+            status="executing",
+            version=1,
+            resolved_journey_sha256="1" * 64,
+            evidence_identity="test",
+            planning_identity="test",
+        )
+        invocation = WorkcellAgentInvocation(
+            delivery_id=delivery.id,
+            workcell_run_id="workcell-run-revoked",
+            agent_run_id="agent-run-revoked",
+            phase="delegate",
+            workcell_key="design",
+            stage_path="design-repair/design",
+            instruction="use frozen knowledge",
+            workspace=Path("/tmp"),
+            workspace_access="artifact_only",
+        )
+
+        with pytest.raises(ProductError) as revoked:
+            await driver._run_agent(delivery, invocation)
+
+        assert revoked.value.code == "KNOWLEDGE_AUTHORIZATION_REVOKED"
+        assert agent.cancelled == ["agent-run-revoked"]
+
+    asyncio.run(scenario())
+
+
 def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     tmp_path: Path,
 ) -> None:
@@ -123,6 +238,15 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
             NULL,'ready',?,'{}',NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",
             (str(remote), "b" * 64),
         )
+    artifact_storage = ContentAddressedArtifactStorage(tmp_path / "artifacts")
+    context_reference = artifact_storage.put_json(
+        {
+            "contract_id": "knowledge-context-v1",
+            "instruction_authority": "none",
+            "content": "external data only",
+        },
+        media_type="application/vnd.agent-team-os.knowledge-context+json",
+    )
     delivery = DeliveryRun(
         id="delivery-driver",
         project_id="project-driver",
@@ -136,16 +260,20 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         resolved_journey_sha256="2" * 64,
         evidence_identity="deterministic-workcell",
         planning_identity="deterministic-workcell",
-        delivery_execution_snapshot=_delivery_snapshot(str(remote), base),
+        delivery_execution_snapshot=_delivery_snapshot(
+            str(remote),
+            base,
+            knowledge_reference=context_reference,
+        ),
     )
     SQLiteDeliveryRepository(database).save(delivery)
-    artifact_storage = ContentAddressedArtifactStorage(tmp_path / "artifacts")
     kernel = WorkcellExecutionModule(
         SQLiteWorkcellExecutionRepository(database),
         artifact_storage=artifact_storage,
     )
     release_repository = SQLiteExternalReleaseRepository(database)
-    agent = DeterministicWorkcellAgent()
+    agent = DeterministicWorkcellAgent(citation_ids=("citation-allowed",))
+    knowledge_guard = RecordingKnowledgeGuard()
     pull_requests = DeterministicPRSurface()
     driver = WorkcellStageDriver(
         kernel=kernel,
@@ -153,12 +281,11 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         methods=StaticMethodRuntime(tmp_path / "method-runtime"),
         agent=agent,
         workspaces=ExternalGitWorkspaceManager(tmp_path / "runtime-workspaces"),
-        binding_resolver=lambda _workspace_id: ExternalGitBinding(
-            remote_uri=str(remote)
-        ),
+        binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri=str(remote)),
         verifier=PassedVerifier(),
         releases=ExternalReleaseCatalog(release_repository),
         pull_requests=pull_requests,
+        knowledge_guard=knowledge_guard,
     )
     requirements = artifact_storage.put_json(
         {
@@ -191,23 +318,35 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     assert [item.run_role for item in tree.agent_runs].count("child") == 3
     assert len(tree.reviews) == 2
     assert tree.verification is not None and tree.verification.status == "passed"
+    assert tree.result is not None
+    assert tree.result.knowledge_citation_ids == ("citation-allowed",)
     assert all(item.result_artifact_sha256 is not None for item in tree.attempts)
     delegate_instructions = [
         item.instruction for item in agent.invocations if item.phase == "delegate"
     ]
     assert delegate_instructions
     assert all("AC-LOGIN" in item for item in delegate_instructions)
+    assert all("external-collaborative" in item for item in delegate_instructions)
+    assert len(knowledge_guard.admissions) >= len(agent.invocations)
     assert pull_requests.calls == 2
     assert release_repository.get_pr(outcome.candidate.id) is not None
     assert _git(remote, "rev-parse", "refs/heads/main") == base
-    assert _git(
-        remote,
-        "rev-parse",
-        "refs/heads/agent-team-os/delivery-driver/design",
-    ) == outcome.candidate.candidate_revision
+    assert (
+        _git(
+            remote,
+            "rev-parse",
+            "refs/heads/agent-team-os/delivery-driver/design",
+        )
+        == outcome.candidate.candidate_revision
+    )
 
 
-def _delivery_snapshot(repository_uri: str, base: str) -> DeliveryExecutionSnapshot:
+def _delivery_snapshot(
+    repository_uri: str,
+    base: str,
+    *,
+    knowledge_reference: ArtifactReference | None = None,
+) -> DeliveryExecutionSnapshot:
     methods = DeliveryMethodSnapshot(
         snapshot_id="method-pack-set-v1:test",
         qualification_sha256="3" * 64,
@@ -270,6 +409,15 @@ def _delivery_snapshot(repository_uri: str, base: str) -> DeliveryExecutionSnaps
         "base": base,
         "methods": methods.model_dump(mode="json"),
     }
+    knowledge_binding = {
+        "stage_path": "design-repair/design",
+        "acwm_artifact_slot": "knowledge-context-v1",
+        "acwm_artifact_contract_version": "1.0.0",
+        "acwm_artifact_contract_sha256": "d" * 64,
+        "retrieval_policy_revision_id": "retrieval-v1",
+        "required": True,
+        "max_context_bytes": 16_384,
+    }
     return DeliveryExecutionSnapshot(
         project_id="project-driver",
         project_version=1,
@@ -280,6 +428,9 @@ def _delivery_snapshot(repository_uri: str, base: str) -> DeliveryExecutionSnaps
         pipeline_revision_sha256="a" * 64,
         workcell_stage_map={"design-repair/design": stage},
         release_contract_snapshot=("design",),
+        knowledge_context_bindings=(
+            {} if knowledge_reference is None else {"design-repair/design": knowledge_binding}
+        ),
         resolved_provider_bindings=providers,
         workspaces=(
             DeliveryWorkspaceSnapshot(
@@ -293,6 +444,21 @@ def _delivery_snapshot(repository_uri: str, base: str) -> DeliveryExecutionSnaps
             ),
         ),
         method_snapshot=methods,
+        knowledge_contexts=(
+            {}
+            if knowledge_reference is None
+            else {
+                "design-repair/design": DeliveryKnowledgeContextSnapshot(
+                    stage_path="design-repair/design",
+                    artifact_reference=knowledge_reference,
+                    citation_ids=("citation-allowed",),
+                    authorization_epoch_hash="c" * 64,
+                )
+            }
+        ),
+        knowledge_authorization_stamp=(
+            None if knowledge_reference is None else {"authorization_epoch_hash": "c" * 64}
+        ),
         snapshot_sha256=sha256_json(payload),
     )
 

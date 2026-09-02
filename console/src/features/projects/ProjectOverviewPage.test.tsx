@@ -13,7 +13,7 @@ const projectDetail = {
   workspace: { project_id: "pj1", workspace_id: "project:pj1", seed_revision: "c".repeat(40), repository_ref: "projects/pj1", status: "ready", provision_attempt: 1, created_at: "2026-08-24T00:00:00Z", updated_at: "2026-08-24T00:00:00Z" },
   pipeline_bindings: [], deployment_access: [], knowledge_sources: [], active_delivery_id: null,
 };
-const evaluator = { id: "user-1", username: "evaluator", display_name: "评测管理员", role: "administrator", enabled: true, version: 1, created_at: "2026-08-24T00:00:00Z", updated_at: "2026-08-24T00:00:00Z" } as const;
+const evaluator = { id: "user-1", username: "evaluator", display_name: "评测管理员", role: "administrator", enabled: true, authorization_version: 1, version: 1, created_at: "2026-08-24T00:00:00Z", updated_at: "2026-08-24T00:00:00Z" } as const;
 
 function withIdentity(children: ReactNode) {
   return <IdentityProvider user={evaluator}>{children}</IdentityProvider>;
@@ -43,7 +43,7 @@ describe("项目概览", () => {
     expect(screen.getByText(/当前版本不支持恢复/)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /取\s*消/ }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: "POST" }));
   });
 
   it("通过项目治理 Interface 授权固定流水线版本", async () => {

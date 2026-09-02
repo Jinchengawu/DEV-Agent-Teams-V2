@@ -78,6 +78,17 @@ class ProjectWorkcellGovernance:
             return False
         return True
 
+    def workspace_project_id(self, workspace_id: str) -> str:
+        try:
+            return self.repository.get_workspace(workspace_id).project_id
+        except KeyError as error:
+            raise _error(
+                "WORKSPACE_BINDING_NOT_FOUND",
+                "Workspace Binding 不存在",
+                "刷新项目 Workspace 列表后重试。",
+                404,
+            ) from error
+
     def topology(self, project_id: str) -> ProjectWorkcellTopology:
         project = self.projects.get(project_id)
         if project is None:
@@ -94,8 +105,7 @@ class ProjectWorkcellGovernance:
         workcells = self.repository.list_workcells(project_id)
         workspaces = self.repository.list_workspaces(project_id)
         order = {
-            definition.workcell_key: index
-            for index, definition in enumerate(revision.workcells)
+            definition.workcell_key: index for index, definition in enumerate(revision.workcells)
         }
         ordered_workcells = tuple(
             sorted(workcells, key=lambda item: order.get(item.workcell_key, len(order)))

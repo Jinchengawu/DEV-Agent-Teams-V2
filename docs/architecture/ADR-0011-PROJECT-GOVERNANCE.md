@@ -44,7 +44,16 @@ ACWM 不感知 Project；它继续解析已经冻结的 Pipeline、Provider 与 
 - 历史数据进入 `legacy-default`，旧 `workspace_id=backend-demo` 只在兼容入口映射到该项目。
 - 新控制台仅提交 `project_id`，项目路由与 Query Key 均包含 Project ID。
 - 原始旧 Delivery Snapshot、哈希、数据库备份和迁移动作继续保存在现有迁移审计表；不生成虚假的历史业务事件。
-- 项目级 RBAC 不在本版本范围。当前身份权限仍是全局角色，因此“项目隔离”只表示数据、Git 和运行作用域隔离，不代表已实现项目成员授权。
+- 项目级 RBAC 不在本 ADR 对应版本范围。当时身份权限仍是全局角色，因此该版本的“项目隔离”只表示数据、Git 和运行作用域隔离，不代表项目成员授权；当前扩展见 ADR-0016。
+
+### 2026-09-02 后续关系
+
+ADR-0016 已接受并实现 `ProjectMembership`、`ProjectRole` 和统一 Project Access Policy；Migration、
+项目级公共接口授权与跨项目直接 ID 隔离已完成 Deterministic 验证。该实现扩展本 ADR 的治理边界，
+不改变 Project 数据、Git、Lease 和 Snapshot 的原有权威，也不构成生产多租户 Live 证据。
+
+历史 `legacy-default` 不生成虚假 Owner；未来扩展仍由 Administrator 旁路治理，并为旁路访问
+写入审计事件。
 
 ## 验证
 

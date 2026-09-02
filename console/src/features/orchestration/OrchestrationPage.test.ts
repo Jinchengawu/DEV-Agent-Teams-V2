@@ -78,6 +78,15 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
                 delegate_3: "workcell.delegate",
               },
               output_validator: "workcell-result-v1",
+              input_artifact_contracts: [{
+                id: "knowledge-context-v1",
+                version: "1.0.0",
+                schema_uri: null,
+                modalities: ["structured", "text"],
+                integrity: "sha256-required",
+                provenance: "required",
+                verification: "schema",
+              }],
             },
           ],
           edges: [],
@@ -99,6 +108,10 @@ describe("DAG 与 LOOP 流水线编辑控制器", () => {
         delegate_3: "workcell.delegate",
       },
       output_validator: "workcell-result-v1",
+      input_artifact_contracts: [expect.objectContaining({
+        id: "knowledge-context-v1",
+        version: "1.0.0",
+      })],
     });
   });
   it("定义不兼容时返回可见诊断，不把解析失败伪装成空图", () => {

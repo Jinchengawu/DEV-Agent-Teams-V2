@@ -1,6 +1,9 @@
 # ADR-0008: Feishu Is a Collaborative Knowledge Provider, Not the Evidence Authority
 
-Status: accepted for a V0.2.1 proof of concept after the local Wiki golden slice.
+Status: accepted for a V0.2.1 proof of concept after the local Wiki golden slice. The user-auth
+and embedded-editor clauses are superseded for the v0.5.1 target by ADR-0017. Tenant Gate A is now
+implemented behind a Feature Flag and Deterministic verified; the composite target remains
+`Accepted/Not Implemented` and has no Live proof.
 
 ## Context
 
@@ -79,3 +82,22 @@ fallback and avoids coupling core Delivery startup to an external SaaS. The trad
 deliberate synchronization layer and dual permission evaluation instead of pretending that an
 embedded document is already trusted product knowledge.
 
+## 2026-09-02 v0.5.1 目标关系
+
+以下决定继续有效：
+
+- Feishu 拥有显式绑定的人工知识正文；
+- Agent-Team-OS 拥有 Binding、不可变 Snapshot、Provenance、Hash、Source Policy 和派生索引；
+- Delivery Evidence 只属于 Agent-Team-OS，Feishu 内容不能覆盖 Evidence；
+- Local Wiki 保持离线/default Provider，Feishu 不能成为既有产品启动依赖。
+
+ADR-0017 为可信本机 Alpha 接受 Tenant App Service Principal，并取代本 ADR 面向目标版本的
+逐用户 User Token、Feishu ACL 交集、Docs Component、Embed Grant 和 Webhook 要求。项目访问改由
+`Global Role ∩ ProjectRole ∩ Resource Policy ∩ Approved Source Scope` 决定。
+目标模型中，Knowledge Module 继续拥有 Provider Binding、Source Head 与 Snapshot Policy；
+Project Governance 单独拥有 `ProjectKnowledgeSourceApprovalV1`，二者通过 Policy Port 关联，
+不形成两个 Source Approval 权威。
+
+当前 Revision 已新增 Tenant App Adapter、Migration 与 Gate A 组合根接线；现有
+`ProviderActor`、`ProviderActorResolver` 和 `resolve_user_access_token` 仍作为独立 Legacy 路径保留，
+没有被原地伪装迁移。真实 Tenant 凭据的 Live PoC 尚未运行，Deterministic Provider 不能替代它。

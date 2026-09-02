@@ -296,6 +296,18 @@ def test_publisher_renders_requirement_artifact_with_agent_provenance(
     assert revision.provenance.runtime_identity == "codex-simulated-hermes"
 
 
+def test_publisher_normalizes_long_multiline_requirement_summary_for_document_title() -> None:
+    summary = "交付受控知识上下文\n" + "冻结引用与授权边界。" * 80
+
+    title, markdown = KnowledgePublisher._render_markdown(
+        "requirement-artifact-v1",
+        {"summary": summary},
+    )
+
+    assert title == "交付受控知识上下文"
+    assert summary in markdown
+
+
 def test_unified_search_applies_wiki_acl_before_returning_title_or_summary(
     tmp_path: Path,
 ) -> None:

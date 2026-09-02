@@ -1,6 +1,8 @@
 # ADR-0006: Local Identity and Role-Based Authorization
 
-Status: accepted for V0.2.1.
+Status: accepted for V0.2.1. ADR-0016 records the project-scoped extension; that slice is now
+implemented and Deterministic verified, while its composite architecture change remains
+`Accepted/Not Implemented`.
 
 ## Decision
 
@@ -15,3 +17,9 @@ Document permissions may narrow inherited Space access but cannot exceed the use
 Credentials for Agent Instances remain `env:` or `keychain:` references. No Interface returns
 password material, session bearer values, or referenced secret values.
 
+## 2026-09-02 后续关系
+
+ADR-0016 在不替代本 ADR 的本地身份、Session、CSRF 和全局 Capability 上限的前提下，接受
+`ProjectRole` 与项目资源授权。当前 Revision 已实现 `ProjectMembership`、最后 Owner 保护、
+Administrator bypass Receipt 与统一 Project Access Policy；有效权限是全局 Capability 上限与
+ProjectRole/Resource Policy 的交集。它仍不等于生产级多租户隔离或逐用户 Feishu ACL。

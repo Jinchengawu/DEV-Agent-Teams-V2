@@ -7,6 +7,7 @@ from ...shared.hashes import Sha256, sha256_json
 from ..agents import ArtifactEnvelope
 from ..artifacts import ContentAddressedArtifactStorage
 from .execution_domain import (
+    AgentAttempt,
     CandidateVerification,
     CandidateVerificationCreate,
     DelegationAssignment,
@@ -70,6 +71,9 @@ class WorkcellExecutionModule:
 
     def list_delivery(self, delivery_id: str) -> tuple[WorkcellRunTree, ...]:
         return tuple(self.tree(item.id) for item in self.repository.list_delivery(delivery_id))
+
+    def list_delivery_attempts(self, delivery_id: str) -> tuple[AgentAttempt, ...]:
+        return self.repository.list_delivery_attempts(delivery_id)
 
     def submit_delegation_plan(
         self,

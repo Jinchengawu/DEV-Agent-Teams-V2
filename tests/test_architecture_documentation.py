@@ -52,11 +52,32 @@ def test_architecture_entrypoint_has_truth_and_change_boundaries() -> None:
     ):
         assert state in document
 
-    assert "这只证明代码合并" in document
+    assert "代码存在、" in document
     assert "正式 Release 验收完成" in document
-    assert "Preview 未构造 `ProviderKnowledgeManager`" in document
+    assert "三个 v0.5.1 Feature Flag 默认均为关闭" in document
+    assert "Gate A/B/C 本地闭环" in document
+    assert "ACWM `0.5.1` Contract 已发布回锁" in document
+    assert "execution_status=not_run" in document
+    assert "ready` 不是 Live Gate 通过" in document
+    assert "live-provider-bindings=blocked" in document
+    assert "product-runtime-adapters=blocked" in document
+    assert "Hermes ACP Role Turn" in document
+    assert "`http.sync` 尚未接线" in document
+    assert "逐 Attempt" in document
+    assert "冻结 Citation 集" in document
+    assert "hermes acp --check" in document
+    assert "knowledge-sync-runtime-v1" in document
+    assert "并发 2、最多 5 次尝试" in document
+    assert "Source Head 级" in document
     assert "不共享 Git Workspace" in document
     assert "ARCH-20260902-02" in document
+    assert "ARCH-20260902-04" in document
+    assert "Release Acceptance V2" in document
+    assert "Maturity: Deterministic Verified; Live Blocked/Not Run" in document
+    assert "`knowledge-live-gate`" in document
+    assert "Workcell Result" in document
+    assert "Workcell Snapshot/DelegationPlan/" in document
+    assert "Main-Child-Attempt 拓扑逐项绑定 Delivery Snapshot" in document
     assert "AgentScope 只承载单次 Attempt" in document
     assert "Runtime Adapter 不得隐藏派生" in document
 
@@ -113,9 +134,10 @@ def test_architecture_diagram_has_one_versioned_source_and_current_outputs() -> 
     assert diagram["diagram_type"] == "architecture"
     assert diagram["meta"]["locale"] == "zh-CN"
     assert diagram["meta"]["quality_profile"] == "showcase"
-    assert len(diagram["components"]) <= 12
+    assert len(diagram["components"]) <= 14
     component_ids = [item["id"] for item in diagram["components"]]
     assert len(component_ids) == len(set(component_ids))
+    assert {"knowledge", "gate_c_contract"}.issubset(component_ids)
     assert DIAGRAM_HTML.is_file()
     assert DIAGRAM_PNG.is_file()
 
@@ -159,4 +181,8 @@ def test_current_documentation_does_not_reference_retired_architecture_images() 
         encoding="utf-8"
     )
     assert "尚未合入 `main`" not in product
-    assert "main@7401fa281a201728fa3cc504daa05d3a724fa7c6" in product
+    assert "origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f" in product
+    assert "135 条 Path、164 个 HTTP Operation" in product
+    assert "Global Role ∩ ProjectRole ∩ Approved Source Scope" in product
+    assert "Release Acceptance V2" in product
+    assert "107 条 Path" not in product

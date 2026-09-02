@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol
 
+from acwm.domain import ResolvedCapability
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ...shared.hashes import Sha256, sha256_json
+from ...shared.ids import new_id
 from .domain import AgentProfileRevision
 
 
@@ -24,6 +26,7 @@ class RuntimeOutputArtifact(BaseModel):
     contract_id: str = Field(min_length=1)
     media_type: str = Field(min_length=1)
     content: dict[str, object]
+    knowledge_citation_ids: tuple[str, ...] = ()
 
 
 class RuntimeDispatchResult(BaseModel):
@@ -37,6 +40,7 @@ class RuntimeDispatchRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     delivery_id: str = Field(min_length=1)
+    attempt_id: str = Field(default_factory=new_id, min_length=1)
     binding_site: str = Field(min_length=1)
     workflow_mode: str = Field(min_length=1)
     objective: str = Field(min_length=1)
@@ -58,6 +62,8 @@ class _DeploymentSnapshot(BaseModel):
     profile_sha256: Sha256
     policy_snapshot: dict[str, object]
     extension_snapshot: tuple[dict[str, object], ...] = ()
+    instance_id: str | None = None
+    instance_version: int | None = None
 
 
 class _BindingSnapshot(BaseModel):
@@ -65,6 +71,7 @@ class _BindingSnapshot(BaseModel):
 
     binding_fingerprint: Sha256
     workflow_mode: str
+    capability: ResolvedCapability | None = None
 
 
 class RuntimeAdapterInvocation(BaseModel):
@@ -73,6 +80,7 @@ class RuntimeAdapterInvocation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     delivery_id: str
+    attempt_id: str = Field(default_factory=new_id, min_length=1)
     binding_site: str
     workflow_mode: str
     expected_artifact_contract_id: str
@@ -83,6 +91,10 @@ class RuntimeAdapterInvocation(BaseModel):
     deployment_policy: dict[str, object]
     extension_snapshot: tuple[dict[str, object], ...]
     resolved_binding_hash: Sha256
+    runtime_identity: str = ""
+    instance_id: str | None = None
+    instance_version: int | None = None
+    resolved_capability: ResolvedCapability | None = None
     inputs: tuple[RuntimeOutputArtifact, ...] = ()
 
 
@@ -119,6 +131,7 @@ class AgentRuntimeDispatcher:
             )
         invocation = RuntimeAdapterInvocation(
             delivery_id=request.delivery_id,
+            attempt_id=request.attempt_id,
             binding_site=request.binding_site,
             workflow_mode=request.workflow_mode,
             expected_artifact_contract_id=request.expected_artifact_contract_id,
@@ -129,6 +142,10 @@ class AgentRuntimeDispatcher:
             deployment_policy=deployment.policy_snapshot,
             extension_snapshot=deployment.extension_snapshot,
             resolved_binding_hash=request.resolved_binding_hash,
+            runtime_identity=runtime_identity,
+            instance_id=deployment.instance_id,
+            instance_version=deployment.instance_version,
+            resolved_capability=binding.capability,
             inputs=request.inputs,
         )
         result = await adapter.execute(invocation)

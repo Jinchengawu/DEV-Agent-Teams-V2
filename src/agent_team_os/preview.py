@@ -37,6 +37,7 @@ from .infrastructure.acwm import (
     PipelineBindingResolutionError,
 )
 from .infrastructure.database import LegacyDatabaseImporter, MigrationRunner
+from .infrastructure.feishu import FeishuTenantKnowledgeProviderResolver
 from .infrastructure.git import (
     ExternalForwardGitRemote,
     ExternalGitBinding,
@@ -45,16 +46,23 @@ from .infrastructure.git import (
     ProjectGitWorkspaces,
 )
 from .infrastructure.github import GitHubPullRequestProvider
+from .infrastructure.knowledge import SQLiteVectorIndexAdapter
+from .infrastructure.ollama import OllamaEmbeddingAdapter
 from .journey import (
     load_agent_workcell_delivery_definition,
     load_backend_delivery_definition,
     load_fullstack_delivery_definition,
     resolve_backend_delivery_fingerprint,
 )
+from .knowledge_live_readiness import (
+    inspect_knowledge_live_readiness,
+    write_knowledge_live_readiness_report,
+)
 from .modules.agents import (
     AgentDeploymentCatalog,
     AgentProfileCatalog,
     AgentRunLedger,
+    AgentRuntimeDispatcher,
     ProviderManifestCatalog,
     SQLiteAgentDeploymentRepository,
     SQLiteAgentProfileRepository,
@@ -63,7 +71,12 @@ from .modules.agents import (
     ensure_builtin_workcell_agent_deployments,
 )
 from .modules.artifacts import ContentAddressedArtifactStorage
-from .modules.delivery import BackendDeliveryPipelinePolicy
+from .modules.delivery import (
+    BackendDeliveryPipelinePolicy,
+    CodeDeliveryRuntimeAdapter,
+    HermesPlanningRoleTurnRuntimeAdapter,
+    PlanningRoleTurnRuntimeAdapter,
+)
 from .modules.evaluation import EvaluationService, SQLiteEvaluationRepository
 from .modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from .modules.extensions import (
@@ -74,10 +87,24 @@ from .modules.extensions import (
 )
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import (
+    DeliveryKnowledgeContextPreparationService,
+    KnowledgeAuthorizationResolver,
+    KnowledgeContextRuntimeGuard,
+    KnowledgeDirectoryReconciler,
+    KnowledgeIndexManager,
+    KnowledgePreparationInputCompiler,
     KnowledgePublicationLedger,
     KnowledgePublisher,
     KnowledgeSearchIndex,
+    KnowledgeSyncPolicy,
+    KnowledgeSyncScheduler,
+    KnowledgeSyncSupervisor,
+    KnowledgeSyncWorker,
+    SQLiteKnowledgeContextRepository,
+    SQLiteKnowledgeIndexRepository,
+    SQLiteTenantKnowledgeRepository,
     SQLiteWikiRepository,
+    TenantKnowledgeManager,
     WikiService,
 )
 from .modules.orchestration import (
@@ -100,6 +127,10 @@ from .modules.releases import (
     SQLiteExternalReleaseRepository,
     SQLiteReleaseRepository,
 )
+from .modules.releases.acceptance_application import (
+    ReleaseAcceptanceVerifierV2,
+    write_release_acceptance_report_v2,
+)
 from .modules.settings import SettingsManager, SQLiteSettingsRepository
 from .modules.workcells import (
     CommandWorkcellMachineVerifier,
@@ -120,9 +151,11 @@ from .readiness import (
     ReadinessReport,
     RuntimeReadiness,
     inspect_acwm_revision_lock,
+    snapshot_delivery_build_identity,
 )
 from .release import combined_gate_status, run_gate
 from .shared.errors import ProductError
+from .shared.features import FeatureFlags
 from .ui import install_preview_ui
 
 _logger = logging.getLogger(__name__)
@@ -166,9 +199,7 @@ class CodexPreviewReadiness:
                     else "安装项目锁定的 ACWM v0.4 Graph Runtime 后重试。"
                 ),
             ),
-            inspect_acwm_revision_lock(
-                self.project_root / "config" / "framework-lock.json"
-            ),
+            inspect_acwm_revision_lock(self.project_root / "config" / "framework-lock.json"),
             _inspect_method_pack_store(
                 self.project_root / "config" / "method-packs-v050.json",
                 self.data_dir / "method-packs",
@@ -189,9 +220,7 @@ def _inspect_method_pack_store(lock_file: Path, store_root: Path) -> DependencyC
     except ProductError as error:
         return DependencyCheck(
             name="method-packs:bmad-tea-v050",
-            status=(
-                "missing" if error.code == "METHOD_PACK_SNAPSHOT_MISSING" else "failed"
-            ),
+            status=("missing" if error.code == "METHOD_PACK_SNAPSHOT_MISSING" else "failed"),
             repair=(
                 "运行 `.venv/bin/python scripts/install_method_packs.py`，"
                 "安装并验证锁定的 BMAD/TEA Package Snapshot。"
@@ -225,6 +254,7 @@ def build_preview_app() -> FastAPI:
     database = data_dir / "agent-team-os.sqlite"
     migrations = MigrationRunner(database, project_root / "migrations")
     migrations.migrate()
+    feature_flags = FeatureFlags.from_environment()
     LegacyDatabaseImporter(migrations, data_dir / "backups").import_if_present(
         data_dir / "preview.sqlite", data_dir / "control-plane.sqlite"
     )
@@ -270,9 +300,11 @@ def build_preview_app() -> FastAPI:
         SQLiteDeliveryRepository(database), projects
     )
     candidate_applier = GitCandidateApplier(project_workspaces)
+    planning = CodexSimulatedHermesPlanning(runner)
+    executor = GitCodeExecutor(project_workspaces, code_agent)
     coordinator = DeliveryCoordinator(
-        planning=CodexSimulatedHermesPlanning(runner),
-        executor=GitCodeExecutor(project_workspaces, code_agent),
+        planning=planning,
+        executor=executor,
         verifier=GitCandidateVerifier(project_workspaces),
         applier=candidate_applier,
         repository=delivery_repository,
@@ -300,6 +332,17 @@ def build_preview_app() -> FastAPI:
     workcell_assignments = ensure_builtin_workcell_agent_deployments(
         agent_profiles,
         agent_deployments,
+    )
+    hermes_runtime = HermesPlanningRoleTurnRuntimeAdapter(
+        control_plane.get_instance,
+        workspace_root=data_dir / "runtime" / "hermes-planning",
+    )
+    runtime_dispatcher = AgentRuntimeDispatcher(
+        (
+            PlanningRoleTurnRuntimeAdapter(planning),
+            CodeDeliveryRuntimeAdapter(executor),
+            hermes_runtime,
+        )
     )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
@@ -368,9 +411,7 @@ def build_preview_app() -> FastAPI:
         SQLiteWikiRepository(database), project_guard=projects.assert_writable
     )
     for project in projects.list():
-        wiki_service.reconcile_project_space(
-            project.id, project.name, project.lifecycle_status
-        )
+        wiki_service.reconcile_project_space(project.id, project.name, project.lifecycle_status)
     evaluations = EvaluationService(
         SQLiteEvaluationRepository(database),
         pipeline_catalog,
@@ -379,6 +420,66 @@ def build_preview_app() -> FastAPI:
         evidence=evidence_ledger,
     )
     artifact_storage = ContentAddressedArtifactStorage(data_dir / "artifacts")
+    identity_service = IdentityService(SQLiteIdentityRepository(database))
+    tenant_knowledge: TenantKnowledgeManager | None = None
+    knowledge_indexes: KnowledgeIndexManager | None = None
+    knowledge_preparation_compiler: KnowledgePreparationInputCompiler | None = None
+    knowledge_runtime_guard: KnowledgeContextRuntimeGuard | None = None
+    knowledge_context_repository: SQLiteKnowledgeContextRepository | None = None
+    authorization: KnowledgeAuthorizationResolver | None = None
+    knowledge_sync_supervisor: KnowledgeSyncSupervisor | None = None
+    if feature_flags.feishu_tenant_sync_v1:
+        tenant_knowledge = TenantKnowledgeManager(
+            SQLiteTenantKnowledgeRepository(database),
+            provider_resolver=FeishuTenantKnowledgeProviderResolver(),
+            artifact_storage=artifact_storage,
+        )
+        projects.configure_knowledge_binding_validator(tenant_knowledge.require_binding)
+        sync_policy = KnowledgeSyncPolicy()
+        knowledge_sync_supervisor = KnowledgeSyncSupervisor(
+            KnowledgeSyncScheduler(
+                tenant_knowledge,
+                project_repository,
+                policy=sync_policy,
+            ),
+            KnowledgeDirectoryReconciler(
+                tenant_knowledge,
+                policy=sync_policy,
+            ),
+            KnowledgeSyncWorker(
+                tenant_knowledge,
+                policy=sync_policy,
+            ),
+            policy=sync_policy,
+        )
+    if feature_flags.knowledge_hybrid_index_v1:
+        assert tenant_knowledge is not None
+        knowledge_indexes = KnowledgeIndexManager(
+            SQLiteKnowledgeIndexRepository(database),
+            tenant_repository=tenant_knowledge.repository,
+            artifact_storage=artifact_storage,
+            index_root=data_dir / "knowledge-indexes",
+            embedding_port=OllamaEmbeddingAdapter(),
+            vector_index_port=SQLiteVectorIndexAdapter(),
+        )
+        pipeline_catalog.configure_knowledge_binding_policy(knowledge_indexes)
+    knowledge_preparer: DeliveryKnowledgeContextPreparationService | None = None
+    if feature_flags.delivery_knowledge_context_v1:
+        assert tenant_knowledge is not None and knowledge_indexes is not None
+        authorization = KnowledgeAuthorizationResolver(
+            identity=identity_service,
+            projects=projects,
+            tenant=tenant_knowledge,
+        )
+        knowledge_preparation_compiler = KnowledgePreparationInputCompiler(
+            authorization=authorization,
+            projects=projects,
+            artifacts=artifact_storage,
+        )
+        knowledge_runtime_guard = KnowledgeContextRuntimeGuard(
+            authorization=authorization,
+            artifacts=artifact_storage,
+        )
     workcell_execution = WorkcellExecutionModule(
         SQLiteWorkcellExecutionRepository(database),
         artifact_storage=artifact_storage,
@@ -414,19 +515,36 @@ def build_preview_app() -> FastAPI:
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
         verifier=CommandWorkcellMachineVerifier(
-            lambda _workcell: (
-                (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
-            )
+            lambda _workcell: ((sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),)
         ),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=GitHubPullRequestProvider(),
+        knowledge_guard=knowledge_runtime_guard,
     )
     delivery_snapshot_compiler = DeliveryExecutionSnapshotCompiler(
         governance=project_workcells,
         projects=project_repository,
         pipelines=pipeline_catalog,
         method_snapshot=method_set.snapshot,
+        build_identity=lambda: snapshot_delivery_build_identity(project_root),
     )
+    if feature_flags.delivery_knowledge_context_v1:
+        assert (
+            tenant_knowledge is not None
+            and knowledge_indexes is not None
+            and authorization is not None
+        )
+        knowledge_context_repository = SQLiteKnowledgeContextRepository(database)
+        knowledge_preparer = DeliveryKnowledgeContextPreparationService(
+            knowledge_context_repository,
+            authorization=authorization,
+            projects=projects,
+            tenant=tenant_knowledge,
+            indexes=knowledge_indexes,
+            artifacts=artifact_storage,
+            snapshot_compiler=delivery_snapshot_compiler,
+        )
+        coordinator.configure_knowledge_context(knowledge_preparer)
     app = create_app(
         coordinator,
         readiness=CodexPreviewReadiness(),
@@ -435,8 +553,10 @@ def build_preview_app() -> FastAPI:
         control_plane=control_plane,
         evidence=evidence_ledger,
         settings=SettingsManager(SQLiteSettingsRepository(database)),
-        identity=IdentityService(SQLiteIdentityRepository(database)),
+        identity=identity_service,
         knowledge=wiki_service,
+        tenant_knowledge=tenant_knowledge,
+        knowledge_indexes=knowledge_indexes,
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
             SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
@@ -458,6 +578,11 @@ def build_preview_app() -> FastAPI:
         delivery_snapshot_compiler=delivery_snapshot_compiler,
         external_release=external_release,
         workcell_stage_driver=workcell_stage_driver,
+        knowledge_preparation_compiler=knowledge_preparation_compiler,
+        knowledge_runtime_guard=knowledge_runtime_guard,
+        knowledge_context_repository=knowledge_context_repository,
+        feature_flags=feature_flags,
+        runtime_dispatcher=runtime_dispatcher,
     )
     install_preview_ui(app, project_root / "console" / "dist")
 
@@ -465,18 +590,23 @@ def build_preview_app() -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         projects.recover_provisioning()
         for project in projects.list():
-            wiki_service.reconcile_project_space(
-                project.id, project.name, project.lifecycle_status
-            )
+            wiki_service.reconcile_project_space(project.id, project.name, project.lifecycle_status)
         delivery_repository.reconcile_leases()
         workcell_execution.recover_interrupted_attempts()
+        if tenant_knowledge is not None:
+            tenant_knowledge.recover_expired_sync_jobs()
         await coordinator.recover()
+        if knowledge_sync_supervisor is not None:
+            knowledge_sync_supervisor.start()
         try:
             yield
         finally:
+            if knowledge_sync_supervisor is not None:
+                await knowledge_sync_supervisor.stop()
             await runner.close()
             await code_agent.close()
             await workcell_agent.close()
+            await hermes_runtime.close()
 
     app.router.lifespan_context = lifespan
 
@@ -511,10 +641,38 @@ def main() -> None:
     gate = subcommands.add_parser("gate")
     gate.add_argument("--live", action="store_true")
     subcommands.add_parser("release")
+    knowledge_readiness = subcommands.add_parser("knowledge-live-readiness")
+    knowledge_readiness.add_argument("--project-id", required=True)
+    knowledge_gate = subcommands.add_parser("knowledge-live-gate")
+    knowledge_gate.add_argument("--project-id", required=True)
+    knowledge_gate.add_argument("--delivery-id", required=True)
     arguments = parser.parse_args()
     command = arguments.command or "demo"
     project_root = Path(__file__).parents[2]
     data_dir = Path(os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(project_root / ".agent-team-os")))
+    if command in {"knowledge-live-readiness", "knowledge-live-gate"}:
+        report = inspect_knowledge_live_readiness(
+            project_root=project_root,
+            data_dir=data_dir,
+            project_id=str(arguments.project_id),
+        )
+        write_knowledge_live_readiness_report(data_dir / "reports" / "readiness", report)
+        if command == "knowledge-live-gate" and report.status == "ready":
+            acceptance = _build_release_acceptance_verifier(
+                project_root=project_root,
+                data_dir=data_dir,
+            ).verify(
+                project_id=str(arguments.project_id),
+                delivery_id=str(arguments.delivery_id),
+            )
+            write_release_acceptance_report_v2(
+                data_dir / "reports" / "release-v2",
+                acceptance,
+            )
+            print(acceptance.model_dump_json())
+            raise SystemExit(0 if acceptance.status == "passed" else 1)
+        print(report.model_dump_json())
+        raise SystemExit(0 if report.status == "ready" else 2)
     if command in {"gate", "release"}:
 
         async def execute_gates() -> int:
@@ -546,3 +704,50 @@ def main() -> None:
         raise SystemExit(2) from error
     port = int(os.environ.get("AGENT_TEAM_OS_PORT", "8080"))
     uvicorn.run(build_preview_app(), host="127.0.0.1", port=port, log_level="info")
+
+
+def _build_release_acceptance_verifier(
+    *,
+    project_root: Path,
+    data_dir: Path,
+) -> ReleaseAcceptanceVerifierV2:
+    database = data_dir / "agent-team-os.sqlite"
+    artifacts = ContentAddressedArtifactStorage(data_dir / "artifacts")
+    project_repository = SQLiteProjectRepository(database)
+    project_workspaces = ProjectGitWorkspaces(data_dir / "workspaces")
+    project_workcells = SQLiteProjectWorkcellRepository(database)
+    projects = ProjectCatalog(project_repository, project_workspaces)
+    identity = IdentityService(SQLiteIdentityRepository(database))
+    tenant = TenantKnowledgeManager(
+        SQLiteTenantKnowledgeRepository(database),
+        provider_resolver=FeishuTenantKnowledgeProviderResolver(),
+        artifact_storage=artifacts,
+    )
+    authorization = KnowledgeAuthorizationResolver(
+        identity=identity,
+        projects=projects,
+        tenant=tenant,
+    )
+    knowledge_guard = KnowledgeContextRuntimeGuard(
+        authorization=authorization,
+        artifacts=artifacts,
+    )
+
+    def resolve_workspace_binding(workspace_id: str) -> ExternalGitBinding:
+        workspace = project_workcells.get_workspace(workspace_id)
+        return ExternalGitBinding(
+            remote_uri=(
+                project_workspaces.remote_uri(workspace.repository_uri)
+                if workspace.adapter_type == "managed-bare-git"
+                else workspace.repository_uri
+            ),
+            credential_reference=workspace.credential_reference,
+        )
+
+    return ReleaseAcceptanceVerifierV2(
+        database=database,
+        project_root=project_root,
+        artifact_root=data_dir / "artifacts",
+        remote=ExternalForwardGitRemote(resolve_workspace_binding),
+        knowledge_guard=knowledge_guard,
+    )

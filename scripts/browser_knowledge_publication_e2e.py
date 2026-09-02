@@ -51,10 +51,9 @@ def main() -> None:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1920, "height": 1200})
         page = context.new_page()
-        console_errors, authentication = _capture_console_errors(page)
+        console_errors = _capture_console_errors(page)
         try:
             _authenticate(page, arguments.url)
-            authentication["in_progress"] = False
             delivery_id = _create_planning_delivery(page)
 
             publications = _get_json(

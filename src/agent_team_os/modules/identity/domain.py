@@ -15,6 +15,7 @@ class User(BaseModel):
     display_name: str
     role: Role
     enabled: bool
+    authorization_version: int = Field(default=1, ge=1)
     version: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime

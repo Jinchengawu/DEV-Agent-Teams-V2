@@ -1,5 +1,6 @@
 from .application import TeamTemplateCatalog
 from .builtin import (
+    builtin_knowledge_context_bindings,
     builtin_release_contract,
     builtin_workcell_stage_map,
     ensure_builtin_software_delivery_team,
@@ -75,6 +76,7 @@ __all__ = [
     "AgentAttempt",
     "BlockingFinding",
     "builtin_release_contract",
+    "builtin_knowledge_context_bindings",
     "builtin_workcell_stage_map",
     "ensure_builtin_software_delivery_team",
     "CandidateVerification",

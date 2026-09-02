@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -15,7 +13,7 @@ from acwm.domain import (
 )
 
 from ...shared.errors import ProductError
-from ...shared.hashes import Sha256
+from ...shared.hashes import Sha256, sha256_json
 from .application import AgentProfileCatalog
 from .deployment_domain import (
     AgentDeployment,
@@ -231,9 +229,9 @@ class AgentDeploymentCatalog:
                 adapter_version=deployment.adapter_version,
                 features=frozenset(CapabilityFeature(value) for value in feature_values),
                 required_features=provider.required_features,
-                config_fingerprint=_fingerprint(instance.connection),
+                config_fingerprint=sha256_json(instance.connection),
                 policy_version="1",
-                policy_fingerprint=_fingerprint(deployment.policy_snapshot),
+                policy_fingerprint=sha256_json(deployment.policy_snapshot),
             )
             report = DefaultProviderResolver({}).inspect(
                 ProviderResolutionRequest(
@@ -334,8 +332,3 @@ class AgentDeploymentCatalog:
     @staticmethod
     def _conflict(code: str, detail: str, repair: str) -> ProductError:
         return ProductError(code=code, title="Agent 部署不可用", detail=detail, repair=repair)
-
-
-def _fingerprint(value: object) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode()
-    return hashlib.sha256(encoded).hexdigest()

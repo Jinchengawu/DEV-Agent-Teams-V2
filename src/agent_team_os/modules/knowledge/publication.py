@@ -354,6 +354,16 @@ class _PublicationFailure(RuntimeError):
         self.detail = detail
 
 
+def _document_title(value: object, *, fallback: str) -> str:
+    """Project an artifact field into the bounded, single-line Wiki title contract."""
+    raw = str(value or fallback).strip()
+    first_line = next((line.strip() for line in raw.splitlines() if line.strip()), fallback)
+    normalized = " ".join(first_line.split()).strip() or fallback
+    if len(normalized) <= 240:
+        return normalized
+    return normalized[:239] + "…"
+
+
 class KnowledgePublisher:
     """Deterministically render persisted Agent artifacts into collaborative Wiki revisions."""
 
@@ -546,8 +556,11 @@ class KnowledgePublisher:
         contract_id: str, content: dict[str, object]
     ) -> tuple[str, str]:
         if contract_id == "requirement-artifact-v1":
-            title = str(content.get("summary") or "产品需求")
+            summary = str(content.get("summary") or "产品需求").strip()
+            title = _document_title(summary, fallback="产品需求")
             sections = [f"# {title}"]
+            if summary != title:
+                sections.append(summary)
             non_goals = content.get("non_goals")
             if isinstance(non_goals, list | tuple) and non_goals:
                 sections.append("## 非目标\n" + "\n".join(f"- {item}" for item in non_goals))
@@ -565,7 +578,7 @@ class KnowledgePublisher:
                 if lines:
                     sections.append("## 验收标准\n" + "\n".join(lines))
             return title, "\n\n".join(sections)
-        title = str(content.get("title") or "交付计划")
+        title = _document_title(content.get("title"), fallback="交付计划")
         instructions = str(content.get("instructions") or "")
         sections = [f"# {title}", instructions]
         acceptance_ids = content.get("acceptance_ids")

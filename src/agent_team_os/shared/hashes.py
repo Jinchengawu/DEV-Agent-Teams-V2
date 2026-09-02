@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from pydantic import GetCoreSchemaHandler
@@ -29,6 +30,14 @@ def sha256_bytes(value: bytes) -> Sha256:
     return Sha256.validate(hashlib.sha256(value).hexdigest())
 
 
+def sha256_file(path: Path, *, block_size: int = 1024 * 1024) -> Sha256:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(block_size), b""):
+            digest.update(block)
+    return Sha256.validate(digest.hexdigest())
+
+
 def sha256_json(value: object) -> Sha256:
     encoded = json.dumps(
         value,
@@ -42,4 +51,3 @@ def sha256_json(value: object) -> Sha256:
 
 def is_valid_sha256(value: str | None) -> bool:
     return bool(value and _SHA256.fullmatch(value) and value != "0" * 64)
-

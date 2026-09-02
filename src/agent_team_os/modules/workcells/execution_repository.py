@@ -150,6 +150,19 @@ class SQLiteWorkcellExecutionRepository:
             ).fetchall()
         return tuple(_attempt(row) for row in rows)
 
+    def list_delivery_attempts(self, delivery_id: str) -> tuple[AgentAttempt, ...]:
+        """Project all observable attempts, including non-Workcell planning attempts."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""SELECT {_ATTEMPT_COLUMNS} FROM agent_attempts
+                WHERE agent_run_id IN (
+                    SELECT id FROM agent_runs WHERE delivery_id=?
+                ) ORDER BY started_at,id""",  # noqa: S608
+                (delivery_id,),
+            ).fetchall()
+        return tuple(_attempt(row) for row in rows)
+
     def put_plan(
         self,
         run: WorkcellRun,
@@ -430,10 +443,7 @@ class SQLiteWorkcellExecutionRepository:
                     validation.workcell_run_id,
                     validation.status,
                     _json(
-                        [
-                            item.model_dump(mode="json")
-                            for item in validation.artifact_references
-                        ]
+                        [item.model_dump(mode="json") for item in validation.artifact_references]
                     ),
                     _json(validation.report),
                     validation.sha256,
@@ -550,8 +560,9 @@ class SQLiteWorkcellExecutionRepository:
             connection.execute(
                 """INSERT INTO workcell_results(
                 id,workcell_run_id,candidate_sha,diff_sha256,verification_sha256,
-                review_artifact_ids_json,output_artifact_references_json,sha256,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
+                review_artifact_ids_json,output_artifact_references_json,
+                knowledge_citation_ids_json,sha256,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (
                     result.id,
                     result.workcell_run_id,
@@ -562,6 +573,7 @@ class SQLiteWorkcellExecutionRepository:
                     _json(
                         [item.model_dump(mode="json") for item in result.output_artifact_references]
                     ),
+                    _json(result.knowledge_citation_ids),
                     result.sha256,
                     result.created_at.isoformat(),
                 ),
@@ -719,7 +731,8 @@ _REVIEW_COLUMNS = (
 )
 _RESULT_COLUMNS = (
     "id,workcell_run_id,candidate_sha,diff_sha256,verification_sha256,"
-    "review_artifact_ids_json,output_artifact_references_json,sha256,created_at"
+    "review_artifact_ids_json,output_artifact_references_json,"
+    "knowledge_citation_ids_json,sha256,created_at"
 )
 _RESULT_VALIDATION_COLUMNS = (
     "id,workcell_run_id,status,artifact_references_json,report_json,sha256,created_at"
@@ -878,14 +891,13 @@ def _result(row: tuple[object, ...]) -> WorkcellResult:
     values["output_artifact_references"] = json.loads(
         str(values.pop("output_artifact_references_json"))
     )
+    values["knowledge_citation_ids"] = json.loads(str(values.pop("knowledge_citation_ids_json")))
     return WorkcellResult.model_validate(values)
 
 
 def _result_validation(row: tuple[object, ...]) -> WorkcellResultValidation:
     values = dict(zip(_RESULT_VALIDATION_COLUMNS.split(","), row, strict=True))
-    values["artifact_references"] = json.loads(
-        str(values.pop("artifact_references_json"))
-    )
+    values["artifact_references"] = json.loads(str(values.pop("artifact_references_json")))
     values["report"] = json.loads(str(values.pop("report_json")))
     return WorkcellResultValidation.model_validate(values)
 

@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ...shared.hashes import Sha256
+
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
@@ -14,12 +16,12 @@ class WorkcellStageBinding(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     workcell_key: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$", max_length=120)
-    slot_bindings: dict[
-        Literal["main", "delegate_1", "delegate_2", "delegate_3"], str
-    ] = Field(min_length=1, max_length=4)
-    delegate_methods: dict[
-        Literal["delegate_1", "delegate_2", "delegate_3"], str
-    ] = Field(default_factory=dict)
+    slot_bindings: dict[Literal["main", "delegate_1", "delegate_2", "delegate_3"], str] = Field(
+        min_length=1, max_length=4
+    )
+    delegate_methods: dict[Literal["delegate_1", "delegate_2", "delegate_3"], str] = Field(
+        default_factory=dict
+    )
     delegate_purposes: dict[
         Literal["delegate_1", "delegate_2", "delegate_3"],
         Literal["workspace_write", "artifact", "review"],
@@ -35,6 +37,20 @@ class WorkcellStageBinding(BaseModel):
         if set(self.delegate_methods) != set(self.delegate_purposes):
             raise ValueError("delegate method and purpose slots must match")
         return self
+
+
+class KnowledgeContextBinding(BaseModel):
+    """Product binding for an ACWM-owned input Artifact Contract."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    stage_path: str = Field(min_length=1, max_length=240)
+    acwm_artifact_slot: Literal["knowledge-context-v1"] = "knowledge-context-v1"
+    acwm_artifact_contract_version: str = Field(min_length=1, max_length=80)
+    acwm_artifact_contract_sha256: Sha256
+    retrieval_policy_revision_id: str = Field(min_length=1, max_length=180)
+    required: bool = True
+    max_context_bytes: int = Field(ge=1, le=2_000_000)
 
 
 class Pipeline(BaseModel):
@@ -62,6 +78,7 @@ class PipelineDraft(BaseModel):
     agent_assignments: dict[str, str] = Field(default_factory=dict)
     workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
     release_contract_snapshot: tuple[str, ...] = ()
+    knowledge_context_bindings: dict[str, KnowledgeContextBinding] = Field(default_factory=dict)
     version: int = Field(default=1, ge=1)
     validation_status: Literal["unknown", "valid", "invalid"] = "unknown"
     validation_errors: tuple[str, ...] = ()
@@ -82,6 +99,7 @@ class PipelineRevision(BaseModel):
     resolved_provider_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
     workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
     release_contract_snapshot: tuple[str, ...] = ()
+    knowledge_context_bindings: dict[str, KnowledgeContextBinding] = Field(default_factory=dict)
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     published_by: str
     published_at: datetime = Field(default_factory=utc_now)
@@ -93,6 +111,9 @@ class GraphCompilation(BaseModel):
     graph: dict[str, object]
     fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     capability_ids: tuple[str, ...]
+    stage_input_artifact_contracts: dict[str, tuple[dict[str, object], ...]] = Field(
+        default_factory=dict
+    )
 
 
 class PipelineRunRecord(BaseModel):
@@ -121,6 +142,7 @@ class PipelineCreate(BaseModel):
     agent_assignments: dict[str, str] = Field(default_factory=dict)
     workcell_stage_map: dict[str, WorkcellStageBinding] = Field(default_factory=dict)
     release_contract_snapshot: tuple[str, ...] = ()
+    knowledge_context_bindings: dict[str, KnowledgeContextBinding] = Field(default_factory=dict)
 
 
 class PipelineDraftPatch(BaseModel):
@@ -134,6 +156,7 @@ class PipelineDraftPatch(BaseModel):
     agent_assignments: dict[str, str] | None = None
     workcell_stage_map: dict[str, WorkcellStageBinding] | None = None
     release_contract_snapshot: tuple[str, ...] | None = None
+    knowledge_context_bindings: dict[str, KnowledgeContextBinding] | None = None
 
 
 class PipelineWithDraft(BaseModel):

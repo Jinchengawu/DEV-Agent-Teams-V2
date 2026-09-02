@@ -45,6 +45,7 @@ from .modules.agents import (
     AgentProfileCatalog,
     AgentRun,
     AgentRunLedger,
+    AgentRuntimeDispatcher,
     ProviderManifestCatalog,
     RuntimeAdapterDescriptor,
     create_agent_deployment_router,
@@ -69,19 +70,28 @@ from .modules.identity import (
     ensure_same_origin,
 )
 from .modules.knowledge import (
+    DeliveryKnowledgeContextOverview,
     Document,
     KnowledgeActivityItem,
     KnowledgeActor,
+    KnowledgeCitationUsage,
+    KnowledgeContextRuntimeGuard,
     KnowledgeDerivationCreate,
     KnowledgeDerivationResult,
+    KnowledgeIndexManager,
+    KnowledgePreparationInputCompiler,
     KnowledgePublication,
     KnowledgePublicationLedger,
     KnowledgePublisher,
     KnowledgeSearchHit,
     KnowledgeSearchIndex,
     ProviderKnowledgeManager,
+    SQLiteKnowledgeContextRepository,
+    TenantKnowledgeManager,
     WikiService,
+    create_knowledge_index_router,
     create_provider_knowledge_router,
+    create_tenant_knowledge_router,
     create_wiki_router,
 )
 from .modules.orchestration import (
@@ -90,7 +100,15 @@ from .modules.orchestration import (
     PipelineRunRecord,
     create_pipeline_router,
 )
-from .modules.projects import Project, ProjectCatalog, ProjectDetail, create_project_router
+from .modules.projects import (
+    Project,
+    ProjectAccessActor,
+    ProjectAccessAudit,
+    ProjectCapability,
+    ProjectCatalog,
+    ProjectDetail,
+    create_project_router,
+)
 from .modules.releases import (
     ExternalForwardReleaseCoordinator,
     create_external_release_router,
@@ -111,8 +129,9 @@ from .readiness import ReadinessProbe, RuntimeReadiness
 from .release import GateReport, LatestGateReports, combined_gate_status, latest_reports
 from .shared.errors import ProblemDetail, ProductError
 from .shared.events import ProductEvent
+from .shared.features import FeatureFlags
 from .shared.ids import new_id
-from .shared.permissions import Permission, permits
+from .shared.permissions import Permission, Role, permits
 
 
 class DeliveryRequest(BaseModel):
@@ -179,6 +198,8 @@ def create_app(
     identity: IdentityService | None = None,
     knowledge: WikiService | None = None,
     provider_knowledge: ProviderKnowledgeManager | None = None,
+    tenant_knowledge: TenantKnowledgeManager | None = None,
+    knowledge_indexes: KnowledgeIndexManager | None = None,
     pipeline_catalog: PipelineCatalog | None = None,
     pipeline_runs: PipelineRunLedger | None = None,
     agent_profiles: AgentProfileCatalog | None = None,
@@ -198,7 +219,68 @@ def create_app(
     delivery_snapshot_compiler: DeliveryExecutionSnapshotCompiler | None = None,
     external_release: ExternalForwardReleaseCoordinator | None = None,
     workcell_stage_driver: WorkcellStageDriver | None = None,
+    knowledge_preparation_compiler: KnowledgePreparationInputCompiler | None = None,
+    knowledge_runtime_guard: KnowledgeContextRuntimeGuard | None = None,
+    knowledge_context_repository: SQLiteKnowledgeContextRepository | None = None,
+    feature_flags: FeatureFlags | None = None,
+    runtime_dispatcher: AgentRuntimeDispatcher | None = None,
 ) -> FastAPI:
+    resolved_feature_flags = feature_flags or FeatureFlags()
+    resolved_feature_flags.require_valid_dependencies()
+    if identity is not None and projects is not None:
+
+        def validate_project_member_principal(user_id: str, project_role: str) -> None:
+            target = identity.repository.get_user(user_id)
+            if target is None:
+                raise ProductError(
+                    code="PROJECT_MEMBER_USER_NOT_FOUND",
+                    title="项目成员用户不存在",
+                    detail="不能为不存在的本地身份创建项目成员关系。",
+                    repair="刷新用户目录并选择有效用户。",
+                    status_code=404,
+                )
+            if not target.enabled:
+                raise ProductError(
+                    code="PROJECT_MEMBER_USER_DISABLED",
+                    title="项目成员用户已禁用",
+                    detail="已禁用用户不能获得新的项目成员权限。",
+                    repair="先由管理员启用该用户，或选择其他有效用户。",
+                    status_code=409,
+                )
+            if project_role == "owner" and target.role not in {
+                Role.ADMINISTRATOR,
+                Role.EDITOR,
+            }:
+                raise ProductError(
+                    code="PROJECT_OWNER_NOT_ELIGIBLE",
+                    title="用户不具备 Owner 资格",
+                    detail="Project Owner 的全局角色必须至少具备 Editor 能力。",
+                    repair="先提升用户的全局角色，或授予 viewer 项目角色。",
+                    status_code=409,
+                )
+
+        projects.configure_membership_principal_validator(validate_project_member_principal)
+
+        def guard_project_owner_continuity(
+            user_id: str, next_role: Role, next_enabled: bool
+        ) -> None:
+            if next_enabled and next_role in {Role.ADMINISTRATOR, Role.EDITOR}:
+                return
+
+            def is_effective_owner(candidate_user_id: str) -> bool:
+                candidate = identity.repository.get_user(candidate_user_id)
+                return bool(
+                    candidate is not None
+                    and candidate.enabled
+                    and candidate.role.value in {"administrator", "editor"}
+                )
+
+            projects.require_alternative_effective_owner(
+                user_id,
+                is_effective_owner=is_effective_owner,
+            )
+
+        identity.configure_user_authorization_change_guard(guard_project_owner_continuity)
     if pipeline_catalog is not None and pipeline_runs is not None:
         coordinator.configure_pipeline_runtime(
             pipeline_catalog,
@@ -210,6 +292,8 @@ def create_app(
             document_publisher=knowledge_publisher,
             workcell_stage_driver=workcell_stage_driver,
             external_release=external_release,
+            knowledge_runtime_guard=knowledge_runtime_guard,
+            runtime_dispatcher=runtime_dispatcher,
         )
     app = FastAPI(
         title="Agent-Team-OS",
@@ -224,6 +308,10 @@ def create_app(
     readiness_probe = readiness or RuntimeReadiness()
     reports = report_dir
 
+    @app.get("/v1/features", response_model=FeatureFlags)
+    def get_feature_flags() -> FeatureFlags:
+        return resolved_feature_flags
+
     def require_permission(request: Request, permission: Permission) -> None:
         if identity is None:
             return
@@ -231,6 +319,64 @@ def create_app(
         if not isinstance(actor, User):
             raise IdentityService.authentication_required()
         identity.require(actor, permission)
+
+    def current_project_actor(request: Request) -> ProjectAccessActor | None:
+        actor = getattr(request.state, "identity_user", None)
+        if not isinstance(actor, User):
+            return None
+        return ProjectAccessActor(user_id=actor.id, global_role=actor.role.value)
+
+    def require_project_capability(
+        request: Request,
+        project_id: str,
+        capability: ProjectCapability,
+        *,
+        resource: str,
+        reason: str,
+    ) -> ProjectAccessAudit | None:
+        if projects is None:
+            return None
+        return projects.authorize(
+            current_project_actor(request),
+            project_id,
+            capability,
+            resource=resource,
+            reason=reason,
+        )
+
+    def require_delivery_capability(
+        request: Request,
+        delivery_id: str,
+        capability: ProjectCapability,
+        *,
+        resource_suffix: str,
+        reason: str,
+    ) -> DeliveryRun:
+        try:
+            delivery = coordinator.get(delivery_id)
+        except DeliveryNotFoundError as error:
+            raise ProductError(
+                code="DELIVERY_NOT_FOUND",
+                title="交付不存在",
+                detail="指定的交付已不存在。",
+                repair="刷新交付列表后重试。",
+                status_code=404,
+            ) from error
+        require_project_capability(
+            request,
+            delivery.project_id,
+            capability,
+            resource=f"project:{delivery.project_id}:delivery:{delivery_id}{resource_suffix}",
+            reason=reason,
+        )
+        return delivery
+
+    def visible_project_ids(request: Request) -> frozenset[str] | None:
+        if projects is None:
+            return None
+        return frozenset(
+            project.id for project in projects.list_for(current_project_actor(request))
+        )
 
     @app.middleware("http")
     async def identity_guard(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -271,6 +417,9 @@ def create_app(
             actor = getattr(request.state, "identity_user", None)
             return actor.id if isinstance(actor, User) else "local-system"
 
+        def project_access_actor(request: Request) -> ProjectAccessActor | None:
+            return current_project_actor(request)
+
         def reconcile_created_project(detail: ProjectDetail) -> None:
             if knowledge is None:
                 return
@@ -295,6 +444,7 @@ def create_app(
             create_project_router(
                 projects,
                 actor_id=project_actor_id,
+                access_actor=project_access_actor,
                 authorize_manage=lambda request: require_permission(
                     request, Permission.PROJECT_MANAGE
                 ),
@@ -365,9 +515,7 @@ def create_app(
             create_team_template_router(
                 team_templates,
                 actor_id=team_template_actor_id,
-                authorize_edit=lambda request: require_permission(
-                    request, Permission.JOURNEY_EDIT
-                ),
+                authorize_edit=lambda request: require_permission(request, Permission.JOURNEY_EDIT),
                 authorize_publish=lambda request: require_permission(
                     request, Permission.JOURNEY_PUBLISH
                 ),
@@ -375,16 +523,64 @@ def create_app(
         )
 
     if project_workcells is not None:
+
+        def authorize_project_workcell_read(request: Request, project_id: str) -> None:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.READ,
+                resource=f"project:{project_id}:workcells",
+                reason="read project workcell topology",
+            )
+
+        def authorize_project_workcell_manage(request: Request, project_id: str) -> None:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.EDIT,
+                resource=f"project:{project_id}:workcells",
+                reason="manage project workcell topology",
+            )
+
+        def authorize_workspace_binding_manage(request: Request, workspace_id: str) -> None:
+            project_id = project_workcells.workspace_project_id(workspace_id)
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.EDIT,
+                resource=f"project:{project_id}:workspace-binding:{workspace_id}",
+                reason="verify project workspace binding",
+            )
+
         app.include_router(
             create_project_workcell_router(
                 project_workcells,
-                authorize_manage=lambda request: require_permission(
-                    request, Permission.PROJECT_MANAGE
-                ),
+                authorize_read=authorize_project_workcell_read,
+                authorize_manage=authorize_project_workcell_manage,
+                authorize_workspace_manage=authorize_workspace_binding_manage,
             )
         )
 
     if workcell_execution is not None:
+
+        def authorize_workcell_read(request: Request, delivery_id: str) -> None:
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.READ,
+                resource_suffix=":workcell-runs",
+                reason="read delivery workcell runs",
+            )
+
+        def authorize_workcell_cancel(request: Request, delivery_id: str) -> None:
+            require_permission(request, Permission.WORKCELL_CANCEL)
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.DELIVERY_DECIDE,
+                resource_suffix=":workcell-runs:cancel",
+                reason="cancel delivery workcell run",
+            )
 
         def cancel_workcell_delivery(tree: WorkcellRunTree) -> None:
             delivery = coordinator.get(tree.workcell_run.delivery_id)
@@ -394,9 +590,8 @@ def create_app(
         app.include_router(
             create_workcell_execution_router(
                 workcell_execution,
-                authorize_cancel=lambda request: require_permission(
-                    request, Permission.WORKCELL_CANCEL
-                ),
+                authorize_read=authorize_workcell_read,
+                authorize_cancel=authorize_workcell_cancel,
                 after_cancel=(
                     cancel_workcell_delivery if workcell_stage_driver is not None else None
                 ),
@@ -404,12 +599,41 @@ def create_app(
         )
 
     if external_release is not None:
+
+        def authorize_release_project_read(request: Request, project_id: str) -> None:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.READ,
+                resource=f"project:{project_id}:release-health",
+                reason="read project release health",
+            )
+
+        def authorize_release_delivery_read(request: Request, delivery_id: str) -> None:
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.READ,
+                resource_suffix=":release",
+                reason="read delivery release",
+            )
+
+        def authorize_release_apply(request: Request, delivery_id: str) -> None:
+            require_permission(request, Permission.CANDIDATE_APPLY)
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.DELIVERY_DECIDE,
+                resource_suffix=":release:resume-forward",
+                reason="resume delivery forward release",
+            )
+
         app.include_router(
             create_external_release_router(
                 external_release,
-                authorize_apply=lambda request: require_permission(
-                    request, Permission.CANDIDATE_APPLY
-                ),
+                authorize_read_project=authorize_release_project_read,
+                authorize_read_delivery=authorize_release_delivery_read,
+                authorize_apply=authorize_release_apply,
                 after_resume=coordinator.finalize_external_release,
             )
         )
@@ -420,8 +644,14 @@ def create_app(
             "/v1/deliveries/{delivery_id}/agent-runs",
             response_model=list[AgentRun],
         )
-        def list_delivery_agent_runs(delivery_id: str) -> tuple[AgentRun, ...]:
-            coordinator.get(delivery_id)
+        def list_delivery_agent_runs(delivery_id: str, request: Request) -> tuple[AgentRun, ...]:
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.READ,
+                resource_suffix=":agent-runs",
+                reason="list delivery agent runs",
+            )
             return agent_runs.list(delivery_id)
 
     if knowledge_publications is not None:
@@ -432,17 +662,15 @@ def create_app(
         )
         def list_delivery_knowledge_publications(
             delivery_id: str,
+            request: Request,
         ) -> tuple[KnowledgePublication, ...]:
-            try:
-                coordinator.get(delivery_id)
-            except DeliveryNotFoundError as error:
-                raise ProductError(
-                    code="DELIVERY_NOT_FOUND",
-                    title="交付不存在",
-                    detail="指定的交付已不存在。",
-                    repair="刷新交付列表后重试。",
-                    status_code=404,
-                ) from error
+            require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.READ,
+                resource_suffix=":knowledge-publications",
+                reason="list delivery knowledge publications",
+            )
             return knowledge_publications.list_for_delivery(delivery_id)
 
         @app.post(
@@ -473,6 +701,13 @@ def create_app(
                     repair="刷新交付发布列表后重试。",
                     status_code=404,
                 ) from error
+            require_project_capability(
+                request,
+                current.project_id,
+                ProjectCapability.SOURCE_MANAGE,
+                resource=f"project:{current.project_id}:knowledge-publication:{publication_id}",
+                reason="retry knowledge publication",
+            )
             if projects is not None:
                 projects.assert_writable(current.project_id)
             published = knowledge_publisher.publish(
@@ -483,9 +718,8 @@ def create_app(
                 delivery = coordinator.get(published.delivery_id)
             except DeliveryNotFoundError:
                 return published
-            if (
-                delivery.pipeline_revision_id is not None
-                and knowledge_publications.is_satisfied(delivery.id)
+            if delivery.pipeline_revision_id is not None and knowledge_publications.is_satisfied(
+                delivery.id
             ):
                 await coordinator.resume_publications(delivery.id)
             return knowledge_publications.get(publication_id)
@@ -610,6 +844,16 @@ def create_app(
                 response: Response,
             ) -> KnowledgeDerivationResult:
                 require_permission(request, Permission.WIKI_EDIT)
+                require_project_capability(
+                    request,
+                    request_body.project_id,
+                    ProjectCapability.SOURCE_USE,
+                    resource=(
+                        f"project:{request_body.project_id}:knowledge-derivation:"
+                        f"{request_body.source_kind}:{request_body.source_id}"
+                    ),
+                    reason="derive project knowledge source",
+                )
                 actor = resolve_knowledge_actor(request)
                 source = knowledge_search.resolve_source(
                     request_body.project_id,
@@ -638,37 +882,160 @@ def create_app(
                 )
             )
 
+    if tenant_knowledge is not None:
+
+        def resolve_tenant_knowledge_actor(request: Request) -> KnowledgeActor:
+            actor = getattr(request.state, "identity_user", None)
+            if not isinstance(actor, User):
+                raise IdentityService.authentication_required()
+            return KnowledgeActor(user_id=actor.id, role=actor.role)
+
+        def authorize_tenant_project_source(
+            request: Request, project_id: str, binding_id: str
+        ) -> KnowledgeActor:
+            if projects is None:
+                raise ProductError(
+                    code="PROJECT_GOVERNANCE_UNAVAILABLE",
+                    title="项目治理模块未配置",
+                    detail="Tenant Knowledge 同步必须经过项目授权。",
+                    repair="启用 Project Catalog 后重试。",
+                    status_code=503,
+                )
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.SOURCE_USE,
+                resource=f"project:{project_id}:knowledge-source:{binding_id}",
+                reason="use approved project knowledge source",
+            )
+            projects.require_knowledge_source_approval(project_id, binding_id)
+            return resolve_tenant_knowledge_actor(request)
+
+        app.include_router(
+            create_tenant_knowledge_router(
+                tenant_knowledge,
+                actor=resolve_tenant_knowledge_actor,
+                authorize_project_source=authorize_tenant_project_source,
+            )
+        )
+
+    if knowledge_indexes is not None:
+
+        def resolve_knowledge_index_actor(request: Request) -> KnowledgeActor:
+            actor = getattr(request.state, "identity_user", None)
+            if not isinstance(actor, User):
+                raise IdentityService.authentication_required()
+            return KnowledgeActor(user_id=actor.id, role=actor.role)
+
+        def authorize_project_retrieval(
+            request: Request, project_id: str, binding_id: str
+        ) -> tuple[KnowledgeActor, tuple[str, ...]]:
+            if projects is None or tenant_knowledge is None:
+                raise ProductError(
+                    code="PROJECT_GOVERNANCE_UNAVAILABLE",
+                    title="项目知识治理未配置",
+                    detail="Hybrid Retrieval 必须经过 Project Approval 与 Tenant Binding。",
+                    repair="启用 Project Catalog 与 Tenant Knowledge Manager 后重试。",
+                    status_code=503,
+                )
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.SOURCE_USE,
+                resource=f"project:{project_id}:knowledge-retrieval:{binding_id}",
+                reason="retrieve approved project knowledge",
+            )
+            projects.require_knowledge_source_approval(
+                project_id,
+                binding_id,
+                rag_required=True,
+            )
+            return (
+                resolve_knowledge_index_actor(request),
+                tenant_knowledge.available_source_ids(binding_id),
+            )
+
+        app.include_router(
+            create_knowledge_index_router(
+                knowledge_indexes,
+                actor=resolve_knowledge_index_actor,
+                authorize_project_retrieval=authorize_project_retrieval,
+            )
+        )
+
     if evidence is not None:
 
         @app.get("/v1/evidence", response_model=list[EvidenceRecord])
         def list_evidence(
+            request: Request,
             project_id: str | None = None,
             delivery_id: str | None = None,
             kind: EvidenceKind | None = None,
             evidence_status: EvidenceStatus | None = None,
         ) -> tuple[EvidenceRecord, ...]:
+            if delivery_id is not None:
+                delivery = require_delivery_capability(
+                    request,
+                    delivery_id,
+                    ProjectCapability.READ,
+                    resource_suffix=":evidence",
+                    reason="list delivery evidence",
+                )
+                if project_id is not None and delivery.project_id != project_id:
+                    raise ProductError(
+                        code="EVIDENCE_PROJECT_DELIVERY_MISMATCH",
+                        title="证据查询范围冲突",
+                        detail="Delivery 不属于指定 Project。",
+                        repair="使用与 Delivery 一致的 Project ID。",
+                        status_code=422,
+                    )
+            elif project_id is not None:
+                require_project_capability(
+                    request,
+                    project_id,
+                    ProjectCapability.READ,
+                    resource=f"project:{project_id}:evidence",
+                    reason="list project evidence",
+                )
+            visible = visible_project_ids(request)
             for delivery in coordinator.list():
+                if visible is not None and delivery.project_id not in visible:
+                    continue
                 evidence.sync_delivery(delivery.model_dump(mode="json"))
             records = evidence.list(delivery_id, project_id)
             return tuple(
                 item
                 for item in records
+                if (visible is None or item.project_id in visible)
                 if (kind is None or item.kind == kind)
                 and (evidence_status is None or item.status == evidence_status)
             )
 
         @app.get("/v1/deliveries/{delivery_id}/evidence", response_model=list[EvidenceRecord])
-        def get_delivery_evidence(delivery_id: str) -> tuple[EvidenceRecord, ...]:
-            try:
-                delivery = coordinator.get(delivery_id)
-            except DeliveryNotFoundError as error:
-                raise HTTPException(status_code=404, detail="delivery not found") from error
+        def get_delivery_evidence(delivery_id: str, request: Request) -> tuple[EvidenceRecord, ...]:
+            delivery = require_delivery_capability(
+                request,
+                delivery_id,
+                ProjectCapability.READ,
+                resource_suffix=":evidence",
+                reason="read delivery evidence",
+            )
             evidence.sync_delivery(delivery.model_dump(mode="json"))
             return evidence.list(delivery_id)
 
         @app.post("/v1/evidence/{evidence_id}/verify", response_model=EvidenceRecord)
         def verify_evidence(evidence_id: str, request: Request) -> EvidenceRecord:
             require_permission(request, Permission.EVIDENCE_VERIFY)
+            current = evidence.get(evidence_id)
+            if current is None:
+                raise HTTPException(status_code=404, detail="evidence not found")
+            require_project_capability(
+                request,
+                current.project_id,
+                ProjectCapability.DELIVERY_DECIDE,
+                resource=f"project:{current.project_id}:evidence:{evidence_id}",
+                reason="verify project evidence",
+            )
             try:
                 return evidence.verify(evidence_id)
             except KeyError as error:
@@ -680,7 +1047,18 @@ def create_app(
         )
         def list_evidence_verifications(
             evidence_id: str,
+            request: Request,
         ) -> tuple[EvidenceVerificationRecord, ...]:
+            current = evidence.get(evidence_id)
+            if current is None:
+                raise HTTPException(status_code=404, detail="evidence not found")
+            require_project_capability(
+                request,
+                current.project_id,
+                ProjectCapability.READ,
+                resource=f"project:{current.project_id}:evidence:{evidence_id}:verifications",
+                reason="read evidence verification history",
+            )
             try:
                 return evidence.verification_history(evidence_id)
             except KeyError as error:
@@ -818,10 +1196,20 @@ def create_app(
             return control_plane.list_journeys()
 
         @app.get("/v1/board", response_model=list[WorkItem])
-        def get_board(project_id: str | None = None) -> tuple[WorkItem, ...]:
+        def get_board(request: Request, project_id: str | None = None) -> tuple[WorkItem, ...]:
+            if project_id is not None:
+                require_project_capability(
+                    request,
+                    project_id,
+                    ProjectCapability.READ,
+                    resource=f"project:{project_id}:board",
+                    reason="read project board",
+                )
+            visible = visible_project_ids(request)
             events = tuple(
                 event
                 for delivery in coordinator.list()
+                if visible is None or delivery.project_id in visible
                 for event in coordinator.events(delivery.id)
             )
             return BoardProjector().rebuild(events, project_id).items
@@ -842,6 +1230,13 @@ def create_app(
             require_permission(request, permission)
             try:
                 delivery = coordinator.get(work_item_id)
+                require_project_capability(
+                    request,
+                    delivery.project_id,
+                    ProjectCapability.DELIVERY_DECIDE,
+                    resource=f"project:{delivery.project_id}:work-item:{work_item_id}",
+                    reason="command project work item",
+                )
                 if delivery.version != request_body.expected_version:
                     raise DeliveryVersionConflictError(work_item_id)
                 if request_body.command in {"approve-plan", "reject-plan"}:
@@ -861,9 +1256,7 @@ def create_app(
                     return coordinator.start_design_decision(
                         work_item_id,
                         decision=(
-                            "approve"
-                            if request_body.command == "approve-design"
-                            else "reject"
+                            "approve" if request_body.command == "approve-design" else "reject"
                         ),
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.design_gate.subject_sha256,
@@ -912,9 +1305,7 @@ def create_app(
             )
 
         @app.get("/v1/knowledge/documents", response_model=list[Document])
-        def list_knowledge_documents(
-            request: Request, response: Response
-        ) -> tuple[Document, ...]:
+        def list_knowledge_documents(request: Request, response: Response) -> tuple[Document, ...]:
             require_permission(request, Permission.USER_MANAGE)
             response.headers["Deprecation"] = "true"
             response.headers["X-Successor-Path"] = "/v1/wiki/documents"
@@ -989,6 +1380,7 @@ def create_app(
 
         @app.get("/v1/knowledge/activity", response_model=list[KnowledgeActivityItem])
         def list_project_knowledge_activity(
+            request: Request,
             project_id: str,
             include_global: bool = True,
             source_kind: str | None = None,
@@ -996,6 +1388,13 @@ def create_app(
             before: datetime | None = None,
             limit: int = Query(default=50, ge=1, le=100),
         ) -> tuple[KnowledgeActivityItem, ...]:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.READ,
+                resource=f"project:{project_id}:knowledge-activity",
+                reason="read project knowledge activity",
+            )
             return knowledge_search.activity(
                 project_id,
                 include_global=include_global,
@@ -1014,13 +1413,18 @@ def create_app(
             q: str = "",
             include_global: bool = True,
         ) -> tuple[KnowledgeSearchHit, ...]:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.SOURCE_USE,
+                resource=f"project:{project_id}:knowledge-search",
+                reason="search project knowledge",
+            )
             actor = resolve_knowledge_actor(request)
             provider_authorizer = (
                 None
                 if provider_knowledge is None
-                else lambda snapshot_id: provider_knowledge.can_read_snapshot(
-                    actor, snapshot_id
-                )
+                else lambda snapshot_id: provider_knowledge.can_read_snapshot(actor, snapshot_id)
             )
             return knowledge_search.search(
                 actor,
@@ -1031,6 +1435,108 @@ def create_app(
                 can_read_evidence=permits(actor.role, Permission.EVIDENCE_READ),
                 provider_snapshot_authorizer=provider_authorizer,
             )
+
+    @app.get(
+        "/v1/deliveries/{delivery_id}/knowledge-context",
+        response_model=DeliveryKnowledgeContextOverview,
+    )
+    def get_delivery_knowledge_context(
+        delivery_id: str,
+        request: Request,
+    ) -> DeliveryKnowledgeContextOverview:
+        delivery = require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.READ,
+            resource_suffix=":knowledge-context",
+            reason="read delivery knowledge context metadata",
+        )
+        snapshot = delivery.delivery_execution_snapshot
+        contexts = (
+            ()
+            if snapshot is None
+            else tuple(
+                snapshot.knowledge_contexts[key] for key in sorted(snapshot.knowledge_contexts)
+            )
+        )
+        unavailable = (
+            ()
+            if snapshot is None
+            else tuple(
+                snapshot.knowledge_context_unavailable[key]
+                for key in sorted(snapshot.knowledge_context_unavailable)
+            )
+        )
+        stage_paths_by_citation: dict[str, set[str]] = {}
+        for context in contexts:
+            for citation_id in context.citation_ids:
+                stage_paths_by_citation.setdefault(citation_id, set()).add(context.stage_path)
+        workcell_runs_by_citation: dict[str, set[str]] = {}
+        if workcell_execution is not None:
+            for tree in workcell_execution.list_delivery(delivery_id):
+                if tree.result is None:
+                    continue
+                for citation_id in tree.result.knowledge_citation_ids:
+                    workcell_runs_by_citation.setdefault(citation_id, set()).add(
+                        tree.workcell_run.id
+                    )
+        citation_ids = sorted(set(stage_paths_by_citation) | set(workcell_runs_by_citation))
+        return DeliveryKnowledgeContextOverview(
+            delivery_id=delivery.id,
+            delivery_status=delivery.status,
+            preparation_run=(
+                None
+                if knowledge_context_repository is None
+                else knowledge_context_repository.get_for_delivery(delivery.id)
+            ),
+            contexts=contexts,
+            unavailable=unavailable,
+            citations=tuple(
+                KnowledgeCitationUsage(
+                    citation_id=citation_id,
+                    stage_paths=tuple(sorted(stage_paths_by_citation.get(citation_id, set()))),
+                    workcell_run_ids=tuple(
+                        sorted(workcell_runs_by_citation.get(citation_id, set()))
+                    ),
+                )
+                for citation_id in citation_ids
+            ),
+        )
+
+    @app.get(
+        "/v1/deliveries/{delivery_id}/knowledge-context/artifact",
+        response_model=dict[str, object],
+    )
+    def inspect_delivery_knowledge_context(
+        delivery_id: str,
+        stage_path: str,
+        request: Request,
+    ) -> dict[str, object]:
+        delivery = require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.SOURCE_USE,
+            resource_suffix=":knowledge-context:artifact",
+            reason="inspect delivery knowledge context body",
+        )
+        if knowledge_runtime_guard is None:
+            raise ProductError(
+                code="KNOWLEDGE_CONTEXT_RUNTIME_UNAVAILABLE",
+                title="Knowledge Context Runtime 未启用",
+                detail="当前实例没有启用 Delivery Knowledge Context Runtime。",
+                repair="启用 delivery_knowledge_context_v1 后重试。",
+                status_code=503,
+            )
+        context = knowledge_runtime_guard.admit(delivery, stage_path)
+        if context is None:
+            raise ProductError(
+                code="KNOWLEDGE_CONTEXT_NOT_FOUND",
+                title="Stage Knowledge Context 不存在",
+                detail="该 Stage 没有可检查的冻结 Knowledge Context。",
+                repair="检查 Pipeline Binding 或 Optional Unavailable Receipt。",
+                status_code=404,
+            )
+        return context.content
 
     @app.post("/v1/deliveries", response_model=DeliveryRun, status_code=status.HTTP_202_ACCEPTED)
     async def create_delivery(
@@ -1055,6 +1561,13 @@ def create_app(
                     status_code=422,
                 )
             effective_project_id = request_body.project_id or "legacy-default"
+            project_access_audit = require_project_capability(
+                request,
+                effective_project_id,
+                ProjectCapability.DELIVERY_CREATE,
+                resource=f"project:{effective_project_id}:deliveries",
+                reason="create delivery",
+            )
             effective_pipeline_revision_id = request_body.pipeline_revision_id
             if projects is not None:
                 project_context = projects.prepare_delivery(
@@ -1106,6 +1619,7 @@ def create_app(
                         repair="在项目智能体授权中启用这些 Deployment 后重试。",
                     )
             delivery_execution_snapshot = None
+            knowledge_preparation_input = None
             if pipeline_revision is not None and pipeline_revision.workcell_stage_map:
                 if delivery_snapshot_compiler is None:
                     raise ProductError(
@@ -1115,10 +1629,34 @@ def create_app(
                         repair="配置 DeliveryExecutionSnapshotCompiler 后重新创建交付。",
                         status_code=503,
                     )
-                delivery_execution_snapshot = delivery_snapshot_compiler.compile(
+                compiled_snapshot = delivery_snapshot_compiler.compile(
                     effective_project_id,
                     f"{pipeline_revision.pipeline_id}:{pipeline_revision.revision}",
                 )
+                if pipeline_revision.knowledge_context_bindings:
+                    if knowledge_preparation_compiler is None:
+                        raise ProductError(
+                            code="KNOWLEDGE_CONTEXT_PREPARER_UNAVAILABLE",
+                            title="Delivery Knowledge Context 未配置",
+                            detail="当前 Pipeline 需要冻结知识上下文，但编译器未接线。",
+                            repair="启用 delivery_knowledge_context_v1 后重试。",
+                            status_code=503,
+                        )
+                    principal = getattr(request.state, "identity_user", None)
+                    if not isinstance(principal, User):
+                        raise IdentityService.authentication_required()
+                    knowledge_preparation_input = knowledge_preparation_compiler.compile(
+                        delivery_id=delivery_id,
+                        project_id=effective_project_id,
+                        principal_id=principal.id,
+                        delivery_goal=request_body.user_request,
+                        base_snapshot=compiled_snapshot,
+                        bypass_receipt_id=(
+                            None if project_access_audit is None else project_access_audit.id
+                        ),
+                    )
+                else:
+                    delivery_execution_snapshot = compiled_snapshot
             revision = None
             if control_plane is not None and pipeline_revision is None:
                 try:
@@ -1185,6 +1723,7 @@ def create_app(
                 resolved_pipeline_sha256=(
                     None if pipeline_revision is None else pipeline_revision.fingerprint
                 ),
+                knowledge_preparation_input=knowledge_preparation_input,
             )
             return delivery
         except PlanningServiceError as error:
@@ -1220,6 +1759,13 @@ def create_app(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         require_permission(request, Permission.PLAN_DECIDE)
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.DELIVERY_DECIDE,
+            resource_suffix=":plan-decision",
+            reason="decide delivery plan",
+        )
         try:
             return service.start_plan_decision(
                 delivery_id,
@@ -1237,8 +1783,16 @@ def create_app(
     @app.get("/v1/deliveries/{delivery_id}", response_model=DeliveryRun)
     def get_delivery(
         delivery_id: str,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.READ,
+            resource_suffix="",
+            reason="read delivery",
+        )
         try:
             return service.get(delivery_id)
         except DeliveryNotFoundError as error:
@@ -1256,6 +1810,13 @@ def create_app(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         require_permission(request, Permission.PLAN_DECIDE)
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.DELIVERY_DECIDE,
+            resource_suffix=":design-decision",
+            reason="decide delivery design",
+        )
         try:
             return service.start_design_decision(
                 delivery_id,
@@ -1274,7 +1835,14 @@ def create_app(
         "/v1/deliveries/{delivery_id}/pipeline-run",
         response_model=PipelineRunRecord,
     )
-    def get_delivery_pipeline_run(delivery_id: str) -> PipelineRunRecord:
+    def get_delivery_pipeline_run(delivery_id: str, request: Request) -> PipelineRunRecord:
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.READ,
+            resource_suffix=":pipeline-run",
+            reason="read delivery pipeline run",
+        )
         if pipeline_runs is None:
             raise HTTPException(status_code=404, detail="pipeline run ledger not configured")
         try:
@@ -1283,19 +1851,35 @@ def create_app(
             raise HTTPException(status_code=404, detail="pipeline run not found") from error
 
     @app.get("/v1/pipeline-runs/{run_id}", response_model=PipelineRunRecord)
-    def get_pipeline_run(run_id: str) -> PipelineRunRecord:
+    def get_pipeline_run(run_id: str, request: Request) -> PipelineRunRecord:
         if pipeline_runs is None:
             raise HTTPException(status_code=404, detail="pipeline run ledger not configured")
         try:
-            return pipeline_runs.get(run_id)
+            pipeline_run = pipeline_runs.get(run_id)
         except KeyError as error:
             raise HTTPException(status_code=404, detail="pipeline run not found") from error
+        require_delivery_capability(
+            request,
+            pipeline_run.delivery_id,
+            ProjectCapability.READ,
+            resource_suffix=f":pipeline-run:{run_id}",
+            reason="read pipeline run",
+        )
+        return pipeline_run
 
     @app.get("/v1/deliveries/{delivery_id}/events", response_model=list[ProductEvent])
     def get_delivery_events(
         delivery_id: str,
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> tuple[ProductEvent, ...]:
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.READ,
+            resource_suffix=":events",
+            reason="read delivery events",
+        )
         try:
             return service.events(delivery_id)
         except DeliveryNotFoundError as error:
@@ -1303,11 +1887,25 @@ def create_app(
 
     @app.get("/v1/deliveries", response_model=list[DeliveryRun])
     def list_deliveries(
+        request: Request,
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
         project_id: str | None = None,
     ) -> tuple[DeliveryRun, ...]:
+        if project_id is not None:
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.READ,
+                resource=f"project:{project_id}:deliveries",
+                reason="list project deliveries",
+            )
+            allowed_project_ids: frozenset[str] | None = frozenset({project_id})
+        else:
+            allowed_project_ids = visible_project_ids(request)
         return tuple(
-            item for item in service.list() if project_id is None or item.project_id == project_id
+            item
+            for item in service.list()
+            if allowed_project_ids is None or item.project_id in allowed_project_ids
         )
 
     @app.post(
@@ -1322,6 +1920,13 @@ def create_app(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         require_permission(request, Permission.CANDIDATE_APPLY)
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.DELIVERY_DECIDE,
+            resource_suffix=":candidate-decision",
+            reason="decide delivery candidate",
+        )
         try:
             return service.start_candidate_decision(
                 delivery_id,
@@ -1344,6 +1949,13 @@ def create_app(
         service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
     ) -> DeliveryRun:
         require_permission(request, Permission.PLAN_DECIDE)
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.DELIVERY_DECIDE,
+            resource_suffix=":cancel",
+            reason="cancel delivery",
+        )
         try:
             return service.cancel(delivery_id, expected_version=request_body.expected_version)
         except DeliveryNotFoundError as error:

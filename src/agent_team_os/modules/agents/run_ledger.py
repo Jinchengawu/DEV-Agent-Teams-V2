@@ -126,9 +126,16 @@ class AgentRunLedger:
         *,
         status: str,
         artifacts: tuple[ArtifactEnvelope, ...] = (),
+        error_code: str | None = None,
     ) -> AgentRun:
         with self._connect() as connection:
-            return self.finish_on(connection, run, status=status, artifacts=artifacts)
+            return self.finish_on(
+                connection,
+                run,
+                status=status,
+                artifacts=artifacts,
+                error_code=error_code,
+            )
 
     def finish_on(
         self,
@@ -137,7 +144,10 @@ class AgentRunLedger:
         *,
         status: str,
         artifacts: tuple[ArtifactEnvelope, ...] = (),
+        error_code: str | None = None,
     ) -> AgentRun:
+        if status == "succeeded" and error_code is not None:
+            raise ValueError("successful AgentAttempt cannot have an error code")
         persisted_artifacts = tuple(self._persist(item) for item in artifacts)
         updated = run.model_copy(
             update={
@@ -165,9 +175,14 @@ class AgentRunLedger:
             raise RuntimeError("AgentRun is no longer running")
         if _table_exists(connection, "agent_attempts"):
             connection.execute(
-                """UPDATE agent_attempts SET status=?,finished_at=?
+                """UPDATE agent_attempts SET status=?,error_code=?,finished_at=?
                 WHERE id=? AND status='running'""",
-                (updated.status, updated.updated_at.isoformat(), run.attempt_id),
+                (
+                    updated.status,
+                    error_code,
+                    updated.updated_at.isoformat(),
+                    run.attempt_id,
+                ),
             )
         return updated
 
@@ -185,10 +200,7 @@ class AgentRunLedger:
     def get(self, run_id: str) -> AgentRun:
         with self._connect() as connection:
             row = connection.execute(
-                """SELECT id,delivery_id,pipeline_revision_id,binding_site,
-                resolved_binding_hash,deployment_snapshot_json,attempt_id,runtime_identity,
-                status,artifact_envelopes_json,created_at,updated_at
-                FROM agent_runs WHERE id=?""",
+                f"SELECT {_RUN_COLUMNS} FROM agent_runs WHERE id=?",  # noqa: S608
                 (run_id,),
             ).fetchone()
         if row is None:
@@ -198,10 +210,8 @@ class AgentRunLedger:
     def list(self, delivery_id: str) -> tuple[AgentRun, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT id,delivery_id,pipeline_revision_id,binding_site,
-                resolved_binding_hash,deployment_snapshot_json,attempt_id,runtime_identity,
-                status,artifact_envelopes_json,created_at,updated_at
-                FROM agent_runs WHERE delivery_id=? ORDER BY created_at,id""",
+                f"""SELECT {_RUN_COLUMNS} FROM agent_runs
+                WHERE delivery_id=? ORDER BY created_at,id""",  # noqa: S608
                 (delivery_id,),
             ).fetchall()
         return tuple(_run(row) for row in rows)
@@ -243,11 +253,27 @@ def _run(row: tuple[object, ...]) -> AgentRun:
         "artifact_envelopes",
         "created_at",
         "updated_at",
+        "workcell_run_id",
+        "parent_agent_run_id",
+        "root_agent_run_id",
+        "depth",
+        "run_role",
+        "delegate_purpose",
+        "workspace_access",
+        "slot_key",
     )
     values = dict(zip(keys, row, strict=True))
     values["deployment_snapshot"] = json.loads(str(values["deployment_snapshot"]))
     values["artifact_envelopes"] = json.loads(str(values["artifact_envelopes"]))
     return AgentRun.model_validate(values)
+
+
+_RUN_COLUMNS = (
+    "id,delivery_id,pipeline_revision_id,binding_site,resolved_binding_hash,"
+    "deployment_snapshot_json,attempt_id,runtime_identity,status,artifact_envelopes_json,"
+    "created_at,updated_at,workcell_run_id,parent_agent_run_id,root_agent_run_id,depth,"
+    "run_role,delegate_purpose,workspace_access,slot_key"
+)
 
 
 def _json(value: object) -> str:
