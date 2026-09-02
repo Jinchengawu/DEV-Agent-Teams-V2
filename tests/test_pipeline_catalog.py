@@ -205,6 +205,49 @@ def test_catalog_publishes_new_builtin_revision_when_definition_changes(
     assert catalog.get_revision("backend-delivery", 2).definition == upgraded.definition
 
 
+def test_catalog_bootstrap_preserves_operator_published_active_revision(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    builtin = PipelineCreate(
+        id="backend-delivery",
+        name="内置后端交付闭环",
+        definition={"id": "backend-delivery", "version": "4.0.0", "nodes": []},
+    )
+    bootstrapped = catalog.ensure_builtin_pipeline(builtin, actor_id="system")
+    draft = catalog.list_drafts("backend-delivery")[0]
+    operator_definition = {
+        "id": "backend-delivery",
+        "version": "4.1.0",
+        "nodes": [{"id": "operator-stage", "kind": "stage"}],
+    }
+    updated = catalog.patch_draft(
+        draft.id,
+        PipelineDraftPatch(
+            expected_version=draft.version,
+            definition=operator_definition,
+        ),
+    )
+    validated = catalog.validate_draft(updated.id, expected_version=updated.version)
+    operator_revision = catalog.publish_draft(
+        validated.id,
+        expected_version=validated.version,
+        published_by="operator",
+    )
+    activated = catalog.activate_revision(
+        "backend-delivery",
+        revision=operator_revision.revision,
+        expected_version=bootstrapped.version,
+        activated_by="operator",
+    )
+
+    restarted = catalog.ensure_builtin_pipeline(builtin, actor_id="system")
+
+    assert activated.active_revision == 2
+    assert restarted == activated
+    assert catalog.get_revision("backend-delivery", 2).definition == operator_definition
+
+
 def test_catalog_publishes_an_immutable_compiled_pipeline_revision(tmp_path: Path) -> None:
     catalog = _catalog(tmp_path)
     created = catalog.create_pipeline(

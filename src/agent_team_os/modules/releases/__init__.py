@@ -1,3 +1,4 @@
+from .acceptance_domain import ReleaseAcceptanceCheckV2, ReleaseAcceptanceReportV2
 from .application import ReleaseApplyError, ReleaseCoordinator, ReleaseWorkspaceApplier
 from .domain import ReleaseApplyAttempt
 from .repository import SQLiteReleaseRepository
@@ -26,6 +27,8 @@ from .verification import FullStackVerificationError, FullStackVerifier
 __all__ = [
     "FullStackVerificationError",
     "FullStackVerifier",
+    "ReleaseAcceptanceCheckV2",
+    "ReleaseAcceptanceReportV2",
     "ExternalForwardReleaseCoordinator",
     "ExternalReleaseCatalog",
     "ExternalReleaseError",

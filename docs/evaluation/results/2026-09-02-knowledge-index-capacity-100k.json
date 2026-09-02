@@ -1,0 +1,52 @@
+{
+  "created_at": "2026-09-02T00:10:15.931623+00:00",
+  "dataset": {
+    "capacity_status": "warning",
+    "chunk_count": 100000,
+    "document_count": 1,
+    "max_chunks": 100000
+  },
+  "hardware": {
+    "logical_cpu_count": 10,
+    "physical_memory_bytes": 34359738368,
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "python": "3.12.11",
+    "sqlite": "3.49.1",
+    "summary": "Apple M1 Max; 32.0 GiB RAM; Darwin 25.5.0"
+  },
+  "limitations": [
+    "数据集与 Embedding 均为 Deterministic Fixture，不证明真实飞书或 Ollama 可用性。",
+    "结果只是当前开发机容量与时延观测，不是生产 SLA。",
+    "向量为确定性 1024 维测试值，不衡量 bge-m3 生成吞吐或语义质量。"
+  ],
+  "live_feishu": false,
+  "live_ollama": false,
+  "metrics": {
+    "build_elapsed_seconds": 11.321,
+    "cold_integrity_verification_ms": 288.015,
+    "index_size_bytes": 607920128,
+    "peak_rss_bytes": 425705472,
+    "query_count": 20,
+    "query_latency_ms": {
+      "max": 613.26,
+      "min": 492.207,
+      "p50": 511.538,
+      "p95": 605.115,
+      "p99": 613.26
+    },
+    "stable_hit_count": 8
+  },
+  "official_benchmark": false,
+  "production_sla": false,
+  "proof_scope": "deterministic_capacity_benchmark",
+  "schema_version": "knowledge-index-capacity-benchmark-v1",
+  "source_revision": "cfe597c05b3b0c65af57bf12d14b7f802fe7899f",
+  "vector_engine": {
+    "adapter_revision": "sqlite-vec-vector-index-v1",
+    "dimension": 1024,
+    "embedding_adapter_revision": "deterministic-capacity-embedding-v1",
+    "name": "sqlite-vec",
+    "version": "0.1.9"
+  },
+  "working_tree_dirty": true
+}

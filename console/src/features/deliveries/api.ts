@@ -44,11 +44,22 @@ export function useDeliveryKnowledgePublications(id?: string, projectId?: string
   });
 }
 
-export function useDeliveryPipelineRun(deliveryId?: string, runId?: string | null) {
+export function pipelineRunReady(
+  runId: string | null | undefined,
+  status: Delivery["status"] | undefined,
+) {
+  return Boolean(runId && status !== "queued" && status !== "preparing_context");
+}
+
+export function useDeliveryPipelineRun(
+  deliveryId?: string,
+  runId?: string | null,
+  status?: Delivery["status"],
+) {
   return useQuery({
     queryKey: ["pipeline-runs", runId ?? "", deliveryId ?? ""],
     queryFn: () => request<PipelineRun>(`/v1/deliveries/${deliveryId}/pipeline-run`),
-    enabled: Boolean(deliveryId && runId),
+    enabled: Boolean(deliveryId && pipelineRunReady(runId, status)),
     refetchInterval: 1000,
   });
 }

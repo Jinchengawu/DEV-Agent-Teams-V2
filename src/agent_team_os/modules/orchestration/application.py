@@ -8,6 +8,7 @@ from ...shared.errors import ProductError
 from ...shared.events import ProductEvent
 from ...shared.ids import new_id
 from .domain import (
+    GraphCompilation,
     Pipeline,
     PipelineCreate,
     PipelineDraft,
@@ -19,6 +20,7 @@ from .domain import (
 from .ports import (
     CapabilityBindingResolver,
     JourneyGraphCompiler,
+    KnowledgeBindingPolicy,
     PipelineDefinitionPolicy,
     PipelineGraphRuntime,
     PipelineRepository,
@@ -39,9 +41,7 @@ _COMMAND_EVENT_SUFFIX = {
 
 
 class PipelineRunLedger:
-    def __init__(
-        self, repository: PipelineRunRepository, runtime: PipelineGraphRuntime
-    ) -> None:
+    def __init__(self, repository: PipelineRunRepository, runtime: PipelineGraphRuntime) -> None:
         self.repository = repository
         self.runtime = runtime
 
@@ -114,11 +114,7 @@ class PipelineRunLedger:
                 event_type,
                 {
                     "node_id": node_id,
-                    **(
-                        {"body_node_id": body_node_id}
-                        if body_node_id is not None
-                        else {}
-                    ),
+                    **({"body_node_id": body_node_id} if body_node_id is not None else {}),
                 },
             ),
         ):
@@ -172,11 +168,7 @@ class PipelineRunLedger:
                 event_type,
                 {
                     "node_id": node_id,
-                    **(
-                        {"body_node_id": body_node_id}
-                        if body_node_id is not None
-                        else {}
-                    ),
+                    **({"body_node_id": body_node_id} if body_node_id is not None else {}),
                 },
             ),
         )
@@ -186,9 +178,7 @@ class PipelineRunLedger:
         return updated
 
     @staticmethod
-    def _event(
-        run: PipelineRunRecord, event_type: str, payload: dict[str, object]
-    ) -> ProductEvent:
+    def _event(run: PipelineRunRecord, event_type: str, payload: dict[str, object]) -> ProductEvent:
         return ProductEvent(
             event_type=event_type,
             aggregate_type="pipeline-run",
@@ -231,9 +221,7 @@ def _workcell_contract_errors(
         return ()
     errors: list[str] = []
     stages = _stage_workflow_modes(draft.definition)
-    workcell_stages = {
-        path for path, mode in stages.items() if mode == "agentscope.workcell-team"
-    }
+    workcell_stages = {path for path, mode in stages.items() if mode == "agentscope.workcell-team"}
     mapped_stages = set(draft.workcell_stage_map)
     for path in sorted(workcell_stages - mapped_stages):
         errors.append(f"PIPELINE_WORKCELL_STAGE_MAPPING_MISSING:{path}")
@@ -253,11 +241,93 @@ def _workcell_contract_errors(
         errors.append("PIPELINE_RELEASE_CONTRACT_REQUIRED")
     if len(set(contract)) != len(contract):
         errors.append("PIPELINE_RELEASE_CONTRACT_DUPLICATE_WORKCELL")
-    mapped_workcells = {
-        binding.workcell_key for binding in draft.workcell_stage_map.values()
-    }
+    mapped_workcells = {binding.workcell_key for binding in draft.workcell_stage_map.values()}
     for workcell_key in sorted(set(contract) - mapped_workcells):
         errors.append(f"PIPELINE_RELEASE_CONTRACT_WORKCELL_UNMAPPED:{workcell_key}")
+    return tuple(dict.fromkeys(errors))
+
+
+def _knowledge_context_errors(
+    draft: PipelineDraft,
+    compilation: GraphCompilation | None,
+    resolved_provider_bindings: dict[str, dict[str, object]] | None,
+    policy: KnowledgeBindingPolicy | None,
+) -> tuple[str, ...]:
+    if not draft.knowledge_context_bindings:
+        return ()
+    errors: list[str] = []
+    stages = _stage_workflow_modes(draft.definition)
+    for stage_path, binding in sorted(draft.knowledge_context_bindings.items()):
+        if binding.stage_path != stage_path:
+            errors.append(
+                f"PIPELINE_KNOWLEDGE_STAGE_KEY_MISMATCH:{stage_path}:{binding.stage_path}"
+            )
+            continue
+        if stage_path not in stages:
+            errors.append(f"PIPELINE_KNOWLEDGE_STAGE_NOT_FOUND:{stage_path}")
+            continue
+        acwm_contracts = {
+            (str(item.get("id")), str(item.get("version"))): item
+            for item in (
+                ()
+                if compilation is None
+                else compilation.stage_input_artifact_contracts.get(stage_path, ())
+            )
+            if isinstance(item, dict)
+        }
+        acwm_contract = acwm_contracts.get(
+            (
+                binding.acwm_artifact_slot,
+                binding.acwm_artifact_contract_version,
+            )
+        )
+        if acwm_contract is None:
+            errors.append(
+                "PIPELINE_KNOWLEDGE_ACWM_ARTIFACT_CONTRACT_MISSING:"
+                f"{stage_path}:{binding.acwm_artifact_slot}:"
+                f"{binding.acwm_artifact_contract_version}"
+            )
+        elif acwm_contract.get("sha256") != binding.acwm_artifact_contract_sha256:
+            errors.append(
+                "PIPELINE_KNOWLEDGE_ACWM_ARTIFACT_CONTRACT_HASH_MISMATCH:"
+                f"{stage_path}:{binding.acwm_artifact_slot}"
+            )
+        sites = tuple(
+            sorted(
+                site
+                for site in (resolved_provider_bindings or {})
+                if site.startswith(f"{stage_path}.")
+            )
+        )
+        if not sites:
+            errors.append(f"PIPELINE_KNOWLEDGE_PROVIDER_BINDINGS_REQUIRED:{stage_path}")
+        for site in sites:
+            snapshot = (resolved_provider_bindings or {}).get(site, {})
+            contracts = snapshot.get("provider_input_contracts")
+            contract_ids = (
+                {
+                    item.get("id")
+                    for item in contracts
+                    if isinstance(contracts, list) and isinstance(item, dict)
+                }
+                if isinstance(contracts, list)
+                else set()
+            )
+            if binding.acwm_artifact_slot not in contract_ids:
+                errors.append(
+                    "PIPELINE_KNOWLEDGE_PROVIDER_INPUT_CONTRACT_MISSING:"
+                    f"{stage_path}:{site}:{binding.acwm_artifact_slot}"
+                )
+        if policy is None:
+            errors.append(f"PIPELINE_KNOWLEDGE_POLICY_RUNTIME_REQUIRED:{stage_path}")
+        else:
+            try:
+                policy.validate(
+                    binding.retrieval_policy_revision_id,
+                    binding.max_context_bytes,
+                )
+            except ValueError as error:
+                errors.append(f"{error}:{stage_path}:{binding.retrieval_policy_revision_id}")
     return tuple(dict.fromkeys(errors))
 
 
@@ -295,16 +365,19 @@ class PipelineCatalog:
         binding_resolver: CapabilityBindingResolver | None = None,
         provider_binding_resolver: ProviderBindingResolver | None = None,
         definition_policy: PipelineDefinitionPolicy | None = None,
+        knowledge_binding_policy: KnowledgeBindingPolicy | None = None,
     ) -> None:
         self.repository = repository
         self.graph_compiler = graph_compiler
         self.binding_resolver = binding_resolver
         self.provider_binding_resolver = provider_binding_resolver
         self.definition_policy = definition_policy
+        self.knowledge_binding_policy = knowledge_binding_policy
 
-    def create_pipeline(
-        self, request: PipelineCreate, *, created_by: str
-    ) -> PipelineWithDraft:
+    def configure_knowledge_binding_policy(self, policy: KnowledgeBindingPolicy) -> None:
+        self.knowledge_binding_policy = policy
+
+    def create_pipeline(self, request: PipelineCreate, *, created_by: str) -> PipelineWithDraft:
         pipeline = Pipeline(
             id=request.id,
             name=request.name,
@@ -321,6 +394,7 @@ class PipelineCatalog:
             agent_assignments=request.agent_assignments,
             workcell_stage_map=request.workcell_stage_map,
             release_contract_snapshot=request.release_contract_snapshot,
+            knowledge_context_bindings=request.knowledge_context_bindings,
             created_by=created_by,
         )
         try:
@@ -337,9 +411,7 @@ class PipelineCatalog:
     def list_pipelines(self) -> tuple[Pipeline, ...]:
         return self.repository.list_pipelines()
 
-    def ensure_builtin_pipeline(
-        self, request: PipelineCreate, *, actor_id: str
-    ) -> Pipeline:
+    def ensure_builtin_pipeline(self, request: PipelineCreate, *, actor_id: str) -> Pipeline:
         """Idempotently migrate one built-in Journey into an active Pipeline."""
         try:
             pipeline = self.repository.get_pipeline(request.id)
@@ -349,10 +421,13 @@ class PipelineCatalog:
             draft = created.draft
         else:
             if pipeline.active_revision is not None:
-                active = self.repository.get_revision(
-                    pipeline.id, pipeline.active_revision
-                )
+                active = self.repository.get_revision(pipeline.id, pipeline.active_revision)
                 if active.definition == request.definition:
+                    return pipeline
+                # Built-ins are startup defaults, not an authority that may overwrite an
+                # operator-published Pipeline Revision.  Only a revision owned by the same
+                # bootstrap actor is eligible for automatic migration.
+                if active.published_by != actor_id:
                     return pipeline
             drafts = self.repository.list_drafts(request.id)
             if not drafts:
@@ -375,11 +450,10 @@ class PipelineCatalog:
                         agent_assignments=request.agent_assignments,
                         workcell_stage_map=request.workcell_stage_map,
                         release_contract_snapshot=request.release_contract_snapshot,
+                        knowledge_context_bindings=request.knowledge_context_bindings,
                     ),
                 )
-        validated = self.validate_draft(
-            draft.id, expected_version=draft.version
-        )
+        validated = self.validate_draft(draft.id, expected_version=draft.version)
         if validated.validation_status != "valid":
             raise ProductError(
                 code="BUILTIN_PIPELINE_INVALID",
@@ -405,8 +479,9 @@ class PipelineCatalog:
         if self.graph_compiler is None:
             raise RuntimeError("Journey Graph compiler is not configured")
         errors: tuple[str, ...] = ()
+        compilation: GraphCompilation | None = None
         try:
-            self.graph_compiler.compile(draft.definition)
+            compilation = self.graph_compiler.compile(draft.definition)
         except ValueError as error:
             errors = (str(error),)
         if self.definition_policy is not None:
@@ -422,6 +497,12 @@ class PipelineCatalog:
         errors = (
             *errors,
             *_workcell_contract_errors(draft, resolved_provider_bindings),
+            *_knowledge_context_errors(
+                draft,
+                compilation,
+                resolved_provider_bindings,
+                self.knowledge_binding_policy,
+            ),
         )
         updated = draft.model_copy(
             update={
@@ -439,7 +520,12 @@ class PipelineCatalog:
     def patch_draft(self, draft_id: str, request: PipelineDraftPatch) -> PipelineDraft:
         draft = self.repository.get_draft(draft_id)
         self._require_version(draft, request.expected_version)
-        changes = request.model_dump(exclude_none=True, exclude={"expected_version"})
+        changes = {
+            field_name: getattr(request, field_name)
+            for field_name in request.model_fields_set
+            if field_name != "expected_version"
+            and getattr(request, field_name) is not None
+        }
         updated = draft.model_copy(
             update={
                 **changes,
@@ -483,11 +569,17 @@ class PipelineCatalog:
         else:
             raise RuntimeError("Pipeline publication binding adapter is not configured")
         workcell_errors = _workcell_contract_errors(draft, resolved_provider_bindings)
-        if workcell_errors:
+        knowledge_errors = _knowledge_context_errors(
+            draft,
+            compilation,
+            resolved_provider_bindings,
+            self.knowledge_binding_policy,
+        )
+        if workcell_errors or knowledge_errors:
             raise ProductError(
                 code="PIPELINE_WORKCELL_CONTRACT_INVALID",
                 title="Pipeline Workcell Contract 已漂移",
-                detail="；".join(workcell_errors),
+                detail="；".join((*workcell_errors, *knowledge_errors)),
                 repair="重新校验 Pipeline 草稿与 Provider Binding 后发布。",
             )
         return self.repository.publish(
@@ -498,6 +590,7 @@ class PipelineCatalog:
             resolved_provider_bindings=resolved_provider_bindings,
             workcell_stage_map=draft.workcell_stage_map,
             release_contract_snapshot=draft.release_contract_snapshot,
+            knowledge_context_bindings=draft.knowledge_context_bindings,
             fingerprint=compilation.fingerprint,
             published_by=published_by,
         )

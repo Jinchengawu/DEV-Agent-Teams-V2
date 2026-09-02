@@ -78,9 +78,9 @@ class WorkcellExecutionSnapshot(BaseModel):
     workspace: WorkcellWorkspaceSnapshot
     delegation_policy: DelegationPolicy
     slot_bindings: tuple[FrozenSlotBinding, ...] = Field(min_length=1, max_length=4)
-    slot_method_bindings: dict[
-        Literal["delegate_1", "delegate_2", "delegate_3"], str
-    ] = Field(default_factory=dict)
+    slot_method_bindings: dict[Literal["delegate_1", "delegate_2", "delegate_3"], str] = Field(
+        default_factory=dict
+    )
     slot_purpose_bindings: dict[
         Literal["delegate_1", "delegate_2", "delegate_3"],
         Literal["workspace_write", "artifact", "review"],
@@ -236,6 +236,7 @@ class WorkcellResult(BaseModel):
     verification_sha256: Sha256
     review_artifact_ids: tuple[str, ...] = ()
     output_artifact_references: tuple[ArtifactReference, ...] = ()
+    knowledge_citation_ids: tuple[str, ...] = ()
     sha256: Sha256
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -248,6 +249,7 @@ class WorkcellResultCreate(BaseModel):
     verification_sha256: Sha256
     review_artifact_ids: tuple[str, ...] = ()
     output_artifact_references: tuple[ArtifactReference, ...] = ()
+    knowledge_citation_ids: tuple[str, ...] = ()
 
 
 class WorkcellResultValidation(BaseModel):

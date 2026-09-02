@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -15,6 +16,36 @@ def utc_now() -> datetime:
 
 ProjectLifecycle = Literal["provisioning", "active", "provision_failed", "archived"]
 WorkspaceStatus = Literal["provisioning", "ready", "failed"]
+ProjectRole = Literal["owner", "editor", "viewer"]
+
+
+class ProjectCapability(StrEnum):
+    READ = "project:read"
+    EDIT = "project:edit"
+    DELIVERY_CREATE = "project:delivery-create"
+    DELIVERY_DECIDE = "project:delivery-decide"
+    MEMBERSHIP_MANAGE = "project:membership-manage"
+    SOURCE_USE = "project:source-use"
+    SOURCE_MANAGE = "project:source-manage"
+    SOURCE_APPROVE = "project:source-approve"
+    CONNECTION_MANAGE = "project:connection-manage"
+
+
+class ProjectAccessActor(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    user_id: str
+    global_role: str
+
+
+class ProjectAccessAudit(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    id: str
+    actor_user_id: str
+    project_id: str
+    capability: str
+    resource: str
+    reason: str
+    created_at: datetime
 
 
 class Project(BaseModel):
@@ -28,6 +59,20 @@ class Project(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectMembership(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    project_id: str
+    user_id: str
+    role: ProjectRole
+    version: int = Field(ge=1)
+
+
+class ProjectMembershipUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: ProjectRole
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class ProjectWorkspace(BaseModel):
@@ -83,9 +128,7 @@ class ProjectCreate(BaseModel):
     @model_validator(mode="after")
     def legacy_repository_mode_is_not_mixed_with_workcells(self) -> ProjectCreate:
         if self.team_template_revision_id is not None and self.repository_mode != "backend":
-            raise ValueError(
-                "repository_mode cannot be combined with team_template_revision_id"
-            )
+            raise ValueError("repository_mode cannot be combined with team_template_revision_id")
         return self
 
 
@@ -153,6 +196,26 @@ class ProjectKnowledgeSourceUpdate(BaseModel):
     expected_version: int | None = Field(default=None, ge=1)
 
 
+class ProjectKnowledgeSourceApproval(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    id: str
+    project_id: str
+    binding_id: str
+    enabled: bool
+    rag_enabled: bool
+    version: int = Field(ge=1)
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectKnowledgeSourceApprovalUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = True
+    rag_enabled: bool = False
+    expected_version: int | None = Field(default=None, ge=1)
+
+
 class ProjectExecutionContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     project_id: str
@@ -172,5 +235,6 @@ class ProjectDetail(BaseModel):
     pipeline_bindings: tuple[ProjectPipelineBinding, ...] = ()
     deployment_access: tuple[ProjectDeploymentAccess, ...] = ()
     knowledge_sources: tuple[ProjectKnowledgeSource, ...] = ()
+    knowledge_source_approvals: tuple[ProjectKnowledgeSourceApproval, ...] = ()
     repositories: tuple[ProjectRepository, ...] = ()
     active_delivery_id: str | None = None

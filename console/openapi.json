@@ -5,6 +5,64 @@
     "version": "0.5.0"
   },
   "paths": {
+    "/v1/features": {
+      "get": {
+        "summary": "Get Feature Flags",
+        "operationId": "get_feature_flags_v1_features_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureFlags"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects": {
       "get": {
         "summary": "List Projects",
@@ -1045,6 +1103,480 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectKnowledgeSource"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/memberships": {
+      "get": {
+        "summary": "List Memberships",
+        "operationId": "list_memberships_v1_projects__project_id__memberships_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectMembership"
+                  },
+                  "title": "Response List Memberships V1 Projects  Project Id  Memberships Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/access-audits": {
+      "get": {
+        "summary": "List Access Audits",
+        "operationId": "list_access_audits_v1_projects__project_id__access_audits_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectAccessAudit"
+                  },
+                  "title": "Response List Access Audits V1 Projects  Project Id  Access Audits Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/memberships/{user_id}": {
+      "put": {
+        "summary": "Put Membership",
+        "operationId": "put_membership_v1_projects__project_id__memberships__user_id__put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMembershipUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMembership"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Membership",
+        "operationId": "delete_membership_v1_projects__project_id__memberships__user_id__delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-source-approvals": {
+      "get": {
+        "summary": "List Knowledge Source Approvals",
+        "operationId": "list_knowledge_source_approvals_v1_projects__project_id__knowledge_source_approvals_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectKnowledgeSourceApproval"
+                  },
+                  "title": "Response List Knowledge Source Approvals V1 Projects  Project Id  Knowledge Source Approvals Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-source-approvals/{binding_id}": {
+      "put": {
+        "summary": "Put Knowledge Source Approval",
+        "operationId": "put_knowledge_source_approval_v1_projects__project_id__knowledge_source_approvals__binding_id__put",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectKnowledgeSourceApprovalUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectKnowledgeSourceApproval"
                 }
               }
             }
@@ -6789,6 +7321,1653 @@
         }
       }
     },
+    "/v1/knowledge/connections": {
+      "get": {
+        "summary": "List Connections",
+        "operationId": "list_connections_v1_knowledge_connections_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantConnection"
+                  },
+                  "type": "array",
+                  "title": "Response List Connections V1 Knowledge Connections Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Connection",
+        "operationId": "create_connection_v1_knowledge_connections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantConnectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantConnection"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/connections/{connection_id}/diagnose": {
+      "post": {
+        "summary": "Diagnose Connection",
+        "operationId": "diagnose_connection_v1_knowledge_connections__connection_id__diagnose_post",
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantConnection"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/connections/{connection_id}/spaces": {
+      "get": {
+        "summary": "List Connection Spaces",
+        "operationId": "list_connection_spaces_v1_knowledge_connections__connection_id__spaces_get",
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderSpace"
+                  },
+                  "title": "Response List Connection Spaces V1 Knowledge Connections  Connection Id  Spaces Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/provider-bindings-v2": {
+      "get": {
+        "summary": "List Bindings",
+        "operationId": "list_bindings_v1_knowledge_provider_bindings_v2_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantProviderBinding"
+                  },
+                  "type": "array",
+                  "title": "Response List Bindings V1 Knowledge Provider Bindings V2 Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Binding",
+        "operationId": "create_binding_v1_knowledge_provider_bindings_v2_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantProviderBindingCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantProviderBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/provider-bindings-v2/{binding_id}/diagnose": {
+      "post": {
+        "summary": "Refresh Binding",
+        "operationId": "refresh_binding_v1_knowledge_provider_bindings_v2__binding_id__diagnose_post",
+        "parameters": [
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantProviderBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/provider-bindings-v2/{binding_id}/nodes": {
+      "get": {
+        "summary": "List Binding Nodes",
+        "operationId": "list_binding_nodes_v1_knowledge_provider_bindings_v2__binding_id__nodes_get",
+        "parameters": [
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderNode"
+                  },
+                  "title": "Response List Binding Nodes V1 Knowledge Provider Bindings V2  Binding Id  Nodes Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-sync-jobs": {
+      "post": {
+        "summary": "Request Sync",
+        "operationId": "request_sync_v1_projects__project_id__knowledge_sync_jobs_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSyncJobRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSyncJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Sync Jobs",
+        "operationId": "list_sync_jobs_v1_projects__project_id__knowledge_sync_jobs_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeSyncJob"
+                  },
+                  "title": "Response List Sync Jobs V1 Projects  Project Id  Knowledge Sync Jobs Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-snapshots": {
+      "get": {
+        "summary": "List Snapshots",
+        "operationId": "list_snapshots_v1_projects__project_id__knowledge_snapshots_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TenantProviderSnapshotRecord"
+                  },
+                  "title": "Response List Snapshots V1 Projects  Project Id  Knowledge Snapshots Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-bindings/{binding_id}/nodes": {
+      "get": {
+        "summary": "List Project Binding Nodes",
+        "operationId": "list_project_binding_nodes_v1_projects__project_id__knowledge_bindings__binding_id__nodes_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "binding_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProviderNode"
+                  },
+                  "title": "Response List Project Binding Nodes V1 Projects  Project Id  Knowledge Bindings  Binding Id  Nodes Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-sync-jobs/{job_id}": {
+      "get": {
+        "summary": "Get Sync Job",
+        "operationId": "get_sync_job_v1_projects__project_id__knowledge_sync_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSyncJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/index-catalog": {
+      "get": {
+        "summary": "Get Catalog",
+        "operationId": "get_catalog_v1_knowledge_index_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexCatalog"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/index-profiles": {
+      "post": {
+        "summary": "Publish Profile",
+        "operationId": "publish_profile_v1_knowledge_index_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeIndexProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexProfileRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/embedding-qualifications": {
+      "post": {
+        "summary": "Qualify Embedding",
+        "operationId": "qualify_embedding_v1_knowledge_embedding_qualifications_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingQualificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingQualificationSnapshot"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/retrieval-policies": {
+      "post": {
+        "summary": "Publish Policy",
+        "operationId": "publish_policy_v1_knowledge_retrieval_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalPolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalPolicyRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/retrieval-evaluation-policies": {
+      "post": {
+        "summary": "Publish Evaluation Policy",
+        "operationId": "publish_evaluation_policy_v1_knowledge_retrieval_evaluation_policies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalEvaluationPolicyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalEvaluationPolicyRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/index-revisions": {
+      "post": {
+        "summary": "Build Index",
+        "operationId": "build_index_v1_knowledge_index_revisions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeIndexBuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/retrieval-evaluation-runs": {
+      "post": {
+        "summary": "Evaluate Retrieval",
+        "operationId": "evaluate_retrieval_v1_knowledge_retrieval_evaluation_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalEvaluationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalEvaluationReport"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/knowledge/index-revisions/{revision_id}/activate": {
+      "post": {
+        "summary": "Activate Index",
+        "operationId": "activate_index_v1_knowledge_index_revisions__revision_id__activate_post",
+        "parameters": [
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Revision Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeIndexActivationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeIndexRevision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-retrieval-preview": {
+      "post": {
+        "summary": "Retrieve",
+        "operationId": "retrieve_v1_projects__project_id__knowledge_retrieval_preview_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectKnowledgeRetrievalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeRetrievalResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/knowledge-retrieval-options": {
+      "get": {
+        "summary": "Retrieval Options",
+        "operationId": "retrieval_options_v1_projects__project_id__knowledge_retrieval_options_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "provider_binding_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider Binding Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectKnowledgeRetrievalOption"
+                  },
+                  "title": "Response Retrieval Options V1 Projects  Project Id  Knowledge Retrieval Options Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/evidence": {
       "get": {
         "summary": "List Evidence",
@@ -8889,6 +11068,155 @@
         }
       }
     },
+    "/v1/deliveries/{delivery_id}/knowledge-context": {
+      "get": {
+        "summary": "Get Delivery Knowledge Context",
+        "operationId": "get_delivery_knowledge_context_v1_deliveries__delivery_id__knowledge_context_get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryKnowledgeContextOverview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/deliveries/{delivery_id}/knowledge-context/artifact": {
+      "get": {
+        "summary": "Inspect Delivery Knowledge Context",
+        "operationId": "inspect_delivery_knowledge_context_v1_deliveries__delivery_id__knowledge_context_artifact_get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          },
+          {
+            "name": "stage_path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stage Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Inspect Delivery Knowledge Context V1 Deliveries  Delivery Id  Knowledge Context Artifact Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/deliveries": {
       "post": {
         "summary": "Create Delivery",
@@ -9834,6 +12162,37 @@
           "statement"
         ],
         "title": "AcceptanceCriterion"
+      },
+      "AdministratorBypassAuthorizationComponent": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "administrator_bypass",
+            "title": "Kind",
+            "default": "administrator_bypass"
+          },
+          "sentinel": {
+            "type": "string",
+            "const": "administrator-bypass:no-membership:v1",
+            "title": "Sentinel",
+            "default": "administrator-bypass:no-membership:v1"
+          },
+          "receipt_id": {
+            "type": "string",
+            "title": "Receipt Id"
+          },
+          "receipt_sha256": {
+            "type": "string",
+            "title": "Receipt Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "receipt_sha256"
+        ],
+        "title": "AdministratorBypassAuthorizationComponent"
       },
       "AgentAttempt": {
         "properties": {
@@ -11360,6 +13719,62 @@
         ],
         "title": "AssetReference"
       },
+      "AuthorizationApprovalComponent": {
+        "properties": {
+          "approval_id": {
+            "type": "string",
+            "title": "Approval Id"
+          },
+          "approval_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Approval Version"
+          },
+          "binding_id": {
+            "type": "string",
+            "title": "Binding Id"
+          },
+          "binding_authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Binding Authorization Version"
+          },
+          "approved_source_scope_sha256": {
+            "type": "string",
+            "title": "Approved Source Scope Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "approval_id",
+          "approval_version",
+          "binding_id",
+          "binding_authorization_version",
+          "approved_source_scope_sha256"
+        ],
+        "title": "AuthorizationApprovalComponent"
+      },
+      "AuthorizationConnectionComponent": {
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "title": "Connection Id"
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Authorization Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connection_id",
+          "authorization_version"
+        ],
+        "title": "AuthorizationConnectionComponent"
+      },
       "BindingRequest": {
         "properties": {
           "instance_id": {
@@ -11498,6 +13913,14 @@
             "type": "string",
             "title": "Unified Diff",
             "default": ""
+          },
+          "knowledge_citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Citation Ids",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -11935,6 +14358,56 @@
         "type": "object",
         "title": "DelegationPolicy"
       },
+      "DeliveryBuildIdentitySnapshot": {
+        "properties": {
+          "product_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Product Revision"
+          },
+          "product_worktree_clean": {
+            "type": "boolean",
+            "title": "Product Worktree Clean"
+          },
+          "acwm_version": {
+            "type": "string",
+            "title": "Acwm Version"
+          },
+          "acwm_revision": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "title": "Acwm Revision"
+          },
+          "framework_lock_sha256": {
+            "type": "string",
+            "title": "Framework Lock Sha256"
+          },
+          "framework_dependency_status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "failed"
+            ],
+            "title": "Framework Dependency Status"
+          },
+          "snapshot_sha256": {
+            "type": "string",
+            "title": "Snapshot Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "product_revision",
+          "product_worktree_clean",
+          "acwm_version",
+          "acwm_revision",
+          "framework_lock_sha256",
+          "framework_dependency_status",
+          "snapshot_sha256"
+        ],
+        "title": "DeliveryBuildIdentitySnapshot"
+      },
       "DeliveryExecutionSnapshot": {
         "properties": {
           "project_id": {
@@ -11985,6 +14458,14 @@
             "type": "array",
             "title": "Release Contract Snapshot"
           },
+          "knowledge_context_bindings": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Knowledge Context Bindings"
+          },
           "resolved_provider_bindings": {
             "additionalProperties": {
               "additionalProperties": true,
@@ -12002,6 +14483,53 @@
           },
           "method_snapshot": {
             "$ref": "#/components/schemas/DeliveryMethodSnapshot"
+          },
+          "build_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryBuildIdentitySnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "knowledge_contexts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DeliveryKnowledgeContextSnapshot"
+            },
+            "type": "object",
+            "title": "Knowledge Contexts"
+          },
+          "knowledge_context_unavailable": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DeliveryKnowledgeContextUnavailableSnapshot"
+            },
+            "type": "object",
+            "title": "Knowledge Context Unavailable"
+          },
+          "knowledge_authorization_stamp": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Authorization Stamp"
+          },
+          "knowledge_preparation_input_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Preparation Input Sha256"
           },
           "snapshot_sha256": {
             "type": "string",
@@ -12031,6 +14559,119 @@
           "snapshot_sha256"
         ],
         "title": "DeliveryExecutionSnapshot"
+      },
+      "DeliveryKnowledgeContextOverview": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "delivery_status": {
+            "type": "string",
+            "title": "Delivery Status"
+          },
+          "preparation_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeContextPreparationRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contexts": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryKnowledgeContextSnapshot"
+            },
+            "type": "array",
+            "title": "Contexts",
+            "default": []
+          },
+          "unavailable": {
+            "items": {
+              "$ref": "#/components/schemas/DeliveryKnowledgeContextUnavailableSnapshot"
+            },
+            "type": "array",
+            "title": "Unavailable",
+            "default": []
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeCitationUsage"
+            },
+            "type": "array",
+            "title": "Citations",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "delivery_status"
+        ],
+        "title": "DeliveryKnowledgeContextOverview"
+      },
+      "DeliveryKnowledgeContextSnapshot": {
+        "properties": {
+          "stage_path": {
+            "type": "string",
+            "title": "Stage Path"
+          },
+          "artifact_reference": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Citation Ids"
+          },
+          "authorization_epoch_hash": {
+            "type": "string",
+            "title": "Authorization Epoch Hash"
+          },
+          "trust_class": {
+            "type": "string",
+            "const": "external-collaborative",
+            "title": "Trust Class",
+            "default": "external-collaborative"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage_path",
+          "artifact_reference",
+          "citation_ids",
+          "authorization_epoch_hash"
+        ],
+        "title": "DeliveryKnowledgeContextSnapshot"
+      },
+      "DeliveryKnowledgeContextUnavailableSnapshot": {
+        "properties": {
+          "stage_path": {
+            "type": "string",
+            "title": "Stage Path"
+          },
+          "receipt_reference": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "error_code": {
+            "type": "string",
+            "title": "Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage_path",
+          "receipt_reference",
+          "error_code"
+        ],
+        "title": "DeliveryKnowledgeContextUnavailableSnapshot"
       },
       "DeliveryMethodSnapshot": {
         "properties": {
@@ -12166,6 +14807,27 @@
               }
             ]
           },
+          "knowledge_preparation_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgePreparationInputV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "knowledge_preparation_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Preparation Run Id"
+          },
           "user_request": {
             "type": "string",
             "title": "User Request"
@@ -12174,6 +14836,7 @@
             "type": "string",
             "enum": [
               "queued",
+              "preparing_context",
               "planning",
               "awaiting_plan_decision",
               "awaiting_design_decision",
@@ -12819,6 +15482,140 @@
         ],
         "title": "DraftVersionRequest"
       },
+      "EmbeddingQualificationRequest": {
+        "properties": {
+          "model_name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Model Name"
+          },
+          "tokenizer_contract": {
+            "type": "string",
+            "title": "Tokenizer Contract",
+            "default": "ollama-embed-input-v1"
+          },
+          "vector_normalization": {
+            "type": "string",
+            "enum": [
+              "none",
+              "l2"
+            ],
+            "title": "Vector Normalization",
+            "default": "none"
+          },
+          "distance_metric": {
+            "type": "string",
+            "enum": [
+              "cosine",
+              "l2"
+            ],
+            "title": "Distance Metric",
+            "default": "cosine"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_name"
+        ],
+        "title": "EmbeddingQualificationRequest"
+      },
+      "EmbeddingQualificationSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "provider_kind": {
+            "type": "string",
+            "const": "ollama",
+            "title": "Provider Kind",
+            "default": "ollama"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name"
+          },
+          "model_digest": {
+            "type": "string",
+            "title": "Model Digest"
+          },
+          "dimension": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Dimension"
+          },
+          "adapter_revision": {
+            "type": "string",
+            "title": "Adapter Revision"
+          },
+          "tokenizer_contract": {
+            "type": "string",
+            "title": "Tokenizer Contract"
+          },
+          "vector_normalization": {
+            "type": "string",
+            "enum": [
+              "none",
+              "l2"
+            ],
+            "title": "Vector Normalization"
+          },
+          "distance_metric": {
+            "type": "string",
+            "enum": [
+              "cosine",
+              "l2"
+            ],
+            "title": "Distance Metric"
+          },
+          "sqlite_vec_version": {
+            "type": "string",
+            "const": "0.1.9",
+            "title": "Sqlite Vec Version",
+            "default": "0.1.9"
+          },
+          "vector_index_adapter_revision": {
+            "type": "string",
+            "title": "Vector Index Adapter Revision"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "qualified",
+              "drifted"
+            ],
+            "title": "Status"
+          },
+          "qualified_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Qualified At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "model_name",
+          "model_digest",
+          "dimension",
+          "adapter_revision",
+          "tokenizer_contract",
+          "vector_normalization",
+          "distance_metric",
+          "vector_index_adapter_revision",
+          "qualification_sha256",
+          "status",
+          "qualified_at"
+        ],
+        "title": "EmbeddingQualificationSnapshot"
+      },
       "EvidenceKind": {
         "type": "string",
         "enum": [
@@ -13057,6 +15854,29 @@
         ],
         "title": "ExternalReleaseView",
         "description": "Observable projection for PR, partial Apply receipts and Manifest evidence."
+      },
+      "FeatureFlags": {
+        "properties": {
+          "feishu_tenant_sync_v1": {
+            "type": "boolean",
+            "title": "Feishu Tenant Sync V1",
+            "default": false
+          },
+          "knowledge_hybrid_index_v1": {
+            "type": "boolean",
+            "title": "Knowledge Hybrid Index V1",
+            "default": false
+          },
+          "delivery_knowledge_context_v1": {
+            "type": "boolean",
+            "title": "Delivery Knowledge Context V1",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FeatureFlags",
+        "description": "Explicit v0.5.1 rollout boundaries; disabled means no implicit runtime use."
       },
       "FrozenSlotBinding": {
         "properties": {
@@ -13729,6 +16549,320 @@
         ],
         "title": "KnowledgeActivityItem"
       },
+      "KnowledgeAuthorizationStampV1": {
+        "properties": {
+          "policy_id": {
+            "type": "string",
+            "const": "best-effort-revoke-v1",
+            "title": "Policy Id",
+            "default": "best-effort-revoke-v1"
+          },
+          "global_identity_policy_revision": {
+            "type": "integer",
+            "const": 1,
+            "title": "Global Identity Policy Revision",
+            "default": 1
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "authorized_principal_id": {
+            "type": "string",
+            "title": "Authorized Principal Id"
+          },
+          "identity_authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Identity Authorization Version"
+          },
+          "global_role": {
+            "type": "string",
+            "title": "Global Role"
+          },
+          "project_authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Project Authorization Version"
+          },
+          "access_component": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MembershipAuthorizationComponent"
+              },
+              {
+                "$ref": "#/components/schemas/AdministratorBypassAuthorizationComponent"
+              }
+            ],
+            "title": "Access Component",
+            "discriminator": {
+              "propertyName": "kind",
+              "mapping": {
+                "administrator_bypass": "#/components/schemas/AdministratorBypassAuthorizationComponent",
+                "membership": "#/components/schemas/MembershipAuthorizationComponent"
+              }
+            }
+          },
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorizationApprovalComponent"
+            },
+            "type": "array",
+            "title": "Approvals"
+          },
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorizationConnectionComponent"
+            },
+            "type": "array",
+            "title": "Connections"
+          },
+          "authorization_epoch_hash": {
+            "type": "string",
+            "title": "Authorization Epoch Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "authorized_principal_id",
+          "identity_authorization_version",
+          "global_role",
+          "project_authorization_version",
+          "access_component",
+          "approvals",
+          "connections",
+          "authorization_epoch_hash"
+        ],
+        "title": "KnowledgeAuthorizationStampV1"
+      },
+      "KnowledgeCitationUsage": {
+        "properties": {
+          "citation_id": {
+            "type": "string",
+            "title": "Citation Id"
+          },
+          "stage_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stage Paths"
+          },
+          "workcell_run_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workcell Run Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "citation_id",
+          "stage_paths"
+        ],
+        "title": "KnowledgeCitationUsage"
+      },
+      "KnowledgeContextBinding": {
+        "properties": {
+          "stage_path": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Stage Path"
+          },
+          "acwm_artifact_slot": {
+            "type": "string",
+            "const": "knowledge-context-v1",
+            "title": "Acwm Artifact Slot",
+            "default": "knowledge-context-v1"
+          },
+          "acwm_artifact_contract_version": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Acwm Artifact Contract Version"
+          },
+          "acwm_artifact_contract_sha256": {
+            "type": "string",
+            "title": "Acwm Artifact Contract Sha256"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Retrieval Policy Revision Id"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "default": true
+          },
+          "max_context_bytes": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Context Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage_path",
+          "acwm_artifact_contract_version",
+          "acwm_artifact_contract_sha256",
+          "retrieval_policy_revision_id",
+          "max_context_bytes"
+        ],
+        "title": "KnowledgeContextBinding",
+        "description": "Product binding for an ACWM-owned input Artifact Contract."
+      },
+      "KnowledgeContextPreparationRun": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "input_sha256": {
+            "type": "string",
+            "title": "Input Sha256"
+          },
+          "knowledge_binding_hash": {
+            "type": "string",
+            "title": "Knowledge Binding Hash"
+          },
+          "preparation_input": {
+            "$ref": "#/components/schemas/KnowledgePreparationInputV1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "leased",
+              "running",
+              "retry_wait",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt Count"
+          },
+          "lease_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Owner"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Expires At"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
+          },
+          "authorization_stamp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeAuthorizationStampV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorization_epoch_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Epoch Hash"
+          },
+          "final_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryExecutionSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "delivery_id",
+          "input_sha256",
+          "knowledge_binding_hash",
+          "preparation_input",
+          "status",
+          "attempt_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "KnowledgeContextPreparationRun"
+      },
       "KnowledgeDerivation": {
         "properties": {
           "document_id": {
@@ -13884,6 +17018,476 @@
         ],
         "title": "KnowledgeDocumentCreate"
       },
+      "KnowledgeIndexActivationRequest": {
+        "properties": {
+          "expected_pointer_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Pointer Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "KnowledgeIndexActivationRequest"
+      },
+      "KnowledgeIndexBuildRequest": {
+        "properties": {
+          "provider_binding_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Provider Binding Id"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Profile Revision Id"
+          },
+          "embedding_qualification_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Embedding Qualification Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider_binding_id",
+          "index_profile_revision_id",
+          "embedding_qualification_id"
+        ],
+        "title": "KnowledgeIndexBuildRequest"
+      },
+      "KnowledgeIndexCatalog": {
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeIndexProfileRevision"
+            },
+            "type": "array",
+            "title": "Profiles",
+            "default": []
+          },
+          "qualifications": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingQualificationSnapshot"
+            },
+            "type": "array",
+            "title": "Qualifications",
+            "default": []
+          },
+          "retrieval_policies": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievalPolicyRevision"
+            },
+            "type": "array",
+            "title": "Retrieval Policies",
+            "default": []
+          },
+          "evaluation_policies": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievalEvaluationPolicyRevision"
+            },
+            "type": "array",
+            "title": "Evaluation Policies",
+            "default": []
+          },
+          "index_revisions": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeIndexRevision"
+            },
+            "type": "array",
+            "title": "Index Revisions",
+            "default": []
+          },
+          "evaluation_reports": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievalEvaluationReport"
+            },
+            "type": "array",
+            "title": "Evaluation Reports",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "KnowledgeIndexCatalog",
+        "description": "Read model for the operator console; all entries remain immutable revisions."
+      },
+      "KnowledgeIndexProfileCreate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "embedding_model_name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Embedding Model Name"
+          },
+          "normalizer_id": {
+            "type": "string",
+            "const": "feishu-block-normalizer-v1",
+            "title": "Normalizer Id",
+            "default": "feishu-block-normalizer-v1"
+          },
+          "chunker_id": {
+            "type": "string",
+            "const": "block-aware-chunker-v1",
+            "title": "Chunker Id",
+            "default": "block-aware-chunker-v1"
+          },
+          "lexical_analyzer_id": {
+            "type": "string",
+            "const": "cjk-bigram-canonical-v1",
+            "title": "Lexical Analyzer Id",
+            "default": "cjk-bigram-canonical-v1"
+          },
+          "index_schema": {
+            "type": "string",
+            "const": "sqlite-vec-hybrid-v1",
+            "title": "Index Schema",
+            "default": "sqlite-vec-hybrid-v1"
+          },
+          "max_chunk_characters": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Max Chunk Characters",
+            "default": 1200
+          },
+          "chunk_overlap_characters": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Chunk Overlap Characters",
+            "default": 150
+          },
+          "max_documents": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Documents",
+            "default": 5000
+          },
+          "max_chunks": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Max Chunks",
+            "default": 100000
+          },
+          "capacity_warning_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Capacity Warning Ratio",
+            "default": 0.8
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "embedding_model_name"
+        ],
+        "title": "KnowledgeIndexProfileCreate"
+      },
+      "KnowledgeIndexProfileRevision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "embedding_model_name": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Embedding Model Name"
+          },
+          "normalizer_id": {
+            "type": "string",
+            "const": "feishu-block-normalizer-v1",
+            "title": "Normalizer Id",
+            "default": "feishu-block-normalizer-v1"
+          },
+          "chunker_id": {
+            "type": "string",
+            "const": "block-aware-chunker-v1",
+            "title": "Chunker Id",
+            "default": "block-aware-chunker-v1"
+          },
+          "lexical_analyzer_id": {
+            "type": "string",
+            "const": "cjk-bigram-canonical-v1",
+            "title": "Lexical Analyzer Id",
+            "default": "cjk-bigram-canonical-v1"
+          },
+          "index_schema": {
+            "type": "string",
+            "const": "sqlite-vec-hybrid-v1",
+            "title": "Index Schema",
+            "default": "sqlite-vec-hybrid-v1"
+          },
+          "max_chunk_characters": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Max Chunk Characters",
+            "default": 1200
+          },
+          "chunk_overlap_characters": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 0.0,
+            "title": "Chunk Overlap Characters",
+            "default": 150
+          },
+          "max_documents": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Max Documents",
+            "default": 5000
+          },
+          "max_chunks": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 1.0,
+            "title": "Max Chunks",
+            "default": 100000
+          },
+          "capacity_warning_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Capacity Warning Ratio",
+            "default": 0.8
+          },
+          "config_sha256": {
+            "type": "string",
+            "title": "Config Sha256"
+          },
+          "published_by": {
+            "type": "string",
+            "title": "Published By"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "embedding_model_name",
+          "config_sha256",
+          "published_by",
+          "published_at"
+        ],
+        "title": "KnowledgeIndexProfileRevision"
+      },
+      "KnowledgeIndexRevision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "provider_binding_id": {
+            "type": "string",
+            "title": "Provider Binding Id"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "title": "Index Profile Revision Id"
+          },
+          "embedding_qualification_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Qualification Id"
+          },
+          "input_manifest_sha256": {
+            "type": "string",
+            "title": "Input Manifest Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "building",
+              "built",
+              "qualified",
+              "active",
+              "stale",
+              "superseded",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "storage_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Uri"
+          },
+          "storage_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Sha256"
+          },
+          "document_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Document Count",
+            "default": 0
+          },
+          "chunk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Count"
+          },
+          "capacity_status": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "warning"
+            ],
+            "title": "Capacity Status",
+            "default": "normal"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "qualified_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qualified At"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "evaluation_report_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Report Uri"
+          },
+          "evaluation_report_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Report Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "provider_binding_id",
+          "index_profile_revision_id",
+          "input_manifest_sha256",
+          "status",
+          "chunk_count",
+          "version",
+          "created_by",
+          "created_at"
+        ],
+        "title": "KnowledgeIndexRevision"
+      },
       "KnowledgeLifecycleStatus": {
         "type": "string",
         "enum": [
@@ -13891,6 +17495,100 @@
           "archived"
         ],
         "title": "KnowledgeLifecycleStatus"
+      },
+      "KnowledgePreparationInputV1": {
+        "properties": {
+          "delivery_id": {
+            "type": "string",
+            "title": "Delivery Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "project_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Project Version"
+          },
+          "project_description_snapshot": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "authorized_principal_id": {
+            "type": "string",
+            "title": "Authorized Principal Id"
+          },
+          "delivery_goal": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Delivery Goal"
+          },
+          "pipeline_revision_id": {
+            "type": "string",
+            "title": "Pipeline Revision Id"
+          },
+          "pipeline_revision_sha256": {
+            "type": "string",
+            "title": "Pipeline Revision Sha256"
+          },
+          "authorization_access_component": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Authorization Access Component"
+          },
+          "approved_knowledge_approval_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Approved Knowledge Approval Ids",
+            "default": []
+          },
+          "stage_bindings": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Stage Bindings"
+          },
+          "stage_responsibilities": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Stage Responsibilities"
+          },
+          "input_sha256": {
+            "type": "string",
+            "title": "Input Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "delivery_id",
+          "project_id",
+          "project_version",
+          "project_description_snapshot",
+          "authorized_principal_id",
+          "delivery_goal",
+          "pipeline_revision_id",
+          "pipeline_revision_sha256",
+          "authorization_access_component",
+          "stage_bindings",
+          "stage_responsibilities",
+          "input_sha256"
+        ],
+        "title": "KnowledgePreparationInputV1"
+      },
+      "KnowledgeProviderKind": {
+        "type": "string",
+        "enum": [
+          "feishu"
+        ],
+        "title": "KnowledgeProviderKind"
       },
       "KnowledgePublication": {
         "properties": {
@@ -14094,6 +17792,165 @@
         ],
         "title": "KnowledgePublicationStatus"
       },
+      "KnowledgeRetrievalHit": {
+        "properties": {
+          "citation_id": {
+            "type": "string",
+            "title": "Citation Id"
+          },
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "snapshot_id": {
+            "type": "string",
+            "title": "Snapshot Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "block_anchor": {
+            "type": "string",
+            "title": "Block Anchor"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "content_sha256": {
+            "type": "string",
+            "title": "Content Sha256"
+          },
+          "score": {
+            "$ref": "#/components/schemas/RetrievalScore"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "citation_id",
+          "chunk_id",
+          "source_id",
+          "snapshot_id",
+          "title",
+          "block_anchor",
+          "content",
+          "content_sha256",
+          "score"
+        ],
+        "title": "KnowledgeRetrievalHit"
+      },
+      "KnowledgeRetrievalReceipt": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "provider_binding_id": {
+            "type": "string",
+            "title": "Provider Binding Id"
+          },
+          "index_revision_id": {
+            "type": "string",
+            "title": "Index Revision Id"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "title": "Retrieval Policy Revision Id"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "query_sha256": {
+            "type": "string",
+            "title": "Query Sha256"
+          },
+          "allowed_source_set_sha256": {
+            "type": "string",
+            "title": "Allowed Source Set Sha256"
+          },
+          "hit_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hit Ids"
+          },
+          "empty_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "provider_binding_id",
+          "index_revision_id",
+          "retrieval_policy_revision_id",
+          "requested_by",
+          "query_sha256",
+          "allowed_source_set_sha256",
+          "hit_ids",
+          "created_at"
+        ],
+        "title": "KnowledgeRetrievalReceipt"
+      },
+      "KnowledgeRetrievalResult": {
+        "properties": {
+          "receipt": {
+            "$ref": "#/components/schemas/KnowledgeRetrievalReceipt"
+          },
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeRetrievalHit"
+            },
+            "type": "array",
+            "title": "Hits"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt",
+          "hits"
+        ],
+        "title": "KnowledgeRetrievalResult"
+      },
       "KnowledgeSearchHit": {
         "properties": {
           "project_id": {
@@ -14155,6 +18012,222 @@
         ],
         "title": "KnowledgeSearchHit"
       },
+      "KnowledgeSyncJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "binding_id": {
+            "type": "string",
+            "title": "Binding Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "title": "Idempotency Key"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "leased",
+              "running",
+              "retry_wait",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attempt"
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Max Attempts"
+          },
+          "lease_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Owner"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lease Expires At"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
+          },
+          "provider_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Revision"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "snapshot_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Sha256"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "requested_by": {
+            "type": "string",
+            "title": "Requested By"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "binding_id",
+          "source_id",
+          "idempotency_key",
+          "status",
+          "attempt",
+          "max_attempts",
+          "requested_by",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "KnowledgeSyncJob"
+      },
+      "KnowledgeSyncJobRequest": {
+        "properties": {
+          "binding_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Binding Id"
+          },
+          "source_id": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Source Id"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Idempotency Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "binding_id",
+          "source_id",
+          "idempotency_key"
+        ],
+        "title": "KnowledgeSyncJobRequest"
+      },
       "LatestGateReports": {
         "properties": {
           "deterministic": {
@@ -14212,6 +18285,32 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MembershipAuthorizationComponent": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "membership",
+            "title": "Kind",
+            "default": "membership"
+          },
+          "membership_id": {
+            "type": "string",
+            "title": "Membership Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "membership_id",
+          "version"
+        ],
+        "title": "MembershipAuthorizationComponent"
       },
       "PermissionGrant": {
         "properties": {
@@ -14382,6 +18481,13 @@
             "type": "array",
             "title": "Release Contract Snapshot",
             "default": []
+          },
+          "knowledge_context_bindings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KnowledgeContextBinding"
+            },
+            "type": "object",
+            "title": "Knowledge Context Bindings"
           }
         },
         "additionalProperties": false,
@@ -14445,6 +18551,13 @@
             "type": "array",
             "title": "Release Contract Snapshot",
             "default": []
+          },
+          "knowledge_context_bindings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KnowledgeContextBinding"
+            },
+            "type": "object",
+            "title": "Knowledge Context Bindings"
           },
           "version": {
             "type": "integer",
@@ -14593,6 +18706,20 @@
               }
             ],
             "title": "Release Contract Snapshot"
+          },
+          "knowledge_context_bindings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/KnowledgeContextBinding"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Context Bindings"
           }
         },
         "additionalProperties": false,
@@ -14662,6 +18789,13 @@
             "type": "array",
             "title": "Release Contract Snapshot",
             "default": []
+          },
+          "knowledge_context_bindings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/KnowledgeContextBinding"
+            },
+            "type": "object",
+            "title": "Knowledge Context Bindings"
           },
           "fingerprint": {
             "type": "string",
@@ -14976,6 +19110,51 @@
         ],
         "title": "Project"
       },
+      "ProjectAccessAudit": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "title": "Actor User Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "capability": {
+            "type": "string",
+            "title": "Capability"
+          },
+          "resource": {
+            "type": "string",
+            "title": "Resource"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "actor_user_id",
+          "project_id",
+          "capability",
+          "resource",
+          "reason",
+          "created_at"
+        ],
+        "title": "ProjectAccessAudit"
+      },
       "ProjectBindingUpdate": {
         "properties": {
           "expected_version": {
@@ -15176,6 +19355,14 @@
             "title": "Knowledge Sources",
             "default": []
           },
+          "knowledge_source_approvals": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectKnowledgeSourceApproval"
+            },
+            "type": "array",
+            "title": "Knowledge Source Approvals",
+            "default": []
+          },
           "repositories": {
             "items": {
               "$ref": "#/components/schemas/ProjectRepository"
@@ -15266,6 +19453,65 @@
         ],
         "title": "ProjectExecutionSnapshot"
       },
+      "ProjectKnowledgeRetrievalOption": {
+        "properties": {
+          "provider_binding_id": {
+            "type": "string",
+            "title": "Provider Binding Id"
+          },
+          "index_revision_id": {
+            "type": "string",
+            "title": "Index Revision Id"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "title": "Index Profile Revision Id"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "title": "Retrieval Policy Revision Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider_binding_id",
+          "index_revision_id",
+          "index_profile_revision_id",
+          "retrieval_policy_revision_id"
+        ],
+        "title": "ProjectKnowledgeRetrievalOption"
+      },
+      "ProjectKnowledgeRetrievalRequest": {
+        "properties": {
+          "provider_binding_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Provider Binding Id"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Retrieval Policy Revision Id"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider_binding_id",
+          "retrieval_policy_revision_id",
+          "query"
+        ],
+        "title": "ProjectKnowledgeRetrievalRequest"
+      },
       "ProjectKnowledgeSource": {
         "properties": {
           "project_id": {
@@ -15306,6 +19552,90 @@
         ],
         "title": "ProjectKnowledgeSource"
       },
+      "ProjectKnowledgeSourceApproval": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "binding_id": {
+            "type": "string",
+            "title": "Binding Id"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "rag_enabled": {
+            "type": "boolean",
+            "title": "Rag Enabled"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "binding_id",
+          "enabled",
+          "rag_enabled",
+          "version",
+          "created_by"
+        ],
+        "title": "ProjectKnowledgeSourceApproval"
+      },
+      "ProjectKnowledgeSourceApprovalUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "rag_enabled": {
+            "type": "boolean",
+            "title": "Rag Enabled",
+            "default": false
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProjectKnowledgeSourceApprovalUpdate"
+      },
       "ProjectKnowledgeSourceUpdate": {
         "properties": {
           "binding_id": {
@@ -15343,6 +19673,72 @@
           "binding_id"
         ],
         "title": "ProjectKnowledgeSourceUpdate"
+      },
+      "ProjectMembership": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "user_id",
+          "role",
+          "version"
+        ],
+        "title": "ProjectMembership"
+      },
+      "ProjectMembershipUpdate": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "owner",
+              "editor",
+              "viewer"
+            ],
+            "title": "Role"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "ProjectMembershipUpdate"
       },
       "ProjectPatch": {
         "properties": {
@@ -15815,6 +20211,106 @@
           "required_features"
         ],
         "title": "ProviderManifestView"
+      },
+      "ProviderNode": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "external_space_id": {
+            "type": "string",
+            "title": "External Space Id"
+          },
+          "parent_external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent External Id"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ProviderNodeKind"
+          },
+          "provider_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Revision"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_id",
+          "external_space_id",
+          "title",
+          "kind"
+        ],
+        "title": "ProviderNode"
+      },
+      "ProviderNodeKind": {
+        "type": "string",
+        "enum": [
+          "folder",
+          "document"
+        ],
+        "title": "ProviderNodeKind"
+      },
+      "ProviderSpace": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "external_id",
+          "title"
+        ],
+        "title": "ProviderSpace"
       },
       "ReleaseApplyAttemptV2": {
         "properties": {
@@ -16375,6 +20871,14 @@
             },
             "type": "array",
             "title": "Acceptance Criteria"
+          },
+          "knowledge_citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Citation Ids",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -16384,6 +20888,605 @@
           "acceptance_criteria"
         ],
         "title": "RequirementArtifact"
+      },
+      "RetrievalEvaluationCase": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 10000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "expected_source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Expected Source Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "query",
+          "expected_source_ids"
+        ],
+        "title": "RetrievalEvaluationCase"
+      },
+      "RetrievalEvaluationPolicyCreate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Retrieval Policy Revision Id"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Profile Revision Id"
+          },
+          "dataset_manifest_sha256": {
+            "type": "string",
+            "title": "Dataset Manifest Sha256"
+          },
+          "recall_at_k_min": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Recall At K Min"
+          },
+          "zero_hit_rate_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Zero Hit Rate Max"
+          },
+          "error_rate_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Error Rate Max"
+          },
+          "p95_latency_ms_max": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "P95 Latency Ms Max"
+          },
+          "peak_rss_bytes_max": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Peak Rss Bytes Max"
+          },
+          "target_hardware": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Target Hardware"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "retrieval_policy_revision_id",
+          "index_profile_revision_id",
+          "dataset_manifest_sha256",
+          "recall_at_k_min",
+          "zero_hit_rate_max",
+          "error_rate_max",
+          "p95_latency_ms_max",
+          "peak_rss_bytes_max",
+          "target_hardware"
+        ],
+        "title": "RetrievalEvaluationPolicyCreate"
+      },
+      "RetrievalEvaluationPolicyRevision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "retrieval_policy_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Retrieval Policy Revision Id"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Profile Revision Id"
+          },
+          "dataset_manifest_sha256": {
+            "type": "string",
+            "title": "Dataset Manifest Sha256"
+          },
+          "recall_at_k_min": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Recall At K Min"
+          },
+          "zero_hit_rate_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Zero Hit Rate Max"
+          },
+          "error_rate_max": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Error Rate Max"
+          },
+          "p95_latency_ms_max": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "P95 Latency Ms Max"
+          },
+          "peak_rss_bytes_max": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Peak Rss Bytes Max"
+          },
+          "target_hardware": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Target Hardware"
+          },
+          "policy_sha256": {
+            "type": "string",
+            "title": "Policy Sha256"
+          },
+          "published_by": {
+            "type": "string",
+            "title": "Published By"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "retrieval_policy_revision_id",
+          "index_profile_revision_id",
+          "dataset_manifest_sha256",
+          "recall_at_k_min",
+          "zero_hit_rate_max",
+          "error_rate_max",
+          "p95_latency_ms_max",
+          "peak_rss_bytes_max",
+          "target_hardware",
+          "policy_sha256",
+          "published_by",
+          "published_at"
+        ],
+        "title": "RetrievalEvaluationPolicyRevision"
+      },
+      "RetrievalEvaluationReport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "evaluation_policy_revision_id": {
+            "type": "string",
+            "title": "Evaluation Policy Revision Id"
+          },
+          "index_revision_id": {
+            "type": "string",
+            "title": "Index Revision Id"
+          },
+          "dataset_manifest_sha256": {
+            "type": "string",
+            "title": "Dataset Manifest Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "recall_at_k": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Recall At K"
+          },
+          "zero_hit_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Zero Hit Rate"
+          },
+          "error_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Error Rate"
+          },
+          "p95_latency_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "P95 Latency Ms"
+          },
+          "peak_rss_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Peak Rss Bytes"
+          },
+          "target_hardware": {
+            "type": "string",
+            "title": "Target Hardware"
+          },
+          "case_count": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Case Count"
+          },
+          "report_artifact": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "run_by": {
+            "type": "string",
+            "title": "Run By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "evaluation_policy_revision_id",
+          "index_revision_id",
+          "dataset_manifest_sha256",
+          "status",
+          "recall_at_k",
+          "zero_hit_rate",
+          "error_rate",
+          "p95_latency_ms",
+          "peak_rss_bytes",
+          "target_hardware",
+          "case_count",
+          "report_artifact",
+          "run_by",
+          "created_at"
+        ],
+        "title": "RetrievalEvaluationReport"
+      },
+      "RetrievalEvaluationRunRequest": {
+        "properties": {
+          "evaluation_policy_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Evaluation Policy Revision Id"
+          },
+          "index_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Revision Id"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievalEvaluationCase"
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Cases"
+          },
+          "target_hardware": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Target Hardware"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evaluation_policy_revision_id",
+          "index_revision_id",
+          "cases",
+          "target_hardware"
+        ],
+        "title": "RetrievalEvaluationRunRequest"
+      },
+      "RetrievalPolicyCreate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Profile Revision Id"
+          },
+          "query_normalizer_id": {
+            "type": "string",
+            "const": "cjk-bigram-canonical-v1",
+            "title": "Query Normalizer Id",
+            "default": "cjk-bigram-canonical-v1"
+          },
+          "lexical_candidates": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Lexical Candidates",
+            "default": 20
+          },
+          "vector_candidates": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Vector Candidates",
+            "default": 20
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 8
+          },
+          "rrf_k": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Rrf K",
+            "default": 60
+          },
+          "score_precision": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Score Precision",
+            "default": 8
+          },
+          "min_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Min Score",
+            "default": 0.0
+          },
+          "max_context_bytes": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Context Bytes",
+            "default": 65536
+          },
+          "empty_result_policy": {
+            "type": "string",
+            "enum": [
+              "allow-empty",
+              "fail"
+            ],
+            "title": "Empty Result Policy",
+            "default": "allow-empty"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "index_profile_revision_id"
+        ],
+        "title": "RetrievalPolicyCreate"
+      },
+      "RetrievalPolicyRevision": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "index_profile_revision_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Index Profile Revision Id"
+          },
+          "query_normalizer_id": {
+            "type": "string",
+            "const": "cjk-bigram-canonical-v1",
+            "title": "Query Normalizer Id",
+            "default": "cjk-bigram-canonical-v1"
+          },
+          "lexical_candidates": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Lexical Candidates",
+            "default": 20
+          },
+          "vector_candidates": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Vector Candidates",
+            "default": 20
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 8
+          },
+          "rrf_k": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Rrf K",
+            "default": 60
+          },
+          "score_precision": {
+            "type": "integer",
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Score Precision",
+            "default": 8
+          },
+          "min_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Min Score",
+            "default": 0.0
+          },
+          "max_context_bytes": {
+            "type": "integer",
+            "maximum": 2000000.0,
+            "minimum": 1.0,
+            "title": "Max Context Bytes",
+            "default": 65536
+          },
+          "empty_result_policy": {
+            "type": "string",
+            "enum": [
+              "allow-empty",
+              "fail"
+            ],
+            "title": "Empty Result Policy",
+            "default": "allow-empty"
+          },
+          "policy_sha256": {
+            "type": "string",
+            "title": "Policy Sha256"
+          },
+          "published_by": {
+            "type": "string",
+            "title": "Published By"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Published At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "index_profile_revision_id",
+          "policy_sha256",
+          "published_by",
+          "published_at"
+        ],
+        "title": "RetrievalPolicyRevision"
+      },
+      "RetrievalScore": {
+        "properties": {
+          "lexical_rank": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lexical Rank"
+          },
+          "lexical_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lexical Score"
+          },
+          "vector_rank": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Rank"
+          },
+          "vector_distance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vector Distance"
+          },
+          "rrf_score": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Rrf Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rrf_score"
+        ],
+        "title": "RetrievalScore"
       },
       "ReviewArtifact": {
         "properties": {
@@ -16889,6 +21992,14 @@
                 "python -m unittest discover -s tests -v"
               ]
             }
+          },
+          "knowledge_citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Citation Ids",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -17280,6 +22391,376 @@
         ],
         "title": "TeamTopology"
       },
+      "TenantConnection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "provider_kind": {
+            "$ref": "#/components/schemas/KnowledgeProviderKind"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "access_model": {
+            "type": "string",
+            "const": "tenant-service-principal-v1",
+            "title": "Access Model",
+            "default": "tenant-service-principal-v1"
+          },
+          "app_id_ref": {
+            "type": "string",
+            "title": "App Id Ref"
+          },
+          "app_secret_ref": {
+            "type": "string",
+            "title": "App Secret Ref"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "ready",
+              "degraded",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Authorization Version",
+            "default": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "last_diagnosed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Diagnosed At"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "provider_kind",
+          "display_name",
+          "app_id_ref",
+          "app_secret_ref",
+          "status",
+          "version",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TenantConnection"
+      },
+      "TenantConnectionCreate": {
+        "properties": {
+          "provider_kind": {
+            "$ref": "#/components/schemas/KnowledgeProviderKind"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "app_id_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Id Ref"
+          },
+          "app_secret_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Secret Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider_kind",
+          "display_name",
+          "app_id_ref",
+          "app_secret_ref"
+        ],
+        "title": "TenantConnectionCreate"
+      },
+      "TenantProviderBinding": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "connection_id": {
+            "type": "string",
+            "title": "Connection Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "external_space_id": {
+            "type": "string",
+            "title": "External Space Id"
+          },
+          "root_node_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Node Token"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Authorization Version",
+            "default": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "replaces_binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Binding Id"
+          },
+          "created_by": {
+            "type": "string",
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "last_permission_probe_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Permission Probe At"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "connection_id",
+          "display_name",
+          "external_space_id",
+          "status",
+          "version",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TenantProviderBinding"
+      },
+      "TenantProviderBindingCreate": {
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Connection Id"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "external_space_id": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "External Space Id"
+          },
+          "root_node_token": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Node Token"
+          },
+          "replaces_binding_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 180,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Binding Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connection_id",
+          "display_name",
+          "external_space_id"
+        ],
+        "title": "TenantProviderBindingCreate"
+      },
+      "TenantProviderSnapshotRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "binding_id": {
+            "type": "string",
+            "title": "Binding Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "provider_revision": {
+            "type": "string",
+            "title": "Provider Revision"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "normalized_text_sha256": {
+            "type": "string",
+            "title": "Normalized Text Sha256"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "fetched_by_product_user_id": {
+            "type": "string",
+            "title": "Fetched By Product User Id"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "binding_id",
+          "source_id",
+          "provider_revision",
+          "content_type",
+          "artifact",
+          "normalized_text_sha256",
+          "fetched_by_product_user_id",
+          "fetched_at"
+        ],
+        "title": "TenantProviderSnapshotRecord"
+      },
       "TopologyLink": {
         "properties": {
           "source_workcell_key": {
@@ -17360,6 +22841,12 @@
           "enabled": {
             "type": "boolean",
             "title": "Enabled"
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Authorization Version",
+            "default": 1
           },
           "version": {
             "type": "integer",
@@ -17918,6 +23405,14 @@
             },
             "type": "array",
             "title": "Output Artifact References",
+            "default": []
+          },
+          "knowledge_citation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledge Citation Ids",
             "default": []
           },
           "sha256": {

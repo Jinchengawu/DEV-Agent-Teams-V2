@@ -28,15 +28,17 @@ class ACWMGraphCompiler:
             graph=cast(dict[str, object], compiled.model_dump(mode="json")),
             fingerprint=str(compiled.fingerprint),
             capability_ids=tuple(sorted(_capability_ids(definition))),
+            stage_input_artifact_contracts=cast(
+                dict[str, tuple[dict[str, object], ...]],
+                getattr(compiled, "stage_input_artifact_contracts", {}),
+            ),
         )
 
 
 class ACWMPipelineGraphRuntime:
     """Calls ACWM reducers while keeping their contracts authoritative upstream."""
 
-    def create(
-        self, run_id: str, compiled_graph: dict[str, object]
-    ) -> dict[str, object]:
+    def create(self, run_id: str, compiled_graph: dict[str, object]) -> dict[str, object]:
         domain = import_module("acwm.domain")
         graph_type = self._required(domain, "CompiledJourneyGraph")
         create_run = self._required(domain, "create_graph_run")
@@ -84,9 +86,7 @@ class ACWMPipelineGraphRuntime:
                 if command == "succeed-loop-body-node"
                 else {}
             )
-            updated = self._required(domain, reducer_name)(
-                run, node_id, body_node_id, **keywords
-            )
+            updated = self._required(domain, reducer_name)(run, node_id, body_node_id, **keywords)
         elif command == "fail":
             updated = self._required(domain, "fail_graph_node")(run, node_id)
         elif command == "cancel":
@@ -132,9 +132,7 @@ class ControlPlaneBindingResolver:
         self.get_binding = get_binding
         self.get_instance = get_instance
 
-    def snapshot(
-        self, capability_ids: tuple[str, ...]
-    ) -> dict[str, dict[str, object]]:
+    def snapshot(self, capability_ids: tuple[str, ...]) -> dict[str, dict[str, object]]:
         snapshot: dict[str, dict[str, object]] = {}
         for capability_id in capability_ids:
             try:
@@ -154,9 +152,7 @@ class ControlPlaneBindingResolver:
                     f"Capability {capability_id} is not bound to a ready instance"
                 )
             if binding.instance_version != instance.version:
-                raise PipelineBindingResolutionError(
-                    f"Capability {capability_id} binding is stale"
-                )
+                raise PipelineBindingResolutionError(f"Capability {capability_id} binding is stale")
             snapshot[capability_id] = {
                 "instance_id": instance.id,
                 "instance_version": instance.version,

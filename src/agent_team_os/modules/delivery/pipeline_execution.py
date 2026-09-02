@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, Protocol
+from uuid import uuid4
 
 from acwm.domain import GateSnapshot, GateSubject, open_gate
 
@@ -39,6 +40,7 @@ from ..agents import (
     AgentRuntimeDispatcher,
     ArtifactEnvelope,
     RuntimeDispatchRequest,
+    RuntimeDispatchResult,
     RuntimeOutputArtifact,
 )
 from ..orchestration import PipelineCatalog, PipelineRevision, PipelineRunLedger
@@ -56,6 +58,26 @@ from .publication import (
     RoleDocumentPublisher,
 )
 from .runtime_adapters import CodeDeliveryRuntimeAdapter, PlanningRoleTurnRuntimeAdapter
+
+
+class KnowledgeRuntimeView(Protocol):
+    content: dict[str, object]
+    citation_ids: tuple[str, ...]
+
+
+class DeliveryKnowledgeGuard(Protocol):
+    def admit(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+    ) -> KnowledgeRuntimeView | None: ...
+
+    def validate_citations(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+        citation_ids: tuple[str, ...],
+    ) -> tuple[str, ...]: ...
 
 
 class PipelineExecutionModule:
@@ -84,7 +106,11 @@ class PipelineExecutionModule:
         document_publisher: RoleDocumentPublisher | None = None,
         workcell_stage_driver: WorkcellStageDriver | None = None,
         external_release: ExternalForwardReleaseCoordinator | None = None,
+        knowledge_runtime_guard: DeliveryKnowledgeGuard | None = None,
+        revocation_poll_seconds: float = 0.5,
     ) -> None:
+        if revocation_poll_seconds <= 0:
+            raise ValueError("revocation_poll_seconds must be positive")
         self._planning = planning
         self._executor = executor
         self._verifier = verifier
@@ -107,6 +133,8 @@ class PipelineExecutionModule:
         self._document_publisher = document_publisher
         self._workcell_stage_driver = workcell_stage_driver
         self._external_release = external_release
+        self._knowledge_runtime_guard = knowledge_runtime_guard
+        self._revocation_poll_seconds = revocation_poll_seconds
 
     def start(self, delivery: DeliveryRun) -> None:
         revision = self._revision(delivery)
@@ -548,9 +576,8 @@ class PipelineExecutionModule:
             await self.advance(delivery.id)
 
     async def recover_publications(self, delivery_id: str) -> bool:
-        if (
-            self._publication_barrier is None
-            or not self._publication_barrier.has_publications(delivery_id)
+        if self._publication_barrier is None or not self._publication_barrier.has_publications(
+            delivery_id
         ):
             return False
         if self._document_publisher is not None:
@@ -585,9 +612,7 @@ class PipelineExecutionModule:
             )
         await self.advance(delivery_id)
 
-    async def _execute_stage(
-        self, delivery_id: str, node_id: str, node: dict[str, object]
-    ) -> None:
+    async def _execute_stage(self, delivery_id: str, node_id: str, node: dict[str, object]) -> None:
         run = self._runs.get_for_delivery(delivery_id)
         self._runs.transition(
             run.id, command="start", node_id=node_id, expected_version=run.version
@@ -611,6 +636,7 @@ class PipelineExecutionModule:
             )
             return
         binding_site = f"{node_id}.{self._slot(node)}"
+        self._admit_knowledge(delivery, node_id)
         agent_run = self._start_agent_run(delivery, binding_site)
         updated_delivery: DeliveryRun | None = None
         try:
@@ -619,10 +645,13 @@ class PipelineExecutionModule:
                     delivery,
                     node,
                     binding_site,
+                    attempt_id=(agent_run.attempt_id if agent_run is not None else str(uuid4())),
+                    stage_path=node_id,
                     allow_failed_verification=False,
                 )
                 updated_delivery = self._get(delivery.id)
             elif workflow_mode == "agentscope.role-turn":
+                self._reject_legacy_knowledge_binding(delivery, node_id)
                 activated, artifact, updated_delivery = await self._execute_role_projection(
                     delivery, node
                 )
@@ -634,8 +663,12 @@ class PipelineExecutionModule:
                 raise DeliveryStateConflictError(
                     f"pipeline stage {node_id} has unsupported Workflow Mode"
                 )
-        except Exception:
-            self._finish_agent_run(agent_run, "failed")
+        except Exception as error:
+            self._finish_agent_run(
+                agent_run,
+                "failed",
+                error_code=getattr(error, "code", type(error).__name__.upper()),
+            )
             raise
         artifacts = self._artifact_envelopes(artifact)
         if not self._commit_role_publication(
@@ -766,10 +799,7 @@ class PipelineExecutionModule:
             workcell_candidate = delivery.workcell_candidates.get("design")
             if design_candidate is None and workcell_candidate is None:
                 raise DeliveryStateConflictError("design gate subject is incomplete")
-            if (
-                design_candidate is not None
-                and design_candidate.verification.status != "passed"
-            ):
+            if design_candidate is not None and design_candidate.verification.status != "passed":
                 raise DeliveryStateConflictError("design gate requires passed verification")
             if workcell_candidate is not None:
                 artifact_id = workcell_candidate.candidate_id
@@ -781,10 +811,7 @@ class PipelineExecutionModule:
             field = "design_gate"
             status = "awaiting_design_decision"
         elif subject_kind == "release-bundle":
-            if (
-                delivery.release_bundle is None
-                and delivery.release_bundle_v2_sha256 is None
-            ):
+            if delivery.release_bundle is None and delivery.release_bundle_v2_sha256 is None:
                 raise DeliveryStateConflictError("release gate subject is incomplete")
             if delivery.release_bundle_v2_sha256 is not None:
                 artifact_id = delivery.release_bundle_v2_sha256
@@ -934,6 +961,8 @@ class PipelineExecutionModule:
                 loop_iteration=iteration,
             )
         binding_site = f"{loop_node_id}/{body_node_id}.{self._slot(node)}"
+        stage_path = f"{loop_node_id}/{body_node_id}"
+        self._admit_knowledge(delivery, stage_path)
         agent_run = self._start_agent_run(delivery, binding_site)
         try:
             if self._revision(delivery).binding_model == "provider-v1":
@@ -941,11 +970,14 @@ class PipelineExecutionModule:
                     delivery,
                     node,
                     binding_site,
+                    attempt_id=(agent_run.attempt_id if agent_run is not None else str(uuid4())),
+                    stage_path=stage_path,
                     allow_failed_verification=True,
                 )
             elif workflow_mode == "agentscope.role-turn":
-                activated, artifact, updated_delivery = (
-                    await self._execute_role_projection(delivery, node)
+                self._reject_legacy_knowledge_binding(delivery, stage_path)
+                activated, artifact, updated_delivery = await self._execute_role_projection(
+                    delivery, node
                 )
                 self._repository.save(updated_delivery)
             elif workflow_mode == "code-delivery":
@@ -953,8 +985,12 @@ class PipelineExecutionModule:
                 artifact = self._get(delivery.id).candidate
             else:
                 raise DeliveryStateConflictError("LOOP body has unsupported Workflow Mode")
-        except Exception:
-            self._finish_agent_run(agent_run, "failed")
+        except Exception as error:
+            self._finish_agent_run(
+                agent_run,
+                "failed",
+                error_code=getattr(error, "code", type(error).__name__.upper()),
+            )
             raise
         self._finish_agent_run(agent_run, "succeeded", artifact)
         return activated
@@ -1019,6 +1055,8 @@ class PipelineExecutionModule:
         node: dict[str, object],
         binding_site: str,
         *,
+        attempt_id: str,
+        stage_path: str,
         allow_failed_verification: bool,
     ) -> tuple[tuple[str, ...], object]:
         revision = self._revision(delivery)
@@ -1042,9 +1080,12 @@ class PipelineExecutionModule:
             self._repository.save(
                 delivery.model_copy(update={"status": "executing", "updated_at": datetime.now(UTC)})
             )
-        result = await self._runtime_dispatcher.dispatch(
+        result = await self._dispatch_with_knowledge_guard(
+            delivery,
+            stage_path,
             RuntimeDispatchRequest(
                 delivery_id=delivery.id,
+                attempt_id=attempt_id,
                 binding_site=binding_site,
                 workflow_mode=workflow_mode,
                 objective=self._runtime_objective(
@@ -1057,14 +1098,31 @@ class PipelineExecutionModule:
                 workspace_id=workspace_id,
                 resolved_binding_hash=Sha256.validate(str(binding["binding_fingerprint"])),
                 binding_snapshot=snapshot,
-                inputs=self._runtime_inputs(delivery, task=runtime_task),
-            )
+                inputs=(
+                    *self._runtime_inputs(delivery, task=runtime_task),
+                    *self._knowledge_runtime_inputs(delivery, stage_path),
+                ),
+            ),
         )
         if len(result.artifacts) != 1:
             raise DeliveryStateConflictError(
                 f"{binding_site} must produce exactly one primary Artifact"
             )
         output = result.artifacts[0]
+        citations = self._validate_knowledge_citations(
+            delivery,
+            stage_path,
+            output.knowledge_citation_ids,
+        )
+        output = output.model_copy(
+            update={
+                "knowledge_citation_ids": citations,
+                "content": {
+                    **output.content,
+                    "knowledge_citation_ids": citations,
+                },
+            }
+        )
         if contract_id == "requirement-artifact-v1":
             requirements = RequirementArtifact.model_validate(output.content)
             self._repository.save(
@@ -1209,6 +1267,79 @@ class PipelineExecutionModule:
                     )
                 )
         return tuple(inputs)
+
+    def _admit_knowledge(self, delivery: DeliveryRun, stage_path: str) -> None:
+        if self._knowledge_runtime_guard is not None:
+            self._knowledge_runtime_guard.admit(delivery, stage_path)
+
+    async def _dispatch_with_knowledge_guard(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+        request: RuntimeDispatchRequest,
+    ) -> RuntimeDispatchResult:
+        self._admit_knowledge(delivery, stage_path)
+        task = asyncio.create_task(self._runtime_dispatcher.dispatch(request))
+        if self._knowledge_runtime_guard is not None:
+            while not task.done():
+                done, _ = await asyncio.wait(
+                    {task},
+                    timeout=self._revocation_poll_seconds,
+                )
+                if done:
+                    break
+                try:
+                    self._admit_knowledge(delivery, stage_path)
+                except Exception:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    raise
+        return await task
+
+    def _validate_knowledge_citations(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+        citation_ids: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if self._knowledge_runtime_guard is None:
+            return tuple(sorted(set(citation_ids)))
+        return self._knowledge_runtime_guard.validate_citations(
+            delivery,
+            stage_path,
+            citation_ids,
+        )
+
+    def _knowledge_runtime_inputs(
+        self,
+        delivery: DeliveryRun,
+        stage_path: str,
+    ) -> tuple[RuntimeOutputArtifact, ...]:
+        if self._knowledge_runtime_guard is None:
+            return ()
+        context = self._knowledge_runtime_guard.admit(delivery, stage_path)
+        if context is None:
+            return ()
+        return (
+            RuntimeOutputArtifact(
+                contract_id="knowledge-context-v1",
+                media_type="application/vnd.agent-team-os.knowledge-context+json",
+                content=context.content,
+                knowledge_citation_ids=context.citation_ids,
+            ),
+        )
+
+    @staticmethod
+    def _reject_legacy_knowledge_binding(
+        delivery: DeliveryRun,
+        stage_path: str,
+    ) -> None:
+        snapshot = delivery.delivery_execution_snapshot
+        if snapshot is not None and stage_path in snapshot.knowledge_context_bindings:
+            raise DeliveryStateConflictError(
+                "KNOWLEDGE_CONTEXT_PROVIDER_V1_REQUIRED: "
+                "Knowledge-bound Stage cannot use legacy-v0 runtime binding"
+            )
 
     @staticmethod
     def _runtime_objective(
@@ -1419,13 +1550,17 @@ class PipelineExecutionModule:
         artifact: object | None = None,
         *,
         artifacts: tuple[ArtifactEnvelope, ...] | None = None,
+        error_code: str | None = None,
     ) -> None:
         if run is None or self._agent_runs is None:
             return
-        resolved_artifacts = (
-            self._artifact_envelopes(artifact) if artifacts is None else artifacts
+        resolved_artifacts = self._artifact_envelopes(artifact) if artifacts is None else artifacts
+        self._agent_runs.finish(
+            run,
+            status=status,
+            artifacts=resolved_artifacts,
+            error_code=error_code,
         )
-        self._agent_runs.finish(run, status=status, artifacts=resolved_artifacts)
 
     def _commit_role_publication(
         self,
@@ -1443,8 +1578,7 @@ class PipelineExecutionModule:
             or self._agent_runs is None
             or self._publications is None
             or len(artifacts) != 1
-            or artifacts[0].contract_id
-            not in {"requirement-artifact-v1", "task-contract-v1"}
+            or artifacts[0].contract_id not in {"requirement-artifact-v1", "task-contract-v1"}
         ):
             return False
         delivery_repository = getattr(self._repository, "inner", self._repository)
@@ -1464,9 +1598,7 @@ class PipelineExecutionModule:
                 "role publication participants must share one SQLite database"
             )
         if delivery.pipeline_run_id is None:
-            raise DeliveryStateConflictError(
-                "role publication requires a persisted pipeline run"
-            )
+            raise DeliveryStateConflictError("role publication requires a persisted pipeline run")
         artifact = artifacts[0]
         connection = sqlite3.connect(database, timeout=5)
         connection.row_factory = sqlite3.Row
@@ -1522,8 +1654,7 @@ class PipelineExecutionModule:
         }
         if exit_condition == "release-bundle-verified":
             return (
-                delivery.release_bundle is not None
-                or delivery.release_bundle_v2_sha256 is not None
+                delivery.release_bundle is not None or delivery.release_bundle_v2_sha256 is not None
             )
         workcell_exit = {
             "design-workcell-passed": "design",
@@ -1630,7 +1761,6 @@ def _upstream_candidate_context(
 def _is_workcell_loop(node: dict[str, object]) -> bool:
     children = _pipeline_items(node.get("nodes"))
     return bool(children) and all(
-        child.get("kind") == "stage"
-        and child.get("workflow_mode") == "agentscope.workcell-team"
+        child.get("kind") == "stage" and child.get("workflow_mode") == "agentscope.workcell-team"
         for child in children
     )

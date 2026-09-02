@@ -64,6 +64,7 @@ const jsonResponse = (body: unknown, status = 200) =>
   });
 
 const route = (url: string, method: string) => {
+  if (url === "/v1/features") return jsonResponse({ feishu_tenant_sync_v1: false, knowledge_hybrid_index_v1: false, delivery_knowledge_context_v1: false });
   if (url.startsWith("/v1/wiki/spaces?")) return jsonResponse(spaces);
   if (url.startsWith("/v1/knowledge/activity?")) return jsonResponse(activity);
   if (url.startsWith("/v1/wiki/search")) return jsonResponse(documents);
@@ -147,8 +148,44 @@ describe("知识空间三栏页", () => {
     await waitFor(() => expect(fetchCalls.some((call) => call.url.startsWith("/v1/wiki/spaces?project_id=legacy-default"))).toBe(true));
     await waitFor(() => expect(fetchCalls.some((call) => call.url.includes("/v1/wiki/documents"))).toBe(true));
     await waitFor(() => expect(fetchCalls.some((call) => call.url.startsWith("/v1/knowledge/activity?project_id=legacy-default"))).toBe(true));
+    await waitFor(() => expect(fetchCalls.some((call) => call.url === "/v1/features")).toBe(true));
+    expect(fetchCalls.some((call) => call.url === "/v1/projects/legacy-default")).toBe(false);
     await screen.findByText("候选变更 · delivery-1");
     expect(screen.getByText(/不可变证据/)).toBeTruthy();
+  });
+
+  test("长知识摘要默认收敛并保留可展开的完整内容", async () => {
+    const originalTitle = activity[0].title;
+    const originalSummary = activity[0].summary;
+    activity[0].title = `超长知识标题\n${"y".repeat(240)}`;
+    activity[0].summary = "x".repeat(640);
+    try {
+      renderKnowledge();
+      const title = await screen.findByText(`超长知识标题 ${"y".repeat(89)}…`);
+      expect(title.closest("a")?.getAttribute("title")).toBe(activity[0].title);
+      await screen.findByText(`${"x".repeat(160)}…`);
+      await userEvent.click(screen.getByText("查看完整摘要"));
+      expect(screen.getByText("x".repeat(640), { selector: "pre" })).toBeTruthy();
+    } finally {
+      activity[0].title = originalTitle;
+      activity[0].summary = originalSummary;
+    }
+  });
+
+  test("历史超长文档标题不撑开记录选择器", async () => {
+    const originalTitle = documents[0].title;
+    const longTitle = `历史长标题\n${"边界".repeat(180)}`;
+    const expectedPreview = `${longTitle.replace(/\s+/g, " ").slice(0, 96)}…`;
+    documents[0].title = longTitle;
+    try {
+      renderKnowledge();
+      const picker = await screen.findByRole("button", {
+        name: `文档 ${expectedPreview}`,
+      });
+      expect(picker.getAttribute("title")).toBe(longTitle);
+    } finally {
+      documents[0].title = originalTitle;
+    }
   });
 
   test("把已验证证据提炼到当前 Wiki 空间并保留来源哈希", async () => {

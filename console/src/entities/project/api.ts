@@ -47,8 +47,8 @@ export function useProjects() {
   return useQuery({ queryKey: projectKeys.all, queryFn: ({ signal }) => request<Project[]>("/v1/projects", { signal }) });
 }
 
-export function useProject(projectId: string) {
-  return useQuery({ queryKey: projectKeys.detail(projectId), queryFn: ({ signal }) => request<ProjectDetail>(`/v1/projects/${encodeURIComponent(projectId)}`, { signal }), enabled: Boolean(projectId) });
+export function useProject(projectId: string, enabled = true) {
+  return useQuery({ queryKey: projectKeys.detail(projectId), queryFn: ({ signal }) => request<ProjectDetail>(`/v1/projects/${encodeURIComponent(projectId)}`, { signal }), enabled: enabled && Boolean(projectId) });
 }
 
 export function assertProjectScope<T extends { project_id?: string | null }>(projectId: string, records: T[], resourceLabel: string): T[] {

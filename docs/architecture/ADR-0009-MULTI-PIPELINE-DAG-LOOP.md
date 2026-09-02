@@ -28,6 +28,11 @@ compiled Journey Graph and Capability binding snapshot.
   apply guarantees.
 - New Deliveries must select an active Published Pipeline Revision. There is no implicit default
   once migration is complete.
+- Built-in Pipeline import is a bootstrap default, not an authority over an operator-published
+  active Revision. Startup may automatically migrate only an active Revision published by the
+  same bootstrap actor. If another actor published the active Revision, startup preserves it and
+  must not patch its draft, publish a duplicate fingerprint, or reactivate an older built-in
+  definition.
 
 ## Delivery order
 
@@ -43,3 +48,8 @@ Independent ready AgentScope role-turn Stages may execute concurrently. Git-muta
 Stages remain serialized within one Delivery workspace so that Candidate and CAS evidence retain a
 single unambiguous ancestry. Nested human approval Gates inside a Loop are rejected until the
 product owns a durable nested-Gate record and recovery contract.
+
+Operator-published Pipeline Revisions therefore survive process restart without silent downgrade.
+Changing such a Revision remains an explicit Draft/Validate/Publish/Activate operation; a future
+built-in definition cannot take ownership merely because application code was upgraded or rolled
+back.

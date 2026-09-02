@@ -15,6 +15,11 @@ from acwm.application.workflow_runtime import DefaultWorkflowRuntime
 from acwm.config import CodexCLIConfig, load_capabilities, load_journeys
 from acwm.domain import JourneyDefinition
 
+from .knowledge_context_contract import (
+    KNOWLEDGE_CONTEXT_STAGE_PATHS,
+    knowledge_context_artifact_contract,
+)
+
 
 def resolve_backend_delivery_fingerprint(config_root: Path) -> str:
     definition = load_journeys(config_root / "journeys.yaml")["backend-delivery"]
@@ -34,6 +39,35 @@ def load_fullstack_delivery_definition(config_root: Path) -> dict[str, object]:
 def load_agent_workcell_delivery_definition(config_root: Path) -> dict[str, object]:
     definition = load_journeys(config_root / "journeys.yaml")["agent-workcell-delivery"]
     return definition.model_dump(mode="json")
+
+
+def load_agent_workcell_knowledge_delivery_definition(
+    config_root: Path,
+) -> dict[str, object]:
+    """Compile the opt-in R2 Journey with ACWM-owned Stage input contracts."""
+
+    definition = load_journeys(config_root / "journeys.yaml")["agent-workcell-delivery"]
+    payload = definition.model_dump(mode="json")
+    payload["version"] = "2.0.0"
+    contract = knowledge_context_artifact_contract().model_dump(mode="json")
+
+    def visit(nodes: object, prefix: str = "") -> None:
+        if not isinstance(nodes, list):
+            return
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = node.get("id")
+            if not isinstance(node_id, str):
+                continue
+            path = f"{prefix}/{node_id}" if prefix else node_id
+            if node.get("kind") == "stage" and path in KNOWLEDGE_CONTEXT_STAGE_PATHS:
+                node["input_artifact_contracts"] = [contract]
+            elif node.get("kind") == "loop":
+                visit(node.get("nodes"), path)
+
+    visit(payload.get("nodes"))
+    return JourneyDefinition.model_validate(payload).model_dump(mode="json")
 
 
 def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition) -> str:

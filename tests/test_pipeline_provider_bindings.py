@@ -46,6 +46,7 @@ from agent_team_os.modules.projects import (
     ProjectLeaseDeliveryRepository,
     SQLiteProjectRepository,
 )
+from agent_team_os.shared.hashes import sha256_json
 from agent_team_os.testing import (
     DeterministicCandidateVerifier,
     DeterministicCodeExecutor,
@@ -144,13 +145,20 @@ def test_pipeline_publication_freezes_provider_bindings_by_stage_site(
     assert revision.binding_model == "provider-v1"
     assert revision.binding_snapshot == {}
     assert set(revision.resolved_provider_bindings) == set(assignments)
+    instances = ControlPlaneService(
+        tmp_path / "agent-team-os.sqlite",
+        config_root=Path(__file__).parents[1] / "config",
+    )
     for snapshot in revision.resolved_provider_bindings.values():
         profile = cast(dict[str, object], snapshot["profile"])
         deployment = cast(dict[str, object], snapshot["deployment"])
         binding = cast(dict[str, object], snapshot["binding"])
+        capability = cast(dict[str, object], binding["capability"])
         assert len(cast(str, profile["sha256"])) == 64
         assert deployment["enabled"] is True
         assert len(cast(str, binding["binding_fingerprint"])) == 64
+        instance = instances.get_instance(cast(str, deployment["instance_id"]))
+        assert capability["config_fingerprint"] == sha256_json(instance.connection)
 
 
 def test_pipeline_validation_rejects_missing_deployment_assignment(

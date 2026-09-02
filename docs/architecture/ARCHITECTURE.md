@@ -1,7 +1,7 @@
 ---
 title: Agent-Team-OS 当前架构总览
-document_version: "1.0"
-product_version: "0.5.0"
+document_version: "1.2"
+product_version: "0.5.1-in-progress"
 truth_scope: repository_revision_containing_this_file
 initial_audit_baseline: 7401fa281a201728fa3cc504daa05d3a724fa7c6
 last_reviewed: 2026-09-02
@@ -13,9 +13,12 @@ language: zh-CN
 > 本文是后续 Agent 理解当前工程的第一入口，以及已接受架构变更的状态索引。
 > 它综合解释当前 Revision 中已经存在的边界，不替代代码、Migration、OpenAPI、测试证据或 ADR。
 
-当前代码基线已经合入 `main@7401fa281a201728fa3cc504daa05d3a724fa7c6`。这只证明代码合并；
-由于真实四仓 GitHub、Hermes/Codex 与 Live Release Gate 仍为 `blocked/not_run`，v0.5.0 尚不能称为
-正式 Release 验收完成。
+当前实现分支以 `main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f` 为基线；本文所在 Revision
+新增了受 Feature Flag 保护的 v0.5.1 Knowledge Gate A/B/C 执行原语与 Deterministic 浏览器
+闭环。代码存在、Deterministic 测试通过和正式 Live Release 验收是三种不同事实：
+真实 Feishu/Ollama、已发布并锁定的 ACWM Stage Input Artifact Contract Revision、四仓 GitHub
+与同 Revision Release Report 仍为 `blocked/not_run`，
+因此 v0.5.1 不能称为正式 Release 验收完成。
 
 - [打开交互架构图](../assets/architecture/agent-team-os-current.html)
 - [查看静态架构图](../assets/architecture/agent-team-os-current.png)
@@ -45,7 +48,7 @@ language: zh-CN
 | `Implemented` | 当前 Revision 中存在实现和契约边界，但不自动证明 Live 可用。 |
 | `Deterministic Verified` | 使用固定 Adapter、Fixture 或本地 Git Remote 验证了产品状态机与证据链。 |
 | `Live Blocked/Not Run` | 缺少真实 Provider、凭据、远端权限或合格 Gate Report，不能换算成通过。 |
-| `Accepted/Not Implemented` | 架构审查已接受，但尚未成为当前实现。 |
+| `Accepted/Not Implemented` | 架构审查已接受，但复合变更的完整验收边界尚未成为当前实现；可包含已单独验证的切片。 |
 | `Superseded` | 已被后续 ADR 或架构变更取代，仅保留历史可追溯性。 |
 
 ### 1.3 架构变更生命周期
@@ -57,8 +60,9 @@ Proposed
 → Superseded
 ```
 
-“当前架构”章节只陈述 `Implemented/Verified` 的事实。尚未实现的内容只能进入第 12 章，不能混入
-当前组件、链路或状态机。
+“当前架构”章节只陈述当前 Revision 已实现并有代码或测试证据的事实。复合架构变更可以已有部分
+`Implemented` / `Deterministic Verified` 切片，但在全部验收条件满足前仍整体保留
+`Accepted/Not Implemented`；尚未落地的部分只能进入第 12 章，不能伪装成当前可用链路。
 
 ## 2. 产品定位和非目标
 
@@ -88,17 +92,18 @@ Agent-Team-OS 是将多 Agent 工作组织为可验证、可审批、可恢复�
 | Auditor / Viewer | 只读查看交付状态、不可变证据、Attempt、PR Receipt 与 Apply Receipt。 |
 | ACWM | 编译并运行跨 Stage Journey、DAG、Gate、Handoff 和 bounded Loop。 |
 | AgentScope | 单个产品已创建 AgentAttempt 内的 Stage-local Session、消息和 Runtime Transport 合同所有者；不得创建隐藏 Child；当前尚未接入 Workcell Live Runtime。 |
-| Hermes | PM 与 Project Admin 角色智能的合同所有者；默认规划仍是 `codex-simulated-hermes`。 |
+| Hermes | PM 与 Project Admin 角色智能的合同所有者；产品已有 `hermes.acp` Role Turn Adapter，默认规划仍是 `codex-simulated-hermes`。 |
 | Codex | 在隔离 Workspace 中执行受控 Role Turn 或 Workspace Write；Live 仍受凭据与 Gate 限制。 |
 | GitHub / Git Remote | 提供外部 Repository 和 PR Review Surface；不拥有产品 Release Gate 或 Apply 决策。 |
 | BMAD / TEA | 以冻结、只读 Method Pack Overlay 提供工作方法，不拥有 Pipeline、Workspace 或 Release。 |
-| Feishu | 外部协作知识 Provider；Adapter 已有实现和测试，但 Preview 运行时尚未接线。 |
+| Feishu | 外部协作知识正文权威；Tenant App Adapter 及同步入口已按 Feature Flag 接线，真实租户 Live 尚未运行。 |
 
 ### 3.2 当前架构视图
 
-交互图与静态图来自同一份 Archify JSON。业务连接的实线表示当前已接线链路；标注
-`Provider Port · Preview 未注入` 的紫色虚线专门表示 Feishu Adapter 已存在、但默认产品运行时未接线。
-虚线 Boundary Frame 只表达权威或隔离范围，不表示能力成熟度。
+交互图与静态图来自同一份 Archify JSON。业务连接的实线表示当前已有受 Feature Flag 保护的实现；
+`Stage input Artifact Contract` 已由 ACWM `0.5.1` 发布并锁定进产品 dependency，干净 clone 可重放。
+虚线 Boundary Frame
+只表达权威或隔离范围，不表示能力成熟度。
 
 [![Agent-Team-OS 当前架构](../assets/architecture/agent-team-os-current.png)](../assets/architecture/agent-team-os-current.html)
 
@@ -106,9 +111,10 @@ Agent-Team-OS 是将多 Agent 工作组织为可验证、可审批、可恢复�
 
 | 领域事实 | 唯一权威 | 产品中的冻结或投影 |
 |---|---|---|
-| Journey、Stage、DAG、Gate、Loop、Handoff | Published Pipeline Revision / ACWM | Pipeline Revision、Graph Fingerprint、Pipeline Run Ledger |
+| Journey、Stage、DAG、Gate、Loop、Handoff 与 Artifact Contract 语义 | ACWM | 产品只保存编译结果、Artifact Slot 和 Pipeline Run 投影 |
+| 不可变发布身份、Provider/Workcell/Release Binding | Agent-Team-OS Pipeline Catalog / Published Pipeline Revision | Pipeline Revision、Binding Snapshot、Graph Fingerprint |
 | 单个 AgentAttempt 内的 Stage-local Session、消息和 Runtime Transport | AgentScope | 当前 Workcell Live Adapter 尚未接线；产品不复制 Runtime 内部状态 |
-| PM、Project Admin 角色智能 | Hermes | 当前默认 Adapter 标识和输出 Artifact |
+| PM、Project Admin 角色智能 | Hermes | 默认模拟身份；可由 Published `hermes.acp` Binding 选择产品 Role Turn Adapter，输出仍受产品 Artifact 校验 |
 | 隔离工作区中的代码执行 | Codex | AgentAttempt、Workspace Access、Candidate 与日志 Artifact |
 | 项目、Team、真实仓库和活动 Delivery Lease | Project Governance | Project/Team/Workspace Binding 与 DeliveryExecutionSnapshot |
 | Main/Child 组合、调度、取消、超时、生命周期和结果合成 | Workcell Execution Module | WorkcellRun、AgentRun Tree、AgentAttempt、WorkcellResult |
@@ -133,11 +139,26 @@ AgentScope 只承载单次 Attempt 内的 Stage-local Session、消息和 Runtim
 4. 初始化 Agent Profile、Deployment、Provider Manifest 和 Runtime Extension；
 5. 导入 Backend、Full-stack 和 Agent Workcell 三条内置 Pipeline；
 6. 构建 Evidence、Wiki、Evaluation、Artifact、Workcell、Method Pack 与 Release 服务；
-7. 通过 `create_app()` 挂载有资格的 `/v1` Router 和身份中间件；
-8. 启动时恢复 provisioning Project、Delivery Lease、interrupted Attempt 和非终态 Delivery。
+7. 按 `Gate A → Gate B → Gate C` 依赖顺序，选择性构建 Tenant Knowledge、Hybrid Index、
+   Context Preparation 与 Runtime Guard；
+8. 通过 `create_app()` 挂载有资格的 `/v1` Router 和身份中间件；
+9. 启动时恢复 provisioning Project、Delivery Lease、interrupted Attempt、过期 Knowledge Sync Lease
+   和非终态 Delivery；启用 Gate A 时再启动受监管的持久化 Scheduler/Worker Supervisor。
 
-Preview 当前没有向 `create_app(provider_knowledge=...)` 注入 `ProviderKnowledgeManager`，因此 Feishu
-Provider Router 不会进入默认产品运行时。这一点不能由存在 Adapter 类或单元测试替代。
+内置 Pipeline 导入只是 bootstrap 默认值：启动时仅可自动迁移由同一 bootstrap
+actor 发布的活动 Revision。如果活动 Revision 由操作者发布，组合根必须保留它，
+不得回写草稿、重复发布历史 Fingerprint 或静默降级到内置定义。该边界由
+[ADR-0009](ADR-0009-MULTI-PIPELINE-DAG-LOOP.md) 和重启回归测试固定。
+
+三个 v0.5.1 Feature Flag 默认均为关闭。启用 Gate A 时 Preview 注入 `TenantKnowledgeManager`；
+Gate B 进一步注入 `KnowledgeIndexManager`；Gate C 进一步注入 Context Preparation、Runtime Guard
+和 Citation 验证。依赖顺序非法时启动 Fail Closed。旧 `ProviderKnowledgeManager` 用户令牌路径仍是
+独立 Legacy Adapter，不作为 Tenant App 自动 RAG 的运行入口。
+
+Gate A 的 `knowledge-sync-runtime-v1` 使用数据库 `KnowledgeSyncJob` 作为唯一任务事实：Scheduler
+按稳定 15 分钟桶幂等入队，不执行 Provider I/O；Worker 以五分钟 Lease、并发 2、最多 5 次尝试
+执行到期任务并在重启后恢复；Binding 目录最迟每 24 小时对账。成功抓取更新 Source Head 级
+权限探测时间，RAG 只接纳 `active` 且 30 分钟内仍新鲜的 Source，不能用旧 Binding 目录缓存替代。
 
 ### 5.2 产品模块
 
@@ -155,7 +176,9 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 
 ### 5.3 Port / Adapter 边界
 
-- HTTP、SQLite Repository、ACWM Gateway、Git、GitHub、Codex、Feishu 都是 Adapter。
+- HTTP、SQLite Repository、ACWM Gateway、Git、GitHub、Codex、Feishu、Ollama 和
+  `sqlite-vec` 都是 Adapter。Knowledge Application 只通过 `EmbeddingPort` 和 `VectorIndexPort`
+  访问模型与向量引擎。
 - Domain Model 和 Application Service 保持 Runtime/Framework 无关。
 - ACWM Runtime Contract 不复制到本仓库；产品只保存编译结果、绑定 Snapshot 和运行投影。
 - 外部 SDK 对象不能穿过 Port 进入领域模型，必须标准化为产品 DTO 或 Artifact Reference。
@@ -168,7 +191,7 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 
 - `agent-team-os.sqlite` 保存产品状态、Revision、Event、Reference 和 Receipt；
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
-- Migration `0001–0035` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- Migration `0001–0043` 按校验和串行执行，已应用文件被修改时 Fail Closed；
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
 - Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。
 
@@ -196,8 +219,8 @@ TeamTemplateRevision
 
 - TeamTemplate 只定义动态 `workcell_key`、职责、Workspace Requirement、Delegate Purpose、
   DelegationPolicy 和展示拓扑。
-- Pipeline 定义 Stage 顺序、DAG、Gate、bounded Loop、Artifact Contract、Workcell Stage Map、
-  Release Contract 和预解析 Slot。
+- ACWM 定义 Stage 顺序、DAG、Gate、bounded Loop 与 Artifact Contract；Published Pipeline
+  Revision 冻结其编译结果、Workcell Stage Map、Release Contract、Provider Binding 和预解析 Slot。
 - Project 绑定采用哪个 Team/Pipeline/Deployment，以及每个 Workcell 对应哪个真实 Workspace。
 - Delivery 启动后只使用冻结 Snapshot，不静默解析较新的 Team、Pipeline、Provider、Workspace 或 Method。
 
@@ -206,8 +229,10 @@ TeamTemplateRevision
 - Project 不是包含 Delivery、Evidence、Knowledge 和 Agent 的巨型 Aggregate；其他模块只保存
   `project_id` 或冻结 Snapshot。
 - v0.5 每个 Project 同时最多一个活动 Delivery；Lease 只在终态持久化后释放。
-- 当前全局角色 RBAC 已实现，但项目成员级 RBAC 尚未实现。“项目隔离”表示数据、Git 和运行作用域
-  隔离，不代表完整多租户授权。
+- 全局角色与 `ProjectMembership(owner | editor | viewer)` 共同约束项目资源；Global Role 是能力上限，
+  ProjectRole 只能收窄权限，Administrator 旁路必须留下审计 Receipt。
+- Project RBAC、最后 Owner 约束、Identity Authorization Version 与 Approved Source Scope 已实现并有
+  Deterministic 公共接口测试；这仍不等于生产级多租户隔离或逐用户 Feishu ACL。
 
 ## 8. Pipeline 与 Workcell 执行
 
@@ -282,7 +307,7 @@ Main planning
 | 对象 | 关键状态与终态规则 |
 |---|---|
 | Project | `provisioning → active | provision_failed`，`active → archived`；当前不恢复 archived。 |
-| Delivery | `queued`、`planning`、人工 Gate、`executing`、`verifying`、`applying`、`needs_attention`；终态为 `completed/rejected/failed/cancelled`。 |
+| Delivery | `queued`、可选 `preparing_context`、`planning`、人工 Gate、`executing`、`verifying`、`applying`、`needs_attention`；终态为 `completed/rejected/failed/cancelled`。 |
 | WorkcellRun | `planning → delegating → verifying → reviewing → synthesizing`；终态为 `succeeded/failed/cancelled/timed_out/interrupted`。 |
 | AgentAttempt | `running` 后进入 `succeeded/failed/cancelled/timed_out/interrupted`，非可恢复进程不伪装续跑。 |
 | Release Health | `healthy | release_drifted`；只有全部远端回读一致才能恢复 healthy。 |
@@ -292,7 +317,8 @@ Main planning
 ### 10.2 身份与信任
 
 - 本地 Identity 使用 Session Cookie、CSRF、同源校验和角色 Permission；缺少身份时 API Fail Closed。
-- 当前权限角色是全局 Administrator、Editor、Viewer，不等同项目级成员 RBAC。
+- 有效项目权限为 Global Role Capability、ProjectRole Capability、Resource Policy 与（知识资源的）
+  Approved Source Scope 的交集；Console 可见性不构成授权边界。
 - Credential 只允许 Reference；Secret 不得进入 Git、SQLite、API、日志、Evidence、截图或文档。
 - Reviewer 的只读语义由 detached Candidate View 和 `candidate_read` Workspace Access 表达，
   不使用 Codex `--add-dir` 模拟权限。
@@ -303,9 +329,35 @@ Main planning
 ### 11.1 Knowledge 与 Feishu
 
 - Local Wiki、Revision、Publication、FTS Search、Role Document 和 Knowledge Derivation 已接入 Preview。
-- Provider Binding、Snapshot、Sync Run、Feishu Adapter 和失败映射已有实现及 Contract Test。
-- Preview 未构造 `ProviderKnowledgeManager`，也未注入 Feishu 用户授权解析，因此默认产品 API/Console
-  没有形成可操作的 Feishu 闭环。
+- Tenant App Connection、Binding、Approved Source、持久化 Sync Job、不可变 Snapshot、Source 级
+  权限新鲜度、受监管 Scheduler/Worker 和失败隔离已实现；Gate A 可在 Preview 与 Deterministic
+  Gate App 中按 Feature Flag 接线。
+- Immutable Derived Index、Embedding Qualification、Retrieval/Evaluation Policy、Shadow Build、CAS
+  激活、Scope-before-recall 与 Citation Receipt 已实现；`VectorIndexPort` 隔离 `sqlite-vec`，
+  Published Profile 冻结 1200/150 Chunk 切分、Document/Chunk 上限与容量告警；Gate B 已
+  完成 Deterministic API/浏览器闭环和
+  [100,000 Chunk 开发机容量基准](../evaluation/results/2026-09-02-knowledge-index-capacity-100k.md)。
+- Context Preparation、Authorization Stamp、Attempt Admission、结果接纳与 Citation Guard 已实现；
+  基于已发布并锁定 ACWM `0.5.1` Revision 的 R2 Pipeline、七个 Stage Context、五个
+  Workcell/Citation 和 ReleaseManifestV2 Deterministic 浏览器闭环已通过。干净 clone 可重放契约，
+  但这些结果仍不是 Live 证据。
+- `feishu-knowledge-delivery-v1` Live Readiness 只读投影已接线，会以已发布的现有权威
+  检查四个 External Git Workspace、七个 Knowledge Context Slot、Approved Source、Index/Ollama、
+  Resolved Provider Binding、产品已接线 Runtime Adapter、Runtime 与干净 ACWM Lock。
+  投影同时校验 `knowledge-sync-runtime-v1` 的 15 分钟/24 小时周期、并发 2、最多 5 次尝试与
+  Job Repository 权威；该静态接线事实仍不证明真实 Provider Job 已成功运行。
+  Readiness Receipt 永远保持 `execution_status=not_run`；
+  `ready` 不是 Live Gate 通过，也不拥有 Release/Manifest 权威。
+- 产品 Runtime Dispatcher 已接线 `hermes.acp` Role Turn：Published Deployment、Runtime Instance
+  Version、Runtime Identity、连接配置指纹和 `ResolvedCapability` 必须一致；每个 Attempt 使用结束即
+  删除的 `0700` 空沙箱，Read/Search/Fetch、Edit 与 Command 默认拒绝，输出必须通过结构化 Schema、
+  Acceptance ID 和冻结 Citation 集校验。Runtime Readiness 实际执行 `hermes acp --check`；
+  `http.sync` 尚未接线。
+- 当前默认规划身份仍是 `codex-simulated-hermes`，因此当前内置 Pipeline 的
+  `live-provider-bindings=blocked` 与 `product-runtime-adapters=blocked`；Adapter 代码存在不等于真实
+  Hermes Attempt 或 Live Gate 通过。
+- Legacy `ProviderActor` / User Token Adapter 保留但不参与 Tenant App RAG；默认关闭三个 Feature Flag
+  时，v0.5.0 既有 Delivery 路径不变。
 - Feishu 是显式链接的协作知识正文权威；产品仍拥有 Binding、Snapshot、Provenance、SHA、Source Policy
   和派生 Search Index。
 - Delivery Evidence 始终由 Agent-Team-OS 拥有；Feishu 内容不能覆盖 Evidence。
@@ -320,10 +372,13 @@ Main planning
 | Workcell Main/Child/Attempt Kernel | `Implemented`、`Deterministic Verified` | 调度、验证、Review、取消和恢复；不证明模型质量。 |
 | BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified` | 包完整性和无业务仓库污染；不证明方法效果。 |
 | External Git、GitHub PR、Forward-only V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 真实四个私有 GitHub 仓库与直推身份尚无合格 Report。 |
-| Hermes Live | `Live Blocked/Not Run` | 默认规划仍为 `codex-simulated-hermes`，不得冒充真实 Hermes。 |
+| Hermes ACP Role Turn | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 产品 Dispatcher/空沙箱/工具拒绝/Schema/Citation 合同已验证；默认规划仍为 `codex-simulated-hermes`，没有真实 Attempt Report。 |
 | AgentScope Attempt Runtime | Manifest/合同 `Implemented`；Workcell Live Adapter `Accepted/Not Implemented` | 当前 Main/Child 由产品直接调度 Codex Attempt，不是 AgentScope Live 证据。 |
 | Local Knowledge | `Implemented` | Wiki/Search/Publication 已接线。 |
-| Feishu Knowledge | Adapter `Implemented`；产品闭环 `Accepted/Not Implemented` | 默认组合根未接线；本次不实施。 |
+| Feishu Tenant Sync（Gate A） | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | Feature-flagged Tenant App、15 分钟幂等 Scheduler、Lease Worker、Source 新鲜度、Snapshot 与 Project Scope；未验证真实租户。 |
+| Hybrid Knowledge Index（Gate B） | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 不可变索引、Vector Port、Evaluation、CAS、RAG Preview、Citation 与 100k 容量基准；未验证真实 Ollama/模型。 |
+| Delivery Knowledge Context（Gate C） | 可重放闭环 `Implemented`、`Deterministic Verified`；Live `Accepted/Not Implemented` | ACWM `0.5.1` Contract 已发布回锁并被 R2 消费；真实 Tenant/Ollama 未验证。 |
+| Release Acceptance V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 只读组合 Build Identity、Pipeline/Attempt、Knowledge、四仓 Candidate/PR/Receipt/Manifest；尚无真实同 Revision Live Report。 |
 | Evaluation | API/CLI/Dataset `Implemented` | 当前没有独立 `/evaluation` Console 页面。 |
 
 已知后移能力包括 Workspace-Set 跨 Delivery Lease、Delta Release、Manifest Version CAS、
@@ -348,7 +403,78 @@ Plan/ADR reference: ADR-0014（2026-09-02 修订）
 Acceptance evidence required: Adapter 合同、身份绑定、取消/超时传播、无隐藏 Child、重启中断和 Live Gate
 ```
 
-Feishu 产品接线沿用 ADR-0008 的边界，尚未进入本次实施范围。
+### 12.1.2 `ARCH-20260902-03` Feishu Tenant Knowledge 与 Delivery Context
+
+```text
+State: Accepted/Not Implemented
+Accepted at: 2026-09-02
+Architecture Impact: Critical
+Decision: 可信本机 Alpha 使用 Tenant App Service Principal；项目访问由 Global Role、ProjectRole、
+          Resource Policy 与 Approved Source Scope 共同决定。Feishu 内容经持久化 Sync Job、
+          不可变 Snapshot、Shadow-built Index 和 ACWM Artifact Binding 编译为 Delivery 冻结的
+          KnowledgeContextArtifact；撤权采用 best-effort-revoke-v1。
+Affected authorities/modules/data/states: Identity、Project Governance、Knowledge、Pipeline/ACWM Binding、
+                                         Delivery、Workcell Execution、Artifact Store、Feishu/Ollama Adapter；
+                                         新增 ProjectMembership、ProjectKnowledgeSourceApprovalV1、
+                                         KnowledgeSyncJob、KnowledgeIndexRevision、
+                                         KnowledgeContextPreparationRun、preparing_context 与
+                                         KnowledgeAuthorizationStampV1。
+Compatibility and migration: ProviderActor/User Token Adapter、R1 Pipeline 和历史 Snapshot 保持兼容；
+                             旧 Binding 为 legacy-user-auth/disabled-for-rag，旧 source_scope 为
+                             legacy-unverified，不自动推导 Tenant Connection；Migration 0036–0043
+                             只新增 v0.5.1 模型，不修改 0001–0035。
+Plan/ADR reference: ../design/FEISHU-KNOWLEDGE-INTEGRATION.md；ADR-0016、ADR-0017、ADR-0018；
+                    ADR-0013 Runtime 对账；ADR-0006、ADR-0008、ADR-0011 的后续关系说明；
+                    ADR-0014 权威澄清。
+Implemented/verified slices: Project-scoped API 权限、Tenant 同步任务/恢复、15 分钟 Scheduler、并发 2
+                             Worker、最多 5 次尝试、24 小时目录对账、Source 级权限新鲜度、不可变 Snapshot、
+                             VectorIndexPort、Index Scope Filter、Shadow Index/CAS、Evaluation、100k 容量基准、
+                             可恢复 Context 原语、细粒度授权版本、Citation/撤权 Guard、R1 回归、
+                             Gate A/B 及基于本地 ACWM Contract 的 Gate C Deterministic 浏览器。
+                             产品 `hermes.acp` Role Turn Dispatcher、逐 Attempt 空沙箱、工具拒绝、
+                             冻结实例/配置指纹与 Schema/Citation Guard 已完成 Contract 验证。
+Remaining acceptance evidence: 发布、推送并在产品 Lock 中固定含 Stage Input Artifact Contract 的
+                               ACWM Revision；真实 Tenant App/Ollama PoC 与 Gate C Live Gate；
+                               同一 Revision Release Report 满足 FAIL=0、WARN=0、skipped=0。
+```
+
+本条目作为复合架构变更继续保持 `Accepted/Not Implemented`。第 3–11 章已经对账当前 Revision
+真实存在的 Gate A/B/C 本地闭环；但这不能绕过剩余验收条件，也不能把 Deterministic Adapter
+表述为真实 Feishu/Ollama 或自动 RAG Live 证据。ACWM Contract 已发布并进入产品 dependency lock，
+因此干净 clone 可重放该契约；剩余状态只由真实 Tenant/Ollama/Hermes/四仓与零跳过 Live Gate 决定。
+
+关联文档：[架构修订版计划](../design/FEISHU-KNOWLEDGE-INTEGRATION.md)、
+[ADR-0016](./ADR-0016-PROJECT-SCOPED-AUTHORIZATION.md)、
+[ADR-0017](./ADR-0017-FEISHU-TENANT-KNOWLEDGE.md)、
+[ADR-0018](./ADR-0018-KNOWLEDGE-INDEX-DELIVERY-CONTEXT.md)。
+
+### 12.2 `Implemented/Verified`
+
+#### 12.2.1 `ARCH-20260902-04` Release Acceptance V2
+
+```text
+State: Implemented/Verified
+Maturity: Deterministic Verified; Live Blocked/Not Run
+Accepted at: 2026-09-02
+Architecture Impact: Critical
+Decision: 用独立的只读 Release Acceptance V2 Module 验证一个已完成四仓 Delivery；冻结执行时
+          Product/ACWM Build Identity，并组合 Knowledge Context、可观察 AgentAttempt、Candidate/PR、
+          Forward-only Receipt 与 Active Manifest 生成内容寻址的 Major Release Report。
+Affected authorities/modules/data/states: DeliveryExecutionSnapshot、Workcell Execution、Knowledge、
+                                         Release V2、Readiness、Release Report；不新增 Apply Authority。
+Compatibility and migration: Legacy GateReport/V1 不变；历史 Snapshot 允许缺少 Build Identity，但不能
+                             被追认成 V2 Live；Readiness blocked 时保持 not_run 且不生成 Release Report。
+Plan/ADR reference: ADR-0019；补充 ADR-0015 与 ADR-0018，不取代其 Apply/Knowledge 权威。
+Implemented evidence: Build Identity 及三方 ACWM Dependency Attestation、只读 Verifier、
+                      `knowledge-live-gate`、内容寻址 JSON/Markdown Report；Deterministic R2
+                      四仓闭环已达 `FAIL=0`、`WARN=0`、`skipped=0`，且 QA Validation
+                      Hash、可自洽重算 Hash 的 Workcell Snapshot、Main Attempt Phase 篡改和
+                      Knowledge Stage Result 缺失均失败关闭；Workcell Snapshot/DelegationPlan/
+                      Main-Child-Attempt 拓扑逐项绑定 Delivery Snapshot；Requirements/Tasking
+                      Planning Root 与唯一 Attempt 也绑定冻结 Hermes Deployment/Binding。
+Remaining Live evidence: 使用真实 Tenant/Ollama/Hermes/Codex 与四个 GitHub 私仓，
+                         基于已锁定 ACWM Revision 生成同 Revision Live Report。
+```
 
 新条目必须使用以下结构：
 
@@ -370,6 +496,8 @@ Acceptance evidence required:
 |---|---|---|---|---|---|
 | `ARCH-20260902-01` | 2026-09-02 | `Implemented/Verified` | 建立架构事实总览、单一可视化模型和 Plan Architecture Review 门禁 | 不需要；未改变运行时权威 | 文档结构测试、Ruff、Archify showcase 9/9、四档 containment 与双主题人工视觉复核通过 |
 | `ARCH-20260902-02` | 2026-09-02 | `Accepted/Not Implemented` | 产品拥有可观察 Workcell Composition；AgentScope 仅拥有单次 Attempt Runtime，禁止隐藏 Child | ADR-0014 修订 | 待完成 AgentScope Adapter 合同、取消/中断和 Live Gate |
+| `ARCH-20260902-03` | 2026-09-02 | `Accepted/Not Implemented` | Tenant App 项目知识经可靠同步、不可变索引与 ACWM Artifact Binding 编译为 Delivery Context | ADR-0016、ADR-0017、ADR-0018；ADR-0013 Runtime 对账；ADR-0006/0008/0011 关系修订；ADR-0014 权威澄清 | Gate A/B/C 可重放 Deterministic 闭环、持久化 Scheduler/Worker、VectorIndexPort、100k 容量基准、ACWM `0.5.1` 回锁、Hermes ACP 产品 Dispatcher 合同与独立 Live Readiness 投影已验证；待真实 Tenant/Ollama/Hermes、四个 GitHub 仓库和同 Revision 零跳过 Release Gate |
+| `ARCH-20260902-04` | 2026-09-02 | `Implemented/Verified` | 冻结 Delivery Build Identity，并以只读 Release Acceptance V2 组合四仓与 Knowledge Live 证据 | ADR-0019；补充 ADR-0015/0018 | Build/Dependency、Pipeline/Attempt、Knowledge、Workcell Result、Candidate/PR、Receipt/Manifest 的 Deterministic 正反闭环及跨 Snapshot/Attempt Phase 篡改回归已验证；Live `blocked/not_run` |
 
 ## 14. Plan Architecture Review 与文档对账
 

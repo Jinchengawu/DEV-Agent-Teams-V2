@@ -12,6 +12,7 @@ from agent_team_os.control_plane import ControlPlaneService
 from agent_team_os.delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ProjectGitWorkspaces
+from agent_team_os.infrastructure.knowledge import SQLiteVectorIndexAdapter
 from agent_team_os.modules.agents import (
     AgentDeploymentCatalog,
     AgentProfileCatalog,
@@ -24,10 +25,15 @@ from agent_team_os.modules.artifacts import ContentAddressedArtifactStorage
 from agent_team_os.modules.evidence import EvidenceLedger, SQLiteEvidenceRepository
 from agent_team_os.modules.identity import IdentityService, SQLiteIdentityRepository
 from agent_team_os.modules.knowledge import (
+    EmbeddingModelDescriptor,
+    KnowledgeIndexManager,
     KnowledgePublicationLedger,
     KnowledgePublisher,
     KnowledgeSearchIndex,
+    SQLiteKnowledgeIndexRepository,
+    SQLiteTenantKnowledgeRepository,
     SQLiteWikiRepository,
+    TenantKnowledgeManager,
     WikiService,
 )
 from agent_team_os.modules.orchestration import PipelineCatalog, SQLitePipelineRepository
@@ -51,6 +57,23 @@ from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanni
 class _SchemaOnlyRemote:
     def revision(self, _candidate: object) -> str:
         raise RuntimeError("OpenAPI schema remote must not be called")
+
+
+class _SchemaOnlyEmbedding:
+    adapter_revision = "schema-only"
+
+    def describe(self, _model_name: str) -> EmbeddingModelDescriptor:
+        raise RuntimeError("OpenAPI schema embedding must not be called")
+
+    def embed(
+        self,
+        _texts: tuple[str, ...],
+        *,
+        model_name: str,
+        truncate: bool,
+    ) -> tuple[tuple[float, ...], ...]:
+        del model_name, truncate
+        raise RuntimeError("OpenAPI schema embedding must not be called")
 
     def apply(self, _candidate: object, *, ordinal: int) -> object:
         del ordinal
@@ -90,6 +113,19 @@ def main() -> None:
             team_governance=project_workcells,
         )
         artifacts = ContentAddressedArtifactStorage(Path(directory) / "artifacts")
+        tenant_repository = SQLiteTenantKnowledgeRepository(database)
+        tenant_knowledge = TenantKnowledgeManager(
+            tenant_repository,
+            artifact_storage=artifacts,
+        )
+        knowledge_indexes = KnowledgeIndexManager(
+            SQLiteKnowledgeIndexRepository(database),
+            tenant_repository=tenant_repository,
+            artifact_storage=artifacts,
+            index_root=Path(directory) / "indexes",
+            embedding_port=_SchemaOnlyEmbedding(),
+            vector_index_port=SQLiteVectorIndexAdapter(),
+        )
         workcell_execution = WorkcellExecutionModule(
             SQLiteWorkcellExecutionRepository(database),
             artifact_storage=artifacts,
@@ -124,6 +160,8 @@ def main() -> None:
             project_workcells=project_workcells,
             workcell_execution=workcell_execution,
             external_release=external_release,
+            tenant_knowledge=tenant_knowledge,
+            knowledge_indexes=knowledge_indexes,
         )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(

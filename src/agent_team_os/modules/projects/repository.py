@@ -5,8 +5,11 @@ from pathlib import Path
 
 from .domain import (
     Project,
+    ProjectAccessAudit,
     ProjectDeploymentAccess,
     ProjectKnowledgeSource,
+    ProjectKnowledgeSourceApproval,
+    ProjectMembership,
     ProjectPipelineBinding,
     ProjectRepository,
     ProjectWorkspace,
@@ -58,6 +61,22 @@ class SQLiteProjectRepository:
                     workspace.updated_at.isoformat(),
                 ),
             )
+            connection.execute(
+                """INSERT INTO project_authorization_versions(project_id,version,updated_at)
+                VALUES(?,1,?)""",
+                (project.id, project.created_at.isoformat()),
+            )
+            connection.execute(
+                """INSERT INTO project_memberships(
+                project_id,user_id,role,version,created_at,updated_at)
+                SELECT ?,id,'owner',1,?,? FROM users WHERE id=?""",
+                (
+                    project.id,
+                    project.created_at.isoformat(),
+                    project.created_at.isoformat(),
+                    project.created_by,
+                ),
+            )
             if legacy_repository:
                 connection.execute(
                     """INSERT INTO project_repositories(
@@ -88,6 +107,137 @@ class SQLiteProjectRepository:
             rows = connection.execute("SELECT * FROM projects ORDER BY created_at,id").fetchall()
         return tuple(_project(row) for row in rows)
 
+    def list_memberships(self, project_id: str) -> tuple[ProjectMembership, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT project_id,user_id,role,version
+                FROM project_memberships WHERE project_id=? ORDER BY role,user_id""",
+                (project_id,),
+            ).fetchall()
+        return tuple(_membership(row) for row in rows)
+
+    def get_membership(self, project_id: str, user_id: str) -> ProjectMembership | None:
+        with sqlite3.connect(self.database) as connection:
+            row = connection.execute(
+                """SELECT project_id,user_id,role,version FROM project_memberships
+                WHERE project_id=? AND user_id=?""",
+                (project_id, user_id),
+            ).fetchone()
+        return None if row is None else _membership(row)
+
+    def list_membership_project_ids(self, user_id: str) -> tuple[str, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT project_id FROM project_memberships
+                WHERE user_id=? ORDER BY project_id""",
+                (user_id,),
+            ).fetchall()
+        return tuple(str(row[0]) for row in rows)
+
+    def get_authorization_version(self, project_id: str) -> int:
+        with sqlite3.connect(self.database) as connection:
+            row = connection.execute(
+                "SELECT version FROM project_authorization_versions WHERE project_id=?",
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(project_id)
+        return int(row[0])
+
+    def put_membership(self, membership: ProjectMembership, expected_version: int | None) -> None:
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                """SELECT role,version FROM project_memberships
+                WHERE project_id=? AND user_id=?""",
+                (membership.project_id, membership.user_id),
+            ).fetchone()
+            if (current is None and expected_version is not None) or (
+                current is not None and int(current[1]) != expected_version
+            ):
+                raise RuntimeError("PROJECT_MEMBERSHIP_VERSION_CONFLICT")
+            if current is not None and str(current[0]) == "owner" and membership.role != "owner":
+                owner_count = int(
+                    connection.execute(
+                        """SELECT COUNT(*) FROM project_memberships
+                        JOIN users ON users.id=project_memberships.user_id
+                        WHERE project_id=? AND project_memberships.role='owner'
+                        AND users.enabled=1""",
+                        (membership.project_id,),
+                    ).fetchone()[0]
+                )
+                if owner_count <= 1:
+                    raise RuntimeError("PROJECT_LAST_OWNER_REQUIRED")
+            connection.execute(
+                """INSERT INTO project_memberships(
+                project_id,user_id,role,version,created_at,updated_at)
+                VALUES(?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                ON CONFLICT(project_id,user_id) DO UPDATE SET
+                role=excluded.role,version=excluded.version,updated_at=CURRENT_TIMESTAMP""",
+                (
+                    membership.project_id,
+                    membership.user_id,
+                    membership.role,
+                    membership.version,
+                ),
+            )
+
+    def delete_membership(self, project_id: str, user_id: str, expected_version: int) -> None:
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                """SELECT role,version FROM project_memberships
+                WHERE project_id=? AND user_id=?""",
+                (project_id, user_id),
+            ).fetchone()
+            if current is None or int(current[1]) != expected_version:
+                raise RuntimeError("PROJECT_MEMBERSHIP_VERSION_CONFLICT")
+            if str(current[0]) == "owner":
+                owner_count = int(
+                    connection.execute(
+                        """SELECT COUNT(*) FROM project_memberships
+                        JOIN users ON users.id=project_memberships.user_id
+                        WHERE project_id=? AND project_memberships.role='owner'
+                        AND users.enabled=1""",
+                        (project_id,),
+                    ).fetchone()[0]
+                )
+                if owner_count <= 1:
+                    raise RuntimeError("PROJECT_LAST_OWNER_REQUIRED")
+            connection.execute(
+                """DELETE FROM project_memberships
+                WHERE project_id=? AND user_id=? AND version=?""",
+                (project_id, user_id, expected_version),
+            )
+
+    def append_access_audit(self, audit: ProjectAccessAudit) -> None:
+        with sqlite3.connect(self.database) as connection:
+            connection.execute(
+                """INSERT INTO project_access_audit(
+                id,actor_user_id,project_id,capability,resource,reason,created_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (
+                    audit.id,
+                    audit.actor_user_id,
+                    audit.project_id,
+                    audit.capability,
+                    audit.resource,
+                    audit.reason,
+                    audit.created_at.isoformat(),
+                ),
+            )
+
+    def list_access_audits(self, project_id: str) -> tuple[ProjectAccessAudit, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,actor_user_id,project_id,capability,resource,reason,created_at
+                FROM project_access_audit WHERE project_id=? ORDER BY created_at,id""",
+                (project_id,),
+            ).fetchall()
+        return tuple(_access_audit(row) for row in rows)
+
     def get_workspace(self, project_id: str) -> ProjectWorkspace | None:
         with sqlite3.connect(self.database) as connection:
             row = connection.execute(
@@ -98,6 +248,12 @@ class SQLiteProjectRepository:
     def update_project(self, project: Project, expected_version: int) -> None:
         with sqlite3.connect(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT lifecycle_status FROM projects WHERE id=? AND version=?",
+                (project.id, expected_version),
+            ).fetchone()
+            if current is None:
+                raise RuntimeError("PROJECT_VERSION_CONFLICT")
             if project.lifecycle_status == "archived":
                 lease = connection.execute(
                     "SELECT 1 FROM project_delivery_leases WHERE project_id=?",
@@ -120,6 +276,12 @@ class SQLiteProjectRepository:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("PROJECT_VERSION_CONFLICT")
+            if str(current[0]) != project.lifecycle_status:
+                connection.execute(
+                    """UPDATE project_authorization_versions
+                    SET version=version+1,updated_at=? WHERE project_id=?""",
+                    (project.updated_at.isoformat(), project.id),
+                )
 
     def update_workspace(self, workspace: ProjectWorkspace) -> None:
         with sqlite3.connect(self.database) as connection:
@@ -342,6 +504,68 @@ class SQLiteProjectRepository:
                 ),
             )
 
+    def list_knowledge_source_approvals(
+        self, project_id: str
+    ) -> tuple[ProjectKnowledgeSourceApproval, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,project_id,binding_id,enabled,rag_enabled,version,
+                created_by,created_at,updated_at
+                FROM project_knowledge_source_approvals_v2
+                WHERE project_id=? ORDER BY binding_id,id""",
+                (project_id,),
+            ).fetchall()
+        return tuple(_knowledge_source_approval(row) for row in rows)
+
+    def list_all_knowledge_source_approvals(
+        self,
+    ) -> tuple[ProjectKnowledgeSourceApproval, ...]:
+        with sqlite3.connect(self.database) as connection:
+            rows = connection.execute(
+                """SELECT id,project_id,binding_id,enabled,rag_enabled,version,
+                created_by,created_at,updated_at
+                FROM project_knowledge_source_approvals_v2
+                ORDER BY project_id,binding_id,id"""
+            ).fetchall()
+        return tuple(_knowledge_source_approval(row) for row in rows)
+
+    def put_knowledge_source_approval(
+        self,
+        approval: ProjectKnowledgeSourceApproval,
+        expected_version: int | None,
+    ) -> None:
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                """SELECT version FROM project_knowledge_source_approvals_v2
+                WHERE project_id=? AND binding_id=?""",
+                (approval.project_id, approval.binding_id),
+            ).fetchone()
+            if (current is None and expected_version is not None) or (
+                current is not None and int(current[0]) != expected_version
+            ):
+                raise RuntimeError("PROJECT_KNOWLEDGE_APPROVAL_VERSION_CONFLICT")
+            connection.execute(
+                """INSERT INTO project_knowledge_source_approvals_v2(
+                id,project_id,binding_id,enabled,rag_enabled,version,created_by,
+                created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(project_id,binding_id) DO UPDATE SET
+                enabled=excluded.enabled,rag_enabled=excluded.rag_enabled,
+                version=excluded.version,updated_at=excluded.updated_at""",
+                (
+                    approval.id,
+                    approval.project_id,
+                    approval.binding_id,
+                    int(approval.enabled),
+                    int(approval.rag_enabled),
+                    approval.version,
+                    approval.created_by,
+                    approval.created_at.isoformat(),
+                    approval.updated_at.isoformat(),
+                ),
+            )
+
 
 def _project(row: tuple[object, ...]) -> Project:
     fields = (
@@ -424,5 +648,48 @@ def _knowledge_source(row: tuple[object, ...]) -> ProjectKnowledgeSource:
             "enabled": bool(row[3]),
             "version": row[4],
             "updated_at": row[5],
+        }
+    )
+
+
+def _knowledge_source_approval(
+    row: tuple[object, ...],
+) -> ProjectKnowledgeSourceApproval:
+    return ProjectKnowledgeSourceApproval.model_validate(
+        {
+            "id": row[0],
+            "project_id": row[1],
+            "binding_id": row[2],
+            "enabled": bool(row[3]),
+            "rag_enabled": bool(row[4]),
+            "version": row[5],
+            "created_by": row[6],
+            "created_at": row[7],
+            "updated_at": row[8],
+        }
+    )
+
+
+def _membership(row: tuple[object, ...]) -> ProjectMembership:
+    return ProjectMembership.model_validate(
+        {
+            "project_id": row[0],
+            "user_id": row[1],
+            "role": row[2],
+            "version": row[3],
+        }
+    )
+
+
+def _access_audit(row: tuple[object, ...]) -> ProjectAccessAudit:
+    return ProjectAccessAudit.model_validate(
+        {
+            "id": row[0],
+            "actor_user_id": row[1],
+            "project_id": row[2],
+            "capability": row[3],
+            "resource": row[4],
+            "reason": row[5],
+            "created_at": row[6],
         }
     )

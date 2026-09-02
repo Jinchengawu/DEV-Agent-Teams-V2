@@ -43,6 +43,7 @@ const statuses: Record<string, string> = {
   healthy: "发布健康",
   release_drifted: "发布已部分推进",
   needs_attention: "需要人工处理",
+  warning: "容量告警",
   applied: "已推进 main",
   draft: "草稿",
   open: "开放",

@@ -13,6 +13,7 @@ import {
 } from "./api";
 import { projectPath, useProjectId } from "../../entities/project/api";
 import { WorkcellExecutionPanel } from "../workcells/WorkcellExecutionPanel";
+import { KnowledgeContextPanel } from "./KnowledgeContextPanel";
 
 export function DeliveryRunPage() {
   const { deliveryId } = useParams<{ deliveryId: string }>();
@@ -21,7 +22,11 @@ export function DeliveryRunPage() {
   const events = useDeliveryEvents(deliveryId, projectId);
   const evidence = useDeliveryEvidence(deliveryId, projectId);
   const publications = useDeliveryKnowledgePublications(deliveryId, projectId);
-  const pipelineRun = useDeliveryPipelineRun(deliveryId, delivery.data?.pipeline_run_id);
+  const pipelineRun = useDeliveryPipelineRun(
+    deliveryId,
+    delivery.data?.pipeline_run_id,
+    delivery.data?.status,
+  );
   const decision = useDeliveryDecision();
   const retryPublication = useRetryKnowledgePublication(deliveryId);
 
@@ -49,6 +54,7 @@ export function DeliveryRunPage() {
       decisionError={decision.error}
       onDecision={(value) => decision.mutate({ delivery: delivery.data!, decision: value })}
     />
+    <KnowledgeContextPanel projectId={projectId} deliveryId={delivery.data.id}/>
     {delivery.data.delivery_execution_snapshot && (
       <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId}/>
     )}

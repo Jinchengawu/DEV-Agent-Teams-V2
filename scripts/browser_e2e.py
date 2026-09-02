@@ -72,7 +72,7 @@ def _authenticate(page: Page, url: str) -> None:
         )
         page.get_by_label("密码").fill(password)
         page.get_by_role("button", name="创建并登录").click()
-        page.get_by_role("link", name="交付", exact=True).wait_for()
+        page.get_by_role("link", name="交付工作台", exact=True).wait_for()
     elif page.get_by_role("heading", name="登录 Agent-Team-OS").count():
         existing_password = os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD")
         if not existing_password:
@@ -84,14 +84,20 @@ def _authenticate(page: Page, url: str) -> None:
         )
         page.get_by_label("密码").fill(existing_password)
         page.get_by_role("button", name="登录控制平面").click()
-        page.get_by_role("link", name="交付", exact=True).wait_for()
+        page.get_by_role("link", name="交付工作台", exact=True).wait_for()
     assert page.locator("body").inner_text().strip(), "rendered page is blank"
     assert not page.locator(".vite-error-overlay").count(), "Vite error overlay found"
 
 
 def _verify_navigation(page: Page) -> None:
     for navigation in (
-        "交付", "看板", "可视化编排", "智能体实例", "知识中心", "证据", "设置"
+        "交付工作台",
+        "交付看板",
+        "可视化编排",
+        "智能体实例",
+        "知识中心",
+        "证据",
+        "设置",
     ):
         page.get_by_role("link", name=navigation, exact=True).click()
         page.get_by_role("heading", name=navigation, exact=True).wait_for()
@@ -101,6 +107,7 @@ def _execute_control_plane_loop(
     page: Page, context: BrowserContext, url: str
 ) -> dict[str, str]:
     page.get_by_role("link", name="智能体实例").click()
+    page.get_by_role("tab", name="运行实例", exact=True).click()
     page.get_by_label("实例名称").fill("Browser 确定性执行器")
     with page.expect_response(
         lambda response: response.request.method == "POST"
@@ -168,7 +175,7 @@ def _execute_control_plane_loop(
     journey_revision_id = f"{revision['journey_id']}:{revision['revision']}"
     page.get_by_text(f"发布版本 {revision['revision']}", exact=True).wait_for()
 
-    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_role("link", name="交付工作台", exact=True).click()
     page.get_by_label("交付需求").fill(
         "增加 health_status 函数，返回 status=ok 和 version=0.1，并补充 unittest。"
     )
@@ -188,12 +195,12 @@ def _execute_control_plane_loop(
         timeout=60_000
     )
 
-    page.get_by_role("link", name="看板", exact=True).click()
+    page.get_by_role("link", name="交付看板", exact=True).click()
     _drag_delivery(page, delivery_id, target_column=2)
     _confirm_board_command(page, delivery_id, "批准计划")
     _wait_for_board_column(page, delivery_id, column=3, timeout=120_000)
 
-    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_role("link", name="交付工作台", exact=True).click()
     page.locator(".unified-diff").wait_for(timeout=30_000)
     assert page.locator(".unified-diff").inner_text().strip(), "candidate diff is empty"
     page.get_by_text("固定机器测试：通过", exact=True).wait_for()
@@ -202,13 +209,13 @@ def _execute_control_plane_loop(
     assert detail["candidate"]["diff_sha256"]
     assert detail["verification"]["exit_code"] == 0
 
-    page.get_by_role("link", name="看板", exact=True).click()
+    page.get_by_role("link", name="交付看板", exact=True).click()
     _wait_for_board_column(page, delivery_id, column=3, timeout=30_000)
     _drag_delivery(page, delivery_id, target_column=4)
     _confirm_board_command(page, delivery_id, "接受候选")
     _wait_for_board_column(page, delivery_id, column=4, timeout=60_000)
 
-    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_role("link", name="交付工作台", exact=True).click()
     page.get_by_text("应用回执已核验", exact=True).wait_for(timeout=30_000)
     completed = _delivery_json(context, url, delivery_id)
     receipt = completed["apply_receipt"]
@@ -236,7 +243,7 @@ def _verify_recovery(
 ) -> None:
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    page.get_by_role("link", name="交付", exact=True).wait_for(timeout=15_000)
+    page.get_by_role("link", name="交付工作台", exact=True).wait_for(timeout=15_000)
     delivery_id = checkpoint["delivery_id"]
     recovered = _delivery_json(context, url, delivery_id)
     assert recovered["status"] == "completed", recovered
@@ -260,7 +267,7 @@ def _verify_recovery(
         item["event_type"] == "delivery.completed" for item in events_response.json()
     )
 
-    page.get_by_role("link", name="交付", exact=True).click()
+    page.get_by_role("link", name="交付工作台", exact=True).click()
     page.locator(".delivery-list button").filter(has_text=delivery_id[:8]).click()
     page.locator(".status-completed").first.wait_for(timeout=15_000)
     page.get_by_text("应用回执已核验", exact=True).wait_for()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ...delivery import (
+    DeliveryBuildIdentitySnapshot,
     DeliveryExecutionSnapshot,
     DeliveryMethodSnapshot,
     DeliveryWorkspaceSnapshot,
@@ -31,11 +32,13 @@ class DeliveryExecutionSnapshotCompiler:
         projects: ProjectRepository,
         pipelines: PipelineCatalog,
         method_snapshot: Callable[[], DeliveryMethodSnapshot],
+        build_identity: Callable[[], DeliveryBuildIdentitySnapshot] | None = None,
     ) -> None:
         self.governance = governance
         self.projects = projects
         self.pipelines = pipelines
         self.method_snapshot = method_snapshot
+        self.build_identity = build_identity
 
     def compile(
         self,
@@ -57,9 +60,7 @@ class DeliveryExecutionSnapshotCompiler:
                 "选择已经冻结 Workcell Stage Map 与 Release Contract 的 Published Revision。",
             )
         team_keys = {item.workcell_key for item in topology.team_revision.workcells}
-        mapped_keys = {
-            item.workcell_key for item in revision.workcell_stage_map.values()
-        }
+        mapped_keys = {item.workcell_key for item in revision.workcell_stage_map.values()}
         unknown = sorted(mapped_keys - team_keys)
         if unknown:
             raise _error(
@@ -84,16 +85,12 @@ class DeliveryExecutionSnapshotCompiler:
                         "重新校验并发布 Pipeline Revision。",
                     )
         workspace_by_id = {item.id: item for item in topology.workspace_bindings}
-        workcell_binding_by_key = {
-            item.workcell_key: item for item in topology.workcell_bindings
-        }
+        workcell_binding_by_key = {item.workcell_key: item for item in topology.workcell_bindings}
         workspaces: list[DeliveryWorkspaceSnapshot] = []
         for definition in topology.team_revision.workcells:
             assignment = workcell_binding_by_key.get(definition.workcell_key)
             workspace = (
-                None
-                if assignment is None
-                else workspace_by_id.get(assignment.workspace_binding_id)
+                None if assignment is None else workspace_by_id.get(assignment.workspace_binding_id)
             )
             if (
                 workspace is None
@@ -126,6 +123,7 @@ class DeliveryExecutionSnapshotCompiler:
                 )
             )
         methods = self.method_snapshot()
+        build_identity = None if self.build_identity is None else self.build_identity()
         required_methods = {
             method_id
             for stage in revision.workcell_stage_map.values()
@@ -157,10 +155,16 @@ class DeliveryExecutionSnapshotCompiler:
                 for key, value in revision.workcell_stage_map.items()
             },
             "release_contract_snapshot": revision.release_contract_snapshot,
+            "knowledge_context_bindings": {
+                key: value.model_dump(mode="json")
+                for key, value in revision.knowledge_context_bindings.items()
+            },
             "resolved_provider_bindings": revision.resolved_provider_bindings,
             "workspaces": [item.model_dump(mode="json") for item in workspaces],
             "method_snapshot": methods.model_dump(mode="json"),
         }
+        if build_identity is not None:
+            payload["build_identity"] = build_identity.model_dump(mode="json")
         return DeliveryExecutionSnapshot(
             project_id=project_id,
             project_version=project.version,
@@ -177,9 +181,14 @@ class DeliveryExecutionSnapshotCompiler:
                 for key, value in revision.workcell_stage_map.items()
             },
             release_contract_snapshot=revision.release_contract_snapshot,
+            knowledge_context_bindings={
+                key: value.model_dump(mode="json")
+                for key, value in revision.knowledge_context_bindings.items()
+            },
             resolved_provider_bindings=revision.resolved_provider_bindings,
             workspaces=tuple(workspaces),
             method_snapshot=methods,
+            build_identity=build_identity,
             snapshot_sha256=sha256_json(payload),
         )
 
@@ -228,11 +237,7 @@ def compile_workcell_execution_snapshot(
     bindings: list[FrozenSlotBinding] = []
     for slot in ("main", "delegate_1", "delegate_2", "delegate_3"):
         site = stage.slot_bindings.get(slot)
-        provider = (
-            delivery.resolved_provider_bindings.get(site)
-            if isinstance(site, str)
-            else None
-        )
+        provider = delivery.resolved_provider_bindings.get(site) if isinstance(site, str) else None
         if not isinstance(provider, dict):
             raise _error(
                 "DELIVERY_PROVIDER_SLOT_SNAPSHOT_INCOMPLETE",
@@ -263,6 +268,25 @@ def compile_workcell_execution_snapshot(
                 deployment_snapshot=provider,
             )
         )
+    stage_context = delivery.knowledge_contexts.get(stage_path)
+    unavailable_context = delivery.knowledge_context_unavailable.get(stage_path)
+    knowledge_references = tuple(
+        reference
+        for reference in (
+            None if stage_context is None else stage_context.artifact_reference,
+            None if unavailable_context is None else unavailable_context.receipt_reference,
+        )
+        if reference is not None
+    )
+    frozen_inputs = tuple(
+        sorted(
+            {
+                reference.sha256: reference
+                for reference in (*input_artifacts, *knowledge_references)
+            }.values(),
+            key=lambda reference: reference.sha256,
+        )
+    )
     return WorkcellExecutionSnapshot(
         team_template_revision_id=delivery.team_template_revision_id,
         team_template_sha256=delivery.team_template_sha256,
@@ -283,7 +307,7 @@ def compile_workcell_execution_snapshot(
         slot_method_bindings=stage.delegate_methods,
         slot_purpose_bindings=stage.delegate_purposes,
         method_snapshot_sha256=delivery.method_snapshot.qualification_sha256,
-        input_artifacts=input_artifacts,
+        input_artifacts=frozen_inputs,
     )
 
 

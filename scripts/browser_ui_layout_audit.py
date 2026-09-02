@@ -8,7 +8,14 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, ViewportSize, sync_playwright
+
+VIEWPORTS: tuple[ViewportSize, ...] = (
+    {"width": 1280, "height": 800},
+    {"width": 1440, "height": 900},
+    {"width": 1920, "height": 1080},
+    {"width": 2560, "height": 1440},
+)
 
 
 def _row_metrics(page: Page, selector: str) -> list[dict[str, Any]]:
@@ -51,6 +58,7 @@ def main() -> None:
     parser.add_argument("--url", default="http://127.0.0.1:8080")
     parser.add_argument("--project-id", required=True)
     parser.add_argument("--screenshot-dir", type=Path)
+    parser.add_argument("--state", type=Path)
     args = parser.parse_args()
     routes = {
         "deliveries": (
@@ -65,13 +73,30 @@ def main() -> None:
         "agents": ("/agents", [".profile-list > .ant-btn"]),
         "knowledge": (
             f"/projects/{args.project_id}/knowledge",
-            [".ant-btn.knowledge-space-item", ".ant-btn.knowledge-doc-item"],
+            [
+                ".ant-btn.knowledge-space-item",
+                ".ant-btn.knowledge-doc-item",
+                ".knowledge-activity-item",
+                ".external-history-list > div",
+                ".rag-preview-results > article",
+            ],
+        ),
+        "project": (
+            f"/projects/{args.project_id}/overview",
+            [".project-membership-list > div", ".project-source-approval-list > div"],
+        ),
+        "settings": (
+            "/settings",
+            [".knowledge-connection-list > article", ".knowledge-binding-list > article"],
         ),
     }
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        context_options: dict[str, Any] = {"viewport": VIEWPORTS[0]}
+        if args.state is not None:
+            context_options["storage_state"] = str(args.state)
+        context = browser.new_context(**context_options)
         page = context.new_page()
         console_errors: list[str] = []
         request_failures: list[str] = []
@@ -104,31 +129,78 @@ def main() -> None:
 
         report: dict[str, Any] = {}
         violations: list[dict[str, Any]] = []
-        for name, (route, selectors) in routes.items():
-            page.goto(f"{args.url}{route}", wait_until="networkidle")
-            page.wait_for_timeout(250)
-            report[name] = {
-                "page_overflow_x": page.evaluate(
-                    "document.documentElement.scrollWidth - document.documentElement.clientWidth"
-                ),
-                "selectors": {},
-            }
-            for selector in selectors:
-                rows = _row_metrics(page, selector)
-                report[name]["selectors"][selector] = rows
-                for row in rows:
-                    if (
-                        row["overflow_x"] > 1
-                        or row["overflow_y"] > 1
-                        or row["white_space"] == "nowrap"
-                    ):
-                        violations.append({"page": name, "selector": selector, **row})
-            if args.screenshot_dir:
-                args.screenshot_dir.mkdir(parents=True, exist_ok=True)
-                page.screenshot(path=str(args.screenshot_dir / f"{name}.png"), full_page=True)
+        for viewport in VIEWPORTS:
+            page.set_viewport_size(viewport)
+            viewport_key = f"{viewport['width']}x{viewport['height']}"
+            report[viewport_key] = {}
+            for name, (route, selectors) in routes.items():
+                page.goto(f"{args.url}{route}", wait_until="networkidle")
+                page.wait_for_timeout(250)
+                report[viewport_key][name] = {
+                    "page_overflow_x": page.evaluate(
+                        "document.documentElement.scrollWidth - "
+                        "document.documentElement.clientWidth"
+                    ),
+                    "selectors": {},
+                }
+                for selector in selectors:
+                    rows = _row_metrics(page, selector)
+                    report[viewport_key][name]["selectors"][selector] = rows
+                    for row in rows:
+                        if (
+                            row["overflow_x"] > 1
+                            or row["overflow_y"] > 1
+                            or row["white_space"] == "nowrap"
+                        ):
+                            violations.append(
+                                {
+                                    "viewport": viewport_key,
+                                    "page": name,
+                                    "selector": selector,
+                                    **row,
+                                }
+                            )
+                if name == "project":
+                    status_badges = _row_metrics(page, ".project-hero > .ant-tag")
+                    report[viewport_key][name]["project_status_badges"] = status_badges
+                    for badge in status_badges:
+                        if badge["height"] > 48:
+                            violations.append(
+                                {
+                                    "viewport": viewport_key,
+                                    "page": name,
+                                    "selector": ".project-hero > .ant-tag",
+                                    "reason": "project status badge is vertically stretched",
+                                    **badge,
+                                }
+                            )
+                if name == "knowledge":
+                    activity_cards = _row_metrics(page, ".knowledge-activity-item")
+                    report[viewport_key][name]["activity_cards"] = activity_cards
+                    for card in activity_cards:
+                        if card["height"] > 520:
+                            violations.append(
+                                {
+                                    "viewport": viewport_key,
+                                    "page": name,
+                                    "selector": ".knowledge-activity-item",
+                                    "reason": "collapsed activity card exceeds 520px",
+                                    **card,
+                                }
+                            )
+                if args.screenshot_dir:
+                    args.screenshot_dir.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(
+                        path=str(args.screenshot_dir / f"{viewport_key}-{name}.png"),
+                        full_page=True,
+                    )
 
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        assert all(item["page_overflow_x"] <= 1 for item in report.values()), report
+        assert all(
+            page_report["page_overflow_x"] <= 1
+            for viewport_report in report.values()
+            for page_report in viewport_report.values()
+        ), report
         assert not violations, violations
         assert not console_errors, console_errors
         assert not request_failures, request_failures

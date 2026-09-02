@@ -1,6 +1,7 @@
 from .application import PipelineCatalog, PipelineRunLedger
 from .domain import (
     GraphCompilation,
+    KnowledgeContextBinding,
     Pipeline,
     PipelineCreate,
     PipelineDraft,
@@ -16,6 +17,7 @@ from .repository import SQLitePipelineRepository, SQLitePipelineRunRepository
 __all__ = [
     "Pipeline",
     "GraphCompilation",
+    "KnowledgeContextBinding",
     "PipelineCatalog",
     "PipelineCreate",
     "PipelineDraft",

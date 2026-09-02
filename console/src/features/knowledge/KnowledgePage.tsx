@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Checkbox, Input, Select } from "antd";
+import { Button, Checkbox, Collapse, Input, Select } from "antd";
 import { Archive, BookMarked, BookPlus, FilePlus2, FileText, FolderPlus, MessageSquare, RefreshCw, Search } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { ApiProblem, request } from "../../shared/api/client";
 import { ConflictState, EmptyState, ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { ConfirmDialog } from "../../shared/feedback/ConfirmDialog";
 import { useProjectId } from "../../entities/project/api";
+import { ExternalKnowledgePanel } from "./ExternalKnowledgePanel";
 
 type Space = components["schemas"]["Space"];
 type Document = components["schemas"]["Document"];
@@ -87,6 +88,32 @@ function sourceKindLabel(value: string) {
   if (value === "evidence") return "不可变证据";
   if (value === "provider-snapshot") return "外部来源快照";
   return `来源 ${value}`;
+}
+
+const activityTitlePreviewLimit = 96;
+const activitySummaryPreviewLimit = 160;
+
+function summarizeActivityTitle(value: string) {
+  const full = value.trim() || "未命名知识记录";
+  const normalized = full.replace(/\s+/g, " ");
+  return {
+    full,
+    preview: normalized.length > activityTitlePreviewLimit
+      ? `${normalized.slice(0, activityTitlePreviewLimit)}…`
+      : normalized,
+  };
+}
+
+function summarizeActivity(value: string | null | undefined) {
+  const full = value?.trim() || "该来源没有可展示的文本摘要。";
+  const truncated = full.length > activitySummaryPreviewLimit;
+  return {
+    full,
+    preview: truncated
+      ? `${full.slice(0, activitySummaryPreviewLimit)}…`
+      : full,
+    truncated,
+  };
 }
 
 const documentKinds = [
@@ -399,7 +426,9 @@ export function KnowledgePage() {
   }
 
   return (
-    <div className="knowledge-layout">
+    <>
+      <ExternalKnowledgePanel projectId={projectId}/>
+      <div className="knowledge-layout">
       <section className="panel knowledge-activity" aria-label="项目知识动态">
         <div className="panel-head">
           <span>项目知识动态</span>
@@ -411,41 +440,61 @@ export function KnowledgePage() {
           <ErrorState error={activity.error} retry={() => activity.refetch()} />
         ) : activity.data?.length ? (
           <div className="knowledge-activity-list" role="list">
-            {activity.data.map((item) => (
-              <article
-                key={`${item.source_kind}:${item.source_id}`}
-                className="knowledge-activity-item"
-                role="listitem"
-              >
-                <span className="knowledge-source-label">{sourceKindLabel(item.source_kind)}</span>
-                <a className="knowledge-activity-link" href={item.source_link || undefined}>
-                  <b>{item.title}</b>
-                </a>
-                <p>{item.summary || "该来源没有可展示的文本摘要。"}</p>
-                <small>
-                  {new Date(item.occurred_at).toLocaleString("zh-CN")} · 修订 {item.revision} · SHA-256 {item.content_sha256?.slice(0, 16) ?? "未提供"}
-                </small>
-                {item.source_kind !== "wiki" && (
-                  <Button
-                    className="button-icon knowledge-derive-button"
-                    aria-label={`提炼“${item.title}”为 Wiki`}
-                    disabled={
-                      deriveSource.isPending ||
-                      !selectedSpaceId ||
-                      !item.content_sha256
-                    }
-                    title={selectedSpaceId ? "保留来源 Revision 与 SHA-256，创建可编辑 Wiki" : "请先创建或选择项目知识空间"}
-                    onClick={() => {
-                      if (selectedSpaceId) {
-                        deriveSource.mutate({ item, targetSpaceId: selectedSpaceId });
-                      }
-                    }}
+            {activity.data.map((item) => {
+              const title = summarizeActivityTitle(item.title);
+              const summary = summarizeActivity(item.summary);
+              return (
+                <article
+                  key={`${item.source_kind}:${item.source_id}`}
+                  className="knowledge-activity-item"
+                  role="listitem"
+                >
+                  <span className="knowledge-source-label">{sourceKindLabel(item.source_kind)}</span>
+                  <a
+                    className="knowledge-activity-link"
+                    href={item.source_link || undefined}
+                    title={title.full}
                   >
-                    <BookPlus size={15} />提炼为 Wiki
-                  </Button>
-                )}
-              </article>
-            ))}
+                    <b>{title.preview}</b>
+                  </a>
+                  <p className="knowledge-activity-summary">{summary.preview}</p>
+                  {summary.truncated && (
+                    <Collapse
+                      className="knowledge-activity-details"
+                      ghost
+                      size="small"
+                      items={[{
+                        key: "full-summary",
+                        label: "查看完整摘要",
+                        children: <pre>{summary.full}</pre>,
+                      }]}
+                    />
+                  )}
+                  <small>
+                    {new Date(item.occurred_at).toLocaleString("zh-CN")} · 修订 {item.revision} · SHA-256 {item.content_sha256?.slice(0, 16) ?? "未提供"}
+                  </small>
+                  {item.source_kind !== "wiki" && (
+                    <Button
+                      className="button-icon knowledge-derive-button"
+                      aria-label={`提炼“${item.title}”为 Wiki`}
+                      disabled={
+                        deriveSource.isPending ||
+                        !selectedSpaceId ||
+                        !item.content_sha256
+                      }
+                      title={selectedSpaceId ? "保留来源 Revision 与 SHA-256，创建可编辑 Wiki" : "请先创建或选择项目知识空间"}
+                      onClick={() => {
+                        if (selectedSpaceId) {
+                          deriveSource.mutate({ item, targetSpaceId: selectedSpaceId });
+                        }
+                      }}
+                    >
+                      <BookPlus size={15} />提炼为 Wiki
+                    </Button>
+                  )}
+                </article>
+              );
+            })}
           </div>
         ) : (
           <EmptyState
@@ -534,20 +583,24 @@ export function KnowledgePage() {
 
         <div className="panel-head"><span>当前空间文档</span><small>{selectedSpaceId || "未选择空间"}</small></div>
         <div className="document-list" role="list" aria-label="当前空间文档列表">
-          {documents.isLoading && selectedSpaceId ? <LoadingState label="正在读取当前空间文档…" /> : documents.error ? <ErrorState error={documents.error} retry={() => documents.refetch()} /> : documents.data?.length ? documents.data.map((document) => (
-            <Button
-              key={document.id}
-              className={`knowledge-doc-item ${selectedDocumentId === document.id ? "selected" : ""}`}
-              aria-label={`文档 ${document.title}`}
-              onClick={() => setSelectedDocumentId(document.id)}
-            >
-              <b>{document.title}</b>
-              <small>{documentKindLabel(document.document_kind ?? "project-general")} · {document.role_key ?? "未指定角色"}</small>
-              <small>{document.delivery_id ? `Delivery ${document.delivery_id}` : "项目级文档"} · {document.source_kind}</small>
-              <small>文档 ID: {document.id}</small>
-              <small>修订: {document.current_revision} · 协议版本: {document.version}</small>
-            </Button>
-          )) : <EmptyState title="当前空间无文档" detail="选择一个空间后创建并编辑 Markdown 文档。" />}
+          {documents.isLoading && selectedSpaceId ? <LoadingState label="正在读取当前空间文档…" /> : documents.error ? <ErrorState error={documents.error} retry={() => documents.refetch()} /> : documents.data?.length ? documents.data.map((document) => {
+            const documentTitle = summarizeActivityTitle(document.title);
+            return (
+              <Button
+                key={document.id}
+                className={`knowledge-doc-item ${selectedDocumentId === document.id ? "selected" : ""}`}
+                aria-label={`文档 ${documentTitle.preview}`}
+                title={documentTitle.full}
+                onClick={() => setSelectedDocumentId(document.id)}
+              >
+                <b>{documentTitle.preview}</b>
+                <small>{documentKindLabel(document.document_kind ?? "project-general")} · {document.role_key ?? "未指定角色"}</small>
+                <small>{document.delivery_id ? `Delivery ${document.delivery_id}` : "项目级文档"} · {document.source_kind}</small>
+                <small>文档 ID: {document.id}</small>
+                <small>修订: {document.current_revision} · 协议版本: {document.version}</small>
+              </Button>
+            );
+          }) : <EmptyState title="当前空间无文档" detail="选择一个空间后创建并编辑 Markdown 文档。" />}
         </div>
       </section>
 
@@ -687,6 +740,7 @@ export function KnowledgePage() {
         ) : <EmptyState title="未选择文档" detail="先选择文档读取评论并提交。" />}
       </section>
       <ConfirmDialog open={Boolean(pendingRestore)} title={`恢复“${selectedDocument?.title ?? "当前文档"}”到修订 ${pendingRestore?.revision ?? ""}`} detail={`系统会以该历史内容创建一个新的当前修订，不会改写或删除原修订。目标内容 SHA-256：${pendingRestore?.contentSha256.slice(0, 16) ?? ""}。`} confirmLabel={`确认恢复到修订 ${pendingRestore?.revision ?? ""}`} tone="danger" pending={restoreRevision.isPending} onCancel={() => setPendingRestore(undefined)} onConfirm={() => { if (selectedDocument && pendingRestore) restoreRevision.mutate({ documentId: selectedDocument.id, revision: pendingRestore.revision, expectedVersion: selectedDocument.version }, { onSuccess: () => setPendingRestore(undefined) }); }}/>
-    </div>
+      </div>
+    </>
   );
 }

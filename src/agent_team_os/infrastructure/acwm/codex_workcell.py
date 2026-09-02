@@ -35,15 +35,15 @@ class CodexWorkcellAgent:
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         sandbox = (
-            "workspace-write"
-            if invocation.workspace_access == "workspace_write"
-            else "read-only"
+            "workspace-write" if invocation.workspace_access == "workspace_write" else "read-only"
         )
         environment = {**os.environ, **invocation.environment}
         instruction = (
             f"{invocation.instruction}\n\n"
             "本次调用就是一个已经登记的 AgentAttempt。不得派生子 Agent，不得使用 Party Mode，"
             "不得读取其他 Workcell Repository。最终只返回一个 JSON object，不要 Markdown。"
+            "允许返回的 knowledge_citation_ids 为："
+            f"{json.dumps(invocation.allowed_knowledge_citation_ids, ensure_ascii=False)}。"
         )
         command = (
             *self.command,
@@ -108,9 +108,18 @@ class CodexWorkcellAgent:
                 "CODEX_WORKCELL_OUTPUT_INVALID",
                 "Codex AgentAttempt 最终 JSON 必须是 object。",
             )
+        raw_citations = content.pop("knowledge_citation_ids", [])
+        if not isinstance(raw_citations, list) or any(
+            not isinstance(item, str) or not item for item in raw_citations
+        ):
+            raise _error(
+                "CODEX_WORKCELL_CITATIONS_INVALID",
+                "knowledge_citation_ids 必须是非空字符串数组。",
+            )
         return WorkcellAgentOutput(
             runtime_identity=self.runtime_identity,
             content=content,
+            knowledge_citation_ids=tuple(sorted(set(raw_citations))),
         )
 
     async def cancel(self, agent_run_id: str) -> bool:

@@ -23,7 +23,8 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
-from .modules.agents import AgentRunLedger
+from .modules.agents import AgentRunLedger, AgentRuntimeDispatcher
+from .modules.artifacts import ArtifactReference
 from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
@@ -53,6 +54,7 @@ class RequirementArtifact(ImmutableModel):
     non_goals: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
     acceptance_criteria: tuple[AcceptanceCriterion, ...]
+    knowledge_citation_ids: tuple[str, ...] = ()
 
 
 class SystemPolicy(ImmutableModel):
@@ -65,6 +67,7 @@ class TaskContract(ImmutableModel):
     instructions: str
     acceptance_ids: tuple[str, ...]
     system_policy: SystemPolicy = SystemPolicy()
+    knowledge_citation_ids: tuple[str, ...] = ()
 
 
 class CandidateChange(ImmutableModel):
@@ -74,6 +77,7 @@ class CandidateChange(ImmutableModel):
     changed_files: tuple[str, ...]
     candidate_ref: str = ""
     unified_diff: str = ""
+    knowledge_citation_ids: tuple[str, ...] = ()
 
 
 class VerificationRun(ImmutableModel):
@@ -169,6 +173,46 @@ class DeliveryMethodSnapshot(ImmutableModel):
     method_entries: dict[str, dict[str, object]]
 
 
+class KnowledgePreparationInputV1(ImmutableModel):
+    delivery_id: str
+    project_id: str
+    project_version: int = Field(ge=1)
+    project_description_snapshot: ArtifactReference
+    authorized_principal_id: str
+    delivery_goal: str = Field(min_length=1, max_length=20_000)
+    pipeline_revision_id: str
+    pipeline_revision_sha256: Sha256
+    authorization_access_component: dict[str, object]
+    approved_knowledge_approval_ids: tuple[str, ...] = ()
+    stage_bindings: dict[str, dict[str, object]]
+    stage_responsibilities: dict[str, str]
+    input_sha256: Sha256
+
+
+class DeliveryKnowledgeContextSnapshot(ImmutableModel):
+    stage_path: str
+    artifact_reference: ArtifactReference
+    citation_ids: tuple[str, ...]
+    authorization_epoch_hash: Sha256
+    trust_class: Literal["external-collaborative"] = "external-collaborative"
+
+
+class DeliveryKnowledgeContextUnavailableSnapshot(ImmutableModel):
+    stage_path: str
+    receipt_reference: ArtifactReference
+    error_code: str
+
+
+class DeliveryBuildIdentitySnapshot(ImmutableModel):
+    product_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    product_worktree_clean: bool
+    acwm_version: str
+    acwm_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    framework_lock_sha256: Sha256
+    framework_dependency_status: Literal["ready", "failed"]
+    snapshot_sha256: Sha256
+
+
 class DeliveryExecutionSnapshot(ImmutableModel):
     project_id: str
     project_version: int = Field(ge=1)
@@ -179,9 +223,17 @@ class DeliveryExecutionSnapshot(ImmutableModel):
     pipeline_revision_sha256: Sha256
     workcell_stage_map: dict[str, dict[str, object]]
     release_contract_snapshot: tuple[str, ...]
+    knowledge_context_bindings: dict[str, dict[str, object]] = Field(default_factory=dict)
     resolved_provider_bindings: dict[str, dict[str, object]]
     workspaces: tuple[DeliveryWorkspaceSnapshot, ...]
     method_snapshot: DeliveryMethodSnapshot
+    build_identity: DeliveryBuildIdentitySnapshot | None = None
+    knowledge_contexts: dict[str, DeliveryKnowledgeContextSnapshot] = Field(default_factory=dict)
+    knowledge_context_unavailable: dict[str, DeliveryKnowledgeContextUnavailableSnapshot] = Field(
+        default_factory=dict
+    )
+    knowledge_authorization_stamp: dict[str, object] | None = None
+    knowledge_preparation_input_sha256: Sha256 | None = None
     snapshot_sha256: Sha256
     compiled_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -204,9 +256,12 @@ class DeliveryRun(ImmutableModel):
     workspace_id: str
     project_execution_snapshot: ProjectExecutionSnapshot | None = None
     delivery_execution_snapshot: DeliveryExecutionSnapshot | None = None
+    knowledge_preparation_input: KnowledgePreparationInputV1 | None = None
+    knowledge_preparation_run_id: str | None = None
     user_request: str
     status: Literal[
         "queued",
+        "preparing_context",
         "planning",
         "awaiting_plan_decision",
         "awaiting_design_decision",
@@ -226,9 +281,7 @@ class DeliveryRun(ImmutableModel):
     candidate: CandidateChange | None = None
     verification: VerificationRun | None = None
     repository_candidates: tuple[RepositoryCandidate, ...] = ()
-    workcell_candidates: dict[str, WorkcellCandidateProjection] = Field(
-        default_factory=dict
-    )
+    workcell_candidates: dict[str, WorkcellCandidateProjection] = Field(default_factory=dict)
     release_bundle: ReleaseBundle | None = None
     release_bundle_v2_sha256: Sha256 | None = None
     release_manifest: ReleaseManifest | None = None
@@ -312,6 +365,19 @@ class RuntimeBindingConflictError(DeliveryStateConflictError):
         self.capability_id = capability_id
         self.expected = expected
         self.actual = actual
+
+
+class KnowledgePreparationResult(ImmutableModel):
+    preparation_run_id: str
+    delivery_execution_snapshot: DeliveryExecutionSnapshot
+
+
+class DeliveryKnowledgeContextPreparer(Protocol):
+    async def prepare(
+        self, preparation_input: KnowledgePreparationInputV1
+    ) -> KnowledgePreparationResult: ...
+
+    def cancel(self, delivery_id: str) -> None: ...
 
 
 class DeliveryRepository(Protocol):
@@ -518,6 +584,10 @@ class DeliveryCoordinator:
         )
         self._background: dict[str, asyncio.Task[None]] = {}
         self._pipeline_execution: PipelineExecution | None = None
+        self._knowledge_preparer: DeliveryKnowledgeContextPreparer | None = None
+
+    def configure_knowledge_context(self, preparer: DeliveryKnowledgeContextPreparer) -> None:
+        self._knowledge_preparer = preparer
 
     def configure_pipeline_runtime(
         self,
@@ -530,6 +600,8 @@ class DeliveryCoordinator:
         document_publisher: RoleDocumentPublisher | None = None,
         workcell_stage_driver: WorkcellStageDriver | None = None,
         external_release: ExternalForwardReleaseCoordinator | None = None,
+        knowledge_runtime_guard: Any | None = None,
+        runtime_dispatcher: AgentRuntimeDispatcher | None = None,
     ) -> None:
         """Attach the product governance layer to the ACWM GraphRun ledger."""
         from .modules.delivery import PipelineExecutionModule
@@ -549,6 +621,8 @@ class DeliveryCoordinator:
             document_publisher=document_publisher,
             workcell_stage_driver=workcell_stage_driver,
             external_release=external_release,
+            knowledge_runtime_guard=knowledge_runtime_guard,
+            runtime_dispatcher=runtime_dispatcher,
         )
 
     def enqueue(
@@ -567,6 +641,7 @@ class DeliveryCoordinator:
         resolved_provider_bindings: dict[str, dict[str, object]] | None = None,
         resolved_journey_sha256: str | None = None,
         resolved_pipeline_sha256: str | None = None,
+        knowledge_preparation_input: KnowledgePreparationInputV1 | None = None,
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
@@ -582,14 +657,24 @@ class DeliveryCoordinator:
                 self._validate_provider_bindings(provider_bindings)
             else:
                 self._validate_runtime_bindings(binding_snapshot)
+        if knowledge_preparation_input is not None:
+            if knowledge_preparation_input.delivery_id != (delivery_id or ""):
+                raise DeliveryStateConflictError(
+                    "knowledge preparation input does not match delivery"
+                )
+            if delivery_execution_snapshot is not None:
+                raise DeliveryStateConflictError(
+                    "knowledge preparation cannot accept a partial execution snapshot"
+                )
         delivery = DeliveryRun(
             id=delivery_id or str(uuid4()),
             project_id=project_id,
             workspace_id=workspace_id,
             project_execution_snapshot=project_execution_snapshot,
             delivery_execution_snapshot=delivery_execution_snapshot,
+            knowledge_preparation_input=knowledge_preparation_input,
             user_request=user_request,
-            status="queued",
+            status=("preparing_context" if knowledge_preparation_input is not None else "queued"),
             version=1,
             evidence_identity=self._planning.evidence_identity,
             planning_identity=self._planning.evidence_identity,
@@ -606,6 +691,13 @@ class DeliveryCoordinator:
             resolved_journey_sha256=journey_hash,
         )
         self._repository.save(delivery)
+        if knowledge_preparation_input is not None:
+            if self._knowledge_preparer is None:
+                return self.fail_initialization(
+                    delivery.id, "KNOWLEDGE_CONTEXT_PREPARER_UNAVAILABLE"
+                )
+            self._schedule(delivery.id, self._prepare_knowledge_context(delivery))
+            return delivery
         if pipeline_revision_id is not None:
             if self._pipeline_execution is None:
                 return self.fail_initialization(delivery.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE")
@@ -614,6 +706,52 @@ class DeliveryCoordinator:
         else:
             self._schedule(delivery.id, self._plan_queued(delivery))
         return delivery
+
+    async def _prepare_knowledge_context(self, delivery: DeliveryRun) -> None:
+        if self._knowledge_preparer is None or delivery.knowledge_preparation_input is None:
+            self.fail_initialization(delivery.id, "KNOWLEDGE_CONTEXT_PREPARER_UNAVAILABLE")
+            return
+        try:
+            result = await self._knowledge_preparer.prepare(delivery.knowledge_preparation_input)
+            current = self.get(delivery.id)
+            if current.status != "preparing_context":
+                return
+            current_input = current.knowledge_preparation_input
+            if current_input is None:
+                raise DeliveryStateConflictError(
+                    "preparing delivery lost its knowledge preparation input"
+                )
+            snapshot = result.delivery_execution_snapshot
+            if (
+                snapshot.project_id != current.project_id
+                or snapshot.pipeline_revision_id != current.pipeline_revision_id
+                or snapshot.knowledge_preparation_input_sha256 != current_input.input_sha256
+            ):
+                raise DeliveryStateConflictError(
+                    "knowledge preparation result does not match delivery"
+                )
+            ready = current.model_copy(
+                update={
+                    "status": "queued",
+                    "version": current.version + 1,
+                    "delivery_execution_snapshot": snapshot,
+                    "knowledge_preparation_run_id": result.preparation_run_id,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._repository.save(ready)
+            if ready.pipeline_revision_id is not None:
+                if self._pipeline_execution is None:
+                    self.fail_initialization(ready.id, "PIPELINE_GRAPH_RUNTIME_UNAVAILABLE")
+                    return
+                self._pipeline_execution.start(ready)
+                await self._pipeline_execution.advance(ready.id)
+            else:
+                await self._plan_queued(ready)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self._save_failed(delivery, error, "KNOWLEDGE_CONTEXT_PREPARATION_FAILED")
 
     def fail_initialization(self, delivery_id: str, error_code: str) -> DeliveryRun:
         task = self._background.pop(delivery_id, None)
@@ -728,6 +866,7 @@ class DeliveryCoordinator:
             raise DeliveryStateConflictError("unknown product workspace reference")
         active = {
             "queued",
+            "preparing_context",
             "planning",
             "awaiting_plan_decision",
             "awaiting_design_decision",
@@ -1150,6 +1289,8 @@ class DeliveryCoordinator:
         task = self._background.get(delivery_id)
         if task is not None:
             task.cancel()
+        if delivery.status == "preparing_context" and self._knowledge_preparer is not None:
+            self._knowledge_preparer.cancel(delivery_id)
         updated = delivery.model_copy(
             update={
                 "status": "cancelled",
@@ -1157,7 +1298,7 @@ class DeliveryCoordinator:
                 "updated_at": datetime.now(UTC),
             }
         )
-        if delivery.pipeline_revision_id is not None:
+        if delivery.pipeline_revision_id is not None and delivery.status != "preparing_context":
             if self._pipeline_execution is None:
                 raise DeliveryStateConflictError("pipeline runtime is unavailable")
             self._pipeline_execution.cancel(delivery)
@@ -1166,7 +1307,16 @@ class DeliveryCoordinator:
 
     async def recover(self) -> None:
         for delivery in self.list():
-            if delivery.status in {"planning", "executing", "verifying"}:
+            if delivery.status == "preparing_context":
+                if self._knowledge_preparer is None:
+                    self._save_failed(
+                        delivery,
+                        DeliveryStateConflictError("knowledge context preparer is unavailable"),
+                        "KNOWLEDGE_CONTEXT_PREPARER_UNAVAILABLE",
+                    )
+                    continue
+                await self._prepare_knowledge_context(delivery)
+            elif delivery.status in {"planning", "executing", "verifying"}:
                 if delivery.pipeline_revision_id is not None:
                     if self._pipeline_execution is None:
                         raise DeliveryStateConflictError("pipeline runtime is unavailable")

@@ -61,6 +61,9 @@ receipt. A successful label is never evidence by itself.
   Verification facts coordinated as one product release.
 - **Release Manifest**: the immutable product authority naming the exact repository revisions that
   form one accepted release. Git Main refs must converge to it but are not cross-repository atomic.
+- **Release Acceptance Report**: a content-addressed, read-only verification of one completed
+  Delivery's frozen Build Identity, Knowledge Context, observable AgentAttempts, Release Bundle,
+  Apply Receipts and active Release Manifest. It never owns Apply or Delivery state.
 
 ## Ownership
 

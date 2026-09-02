@@ -83,7 +83,12 @@ def _authenticate(page: Page, url: str) -> None:
     page.get_by_role("link", name="项目", exact=True).wait_for(timeout=30_000)
 
 
-def _execute_workcell_journey(page: Page, url: str) -> tuple[str, str]:
+def _execute_workcell_journey(
+    page: Page,
+    url: str,
+    *,
+    knowledge_binding_id: str | None = None,
+) -> tuple[str, str]:
     request = page.context.request
     pipeline = next(
         item
@@ -98,7 +103,11 @@ def _execute_workcell_journey(page: Page, url: str) -> tuple[str, str]:
     expect(page.locator(".topology-workcell").get_by_text("git_repository_v1")).to_have_count(4)
     assert page.get_by_text("执行顺序由 Published Pipeline Revision 管理。").count() == 0
 
-    project_id = "browser-workcell-v050"
+    project_id = (
+        "browser-workcell-v051-knowledge"
+        if knowledge_binding_id is not None
+        else "browser-workcell-v050"
+    )
     page.get_by_role("link", name="项目", exact=True).click()
     page.get_by_placeholder("例如：pj1").fill(project_id)
     page.get_by_placeholder("例如：客户门户后端").fill("四仓 Workcell 浏览器验收")
@@ -155,6 +164,16 @@ def _execute_workcell_journey(page: Page, url: str) -> tuple[str, str]:
         page.get_by_role("button", name="激活四仓团队").click()
     activated = activated_response.value.json()
     assert activated["project_status"] == "active", activated
+
+    if knowledge_binding_id is not None:
+        approval = _put_json(
+            request,
+            f"{url}/v1/projects/{project_id}/knowledge-source-approvals/"
+            f"{knowledge_binding_id}",
+            {"enabled": True, "rag_enabled": True, "expected_version": None},
+        )
+        assert approval["enabled"] is True, approval
+        assert approval["rag_enabled"] is True, approval
 
     page.get_by_role("link", name="交付工作台", exact=True).click()
     page.get_by_text("Repository Workcell Set", exact=True).wait_for()
@@ -272,6 +291,18 @@ def _assert_product_evidence(
     assert len(release["remote_apply_receipts"]) == 4, release
     assert release["manifest"]["manifest_sha256"] == delivery["release_manifest_v2_sha256"]
 
+    project_documents = _get_json(
+        request,
+        f"{url}/v1/wiki/documents?space_id=project-docs:{project_id}",
+    )
+    assert project_documents, "role document publication did not create project Wiki records"
+    assert all(
+        0 < len(item["title"]) <= 240
+        and "\n" not in item["title"]
+        and "external-collaborative-data" not in item["title"]
+        for item in project_documents
+    ), project_documents
+
     for workcell_key, candidate in candidates.items():
         bare_repository = (
             data_dir
@@ -332,9 +363,41 @@ def _post_json(
     return response.json()
 
 
+def _put_json(
+    request: APIRequestContext,
+    url: str,
+    payload: dict[str, object],
+    *,
+    expected_status: int = 200,
+) -> Any:
+    csrf_token = next(
+        (
+            str(cookie["value"])
+            for cookie in request.storage_state()["cookies"]
+            if cookie["name"] == "agent_team_os_csrf"
+        ),
+        None,
+    )
+    assert csrf_token, "authenticated browser context is missing the CSRF cookie"
+    parsed = urlsplit(url)
+    response = request.put(
+        url,
+        data=payload,
+        headers={
+            "Origin": f"{parsed.scheme}://{parsed.netloc}",
+            "X-CSRF-Token": csrf_token,
+        },
+    )
+    assert response.status == expected_status, response.text()
+    return response.json()
+
+
 def _select_option(page: Page, label: str, option_text: str) -> None:
-    page.get_by_label(label).click()
-    dropdown = page.locator(".ant-select-dropdown:visible")
+    control = page.get_by_label(label)
+    control.click()
+    # Ant Design briefly keeps the leaving popup visible while the next popup
+    # enters. The most recently mounted visible popup owns the active control.
+    dropdown = page.locator(".ant-select-dropdown:visible").last
     dropdown.wait_for()
     option = dropdown.locator(".ant-select-item-option:visible").filter(
         has_text=option_text
@@ -346,7 +409,13 @@ def _select_option(page: Page, label: str, option_text: str) -> None:
         raise AssertionError(
             f"{label} 缺少选项 {option_text!r}；当前选项：{available!r}"
         ) from error
-    option.first.click()
+    # React Flow viewport animations can cause Ant Design to rebuild and
+    # reposition its portal between Playwright's actionability check and the
+    # native click. A DOM click is appropriate here: the option is already
+    # proven visible and enabled, and it avoids a false "outside viewport"
+    # failure without weakening the product assertion that follows.
+    option.first.evaluate("element => element.click()")
+    control.wait_for()
     page.keyboard.press("Escape")
 
 

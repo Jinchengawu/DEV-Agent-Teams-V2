@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
+from pydantic import JsonValue
 
 from .api import create_app
 from .control_plane import ControlPlaneService, HealthResult
@@ -26,6 +30,7 @@ from .infrastructure.git import (
     ExternalGitWorkspaceManager,
     ProjectGitWorkspaces,
 )
+from .infrastructure.knowledge import SQLiteVectorIndexAdapter
 from .journey import (
     load_agent_workcell_delivery_definition,
     load_backend_delivery_definition,
@@ -55,10 +60,30 @@ from .modules.extensions import (
 )
 from .modules.identity import IdentityService, SQLiteIdentityRepository
 from .modules.knowledge import (
+    DeliveryKnowledgeContextPreparationService,
+    EmbeddingModelDescriptor,
+    KnowledgeAuthorizationResolver,
+    KnowledgeContextRuntimeGuard,
+    KnowledgeDirectoryReconciler,
+    KnowledgeIndexManager,
+    KnowledgePreparationInputCompiler,
     KnowledgePublicationLedger,
     KnowledgePublisher,
     KnowledgeSearchIndex,
+    KnowledgeSyncPolicy,
+    KnowledgeSyncScheduler,
+    KnowledgeSyncSupervisor,
+    KnowledgeSyncWorker,
+    ProviderNode,
+    ProviderNodeKind,
+    ProviderSnapshot,
+    ProviderSpace,
+    SQLiteKnowledgeContextRepository,
+    SQLiteKnowledgeIndexRepository,
+    SQLiteTenantKnowledgeRepository,
     SQLiteWikiRepository,
+    TenantConnection,
+    TenantKnowledgeManager,
     WikiService,
 )
 from .modules.orchestration import (
@@ -95,7 +120,10 @@ from .modules.workcells import (
     builtin_release_contract,
     builtin_workcell_stage_map,
 )
+from .readiness import snapshot_delivery_build_identity
 from .release import DeterministicWorkspaceAgent
+from .shared.features import FeatureFlags
+from .shared.hashes import sha256_json
 from .testing import (
     DeterministicPlanningService,
     DeterministicPullRequestSurface,
@@ -121,11 +149,107 @@ class DeterministicGateHealthProbe:
         )
 
 
+class DeterministicGateTenantKnowledgeProvider:
+    """Release-gate-only Feishu boundary; never valid Live evidence."""
+
+    def list_spaces(self) -> tuple[ProviderSpace, ...]:
+        return (
+            ProviderSpace(external_id="gate-space", title="Gate 研发知识库"),
+        )
+
+    def list_nodes(self, external_space_id: str) -> tuple[ProviderNode, ...]:
+        return (
+            ProviderNode(
+                external_id="gate-architecture",
+                external_space_id=external_space_id,
+                source_id="docx:gate-architecture",
+                title="四仓隔离架构规范",
+                kind=ProviderNodeKind.DOCUMENT,
+                provider_revision="gate-rev-1",
+            ),
+            ProviderNode(
+                external_id="gate-release",
+                external_space_id=external_space_id,
+                source_id="docx:gate-release",
+                title="Forward-only Release 规范",
+                kind=ProviderNodeKind.DOCUMENT,
+                provider_revision="gate-rev-1",
+            ),
+        )
+
+    def fetch_snapshot(self, source_id: str) -> ProviderSnapshot:
+        text_by_source = {
+            "docx:gate-architecture": (
+                "# 四仓隔离架构规范\n"
+                "Design、Frontend、Backend、QA 必须使用独立 Git Repository Workspace。"
+            ),
+            "docx:gate-release": (
+                "# Forward-only Release 规范\n"
+                "Candidate 通过 Verification 和 Review 后才能快进 Apply。"
+            ),
+        }
+        text = text_by_source[source_id]
+        normalized: JsonValue = {"type": "feishu-docx-raw", "text": text}
+        return ProviderSnapshot(
+            source_id=source_id,
+            provider_revision="gate-rev-1",
+            content_type="text/markdown; charset=utf-8",
+            normalized_content=normalized,
+            normalized_text=text,
+            content_sha256=sha256_json(normalized),
+            source_url=f"https://example.invalid/wiki/{source_id.split(':', 1)[1]}",
+            fetched_at=datetime(2026, 9, 2, tzinfo=UTC),
+        )
+
+
+class DeterministicGateTenantKnowledgeResolver:
+    def __init__(self) -> None:
+        self.provider = DeterministicGateTenantKnowledgeProvider()
+
+    def resolve(self, _connection: TenantConnection) -> DeterministicGateTenantKnowledgeProvider:
+        return self.provider
+
+
+class DeterministicGateEmbeddingPort:
+    """Stable four-dimensional embedding for deterministic browser evidence."""
+
+    adapter_revision = "deterministic-gate-embedding-v1"
+    model_digest = "sha256:" + "1" * 64
+
+    def describe(self, model_name: str) -> EmbeddingModelDescriptor:
+        return EmbeddingModelDescriptor(
+            model_name=model_name,
+            model_digest=self.model_digest,
+        )
+
+    def embed(
+        self,
+        texts: tuple[str, ...],
+        *,
+        model_name: str,
+        truncate: bool,
+    ) -> tuple[tuple[float, ...], ...]:
+        del model_name, truncate
+        vectors: list[tuple[float, ...]] = []
+        for text in texts:
+            lowered = text.lower()
+            vectors.append(
+                (
+                    0.01 + float("workspace" in lowered or "仓" in text),
+                    float("frontend" in lowered or "前端" in text),
+                    float("backend" in lowered or "后端" in text),
+                    float("apply" in lowered or "发布" in text),
+                )
+            )
+        return tuple(vectors)
+
+
 def build_gate_app() -> FastAPI:
     project_root = Path(__file__).parents[2]
     data_dir = Path(os.environ["AGENT_TEAM_OS_DATA_DIR"])
     database = data_dir / "agent-team-os.sqlite"
     MigrationRunner(database, project_root / "migrations").migrate()
+    feature_flags = FeatureFlags.from_environment()
     project_workspaces = ProjectGitWorkspaces(data_dir / "browser-workspaces")
     sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
@@ -260,6 +384,65 @@ def build_gate_app() -> FastAPI:
     evidence_ledger = EvidenceLedger(SQLiteEvidenceRepository(database))
     knowledge_publications = KnowledgePublicationLedger(database)
     artifact_storage = ContentAddressedArtifactStorage(data_dir / "artifacts")
+    identity_service = IdentityService(SQLiteIdentityRepository(database))
+    tenant_knowledge: TenantKnowledgeManager | None = None
+    knowledge_indexes: KnowledgeIndexManager | None = None
+    knowledge_preparation_compiler: KnowledgePreparationInputCompiler | None = None
+    knowledge_runtime_guard: KnowledgeContextRuntimeGuard | None = None
+    knowledge_context_repository: SQLiteKnowledgeContextRepository | None = None
+    authorization: KnowledgeAuthorizationResolver | None = None
+    knowledge_sync_supervisor: KnowledgeSyncSupervisor | None = None
+    if feature_flags.feishu_tenant_sync_v1:
+        tenant_knowledge = TenantKnowledgeManager(
+            SQLiteTenantKnowledgeRepository(database),
+            provider_resolver=DeterministicGateTenantKnowledgeResolver(),
+            artifact_storage=artifact_storage,
+        )
+        projects.configure_knowledge_binding_validator(tenant_knowledge.require_binding)
+        sync_policy = KnowledgeSyncPolicy()
+        knowledge_sync_supervisor = KnowledgeSyncSupervisor(
+            KnowledgeSyncScheduler(
+                tenant_knowledge,
+                project_repository,
+                policy=sync_policy,
+            ),
+            KnowledgeDirectoryReconciler(
+                tenant_knowledge,
+                policy=sync_policy,
+            ),
+            KnowledgeSyncWorker(
+                tenant_knowledge,
+                policy=sync_policy,
+            ),
+            policy=sync_policy,
+        )
+    if feature_flags.knowledge_hybrid_index_v1:
+        assert tenant_knowledge is not None
+        knowledge_indexes = KnowledgeIndexManager(
+            SQLiteKnowledgeIndexRepository(database),
+            tenant_repository=tenant_knowledge.repository,
+            artifact_storage=artifact_storage,
+            index_root=data_dir / "knowledge-indexes",
+            embedding_port=DeterministicGateEmbeddingPort(),
+            vector_index_port=SQLiteVectorIndexAdapter(),
+        )
+        pipeline_catalog.configure_knowledge_binding_policy(knowledge_indexes)
+    if feature_flags.delivery_knowledge_context_v1:
+        assert tenant_knowledge is not None and knowledge_indexes is not None
+        authorization = KnowledgeAuthorizationResolver(
+            identity=identity_service,
+            projects=projects,
+            tenant=tenant_knowledge,
+        )
+        knowledge_preparation_compiler = KnowledgePreparationInputCompiler(
+            authorization=authorization,
+            projects=projects,
+            artifacts=artifact_storage,
+        )
+        knowledge_runtime_guard = KnowledgeContextRuntimeGuard(
+            authorization=authorization,
+            artifacts=artifact_storage,
+        )
     workcell_execution = WorkcellExecutionModule(
         SQLiteWorkcellExecutionRepository(database),
         artifact_storage=artifact_storage,
@@ -300,13 +483,32 @@ def build_gate_app() -> FastAPI:
         ),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=DeterministicPullRequestSurface(),
+        knowledge_guard=knowledge_runtime_guard,
     )
     delivery_snapshot_compiler = DeliveryExecutionSnapshotCompiler(
         governance=project_workcells,
         projects=project_repository,
         pipelines=pipeline_catalog,
         method_snapshot=method_set.snapshot,
+        build_identity=lambda: snapshot_delivery_build_identity(project_root),
     )
+    if feature_flags.delivery_knowledge_context_v1:
+        assert (
+            tenant_knowledge is not None
+            and knowledge_indexes is not None
+            and authorization is not None
+        )
+        knowledge_context_repository = SQLiteKnowledgeContextRepository(database)
+        knowledge_preparer = DeliveryKnowledgeContextPreparationService(
+            knowledge_context_repository,
+            authorization=authorization,
+            projects=projects,
+            tenant=tenant_knowledge,
+            indexes=knowledge_indexes,
+            artifacts=artifact_storage,
+            snapshot_compiler=delivery_snapshot_compiler,
+        )
+        coordinator.configure_knowledge_context(knowledge_preparer)
     wiki_service = WikiService(
         SQLiteWikiRepository(database), project_guard=projects.assert_writable
     )
@@ -319,7 +521,7 @@ def build_gate_app() -> FastAPI:
         control_plane=control_plane,
         evidence=evidence_ledger,
         settings=SettingsManager(SQLiteSettingsRepository(database)),
-        identity=IdentityService(SQLiteIdentityRepository(database)),
+        identity=identity_service,
         knowledge=wiki_service,
         pipeline_catalog=pipeline_catalog,
         pipeline_runs=PipelineRunLedger(
@@ -335,6 +537,8 @@ def build_gate_app() -> FastAPI:
         release_applier=ReleaseCoordinator(SQLiteReleaseRepository(database), candidate_applier),
         knowledge_publications=knowledge_publications,
         knowledge_publisher=KnowledgePublisher(database, knowledge_publications),
+        tenant_knowledge=tenant_knowledge,
+        knowledge_indexes=knowledge_indexes,
         evaluations=EvaluationService(
             SQLiteEvaluationRepository(database),
             pipeline_catalog,
@@ -348,8 +552,26 @@ def build_gate_app() -> FastAPI:
         delivery_snapshot_compiler=delivery_snapshot_compiler,
         external_release=external_release,
         workcell_stage_driver=workcell_stage_driver,
+        knowledge_preparation_compiler=knowledge_preparation_compiler,
+        knowledge_runtime_guard=knowledge_runtime_guard,
+        knowledge_context_repository=knowledge_context_repository,
+        feature_flags=feature_flags,
     )
     install_preview_ui(result, project_root / "console" / "dist")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if tenant_knowledge is not None:
+            tenant_knowledge.recover_expired_sync_jobs()
+        if knowledge_sync_supervisor is not None:
+            knowledge_sync_supervisor.start()
+        try:
+            yield
+        finally:
+            if knowledge_sync_supervisor is not None:
+                await knowledge_sync_supervisor.stop()
+
+    result.router.lifespan_context = lifespan
     return result
 
 

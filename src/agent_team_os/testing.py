@@ -21,7 +21,7 @@ class DeterministicPlanningService:
 
     async def analyze(self, user_request: str) -> RequirementArtifact:
         return RequirementArtifact(
-            summary=user_request,
+            summary=_deterministic_stage_objective(user_request),
             acceptance_criteria=(
                 AcceptanceCriterion(
                     id="AC-1",
@@ -33,11 +33,26 @@ class DeterministicPlanningService:
         )
 
     async def plan(self, requirements: RequirementArtifact) -> TaskContract:
+        approved_marker = "已批准需求摘要："
+        instructions = (
+            requirements.summary.rsplit(approved_marker, 1)[1].strip()
+            if approved_marker in requirements.summary
+            else _deterministic_stage_objective(requirements.summary)
+        )
         return TaskContract(
             title="Implement the approved Backend request",
-            instructions=requirements.summary,
+            instructions=instructions,
             acceptance_ids=tuple(item.id for item in requirements.acceptance_criteria),
         )
+
+
+def _deterministic_stage_objective(instruction: str) -> str:
+    """Keep the fixture output shaped like provider output without echoing its prompt."""
+    prompt = instruction.split("<external-collaborative-data", 1)[0].strip()
+    marker = "本次 Stage 目标："
+    if marker in prompt:
+        return prompt.rsplit(marker, 1)[1].strip()
+    return prompt
 
 
 class DeterministicCodeExecutor:
@@ -119,6 +134,7 @@ class DeterministicWorkcellAgent:
         return WorkcellAgentOutput(
             runtime_identity="deterministic-model-boundary",
             content=content,
+            knowledge_citation_ids=invocation.allowed_knowledge_citation_ids,
         )
 
 
@@ -136,9 +152,7 @@ class DeterministicPullRequestSurface:
         )
         return GitHubPRReceiptCreate(
             pull_request_id=ordinal,
-            url=(
-                f"https://github.com/deterministic/{candidate.workcell_key}/pull/{ordinal}"
-            ),
+            url=(f"https://github.com/deterministic/{candidate.workcell_key}/pull/{ordinal}"),
             head_branch=candidate.candidate_branch,
             head_candidate_sha=candidate.candidate_revision,
             state="open",

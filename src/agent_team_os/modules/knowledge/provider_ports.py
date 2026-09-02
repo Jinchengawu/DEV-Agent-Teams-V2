@@ -15,11 +15,19 @@ from .provider_domain import (
 
 
 class ProviderFailure(RuntimeError):
-    def __init__(self, code: str, detail: str, *, unavailable: bool = False) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        unavailable: bool = False,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         super().__init__(detail)
         self.code = code
         self.detail = detail
         self.unavailable = unavailable
+        self.retry_after_seconds = retry_after_seconds
 
 
 class KnowledgeProvider(Protocol):

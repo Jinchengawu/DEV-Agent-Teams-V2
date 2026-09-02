@@ -29,8 +29,8 @@
       {
         "id": "knowledge-boundary",
         "label": "知识边界",
-        "focus": ["api", "state", "feishu"],
-        "note": "Feishu Adapter 已实现，但 Preview 未注入 ProviderKnowledgeManager。"
+        "focus": ["api", "knowledge", "state", "artifacts", "feishu", "gate_c_contract", "acwm"],
+        "note": "Gate A/B/C 已按 Feature Flag 完成本地 Deterministic 验证；Gate C 的 ACWM Stage 输入合同已发布并由产品依赖锁定。"
       }
     ]
   },
@@ -92,7 +92,7 @@
       "id": "state",
       "type": "database",
       "label": "SQLite · WAL · Event",
-      "sublabel": "UoW · Migration 0001–0035",
+      "sublabel": "UoW · Migration 0001–0043",
       "tag": "Product state",
       "pos": [584, 72],
       "size": [190, 78]
@@ -136,10 +136,28 @@
     {
       "id": "feishu",
       "type": "external",
-      "label": "飞书知识 Provider",
-      "sublabel": "Feishu Knowledge · Adapter only",
-      "tag": "Preview 未接线",
+      "label": "飞书 Tenant Knowledge",
+      "sublabel": "Feishu Wiki · Docx Blocks",
+      "tag": "Live not_run",
       "pos": [28, 72],
+      "size": [190, 78]
+    },
+    {
+      "id": "knowledge",
+      "type": "backend",
+      "label": "Knowledge 控制面",
+      "sublabel": "RBAC · Snapshot · VectorIndexPort",
+      "tag": "Gate A/B/C · feature-flagged",
+      "pos": [286, 72],
+      "size": [204, 78]
+    },
+    {
+      "id": "gate_c_contract",
+      "type": "external",
+      "label": "ACWM Knowledge Contract",
+      "sublabel": "Stage input Artifact Contract",
+      "tag": "Gate C · pinned revision",
+      "pos": [28, 498],
       "size": [190, 78]
     }
   ],
@@ -147,7 +165,7 @@
     {
       "kind": "region",
       "label": "Agent-Team-OS 产品边界 / Product Authority",
-      "wraps": ["console", "api", "governance", "workcell", "state", "artifacts"],
+      "wraps": ["console", "api", "governance", "workcell", "state", "artifacts", "knowledge"],
       "pad": 18
     },
     {
@@ -254,13 +272,39 @@
       "toSide": "bottom"
     },
     {
-      "id": "api-feishu",
+      "id": "api-knowledge",
       "from": "api",
-      "to": "feishu",
-      "label": "Provider Port · Preview 未注入",
-      "variant": "dashed",
+      "to": "knowledge",
+      "label": "Project RBAC · Sync / Retrieval",
       "fromSide": "top",
-      "toSide": "right"
+      "toSide": "bottom"
+    },
+    {
+      "id": "knowledge-feishu",
+      "from": "knowledge",
+      "to": "feishu",
+      "label": "Tenant App Provider Port",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [252, 164]
+    },
+    {
+      "id": "knowledge-state",
+      "from": "knowledge",
+      "to": "state",
+      "label": "Snapshot · Index Metadata",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelAt": [537, 164]
+    },
+    {
+      "id": "gate-c-contract-acwm",
+      "from": "gate_c_contract",
+      "to": "acwm",
+      "label": "已锁定上游 Revision",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelDy": 63
     }
   ],
   "cards": [
@@ -284,8 +328,8 @@
       "dot": "amber",
       "title": "成熟度 / Maturity",
       "items": [
-        "Workcell 与 Forward-only 状态机已 Deterministic 验证",
-        "真实 Hermes、AgentScope、GitHub 四仓仍 Live blocked/not_run"
+        "Knowledge Gate A/B/C 本地闭环与 Workcell 状态机已 Deterministic 验证",
+        "ACWM Contract 已发布回锁；真实 Feishu/Ollama/四仓仍 blocked/not_run"
       ]
     }
   ]

@@ -79,16 +79,16 @@ Agent 能修改文件，不代表代码已经可以安全交付。Agent-Team-OS 
 
 ## 模块总览
 
-| 模块 | v0.5 本地 Alpha 已有能力 | 明确边界 |
+| 模块 | v0.5.x 本地 Alpha 已有能力 | 明确边界 |
 |---|---|---|
-| **组织与项目** | TeamTemplate Revision、四 Workcell 拓扑、独立 Repository Binding/验证/激活 | Team 不定义 Stage、Provider 或真实仓库；暂无项目级 RBAC |
+| **组织与项目** | TeamTemplate Revision、四 Workcell 拓扑、独立 Repository Binding/验证/激活、项目级 RBAC | Team 不定义 Stage、Provider 或真实仓库；尚非生产多租户隔离 |
 | **Workcell 执行** | 可观察 Main/Child/Attempt、冻结 Slot、取消/超时/中断、机器验证和结构化 Review | Child 深度最多 1；一个 Workcell 最多一个 Writer |
 | **交付与发布** | 四仓 Candidate Lineage、ReleaseBundleV2、GitHub PR、Forward-only Apply、Resume 和 Manifest | GitHub PR 仅是评审面；v0.5 不使用 Provider-native Merge |
 | **Method Pack** | 内容寻址 BMAD/TEA Store、完整性校验、临时只读 Codex Overlay | 不执行不受信安装脚本，不暴露 Party Mode，不污染业务仓库 |
 | **看板** | 可重建的项目级 WorkItem 与合法命令 | 拖动表达命令，不能伪造完成状态 |
 | **可视化编排** | 多流水线、React Flow DAG、条件边和有界 LOOP | LOOP 内禁止人工 Gate |
 | **智能体** | Agent Profile、不可变 Revision、Deployment、运行实例、Provider Manifest 与资格检查 | Runtime Feature 来自可信 Adapter，浏览器不可伪造 |
-| **知识中心** | 项目/全局 Wiki、版本、评论、FTS5、Provider Snapshot 与项目知识动态 | 不含 Embedding、RAG 回答生成和长期 Agent Memory |
+| **知识中心** | Wiki/FTS5、Tenant 同步、不可变 Hybrid Index 与冻结 Delivery Context（Feature Flag） | 真实 Tenant/Ollama Live、通用 RAG 问答与长期 Agent Memory 尚未验收或实现 |
 | **证据** | 只追加交付事实、SHA-256 完整性与重新验证历史 | Evidence 可提炼为 Wiki，但本体永远不可编辑 |
 | **设置** | Readiness、发布门禁状态和安全运营配置 | 系统安全硬限制不可由界面放宽 |
 
@@ -275,7 +275,7 @@ Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管�
 | 默认需求/任务规划 | `codex-simulated-hermes` | Codex 执行了结构化规划 Adapter；不能证明调用了 Hermes |
 | Workcell Main / Child Attempt | `codex-cli` | Codex 在冻结 Slot、Workspace Access 和临时 Method Overlay 内执行；不允许隐藏派生 |
 | 确定性四仓门禁 | `deterministic-test` | 只证明 Workcell、Artifact、Git、PR Receipt 和 Forward-only 状态机，不证明真实模型质量 |
-| Hermes Adapter | `hermes-acp` / `hermes-http` | 可注册并健康检查；真实使用必须显式配置并产生对应证据 |
+| Hermes Adapter | `hermes-acp` / `hermes-http` | `hermes.acp` 产品 Role Turn 已接线；`hermes-http` 仅可注册/健康检查；真实使用仍需显式 Published Binding 与 Live 证据 |
 
 未知或未验证 Artifact 可以被审计，但不能驱动 Delivery 成功。
 
@@ -329,6 +329,45 @@ v0.5 Workcell 门禁：
 `AGENT_TEAM_OS_TEST_PASSWORD` 注入独立的会话级评测密码。它使用四个真实本地 Bare Git
 Remote，但 Agent 边界是 Deterministic，不是 Live 模型证据。
 
+v0.5.1 Feishu Knowledge 与四仓 Live 启动前检查：
+
+```bash
+AGENT_TEAM_OS_FEATURE_FEISHU_TENANT_SYNC_V1=1 \
+AGENT_TEAM_OS_FEATURE_KNOWLEDGE_HYBRID_INDEX_V1=1 \
+AGENT_TEAM_OS_FEATURE_DELIVERY_KNOWLEDGE_CONTEXT_V1=1 \
+uv run --extra live agent-team-os knowledge-live-readiness --project-id <project-id>
+```
+
+该命令只读取 Project/Team/Workspace、Published Pipeline、Approved Source、Index Qualification、
+Resolved Provider Binding、产品已接线 Runtime Adapter、持久化 Knowledge Sync Runtime、ACWM Lock
+与 Runtime 事实，并将
+不含凭据值的 JSON/Markdown Receipt 写入
+`$AGENT_TEAM_OS_DATA_DIR/reports/readiness/`。返回 `ready/not_run` 只表示具备启动条件，
+不表示 Live Delivery 已执行或通过；缺少任一前置条件时以退出码 2 得到
+`blocked/not_run`。该 Receipt 不属于 `Release Report`，不能激活 Manifest。
+ACWM 检查同时要求 `framework-lock.json`、`pyproject.toml` 的精确版本/Git Revision 和
+`uv.lock` 的实际解析 Revision 三方一致；只修改 Framework Lock 不能使本地 editable checkout
+冒充可由干净 clone 重放的依赖。
+
+已完成真实 Delivery 后，使用只读 Release Acceptance V2：
+
+```bash
+uv run --extra live agent-team-os knowledge-live-gate \
+  --project-id <project-id> \
+  --delivery-id <completed-delivery-id>
+```
+
+Readiness 不通过时该命令只写 `reports/readiness/` 且返回退出码 2，不生成发布报告。
+Readiness 通过后，它只校验既有 `completed` Delivery，并把去敏的 JSON/Markdown 报告写入
+`$AGENT_TEAM_OS_DATA_DIR/reports/release-v2/`。该验收器不启动 Agent、不重新检索、不 Apply，且
+只有 `FAIL=0`、`WARN=0`、`skipped=0` 才返回 `passed`。
+产品 Runtime Dispatcher 已接入 `hermes.acp` role-turn，并对 Published Runtime Instance、连接指纹、
+逐 Attempt 空沙箱、工具拒绝、结构化输出与 Citation 做失败关闭校验；`http.sync` 尚未接入。
+Runtime Readiness 还会实际执行 `hermes acp --check`，仅能找到 CLI 不足以通过 ACP 协议前置检查。
+默认内置 Planning Slot 仍是 `codex-simulated-hermes`，所以即使本机安装 Hermes CLI 并配置 API Key，
+在重新资格化、发布真实 `hermes.acp` Binding 之前，`live-provider-bindings` 与
+`product-runtime-adapters` 仍会保持 `blocked`。
+
 保留的 v0.4 单仓回归门禁：
 
 ```bash
@@ -358,9 +397,11 @@ Report，因此四 Workcell Live Release 仍是 `blocked/not_run`，不得由 De
 - Child 深度固定为 1，每个 Workcell 最多 3 个 Child、2 个并发、1 个 Writer。
 - External Git Live 参考实现只支持 GitHub HTTPS 与 `env://` / `keychain://` 凭据引用；不管理 SSH 凭据。
 - 仓库保护若禁止服务身份直推 `main`，该仓库不能通过 v0.5 Live Readiness；v0.5 不使用 Provider-native PR Merge。
-- 默认由 Codex 模拟 Hermes PM/Admin；真实 Hermes 尚不是发布门禁。
-- 没有 Embedding、RAG 回答生成、共享长期 Agent Memory 或多租户。
-- 尚未实现项目级 RBAC；当前角色作用于整个控制平面。
+- 默认由 Codex 模拟 Hermes PM/Admin；`hermes.acp` 产品 Adapter 已实现，但真实 Hermes 尚未通过
+  同 Revision Live 发布门禁。
+- Feature-flagged Hybrid Retrieval 与 Delivery Context 已有 Deterministic 闭环，但尚无真实
+  Feishu/Ollama/Hermes 四仓 Live 证据；没有共享长期 Agent Memory 或多租户。
+- 项目级 RBAC 已实现；生产多租户、逐用户 Feishu ACL 与跨租户隔离仍未实现。
 - v0.5 当前工作树没有发布安装包、Git Tag 或 GitHub Release。
 - 仓库当前没有 License；公开可见不代表获得复用授权。
 

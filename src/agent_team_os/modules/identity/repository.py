@@ -24,8 +24,9 @@ class SQLiteIdentityRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO users(
-                id,username,display_name,role,password_hash,enabled,version,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?)""",
+                id,username,display_name,role,password_hash,enabled,authorization_version,
+                version,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (
                     user.id,
                     user.username,
@@ -33,6 +34,7 @@ class SQLiteIdentityRepository:
                     user.role.value,
                     password_hash,
                     int(user.enabled),
+                    user.authorization_version,
                     user.version,
                     user.created_at.isoformat(),
                     user.updated_at.isoformat(),
@@ -54,25 +56,19 @@ class SQLiteIdentityRepository:
 
     def get_user(self, user_id: str) -> User | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE id=?", (user_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
         return None if row is None else self._user(row)
 
     def get_user_by_username(self, username: str) -> tuple[User, str] | None:
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE username=?", (username,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
         if row is None:
             return None
         return self._user(row), str(row["password_hash"])
 
     def list_users(self) -> tuple[User, ...]:
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM users ORDER BY created_at,id"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM users ORDER BY created_at,id").fetchall()
         return tuple(self._user(row) for row in rows)
 
     def compare_and_swap_user(
@@ -82,6 +78,7 @@ class SQLiteIdentityRepository:
             "display_name=?",
             "role=?",
             "enabled=?",
+            "authorization_version=?",
             "version=?",
             "updated_at=?",
         ]
@@ -89,6 +86,7 @@ class SQLiteIdentityRepository:
             user.display_name,
             user.role.value,
             int(user.enabled),
+            user.authorization_version,
             user.version,
             user.updated_at.isoformat(),
         ]
@@ -112,8 +110,7 @@ class SQLiteIdentityRepository:
             if removes_enabled_admin:
                 administrator_count = int(
                     connection.execute(
-                        "SELECT COUNT(*) FROM users "
-                        "WHERE role='administrator' AND enabled=1"
+                        "SELECT COUNT(*) FROM users WHERE role='administrator' AND enabled=1"
                     ).fetchone()[0]
                 )
                 if administrator_count == 1:
@@ -208,6 +205,7 @@ class SQLiteIdentityRepository:
             display_name=str(row["display_name"]),
             role=Role(str(row["role"])),
             enabled=bool(row["enabled"]),
+            authorization_version=int(row["authorization_version"]),
             version=int(row["version"]),
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),

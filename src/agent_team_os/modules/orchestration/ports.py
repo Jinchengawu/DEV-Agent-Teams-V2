@@ -6,6 +6,7 @@ from typing import Literal, Protocol
 from ...shared.events import ProductEvent
 from .domain import (
     GraphCompilation,
+    KnowledgeContextBinding,
     Pipeline,
     PipelineDraft,
     PipelineRevision,
@@ -19,9 +20,7 @@ class JourneyGraphCompiler(Protocol):
 
 
 class CapabilityBindingResolver(Protocol):
-    def snapshot(
-        self, capability_ids: tuple[str, ...]
-    ) -> dict[str, dict[str, object]]: ...
+    def snapshot(self, capability_ids: tuple[str, ...]) -> dict[str, dict[str, object]]: ...
 
 
 class ProviderBindingResolver(Protocol):
@@ -36,10 +35,12 @@ class PipelineDefinitionPolicy(Protocol):
     def validate(self, definition: dict[str, object]) -> tuple[str, ...]: ...
 
 
+class KnowledgeBindingPolicy(Protocol):
+    def validate(self, retrieval_policy_revision_id: str, max_context_bytes: int) -> None: ...
+
+
 class PipelineGraphRuntime(Protocol):
-    def create(
-        self, run_id: str, compiled_graph: dict[str, object]
-    ) -> dict[str, object]: ...
+    def create(self, run_id: str, compiled_graph: dict[str, object]) -> dict[str, object]: ...
 
     def transition(
         self,
@@ -88,9 +89,7 @@ class PipelineRepository(Protocol):
 
     def list_drafts(self, pipeline_id: str) -> tuple[PipelineDraft, ...]: ...
 
-    def compare_and_swap_draft(
-        self, expected_version: int, updated: PipelineDraft
-    ) -> bool: ...
+    def compare_and_swap_draft(self, expected_version: int, updated: PipelineDraft) -> bool: ...
 
     def publish(
         self,
@@ -102,6 +101,7 @@ class PipelineRepository(Protocol):
         resolved_provider_bindings: dict[str, dict[str, object]],
         workcell_stage_map: dict[str, WorkcellStageBinding],
         release_contract_snapshot: tuple[str, ...],
+        knowledge_context_bindings: dict[str, KnowledgeContextBinding],
         fingerprint: str,
         published_by: str,
     ) -> PipelineRevision: ...

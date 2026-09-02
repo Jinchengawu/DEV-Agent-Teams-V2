@@ -18,7 +18,9 @@ from .project_application import ProjectWorkcellGovernance
 def create_project_workcell_router(
     governance: ProjectWorkcellGovernance,
     *,
-    authorize_manage: Callable[[Request], None] | None = None,
+    authorize_read: Callable[[Request, str], None] | None = None,
+    authorize_manage: Callable[[Request, str], None] | None = None,
+    authorize_workspace_manage: Callable[[Request, str], None] | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -26,7 +28,9 @@ def create_project_workcell_router(
         "/v1/projects/{project_id}/workcells",
         response_model=ProjectWorkcellTopology,
     )
-    def get_project_workcells(project_id: str) -> ProjectWorkcellTopology:
+    def get_project_workcells(project_id: str, request: Request) -> ProjectWorkcellTopology:
+        if authorize_read is not None:
+            authorize_read(request, project_id)
         return governance.topology(project_id)
 
     @router.post(
@@ -40,7 +44,7 @@ def create_project_workcell_router(
         request: Request,
     ) -> WorkspaceBindingAssignment:
         if authorize_manage is not None:
-            authorize_manage(request)
+            authorize_manage(request, project_id)
         return governance.create_workspace_binding(project_id, body)
 
     @router.post(
@@ -52,8 +56,8 @@ def create_project_workcell_router(
         body: WorkspaceBindingVerificationRequest,
         request: Request,
     ) -> WorkspaceBinding:
-        if authorize_manage is not None:
-            authorize_manage(request)
+        if authorize_workspace_manage is not None:
+            authorize_workspace_manage(request, workspace_id)
         return governance.verify_workspace(
             workspace_id,
             expected_version=body.expected_version,
@@ -69,7 +73,7 @@ def create_project_workcell_router(
         request: Request,
     ) -> ProjectWorkcellTopology:
         if authorize_manage is not None:
-            authorize_manage(request)
+            authorize_manage(request, project_id)
         return governance.activate(project_id, expected_version=body.expected_version)
 
     return router

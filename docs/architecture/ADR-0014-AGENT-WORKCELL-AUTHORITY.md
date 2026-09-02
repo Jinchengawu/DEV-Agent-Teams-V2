@@ -17,7 +17,8 @@ Agent-Team-OS 引入 `Agent Workcell` 作为 Stage 内的产品级执行单元�
 
 | 领域事实 | 唯一权威 |
 |---|---|
-| Stage、DAG、Gate、Loop、Artifact Contract、Provider Binding | Published Pipeline Revision / ACWM |
+| Stage、DAG、Gate、Loop、Artifact Contract 语义 | ACWM |
+| 不可变发布 Revision、Provider/Workcell/Release Binding | Agent-Team-OS Published Pipeline Revision |
 | Workcell 身份、拓扑、Workspace 要求、Delegation 上限 | TeamTemplate Revision |
 | Team 选择和真实仓库绑定 | Project Governance |
 | Main/Child 组合、调度、取消、超时、生命周期和结果合成 | Workcell Execution Module |

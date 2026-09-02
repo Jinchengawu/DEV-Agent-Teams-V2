@@ -8,6 +8,7 @@ from acwm.domain import (
     ProviderCapability,
 )
 
+from ...knowledge_context_contract import knowledge_context_artifact_contract
 from ...shared.hashes import Sha256
 from .deployment_domain import ProviderManifestView
 
@@ -91,6 +92,9 @@ def _codex_provider() -> CapabilityProviderManifest:
         ),
         required_features=frozenset({CapabilityFeature.TEXT_FINAL}),
         optional_features=frozenset({CapabilityFeature.CWD_BINDING, CapabilityFeature.TOOL_EVENTS}),
+        input_contracts=(
+            knowledge_context_artifact_contract(),
+        ),
         output_contracts=(
             ArtifactContract(
                 id="agent-output",
@@ -119,6 +123,9 @@ def _hermes_provider() -> CapabilityProviderManifest:
         ),
         workflow_modes=("agentscope.role-turn",),
         required_features=frozenset({CapabilityFeature.TEXT_FINAL}),
+        input_contracts=(
+            knowledge_context_artifact_contract(),
+        ),
         output_contracts=(
             ArtifactContract(
                 id="agent-output",

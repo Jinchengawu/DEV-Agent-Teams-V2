@@ -1,4 +1,4 @@
-# Agent-Team-OS v0.5.0 产品事实总纲
+# Agent-Team-OS v0.5.1 开发事实总纲
 
 > 面向产品、架构、研发、测试与交付运营人员的统一产品说明。本文解释“产品是什么、为什么存在、
 > 如何工作、当前真正做到什么”，不替代 OpenAPI、领域模型、Migration 或 ADR。
@@ -7,15 +7,15 @@
 
 | 字段 | 值 |
 |---|---|
-| 产品版本 | `0.5.0` |
+| 产品版本 | `0.5.1` 开发中；Python Package Version 尚保持 `0.5.0` |
 | 产品阶段 | 本地 Alpha；尚未完成正式 Release 验收 |
-| 文档版本 | `1.1` |
+| 文档版本 | `1.2` |
 | 文档日期 | 2026-09-02 |
-| 事实基线 | `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` |
-| `main` 对照 | `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` |
-| 合并状态 | v0.5.0 Workcell 代码已经合入 `main`；代码合并不等于正式 Release 验收，Live 四仓 Gate 仍为 `blocked/not_run` |
-| ACWM 锁定版本 | `agent-capability-workflow-matrix==0.5.0`，Revision `65acf7f6a11cbcbe58dda88e3a4aa3d48f87245d` |
-| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，107 条 Path、132 个 HTTP Operation |
+| 事实基线 | `codex/v051-feishu-knowledge-rag` 功能分支，基于 `origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f`；具体提交 SHA 以 Git 分支为准 |
+| `main` 对照 | 本地 `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` 已落后于 `origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f` |
+| 合并状态 | v0.5.1 Feishu Knowledge/RAG 与 Release Acceptance V2 位于功能分支，尚未合并 `main`；Deterministic 通过不等于 Live Release 验收 |
+| ACWM 锁定版本 | `agent-capability-workflow-matrix==0.5.1`，Revision `ae46ea81a2795b4b6dd5c46ce8c271c68e98b9ed`；Stage Input Artifact Contract 已发布并进入产品依赖锁 |
+| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，135 条 Path、164 个 HTTP Operation |
 
 ### 0.1 能力事实等级
 
@@ -112,8 +112,8 @@ v0.5.0 不承诺：
 - 在一个共享 Git Workspace 中放入前端、后端、设计和 QA；
 - 自动创建、删除或重命名用户远端仓库；
 - 自动回滚已推进的外部 `main`、Force Push、自动 Rebase 或重写已审批 Bundle；
-- 生产多租户、项目级 RBAC、生产 SLA 或官方模型 Benchmark；
-- RAG 问答、Embedding、共享长期 Agent Memory；
+- 生产多租户、跨租户数据隔离、生产 SLA 或官方模型 Benchmark；
+- 通用 RAG 对话生成、跨 Delivery 共享长期 Agent Memory；当前 Hybrid Retrieval 只服务检索预览与冻结 Delivery Context；
 - 支持仅允许 Provider-native PR Merge、禁止服务身份直推 `main` 的 Live 仓库。
 
 ### 1.5 适用与不适用场景
@@ -123,7 +123,7 @@ v0.5.0 不承诺：
 | Coding Agent 团队需要受控、多仓交付闭环 | 只需要 Agent 聊天或 Prompt 编排 |
 | 需要 DAG、bounded Loop、人工 Gate 和 Git 证据组合 | 必须马上获得托管生产服务、跨租户隔离或生产 SLA |
 | 需要区分“产生、验证、审批、应用、激活”五类事实 | 仓库政策只允许 GitHub Merge，且不能授权服务身份直推 `main` |
-| 研究 Agent Runtime 与产品控制面的职责边界 | 需要内置向量数据库、RAG 或长期共享 Memory |
+| 研究 Agent Runtime 与产品控制面的职责边界 | 需要通用知识聊天、长期共享 Memory 或跨租户知识平台 |
 | 本地 Alpha、架构验证和受控评测 | 直接接入敏感生产仓库；当前尚无独立安全审计 |
 
 ### 1.6 人物角色
@@ -538,9 +538,9 @@ Lease，但**不会**修复已部分推进的远端、清除 `release_drifted` �
 Auditor 从 Delivery 详情和 Evidence 页面复核运行身份、Revision、Artifact Hash、Gate、Verification、PR、
 Receipt 和 Manifest。Evidence 本体不可编辑，重新验证只追加新 Verification。需要形成可维护说明时，
 用户可显式把已验证 Evidence 派生为 Wiki；派生记录保留来源 ID、Revision 与 SHA-256，但不会改变原始
-Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permission 定义，而是“全局身份认证 +
-个别 Endpoint/Domain 二次授权”的组合；精确范围见第 6.1 节。这里的 Viewer 不是项目级授权模型，
-因为 v0.5 尚无项目级 RBAC。
+Evidence 的不可变性。项目级资源按 `Global Role ∩ ProjectRole` 求交集；非 Administrator 只能看到
+自己拥有 Membership 的项目。外部知识还必须进一步满足 Approved Source Scope。Administrator 可执行
+Break-glass 访问，但产品会追加 `ProjectAccessAudit`，不会把管理员绕行伪装成普通 Membership 授权。
 
 ---
 
@@ -570,20 +570,24 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 | Identity、Project、TeamTemplate、Agent Catalog、Pipeline、Delivery、Workcell、Board、Evidence、Knowledge、Settings | **[已实现]**；公共合同/组件/领域测试覆盖程度见第 10 章 |
 | 四仓 Workcell、隔离 Workspace、ReleaseBundleV2、Forward-only、`resume-forward` | **[已实现] [Deterministic 已验证] [Live blocked/not_run]** |
 | BMAD/TEA Content-Addressed Store 与 Overlay | **[已实现] [Deterministic 已验证]**；真实方法效果不在证明范围 |
+| Project Membership 与 Knowledge Source Scope | **[已实现] [Deterministic 已验证]**；采用 `Global Role ∩ ProjectRole ∩ Approved Source Scope`，不是逐用户 Feishu ACL |
+| Feishu Tenant Sync、不可变 Snapshot、Hybrid Index、Retrieval Preview | **[已实现] [Deterministic 已验证] [Live blocked/not_run]**；真实 Tenant/Ollama 证据尚缺 |
+| Delivery Knowledge Context、Citation 与 Best-effort Revoke | **[已实现] [Deterministic 已验证] [Live blocked/not_run]**；结果接纳时重新校验授权 Epoch，已进入模型上下文的内容不可追回 |
+| Release Acceptance V2 与 Build Identity | **[已实现] [Deterministic 已验证] [Live blocked/not_run]**；只读验证既有 completed Delivery，Readiness blocked 时不生成 Release Report |
 | Evaluation Domain、CLI、Runtime Router、Dataset | **[已实现]**；Offline Fixture 可运行，Live 按前置条件决定 `blocked/not_run` |
 | Evaluation Console 与 Console Client Contract | **[未来规划]**；当前不存在 `/evaluation`，Router 未进入 Console OpenAPI |
-| 真实 Hermes PM/Admin | Adapter 可注册；发布级 Live 使用证据 **[Live blocked/not_run]** |
+| 真实 Hermes PM/Admin | ACWM Catalog 可发现 `hermes.acp` / `http.sync`；产品 Runtime Dispatcher 当前只接线 `hermes.acp`，`http.sync` 尚未接线；发布级 Live 使用证据 **[Live blocked/not_run]** |
 | AgentScope Attempt Runtime | Workflow Manifest/合同已有；Workcell Live Adapter **[未来规划]**，架构状态为 `Accepted/Not Implemented`；当前 Codex 直连 Attempt 不是 AgentScope Live 证据 |
 
 ### 5.2 Identity 与本地访问控制
 
 | 项目 | 规格 |
 |---|---|
-| 目的 | 保护本地控制面命令，区分 Administrator、Editor、Viewer。 |
+| 目的 | 保护本地控制面命令，区分 Administrator、Editor、Viewer，并将 Project-scoped 访问收敛到 `Global Role ∩ ProjectRole`。 |
 | 前置条件 | 全新数据目录；首次 Bootstrap 后才能登录。 |
 | 用户动作 | Bootstrap、Login、Logout；Administrator 管理用户状态和角色。 |
-| 状态变化 | User 启用/禁用与 Version；Session 创建/撤销/过期。 |
-| 输出证据 | Product Event、Problem Detail；Session 与 CSRF Token 不作为交付 Evidence。 |
+| 状态变化 | User 启用/禁用与 Version；Session 创建/撤销/过期；Project Membership `owner/editor/viewer` CAS 变更。 |
+| 输出证据 | Product Event、Problem Detail、Break-glass ProjectAccessAudit；Session 与 CSRF Token 不作为交付 Evidence。 |
 | 权限 | `users:manage` 仅 Administrator；读取/命令再按模块权限校验。 |
 | 失败恢复 | 弱密码、错误 Origin/CSRF、最后一个管理员禁用、Version 冲突均拒绝；刷新版本或由管理员修复。 |
 
@@ -593,9 +597,9 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 |---|---|
 | 目的 | 把一个项目绑定到已发布 Team、Pipeline、Deployment、Knowledge Source 与真实仓库。 |
 | 前置条件 | Team/Pipeline/Deployment 已发布；外部仓库已存在；凭据以引用方式提供。 |
-| 用户动作 | 创建/编辑/归档项目；配置 Pipeline、Deployment Access、Knowledge Source；绑定/Verify Workspace；Team Activate。 |
+| 用户动作 | 创建/编辑/归档项目；管理 Membership；配置 Pipeline、Deployment Access、Approved Knowledge Source；绑定/Verify Workspace；Team Activate。 |
 | 状态变化 | Project：`provisioning` → `active` / `provision_failed` → `archived`；Workspace：`provisioning` / `ready` / `failed`。 |
-| 输出证据 | Workspace Verification Hash、Base SHA、绑定 Version、Team Activation 结果、Release Health。 |
+| 输出证据 | Membership/Approval Version、Workspace Verification Hash、Base SHA、Team Activation 结果、Release Health。 |
 | 权限 | `projects:manage`、`workspace:reset` 仅 Administrator。 |
 | 失败恢复 | Retry Provision/Verify；Base 或权限变化后重新验证；已归档项目只读。 |
 
@@ -631,7 +635,7 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 | 前置条件 | 所有 Stage/边合法；Loop 有上限；Provider/Workcell/Method 绑定完整。 |
 | 用户动作 | Create/Patch Draft、图校验、Publish、Activate、查看 Published Snapshot。 |
 | 状态变化 | Draft Version 与 Validation；Published Revision 不可变；Activation 指向固定 Revision。 |
-| 输出证据 | Graph Fingerprint、Revision Hash、ResolvedProviderBinding、Workcell Stage Map、Release Contract。 |
+| 输出证据 | Graph Fingerprint、Revision Hash、ResolvedProviderBinding、Workcell Stage Map、Release Contract、KnowledgeContextBinding 与 ACWM Stage Input Artifact Contract。 |
 | 权限 | Editor 可编辑；Publish/Activate 需要 Administrator 的发布权限。 |
 | 失败恢复 | 显示合同错误并修复 Draft；不得把 Schema 解析失败静默渲染成空图。 |
 
@@ -643,7 +647,7 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 | 前置条件 | Project `active`；无其他活动 Delivery；固定 Pipeline 与资源均 Ready。 |
 | 用户动作 | 创建 Delivery；审批/拒绝 Plan 与 Design；查看 Tree；取消 Delivery/Workcell。 |
 | 状态变化 | Delivery 与 Workcell 状态机见第 2.6 节；取消向未完成 Child 传播。 |
-| 输出证据 | Requirements、Task、Gate、Snapshot、Attempt、DelegationPlan、Verification、ReviewArtifact、WorkcellResult。 |
+| 输出证据 | Requirements、Task、Gate、Delivery/Workcell Snapshot、Knowledge Context/Citation、Attempt、DelegationPlan、Verification、ReviewArtifact、WorkcellResult。 |
 | 权限 | Editor 可创建、决定日常 Gate、取消 Workcell；最终 Candidate Apply 仅 Administrator。 |
 | 失败恢复 | ACWM bounded Loop 创建新的 WorkcellRun；超时/中断保留真实终态，不在 Child 内递归。 |
 
@@ -671,6 +675,18 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 | 权限 | Candidate Apply 为 `delivery:candidate-apply`，仅 Administrator；Resume 走同一发布权威。 |
 | 失败恢复 | 原 Bundle 预检后继续；不回滚、不 Force Push、不自动 Rebase、不使用 GitHub Merge。 |
 
+#### 5.9.1 Release Acceptance V2
+
+| 项目 | 规格 |
+|---|---|
+| 目的 | 在不取得 Apply Authority 的前提下，只读组合一个已完成四仓 Delivery 的 Build、Pipeline、Knowledge、Workcell 与 Release 事实。 |
+| 前置条件 | `knowledge-live-readiness=ready`；Delivery 已完成；执行时冻结的 Product/ACWM Build Identity 与报告时一致且可重放。 |
+| 用户动作 | 执行 `agent-team-os knowledge-live-gate --project-id <id> --delivery-id <id>`。 |
+| 状态变化 | Readiness blocked 时保持 `not_run` 且只写 Readiness Receipt；Ready 后 Report 为 `passed/failed`，不改写 Delivery、Bundle、Receipt 或 Manifest。 |
+| 输出证据 | 内容寻址 JSON/Markdown `ReleaseAcceptanceReportV2`；`FAIL=0`、`WARN=0`、`skipped=0` 才能 passed。 |
+| 权限与秘密 | CLI 报告不保存 Secret、Credential Reference、Repository URI、知识正文或模型原始响应。 |
+| 失败恢复 | 按失败 Check 修复外部事实后重新验证同一 Delivery；Verifier 不重跑 Agent、不重新检索、不自动 Apply。 |
+
 ### 5.10 Evidence
 
 | 项目 | 规格 |
@@ -687,21 +703,21 @@ Evidence 的不可变性。Viewer 的当前读取面并非由一项通配 Permis
 
 | 项目 | 规格 |
 |---|---|
-| 目的 | 管理可编辑 Wiki、外部 Provider Snapshot 和从 Evidence 派生的可维护文档。 |
-| 前置条件 | 项目存在；Provider Binding 已启用；派生来源可验证。 |
-| 用户动作 | 创建 Space/Document、修订、恢复 Revision、评论、搜索、派生、重试 Publication。 |
-| 状态变化 | Wiki Version/Revision；Provider Snapshot；Publication pending/published/failed。 |
-| 输出证据 | Source ID、Revision、SHA-256、派生关系与 Publication 记录。 |
-| 权限 | Editor/Administrator 可 `wiki:edit`；Viewer 不可编辑。 |
-| 失败恢复 | 版本冲突刷新后重试；归档 Space 只读；Provider/Publication 修复后显式 Retry。 |
+| 目的 | 管理可编辑 Wiki、Feishu Tenant Source、不变 Snapshot、Hybrid Index、Retrieval Preview，以及冻结到 Delivery 的 Knowledge Context/Citation。 |
+| 前置条件 | 项目存在且 Actor 有 Membership；Tenant Connection/Binding 已诊断；Source 经 Project Approval；索引通过 Published Evaluation Policy。 |
+| 用户动作 | 创建/修订 Wiki；创建并诊断 Tenant Connection/Binding；同步 Source；构建 Shadow Index、评测并 CAS 激活；检索预览；查看 Delivery Context/Citation。 |
+| 状态变化 | Wiki Version/Revision；SyncJob Lease/Attempt；Provider Snapshot；Index `shadow/active`；Authorization Epoch；Delivery Context available/unavailable。 |
+| 输出证据 | Source/Snapshot/Index Revision、Embedding Qualification、Evaluation Run、Authorization Stamp、ArtifactReference、Citation ID 与 Publication 记录。 |
+| 权限 | Wiki 沿用 `wiki:edit`；项目知识读取/使用/管理取 `Global Role ∩ ProjectRole ∩ Approved Source Scope`；Tenant Service Principal 不模拟逐用户 Feishu ACL。 |
+| 失败恢复 | 版本冲突刷新；SyncJob 可重试并在重启后恢复；撤权阻止新 Attempt，运行中 Attempt 可结束但结果不接纳；进入模型上下文的内容无法追回。 |
 
 ### 5.12 Settings 与 Readiness
 
 | 项目 | 规格 |
 |---|---|
-| 目的 | 展示依赖与发布门禁，调整有限的本地运营参数。 |
+| 目的 | 展示依赖、Feishu Gate A/B/C 接线事实与发布门禁，调整有限的本地运营参数。 |
 | 前置条件 | 已登录；修改需要最新 Settings Version。 |
-| 用户动作 | Refresh Readiness/Release Gate；以 CAS 保存 Planning/Execution/Verification Timeout 与 Evidence Retention 配置值。 |
+| 用户动作 | Refresh Readiness/Release Gate；管理 Tenant Connection/Binding；以 CAS 保存 Planning/Execution/Verification Timeout 与 Evidence Retention 配置值。 |
 | 状态变化 | Settings CAS Version；Readiness 为即时观察，不是持久能力声明。当前 Workcell Runtime 注入未从这些 Settings 动态解析命令或超时。 |
 | 输出证据 | Dependency Check、Release Gate Report 引用、配置 Version。 |
 | 权限 | `settings:edit` 仅 Administrator。 |
@@ -729,8 +745,9 @@ Evaluation Router Operation 当前也没有被 `scripts/export_openapi.py` 注�
 
 ## 6. 权限矩阵
 
-权限是控制面全局角色权限，尚未细化为项目级 RBAC。表中“是”表示该角色拥有对应命令权限；读取接口
-仍可能要求已登录、资源存在并满足项目边界。
+下表是全局 Role 能力上限。项目级资源还必须通过 Project Membership 求交集；外部知识进一步与
+Approved Source Scope 求交集。Administrator 的 Break-glass 不等于普通成员权限，使用时追加审计。
+表中“是”表示全局角色允许进入对应命令边界，并不单独保证某个项目上的最终授权。
 
 | Permission | Administrator | Editor | Viewer | 作用 |
 |---|:---:|:---:|:---:|---|
@@ -840,7 +857,9 @@ OPTIONS 先校验会话；各 Endpoint 或 Domain Service 再决定是否增加�
 - 密码使用 `scrypt` 派生哈希；Session Bearer 与 CSRF Token 只存 Hash；
 - 所有变更命令校验同源 `Origin` 与 CSRF Header；
 - Session 支持过期和撤销；不能禁用最后一个 Administrator；
-- 当前没有多租户和项目级 RBAC，也没有独立安全审计，因此不能直接面向不可信网络。
+- Project-scoped 资源使用 `Global Role ∩ ProjectRole`，知识来源再叠加 Approved Source Scope；
+- Tenant App Service Principal 代表本地可信 Alpha 的服务身份，不保留逐用户 Feishu ACL；
+- 当前没有多租户隔离和独立安全审计，因此不能直接面向不可信网络。
 
 ### 8.2 凭据边界
 
@@ -939,6 +958,16 @@ AGENT_TEAM_OS_DATA_DIR=/tmp/agent-team-os-demo \
     `python -m unittest discover -s tests -v`（当前 Python 解释器），超时由 Verifier 构造参数控制，
     默认 300 秒；确认目标四仓确实兼容该命令；
 11. Release Gate 报告绑定当前 Git / ACWM / Pipeline Revision，且未过期、未损坏。
+
+Feishu Knowledge 与四仓 V2 必须先运行：
+
+```bash
+agent-team-os knowledge-live-readiness --project-id <project-id>
+agent-team-os knowledge-live-gate --project-id <project-id> --delivery-id <delivery-id>
+```
+
+前者只证明具备启动条件，固定为 `execution_status=not_run`；后者只在 Readiness `ready` 后读取既有
+completed Delivery。Readiness blocked 时不得创建 Release Acceptance Report。
 
 任一 Live 条件缺失时，状态只能是 `not_ready`、`blocked` 或 `not_run`，不能自动切换到
 Deterministic Adapter 后宣布 Live Ready。
@@ -1069,7 +1098,10 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
 - Settings 中的 Timeout/Retention 值可 CAS 保存，但当前 Workcell Verifier、Planner/Executor 与
   Evidence 生命周期没有全部动态消费这些值；界面保存成功不等于运行策略已改变；
 - 不支持 Provider-native PR Merge、自动 Rebase、自动补偿提交或外部 `main` 回滚；
-- 没有项目级 RBAC、多租户、Embedding、RAG 回答生成或共享长期 Agent Memory；
+- 已有本地 Project Membership 授权，但没有多租户隔离、逐用户 Feishu ACL、通用 RAG 对话生成或
+  共享长期 Agent Memory；Hybrid Index/Embedding 只服务受批准 Source 的检索和冻结 Delivery Context；
+- Feishu Tenant、Ollama bge-m3、Hermes、Codex 与四个 GitHub 私仓尚未形成同一干净 Revision 的
+  Live Release Acceptance Report；当前只能是 `blocked/not_run`；
 - 没有发布安装包、Git Tag 或 GitHub Release；仓库当前没有 License。
 
 ### 11.2 控制台与体验
@@ -1091,7 +1123,7 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
 - 只适合 Loopback 受控环境，不应直接暴露公网；
 - SQLite/WAL 适合当前本地单实例目标，不代表生产级高可用数据库；
 - 没有内置 Secret Manager、在线备份、跨节点恢复、审计导出或告警平台；
-- Release Report 的 Live 条件未满足，因此 v0.5 不能宣称正式验收。
+- Release Acceptance V2 的 Live 条件未满足，因此 v0.5.1 不能宣称正式验收。
 
 ---
 
@@ -1317,8 +1349,13 @@ Git、Workcell 不变量等大量代码通过 `_method_pack_error(code, ...)`、
 
 - [`ADR-0014：Agent Workcell 权威关系与隔离工作区`](../architecture/ADR-0014-AGENT-WORKCELL-AUTHORITY.md)
 - [`ADR-0015：外部 Git Forward-only Release`](../architecture/ADR-0015-EXTERNAL-FORWARD-ONLY-RELEASE.md)
+- [`ADR-0016：Project-scoped Authorization`](../architecture/ADR-0016-PROJECT-SCOPED-AUTHORIZATION.md)
+- [`ADR-0017：Feishu Tenant Knowledge`](../architecture/ADR-0017-FEISHU-TENANT-KNOWLEDGE.md)
+- [`ADR-0018：Knowledge Index 与 Delivery Context`](../architecture/ADR-0018-KNOWLEDGE-INDEX-DELIVERY-CONTEXT.md)
+- [`ADR-0019：Release Acceptance V2`](../architecture/ADR-0019-RELEASE-ACCEPTANCE-V2.md)
 - [`ADR-0011：Project Governance`](../architecture/ADR-0011-PROJECT-GOVERNANCE.md)
 - [`ADR-0009：Multi-Pipeline DAG/LOOP`](../architecture/ADR-0009-MULTI-PIPELINE-DAG-LOOP.md)
+- [`Feishu Knowledge 架构修订版计划`](../design/FEISHU-KNOWLEDGE-INTEGRATION.md)
 - [`v0.5.0 Agent Workcell Kernel 交付说明`](../releases/V0.5.0-AGENT-WORKCELL-KERNEL.md)
 - [`控制台设计边界`](../design/CONTROL-CONSOLE.md)
 - [`Evaluation 方法论`](../evaluation/METHODOLOGY.md)
@@ -1326,7 +1363,8 @@ Git、Workcell 不变量等大量代码通过 `_method_pack_error(code, ...)`、
 
 ---
 
-**最终事实边界：** 当前 Revision 已实现并以 Deterministic 方式验证了 Workcell Kernel、四仓产品状态机、
-Method Overlay 和 Forward-only 恢复语义；四仓 GitHub Live、真实 Hermes 与正式 Release Report 仍为
-`blocked/not_run` 或未完成。只有后者也在同一 Revision 上满足门禁，才能把 v0.5.0 从“本地 Alpha
-开发验证”提升为“已验收版本”。
+**最终事实边界：** 当前功能分支已实现并以 Deterministic 方式验证 Workcell Kernel、四仓产品
+状态机、Method Overlay、Feishu Tenant/Hybrid Retrieval/Delivery Context、Forward-only 恢复和
+Release Acceptance V2；ACWM Contract 已发布并回锁到可重放 Revision。四仓 GitHub、真实
+Feishu/Ollama/Hermes/Codex 与同 Revision Live Release Report 仍为 `blocked/not_run`。只有完成零跳过
+Live Gate，才能把 v0.5.1 从“本地 Alpha 开发验证”提升为“已验收版本”。
