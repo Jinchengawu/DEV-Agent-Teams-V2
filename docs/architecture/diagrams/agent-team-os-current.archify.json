@@ -92,7 +92,7 @@
       "id": "state",
       "type": "database",
       "label": "SQLite · WAL · Event",
-      "sublabel": "UoW · Migration 0001–0043",
+      "sublabel": "UoW · Migration 0001–0044",
       "tag": "Product state",
       "pos": [584, 72],
       "size": [190, 78]

@@ -50,6 +50,9 @@ def _ready_facts() -> KnowledgeLiveFacts:
         ),
         required_knowledge_context_count=7,
         resolved_provider_binding_count=22,
+        planning_runtime_kind="hermes",
+        planning_binding_count=2,
+        product_planning_runtime_wired=True,
         hermes_planning_binding_count=2,
         codex_workcell_binding_count=20,
         product_hermes_runtime_wired=True,
@@ -65,6 +68,18 @@ def _ready_facts() -> KnowledgeLiveFacts:
         qualified_ollama_model_count=1,
         verified_index_policy_count=1,
         live_ollama_model_count=1,
+    )
+
+
+def _ready_codex_facts() -> KnowledgeLiveFacts:
+    return _ready_facts().model_copy(
+        update={
+            "planning_runtime_kind": "codex",
+            "planning_binding_count": 2,
+            "product_planning_runtime_wired": True,
+            "hermes_planning_binding_count": 0,
+            "product_hermes_runtime_wired": False,
+        }
     )
 
 
@@ -89,9 +104,7 @@ def test_live_readiness_is_ready_but_not_run_when_every_precondition_is_proven()
             knowledge_hybrid_index_v1=True,
             delivery_knowledge_context_v1=True,
         ),
-        framework_revision=DependencyCheck(
-            name="python:acwm-revision", status="ready"
-        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
         runtime=_runtime_ready(),
     )
 
@@ -144,13 +157,9 @@ def test_live_readiness_fails_closed_without_leaking_credentials() -> None:
         "ollama-model",
     } <= blocked
     checks = {check.name: check for check in report.checks}
-    assert (
-        checks["framework-lock"].detail
-        == "ACWM Revision/Dependency Attestation 未通过。"
-    )
+    assert checks["framework-lock"].detail == "ACWM Revision/Dependency Attestation 未通过。"
     assert checks["external-git-workspaces"].detail == (
-        "四个独立 external-git Workspace、凭据解析或直接 Fast-forward main 权限"
-        "尚未全部验证。"
+        "四个独立 external-git Workspace、凭据解析或直接 Fast-forward main 权限尚未全部验证。"
     )
     assert checks["feishu-approved-source"].detail == (
         "没有同时满足凭据可解析、权限探测新鲜且项目已批准 RAG 的 Feishu Source。"
@@ -179,9 +188,7 @@ def test_managed_git_or_incomplete_pipeline_cannot_satisfy_live_readiness() -> N
             knowledge_hybrid_index_v1=True,
             delivery_knowledge_context_v1=True,
         ),
-        framework_revision=DependencyCheck(
-            name="python:acwm-revision", status="ready"
-        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
         runtime=_runtime_ready(),
     )
 
@@ -192,9 +199,7 @@ def test_managed_git_or_incomplete_pipeline_cannot_satisfy_live_readiness() -> N
 
 
 def test_evaluation_and_qualification_cannot_be_joined_across_index_revisions() -> None:
-    facts = _ready_facts().model_copy(
-        update={"verified_index_policy_count": 0}
-    )
+    facts = _ready_facts().model_copy(update={"verified_index_policy_count": 0})
 
     report = evaluate_knowledge_live_readiness(
         project_id="alpha",
@@ -204,9 +209,7 @@ def test_evaluation_and_qualification_cannot_be_joined_across_index_revisions() 
             knowledge_hybrid_index_v1=True,
             delivery_knowledge_context_v1=True,
         ),
-        framework_revision=DependencyCheck(
-            name="python:acwm-revision", status="ready"
-        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
         runtime=_runtime_ready(),
     )
 
@@ -218,6 +221,9 @@ def test_evaluation_and_qualification_cannot_be_joined_across_index_revisions() 
 def test_simulated_planning_provider_cannot_satisfy_live_readiness() -> None:
     facts = _ready_facts().model_copy(
         update={
+            "planning_runtime_kind": "unknown",
+            "planning_binding_count": 0,
+            "product_planning_runtime_wired": False,
             "hermes_planning_binding_count": 0,
             "product_hermes_runtime_wired": False,
         }
@@ -231,9 +237,7 @@ def test_simulated_planning_provider_cannot_satisfy_live_readiness() -> None:
             knowledge_hybrid_index_v1=True,
             delivery_knowledge_context_v1=True,
         ),
-        framework_revision=DependencyCheck(
-            name="python:acwm-revision", status="ready"
-        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
         runtime=_runtime_ready(),
     )
 
@@ -242,8 +246,7 @@ def test_simulated_planning_provider_cannot_satisfy_live_readiness() -> None:
     assert checks["product-runtime-adapters"] == "blocked"
     details = {check.name: check.detail for check in report.checks}
     assert details["product-runtime-adapters"] == (
-        "Published Planning Binding 尚未选择产品已接线的 Hermes role-turn Adapter，"
-        "或实例/配置验证未通过。"
+        "Published Planning Binding 尚未选择产品已接线的 role-turn Adapter，或实例/配置验证未通过。"
     )
     assert report.status == "blocked"
 
@@ -274,25 +277,60 @@ def test_runtime_readiness_probes_hermes_acp_protocol(
 
     assert report.status == "ready"
     assert ("hermes", "acp", "--check") in commands
-    assert next(
-        check for check in report.checks if check.name == "hermes-acp-protocol"
-    ).status == "ready"
+    assert (
+        next(check for check in report.checks if check.name == "hermes-acp-protocol").status
+        == "ready"
+    )
 
 
-def test_missing_persistent_sync_runtime_cannot_satisfy_live_readiness() -> None:
+def test_codex_planning_readiness_does_not_require_hermes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    monkeypatch.delenv("HERMES_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "agent_team_os.readiness.shutil.which",
+        lambda name: None if name == "hermes" else f"/usr/local/bin/{name}",
+    )
+
+    def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(tuple(command))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("agent_team_os.readiness.subprocess.run", run)
+
+    runtime = RuntimeReadiness(planning_runtime_kind="codex").inspect()
     report = evaluate_knowledge_live_readiness(
         project_id="alpha",
-        facts=_ready_facts().model_copy(
-            update={"product_knowledge_sync_runtime_wired": False}
-        ),
+        facts=_ready_codex_facts(),
         flags=FeatureFlags(
             feishu_tenant_sync_v1=True,
             knowledge_hybrid_index_v1=True,
             delivery_knowledge_context_v1=True,
         ),
-        framework_revision=DependencyCheck(
-            name="python:acwm-revision", status="ready"
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
+        runtime=runtime,
+    )
+
+    assert runtime.status == "ready"
+    assert all("hermes" not in check.name for check in runtime.checks)
+    assert ("codex", "login", "status") in commands
+    assert report.status == "ready"
+    checks = {check.name: check for check in report.checks}
+    assert "Codex" in checks["live-provider-bindings"].detail
+    assert "Codex" in checks["product-runtime-adapters"].detail
+
+
+def test_missing_persistent_sync_runtime_cannot_satisfy_live_readiness() -> None:
+    report = evaluate_knowledge_live_readiness(
+        project_id="alpha",
+        facts=_ready_facts().model_copy(update={"product_knowledge_sync_runtime_wired": False}),
+        flags=FeatureFlags(
+            feishu_tenant_sync_v1=True,
+            knowledge_hybrid_index_v1=True,
+            delivery_knowledge_context_v1=True,
         ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
         runtime=_runtime_ready(),
     )
 

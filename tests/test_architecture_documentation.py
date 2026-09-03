@@ -59,9 +59,10 @@ def test_architecture_entrypoint_has_truth_and_change_boundaries() -> None:
     assert "ACWM `0.5.1` Contract 已发布回锁" in document
     assert "execution_status=not_run" in document
     assert "ready` 不是 Live Gate 通过" in document
-    assert "live-provider-bindings=blocked" in document
-    assert "product-runtime-adapters=blocked" in document
-    assert "Hermes ACP Role Turn" in document
+    assert "Live Readiness 和 Release Acceptance 按 Published Pipeline" in document
+    assert "`codex-simulated-hermes` 仍保持可读" in document
+    assert "CODEX_PLANNING_ATTEMPTS_VERIFIED" in document
+    assert "Planning Role Turn（Codex / Hermes）" in document
     assert "`http.sync` 尚未接线" in document
     assert "逐 Attempt" in document
     assert "冻结 Citation 集" in document

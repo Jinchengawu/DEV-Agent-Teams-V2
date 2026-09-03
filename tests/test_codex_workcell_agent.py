@@ -1,5 +1,6 @@
 import asyncio
 import json
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -168,6 +169,75 @@ print(json.dumps(event))
     assert subprocess.check_output(
         ["git", "status", "--short"], cwd=workspace, text=True
     ).splitlines() == ["?? src/"]
+
+
+def test_codex_workcell_agent_mounts_bmad_support_for_read_only_candidate(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "review"
+    workspace.mkdir()
+    candidate = workspace / "candidate.txt"
+    candidate.write_text("immutable candidate\n", encoding="utf-8")
+    source = tmp_path / "verified-bmad-source"
+    scripts = source / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "render_skill.py").write_text("# verified renderer\n", encoding="utf-8")
+    (scripts / "config_utils.py").write_text("# verified config\n", encoding="utf-8")
+    candidate.chmod(0o444)
+    workspace.chmod(0o555)
+    code = """
+import json
+import sys
+from pathlib import Path
+
+sys.stdin.read()
+root = Path.cwd()
+overlay = root / "_bmad"
+payload = {
+    "overlay_present": overlay.is_dir(),
+    "renderer_present": (overlay / "scripts" / "render_skill.py").is_file(),
+    "candidate_writable": bool((root / "candidate.txt").stat().st_mode & 0o200),
+    "overlay_writable": bool(overlay.stat().st_mode & 0o200),
+}
+event = {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(payload)}}
+print(json.dumps(event))
+"""
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    try:
+        output = asyncio.run(
+            agent.run(
+                WorkcellAgentInvocation(
+                    delivery_id="delivery-read-only-review",
+                    workcell_run_id="workcell-read-only-review",
+                    agent_run_id="agent-read-only-review",
+                    phase="delegate",
+                    workcell_key="design",
+                    stage_path="design-repair/design",
+                    instruction="review",
+                    workspace=workspace,
+                    workspace_access="candidate_read",
+                    method_id="bmad-review",
+                    environment={"AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(source)},
+                )
+            )
+        )
+
+        assert output.content == {
+            "overlay_present": True,
+            "renderer_present": True,
+            "candidate_writable": False,
+            "overlay_writable": False,
+        }
+        assert not (workspace / "_bmad").exists()
+        assert stat.S_IMODE(workspace.stat().st_mode) == 0o555
+        assert stat.S_IMODE(candidate.stat().st_mode) == 0o444
+    finally:
+        workspace.chmod(0o755)
+        candidate.chmod(0o644)
 
 
 def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(

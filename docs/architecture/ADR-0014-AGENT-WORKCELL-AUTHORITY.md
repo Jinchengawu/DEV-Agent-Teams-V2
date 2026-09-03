@@ -76,6 +76,11 @@ Project Support Overlay 必须在子进程启动前装配，通过 Attempt 专�
 `core.excludesFile` 对子进程隐藏，并在 Candidate 冻结前删除。Candidate Policy 仍独立
 拒绝 `_bmad/**`，不将 `.agents/skills` 或其他安装产物纳入业务 Diff。已存在的非产品
 `_bmad` 、Snapshot 不一致、标记被篡改或清理失败均 Fail Closed，不得覆盖用户内容。
+对 `candidate_read` Attempt，产品只能在 Provider 子进程启动前临时获得 Detached View
+根目录的 owner-write 权限以装配 Overlay；装配后必须立即将 Overlay 和根目录恢复只读，
+且 Candidate 跟踪文件全程不得变为可写。Provider 仍在 Codex `read-only` Sandbox 中运行。
+最后一个并发 Reviewer 结束后，产品才能以同样的短暂 owner-write 租约移除 Overlay
+并恢复原权限。该产品内部租约不赋予 Agent 写权限，也不改变 Reviewer 只读语义。
 Codex 子进程只继承运行必需的系统环境白名单和经 Adapter 授权的非敏感 Override；
 Feishu、GitHub 等服务 Credential 不得从产品进程环境隐式传入 AgentAttempt。
 Party Mode 不在允许入口中。Method 发现资格与真实执行资格必须分开验证；

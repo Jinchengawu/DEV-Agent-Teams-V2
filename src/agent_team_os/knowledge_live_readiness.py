@@ -59,9 +59,7 @@ EXPECTED_KNOWLEDGE_STAGE_PATHS = frozenset(
         *EXPECTED_WORKCELL_STAGE_PATHS,
     }
 )
-EXPECTED_PLANNING_BINDING_SITES = frozenset(
-    {"requirements.actor", "tasking.actor"}
-)
+EXPECTED_PLANNING_BINDING_SITES = frozenset({"requirements.actor", "tasking.actor"})
 EXPECTED_WORKCELL_BINDING_SITES = frozenset(
     f"{stage_path}.{slot}"
     for stage_path in EXPECTED_WORKCELL_STAGE_PATHS
@@ -93,6 +91,9 @@ class KnowledgeLiveFacts(_ImmutableModel):
     knowledge_context_stage_paths: tuple[str, ...] = ()
     required_knowledge_context_count: int = Field(default=0, ge=0)
     resolved_provider_binding_count: int = Field(default=0, ge=0)
+    planning_runtime_kind: Literal["hermes", "codex", "unknown"] = "hermes"
+    planning_binding_count: int = Field(default=0, ge=0)
+    product_planning_runtime_wired: bool = False
     hermes_planning_binding_count: int = Field(default=0, ge=0)
     codex_workcell_binding_count: int = Field(default=0, ge=0)
     product_hermes_runtime_wired: bool = False
@@ -118,12 +119,8 @@ class KnowledgeLiveReadinessCheck(_ImmutableModel):
 
 
 class KnowledgeLiveReadinessReport(_ImmutableModel):
-    capability: Literal["feishu-knowledge-delivery-v1"] = (
-        "feishu-knowledge-delivery-v1"
-    )
-    project_id: str = Field(
-        min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9-]*$"
-    )
+    capability: Literal["feishu-knowledge-delivery-v1"] = "feishu-knowledge-delivery-v1"
+    project_id: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9-]*$")
     status: Literal["ready", "blocked"]
     execution_status: Literal["not_run"] = "not_run"
     checks: tuple[KnowledgeLiveReadinessCheck, ...]
@@ -211,8 +208,10 @@ class KnowledgeLiveFactsCollector:
         required_knowledge_context_count = 0
         resolved_provider_binding_count = 0
         hermes_planning_binding_count = 0
+        codex_planning_binding_count = 0
         codex_workcell_binding_count = 0
         hermes_planning_adapter_ids: tuple[str, ...] = ()
+        codex_planning_adapter_ids: tuple[str, ...] = ()
         retrieval_policy_ids: tuple[str, ...] = ()
         default_bindings = tuple(
             binding
@@ -222,24 +221,17 @@ class KnowledgeLiveFactsCollector:
         if len(default_bindings) == 1:
             binding = default_bindings[0]
             try:
-                revision = pipelines.get_revision(
-                    binding.pipeline_id, binding.pipeline_revision
-                )
+                revision = pipelines.get_revision(binding.pipeline_id, binding.pipeline_revision)
             except KeyError:
                 revision = None
             if revision is not None:
-                pipeline_revision_id = (
-                    f"{revision.pipeline_id}:{revision.revision}"
-                )
+                pipeline_revision_id = f"{revision.pipeline_id}:{revision.revision}"
                 pipeline_binding_model = revision.binding_model
                 release_contract = tuple(sorted(revision.release_contract_snapshot))
                 workcell_stage_paths = tuple(sorted(revision.workcell_stage_map))
-                knowledge_context_stage_paths = tuple(
-                    sorted(revision.knowledge_context_bindings)
-                )
+                knowledge_context_stage_paths = tuple(sorted(revision.knowledge_context_bindings))
                 required_knowledge_context_count = sum(
-                    item.required
-                    for item in revision.knowledge_context_bindings.values()
+                    item.required for item in revision.knowledge_context_bindings.values()
                 )
                 retrieval_policy_ids = tuple(
                     sorted(
@@ -249,9 +241,7 @@ class KnowledgeLiveFactsCollector:
                         }
                     )
                 )
-                resolved_provider_binding_count = len(
-                    revision.resolved_provider_bindings
-                )
+                resolved_provider_binding_count = len(revision.resolved_provider_bindings)
                 live_hermes_bindings = tuple(
                     snapshot
                     for site, snapshot in revision.resolved_provider_bindings.items()
@@ -268,6 +258,24 @@ class KnowledgeLiveFactsCollector:
                     sorted(
                         str(snapshot["deployment"]["adapter_id"])  # type: ignore[index]
                         for snapshot in live_hermes_bindings
+                    )
+                )
+                live_codex_planning_bindings = tuple(
+                    snapshot
+                    for site, snapshot in revision.resolved_provider_bindings.items()
+                    if _is_live_provider_binding(
+                        site,
+                        snapshot,
+                        expected_sites=EXPECTED_PLANNING_BINDING_SITES,
+                        provider_id="codex-cli-provider",
+                        adapter_ids=frozenset({"codex.cli"}),
+                    )
+                )
+                codex_planning_binding_count = len(live_codex_planning_bindings)
+                codex_planning_adapter_ids = tuple(
+                    sorted(
+                        str(snapshot["deployment"]["adapter_id"])  # type: ignore[index]
+                        for snapshot in live_codex_planning_bindings
                     )
                 )
                 codex_workcell_binding_count = sum(
@@ -294,9 +302,7 @@ class KnowledgeLiveFactsCollector:
         freshness_threshold = self.clock() - timedelta(minutes=30)
         for approval in approvals:
             source = tenant_bindings.get(approval.binding_id)
-            connection = (
-                None if source is None else connections.get(source.connection_id)
-            )
+            connection = None if source is None else connections.get(source.connection_id)
             if (
                 source is None
                 or source.status != "ready"
@@ -331,23 +337,17 @@ class KnowledgeLiveFactsCollector:
             if policy is None or evaluation_policy is None:
                 continue
             for source_id in sorted(resolvable_source_ids):
-                active = indexes.get_active_index(
-                    source_id, policy.index_profile_revision_id
-                )
+                active = indexes.get_active_index(source_id, policy.index_profile_revision_id)
                 if active is None or active.status != "active":
                     continue
                 ready_policy_ids.add(policy_id)
                 active_index_ids.add(active.id)
-                evaluation_passed = indexes.has_passed_evaluation(
-                    evaluation_policy.id, active.id
-                )
+                evaluation_passed = indexes.has_passed_evaluation(evaluation_policy.id, active.id)
                 if evaluation_passed:
                     passed_policy_ids.add(policy_id)
                 if active.embedding_qualification_id is None:
                     continue
-                qualification = indexes.get_qualification(
-                    active.embedding_qualification_id
-                )
+                qualification = indexes.get_qualification(active.embedding_qualification_id)
                 if not self._qualification_is_current(qualification, vector_descriptor):
                     continue
                 qualified_policy_ids.add(policy_id)
@@ -361,6 +361,26 @@ class KnowledgeLiveFactsCollector:
                 if is_live:
                     live_model_policy_ids.add(policy_id)
                     break
+
+        expected_planning_count = len(EXPECTED_PLANNING_BINDING_SITES)
+        if (
+            hermes_planning_binding_count == expected_planning_count
+            and codex_planning_binding_count == 0
+        ):
+            planning_runtime_kind: Literal["hermes", "codex", "unknown"] = "hermes"
+            planning_binding_count = hermes_planning_binding_count
+            planning_adapter_ids = hermes_planning_adapter_ids
+        elif (
+            codex_planning_binding_count == expected_planning_count
+            and hermes_planning_binding_count == 0
+        ):
+            planning_runtime_kind = "codex"
+            planning_binding_count = codex_planning_binding_count
+            planning_adapter_ids = codex_planning_adapter_ids
+        else:
+            planning_runtime_kind = "unknown"
+            planning_binding_count = 0
+            planning_adapter_ids = ()
 
         return KnowledgeLiveFacts(
             database_ready=True,
@@ -382,6 +402,12 @@ class KnowledgeLiveFactsCollector:
             knowledge_context_stage_paths=knowledge_context_stage_paths,
             required_knowledge_context_count=required_knowledge_context_count,
             resolved_provider_binding_count=resolved_provider_binding_count,
+            planning_runtime_kind=planning_runtime_kind,
+            planning_binding_count=planning_binding_count,
+            product_planning_runtime_wired=_runtime_bindings_wired(
+                planning_adapter_ids,
+                expected_count=expected_planning_count,
+            ),
             hermes_planning_binding_count=hermes_planning_binding_count,
             codex_workcell_binding_count=codex_workcell_binding_count,
             product_hermes_runtime_wired=_runtime_bindings_wired(
@@ -419,9 +445,7 @@ class KnowledgeLiveFactsCollector:
         except Exception:
             return False
 
-    def _feishu_credentials_are_resolvable(
-        self, app_id_ref: str, app_secret_ref: str
-    ) -> bool:
+    def _feishu_credentials_are_resolvable(self, app_id_ref: str, app_secret_ref: str) -> bool:
         try:
             return bool(self.feishu_secrets.resolve(app_id_ref)) and bool(
                 self.feishu_secrets.resolve(app_secret_ref)
@@ -458,9 +482,7 @@ class KnowledgeLiveFactsCollector:
             )
         )
 
-    def _ollama_qualification_is_live(
-        self, qualification: EmbeddingQualificationSnapshot
-    ) -> bool:
+    def _ollama_qualification_is_live(self, qualification: EmbeddingQualificationSnapshot) -> bool:
         try:
             model_name = qualification.model_name
             descriptor = self.embedding_port.describe(model_name)
@@ -474,8 +496,7 @@ class KnowledgeLiveFactsCollector:
         return bool(
             descriptor.model_name == model_name
             and descriptor.model_digest == qualification.model_digest
-            and self.embedding_port.adapter_revision
-            == qualification.adapter_revision
+            and self.embedding_port.adapter_revision == qualification.adapter_revision
             and len(vectors) == 1
             and len(vectors[0]) == qualification.dimension
         )
@@ -497,10 +518,12 @@ def inspect_knowledge_live_readiness(
             flags = FeatureFlags.from_environment()
         except ProductError:
             flags = FeatureFlags()
-    facts = (
-        collector
-        or KnowledgeLiveFactsCollector(data_dir / "agent-team-os.sqlite")
-    ).collect(project_id)
+    facts = (collector or KnowledgeLiveFactsCollector(data_dir / "agent-team-os.sqlite")).collect(
+        project_id
+    )
+    planning_runtime_kind: Literal["hermes", "codex"] = (
+        "codex" if facts.planning_runtime_kind == "codex" else "hermes"
+    )
     return evaluate_knowledge_live_readiness(
         project_id=project_id,
         facts=facts,
@@ -508,7 +531,7 @@ def inspect_knowledge_live_readiness(
         framework_revision=inspect_acwm_revision_lock(
             project_root / "config" / "framework-lock.json"
         ),
-        runtime=runtime or RuntimeReadiness().inspect(),
+        runtime=runtime or RuntimeReadiness(planning_runtime_kind=planning_runtime_kind).inspect(),
     )
 
 
@@ -572,6 +595,7 @@ def evaluate_knowledge_live_readiness(
             flags.delivery_knowledge_context_v1,
         )
     )
+    planning_name = _planning_runtime_name(facts)
     checks = (
         _check(
             "data-store",
@@ -598,9 +622,12 @@ def evaluate_knowledge_live_readiness(
         _check(
             "runtime",
             runtime.status == "ready",
-            "AgentScope、Hermes 和 Codex Runtime 身份就绪。",
+            f"AgentScope、{planning_name} Planning 与 Codex Workcell Runtime 身份就绪。",
             _runtime_repair(runtime),
-            blocked_detail="AgentScope、Hermes 或 Codex Runtime Readiness 尚未通过。",
+            blocked_detail=(
+                f"AgentScope、{planning_name} Planning 或 Codex Workcell Runtime "
+                "Readiness 尚未通过。"
+            ),
         ),
         _check(
             "project-governance",
@@ -643,27 +670,30 @@ def evaluate_knowledge_live_readiness(
         _check(
             "live-provider-bindings",
             _live_provider_bindings_ready(facts),
-            "Published Pipeline 以真实 Hermes 规划和 Codex Workcell 身份冻结全部 Slot。",
             (
-                "将 requirements/tasking 绑定到 hermes-provider，将五个 Workcell 的 "
-                "20 个 Slot 绑定到 codex-cli-provider，重新资格化并发布 Pipeline。"
+                f"Published Pipeline 以真实 {planning_name} Planning 和 Codex Workcell "
+                "身份冻结全部 Slot。"
+            ),
+            (
+                "将 requirements/tasking 绑定到同一种已批准 Planning Provider，将五个 "
+                "Workcell 的 20 个 Slot 绑定到 codex-cli-provider，重新资格化并发布 Pipeline。"
             ),
             blocked_detail=(
-                "Published Pipeline 尚未以真实 Hermes 规划和 Codex Workcell 身份"
-                "冻结全部 Slot。"
+                "Published Pipeline 尚未以单一真实 Planning Provider 和 Codex Workcell "
+                "身份冻结全部 Slot。"
             ),
         ),
         _check(
             "product-runtime-adapters",
-            facts.product_hermes_runtime_wired,
-            "产品 Runtime Dispatcher 已接线 Hermes role-turn Adapter。",
+            facts.product_planning_runtime_wired,
+            f"产品 Runtime Dispatcher 已接线 {planning_name} role-turn Adapter。",
             (
                 "将 requirements/tasking 的 Published Binding 冻结为产品已接线的 "
-                "hermes.acp role-turn Adapter，并验证 Runtime Instance、Identity 与连接指纹；"
+                "Planning role-turn Adapter，并验证 Runtime Instance、Identity 与连接指纹；"
                 "仅安装 CLI/ACWM Adapter 不等于产品已接线。"
             ),
             blocked_detail=(
-                "Published Planning Binding 尚未选择产品已接线的 Hermes role-turn Adapter，"
+                "Published Planning Binding 尚未选择产品已接线的 role-turn Adapter，"
                 "或实例/配置验证未通过。"
             ),
         ),
@@ -678,9 +708,7 @@ def evaluate_knowledge_live_readiness(
                 "接入 knowledge-sync-runtime-v1，并保持 KnowledgeSyncJob Repository、"
                 "Lease、重启恢复和 Source 级权限新鲜度为状态权威。"
             ),
-            blocked_detail=(
-                "持久化 Knowledge Sync Scheduler/Worker 尚未完成运行时接线或验证。"
-            ),
+            blocked_detail=("持久化 Knowledge Sync Scheduler/Worker 尚未完成运行时接线或验证。"),
         ),
         _check(
             "feishu-approved-source",
@@ -706,8 +734,7 @@ def evaluate_knowledge_live_readiness(
         _check(
             "ollama-model",
             facts.required_retrieval_policy_count > 0
-            and facts.live_ollama_model_count
-            == facts.required_retrieval_policy_count,
+            and facts.live_ollama_model_count == facts.required_retrieval_policy_count,
             "当前 Ollama 模型名、Digest、维度和 Adapter Revision 与资格快照一致。",
             "启动 Ollama，安装锁定 bge-m3，并重新执行 Embedding Qualification。",
             blocked_detail=(
@@ -788,18 +815,22 @@ def _source_ready(facts: KnowledgeLiveFacts) -> bool:
 def _live_provider_bindings_ready(facts: KnowledgeLiveFacts) -> bool:
     return (
         facts.resolved_provider_binding_count
-        == len(EXPECTED_PLANNING_BINDING_SITES)
-        + len(EXPECTED_WORKCELL_BINDING_SITES)
-        and facts.hermes_planning_binding_count
-        == len(EXPECTED_PLANNING_BINDING_SITES)
-        and facts.codex_workcell_binding_count
-        == len(EXPECTED_WORKCELL_BINDING_SITES)
+        == len(EXPECTED_PLANNING_BINDING_SITES) + len(EXPECTED_WORKCELL_BINDING_SITES)
+        and facts.planning_runtime_kind in {"hermes", "codex"}
+        and facts.planning_binding_count == len(EXPECTED_PLANNING_BINDING_SITES)
+        and facts.codex_workcell_binding_count == len(EXPECTED_WORKCELL_BINDING_SITES)
     )
 
 
-def _runtime_bindings_wired(
-    adapter_ids: tuple[str, ...], *, expected_count: int
-) -> bool:
+def _planning_runtime_name(facts: KnowledgeLiveFacts) -> str:
+    return {
+        "hermes": "Hermes",
+        "codex": "Codex",
+        "unknown": "Unknown",
+    }[facts.planning_runtime_kind]
+
+
+def _runtime_bindings_wired(adapter_ids: tuple[str, ...], *, expected_count: int) -> bool:
     return len(adapter_ids) == expected_count and all(
         (adapter_id, "agentscope.role-turn") in PRODUCT_RUNTIME_ADAPTER_CONTRACTS
         for adapter_id in adapter_ids
@@ -832,8 +863,7 @@ def _is_live_provider_binding(
 def _index_ready(facts: KnowledgeLiveFacts) -> bool:
     return (
         facts.required_retrieval_policy_count > 0
-        and facts.ready_retrieval_policy_count
-        == facts.required_retrieval_policy_count
+        and facts.ready_retrieval_policy_count == facts.required_retrieval_policy_count
         and facts.active_index_count > 0
         and all(
             count == facts.required_retrieval_policy_count

@@ -12,6 +12,9 @@ from agent_team_os.knowledge_live_readiness import (
     KnowledgeLiveReadinessCheck,
     KnowledgeLiveReadinessReport,
 )
+from agent_team_os.modules.releases.acceptance_application import (
+    _planning_runtime_contract,
+)
 from agent_team_os.modules.releases.acceptance_domain import (
     ReleaseAcceptanceCheckV2,
     ReleaseAcceptanceReportV2,
@@ -72,6 +75,51 @@ def test_release_acceptance_report_rejects_duplicate_check_codes() -> None:
                 _check("BUILD_IDENTITY_VERIFIED"),
             ),
         )
+
+
+def test_planning_acceptance_contract_follows_frozen_provider() -> None:
+    codex = {
+        site: {
+            "deployment": {
+                "provider_id": "codex-cli-provider",
+                "adapter_id": "codex.cli",
+            },
+            "runtime_identity": "codex-cli",
+        }
+        for site in ("requirements.actor", "tasking.actor")
+    }
+    hermes = {
+        site: {
+            "deployment": {
+                "provider_id": "hermes-provider",
+                "adapter_id": "hermes.acp",
+            },
+            "runtime_identity": "hermes-acp:test",
+        }
+        for site in ("requirements.actor", "tasking.actor")
+    }
+    simulated = {
+        site: {
+            "deployment": {
+                "provider_id": "codex-cli-provider",
+                "adapter_id": "codex.cli",
+            },
+            "runtime_identity": "codex-simulated-hermes",
+        }
+        for site in ("requirements.actor", "tasking.actor")
+    }
+
+    assert _planning_runtime_contract(codex) == (
+        "CODEX_PLANNING_ATTEMPTS_VERIFIED",
+        "codex.cli",
+        "Codex",
+    )
+    assert _planning_runtime_contract(hermes) == (
+        "HERMES_PLANNING_ATTEMPTS_VERIFIED",
+        "hermes.acp",
+        "Hermes",
+    )
+    assert _planning_runtime_contract(simulated) is None
 
 
 def test_live_gate_stops_at_readiness_and_does_not_create_acceptance_report(
