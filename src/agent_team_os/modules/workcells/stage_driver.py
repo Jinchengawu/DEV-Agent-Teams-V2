@@ -318,7 +318,10 @@ class WorkcellStageDriver:
                 snapshot=snapshot,
             )
         )
-        with self.methods.activate(delivery_snapshot.method_snapshot) as method_context:
+        with _terminalize_workcell_failure(
+            self.kernel,
+            tree.workcell_run.id,
+        ), self.methods.activate(delivery_snapshot.method_snapshot) as method_context:
             assignments = self._assignments(snapshot)
             planning_reference, planning_citations = await self._main_planning(
                 delivery,
@@ -532,8 +535,12 @@ class WorkcellStageDriver:
                     _knowledge_trust_boundary()
                     + "\n冻结 ArtifactAttachment:"
                     + self._attachment_payload(tree)
-                    + "\n生成 DelegationPlan JSON；只能使用以下冻结 "
-                    "Slot/Method/Purpose："
+                    + "\n生成 DelegationPlan JSON。最终 JSON object 必须且只能包含 "
+                    "assignments 与可选的 knowledge_citation_ids 两个键；"
+                    "assignments 必须逐项等于下列冻结数组。"
+                    "禁止改名为 delegations，禁止添加 depends_on 或其他字段，"
+                    "禁止改变 Slot/Method/Purpose/权限。"
+                    "冻结 assignments 数组："
                     + json.dumps(
                         [item.model_dump(mode="json") for item in assignments],
                         ensure_ascii=False,
@@ -1107,6 +1114,25 @@ def _success_condition(stage_path: str) -> str:
         "backend-repair/backend": "backend-candidate-passed",
         "qa-delivery-repair/qa-delivery": "qa-candidate-passed",
     }.get(stage_path, "workcell-passed")
+
+
+@contextmanager
+def _terminalize_workcell_failure(
+    kernel: WorkcellExecutionModule,
+    run_id: str,
+) -> Iterator[None]:
+    """Make every unexpected Driver error observable before it escapes to ACWM."""
+
+    try:
+        yield
+    except Exception as error:
+        kernel.fail(
+            run_id,
+            error_code=str(
+                getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")
+            ),
+        )
+        raise
 
 
 def _redact(value: str) -> str:

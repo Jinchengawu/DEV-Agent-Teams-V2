@@ -324,6 +324,12 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     delegate_instructions = [
         item.instruction for item in agent.invocations if item.phase == "delegate"
     ]
+    planning_instruction = next(
+        item.instruction for item in agent.invocations if item.phase == "planning"
+    )
+    assert "assignments 必须逐项等于" in planning_instruction
+    assert "禁止改名为 delegations" in planning_instruction
+    assert "禁止添加 depends_on" in planning_instruction
     assert delegate_instructions
     assert all("AC-LOGIN" in item for item in delegate_instructions)
     assert all("external-collaborative" in item for item in delegate_instructions)

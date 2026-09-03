@@ -622,6 +622,23 @@ class SQLiteWorkcellExecutionRepository:
             attempt_error_code="PARENT_TIMED_OUT",
         )
 
+    def fail(
+        self,
+        run: WorkcellRun,
+        *,
+        expected_version: int,
+        error_code: str,
+    ) -> WorkcellRun:
+        """Fail a Workcell and every unfinished observable AgentRun atomically."""
+
+        return self._terminate(
+            run,
+            expected_version=expected_version,
+            status="failed",
+            error_code=error_code,
+            attempt_error_code=error_code,
+        )
+
     def _terminate(
         self,
         run: WorkcellRun,

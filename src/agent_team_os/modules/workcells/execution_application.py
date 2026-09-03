@@ -515,6 +515,23 @@ class WorkcellExecutionModule:
             raise _repository_error(error) from error
         return self.tree(run_id)
 
+    def fail(self, run_id: str, *, error_code: str) -> WorkcellRunTree:
+        """Persist an unexpected execution failure without leaving phantom running Attempts."""
+
+        tree = self.tree(run_id)
+        run = tree.workcell_run
+        if run.status in {"succeeded", "failed", "cancelled", "timed_out", "interrupted"}:
+            return tree
+        try:
+            self.repository.fail(
+                run,
+                expected_version=run.version,
+                error_code=error_code,
+            )
+        except RuntimeError as error:
+            raise _repository_error(error) from error
+        return self.tree(run_id)
+
     def recover_interrupted_attempts(self) -> tuple[str, ...]:
         return self.repository.interrupt_running_codex_attempts()
 
