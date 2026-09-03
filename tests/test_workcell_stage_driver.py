@@ -71,9 +71,16 @@ def test_content_addressed_method_runtime_discovers_explicit_codex_auth_referenc
 
 
 class DeterministicWorkcellAgent:
-    def __init__(self, *, citation_ids: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        citation_ids: tuple[str, ...] = (),
+        blocking_review_calls: frozenset[int] = frozenset(),
+    ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
         self.citation_ids = citation_ids
+        self.blocking_review_calls = blocking_review_calls
+        self.review_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -99,9 +106,21 @@ class DeterministicWorkcellAgent:
                 content={"changed": "design/candidate.md"},
                 knowledge_citation_ids=self.citation_ids,
             )
+        self.review_calls += 1
+        findings = (
+            [
+                {
+                    "code": "DESIGN_REVIEW_BLOCKING",
+                    "summary": "Candidate 缺少可验证的契约边界。",
+                    "evidence_sha256": "f" * 64,
+                }
+            ]
+            if self.review_calls in self.blocking_review_calls
+            else []
+        )
         return WorkcellAgentOutput(
             runtime_identity="deterministic-workcell",
-            content={"blocking_findings": [], "method_id": invocation.method_id},
+            content={"blocking_findings": findings, "method_id": invocation.method_id},
             knowledge_citation_ids=self.citation_ids,
         )
 
@@ -246,8 +265,17 @@ def test_running_workcell_agent_is_cancelled_when_authorization_is_revoked() -> 
     asyncio.run(scenario())
 
 
-def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
+@pytest.mark.parametrize(
+    ("blocking_review_calls", "expected_status"),
+    [
+        (frozenset(), "succeeded"),
+        (frozenset({1}), "repair_required"),
+    ],
+)
+def test_stage_driver_terminalizes_parallel_reviews_and_preserves_evidence(
     tmp_path: Path,
+    blocking_review_calls: frozenset[int],
+    expected_status: str,
 ) -> None:
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
@@ -301,7 +329,10 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         artifact_storage=artifact_storage,
     )
     release_repository = SQLiteExternalReleaseRepository(database)
-    agent = DeterministicWorkcellAgent(citation_ids=("citation-allowed",))
+    agent = DeterministicWorkcellAgent(
+        citation_ids=("citation-allowed",),
+        blocking_review_calls=blocking_review_calls,
+    )
     knowledge_guard = RecordingKnowledgeGuard()
     pull_requests = DeterministicPRSurface()
     driver = WorkcellStageDriver(
@@ -333,7 +364,21 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         )
     )
 
-    assert outcome.status == "succeeded"
+    assert outcome.status == expected_status
+    tree = kernel.tree(outcome.workcell_run_id)
+    assert all(
+        item.status in {"succeeded", "failed", "cancelled", "timed_out", "interrupted"}
+        for item in tree.agent_runs
+        if item.run_role == "child"
+    )
+    assert len(tree.reviews) == 2
+    if expected_status == "repair_required":
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "WORKCELL_BLOCKING_REVIEW"
+        assert any(item.blocking_findings for item in tree.reviews)
+        assert outcome.candidate is None
+        return
+
     assert outcome.activated_conditions == (
         "design-workcell-passed",
         "release-bundle-verified",
@@ -341,11 +386,9 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     assert outcome.candidate is not None
     assert outcome.candidate.candidate_branch == "agent-team-os/delivery-driver/design"
     assert outcome.release_bundle is not None
-    tree = kernel.tree(outcome.workcell_run_id)
     assert tree.workcell_run.status == "succeeded"
     assert [item.run_role for item in tree.agent_runs].count("main") == 1
     assert [item.run_role for item in tree.agent_runs].count("child") == 3
-    assert len(tree.reviews) == 2
     assert tree.verification is not None and tree.verification.status == "passed"
     assert tree.result is not None
     assert tree.result.knowledge_citation_ids == ("citation-allowed",)

@@ -292,7 +292,15 @@ class WorkcellExecutionModule:
         tree = self.tree(run_id)
         run = tree.workcell_run
         verification = tree.verification
-        if run.status != "reviewing" or verification is None or verification.status != "passed":
+        collecting_launched_batch = (
+            run.status == "failed" and run.error_code == "WORKCELL_BLOCKING_REVIEW"
+        )
+        accepts_review_evidence = run.status == "reviewing" or collecting_launched_batch
+        if (
+            not accepts_review_evidence
+            or verification is None
+            or verification.status != "passed"
+        ):
             raise _error(
                 "REVIEW_CANDIDATE_NOT_VERIFIED",
                 "Reviewer 只能审查已通过机器验证的不可变 Candidate",

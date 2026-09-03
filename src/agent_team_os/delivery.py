@@ -397,6 +397,8 @@ class PipelineExecution(Protocol):
 
     async def advance(self, delivery_id: str) -> None: ...
 
+    def reconcile_terminal(self, delivery_id: str) -> bool: ...
+
     async def decide_plan(
         self,
         delivery: DeliveryRun,
@@ -1320,6 +1322,8 @@ class DeliveryCoordinator:
                 if delivery.pipeline_revision_id is not None:
                     if self._pipeline_execution is None:
                         raise DeliveryStateConflictError("pipeline runtime is unavailable")
+                    if self._pipeline_execution.reconcile_terminal(delivery.id):
+                        continue
                     if await self._pipeline_execution.recover_publications(delivery.id):
                         continue
                     self._pipeline_execution.fail(

@@ -780,6 +780,8 @@ class WorkcellStageDriver:
         )
         review_ids: list[str] = []
         citations: set[str] = set()
+        prepared: list[tuple[AgentRun, ArtifactReference, tuple[BlockingFinding, ...]]] = []
+        failures: list[BaseException] = []
         for child, result in zip(reviewers, results, strict=True):
             if isinstance(result, BaseException):
                 self.kernel.finish_child(
@@ -787,10 +789,20 @@ class WorkcellStageDriver:
                     status="failed",
                     error_code=getattr(result, "code", "WORKCELL_REVIEW_FAILED"),
                 )
-                raise result
-            _require_runtime_identity(child, result)
-            citations.update(result.knowledge_citation_ids)
-            reference = self.artifacts.put_json(result.content)
+                failures.append(result)
+                continue
+            try:
+                _require_runtime_identity(child, result)
+                findings = _validated_blocking_findings(result.content)
+                reference = self.artifacts.put_json(result.content)
+            except BaseException as error:
+                self.kernel.finish_child(
+                    child.id,
+                    status="failed",
+                    error_code=getattr(error, "code", "WORKCELL_REVIEW_FAILED"),
+                )
+                failures.append(error)
+                continue
             self.kernel.finish_child(
                 child.id,
                 status="succeeded",
@@ -802,7 +814,11 @@ class WorkcellStageDriver:
                     ),
                 ),
             )
-            findings = _validated_blocking_findings(result.content)
+            citations.update(result.knowledge_citation_ids)
+            prepared.append((child, reference, findings))
+        if failures:
+            raise failures[0]
+        for child, reference, findings in prepared:
             tree = self.kernel.record_review(
                 tree.workcell_run.id,
                 ReviewArtifactCreate(
@@ -814,8 +830,6 @@ class WorkcellStageDriver:
                 ),
             )
             review_ids.append(tree.reviews[-1].id)
-            if tree.workcell_run.status == "failed":
-                break
         return tree, tuple(review_ids), tuple(sorted(citations))
 
     async def _main_synthesis(
