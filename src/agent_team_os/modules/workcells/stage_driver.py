@@ -1079,6 +1079,13 @@ def _delegate_invocation(
     workspace: Path,
     attachment_payload: str,
 ) -> WorkcellAgentInvocation:
+    path_policy = ""
+    if child.delegate_purpose == "workspace_write":
+        path_policy = (
+            "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
+            + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
+            + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+        )
     return WorkcellAgentInvocation(
         delivery_id=delivery.id,
         workcell_run_id=tree.workcell_run.id,
@@ -1092,6 +1099,7 @@ def _delegate_invocation(
             f"{_knowledge_trust_boundary()}\n"
             f"用户目标：{delivery.user_request}\n"
             f"冻结 ArtifactAttachment（已验证内容哈希）：{attachment_payload}"
+            f"{path_policy}"
         ),
         workspace=workspace,
         workspace_access=child.workspace_access,  # type: ignore[arg-type]

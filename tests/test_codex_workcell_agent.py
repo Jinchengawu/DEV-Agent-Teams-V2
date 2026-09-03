@@ -50,6 +50,52 @@ def test_codex_workcell_agent_returns_only_observable_structured_attempt(
     assert output.content == {"blocking_findings": []}
 
 
+def test_codex_workcell_agent_parses_only_the_last_agent_message(
+    tmp_path: Path,
+) -> None:
+    progress = {
+        "type": "item.completed",
+        "item": {"type": "agent_message", "text": "正在修改隔离工作区"},
+    }
+    final = {
+        "type": "item.completed",
+        "item": {
+            "type": "agent_message",
+            "text": json.dumps(
+                {"changed_files": ["design/health-contract-v1.json"], "knowledge_citation_ids": []}
+            ),
+        },
+    }
+    code = (
+        "import json,sys; sys.stdin.read(); "
+        f"print(json.dumps({progress!r}, ensure_ascii=False)); "
+        f"print(json.dumps({final!r}, ensure_ascii=False))"
+    )
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-multiple-messages",
+                workcell_run_id="workcell-multiple-messages",
+                agent_run_id="agent-multiple-messages",
+                phase="delegate",
+                workcell_key="design",
+                stage_path="design-repair/design",
+                instruction="write",
+                workspace=tmp_path,
+                workspace_access="workspace_write",
+                method_id="bmad-ux",
+            )
+        )
+    )
+
+    assert output.content == {"changed_files": ["design/health-contract-v1.json"]}
+
+
 def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
     tmp_path: Path,
 ) -> None:

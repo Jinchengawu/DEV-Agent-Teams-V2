@@ -166,7 +166,7 @@ def _final_messages(stdout: str) -> str:
             "CODEX_WORKCELL_OUTPUT_MISSING",
             "Codex CLI 没有产生最终 Agent Message。",
         )
-    return "\n".join(messages)
+    return messages[-1]
 
 
 def _redact(value: str) -> str:

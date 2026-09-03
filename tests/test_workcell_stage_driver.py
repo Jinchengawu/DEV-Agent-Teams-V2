@@ -349,6 +349,14 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     assert delegate_instructions
     assert all("AC-LOGIN" in item for item in delegate_instructions)
     assert all("external-collaborative" in item for item in delegate_instructions)
+    writer_instruction = next(
+        item.instruction
+        for item in agent.invocations
+        if item.workspace_access == "workspace_write"
+    )
+    assert '"design/**"' in writer_instruction
+    assert '"tests/**"' in writer_instruction
+    assert "禁止修改允许路径之外的文件" in writer_instruction
     assert len(knowledge_guard.admissions) >= len(agent.invocations)
     assert pull_requests.calls == 2
     assert release_repository.get_pr(outcome.candidate.id) is not None
