@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import stat
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -38,7 +39,7 @@ class CodexWorkcellAgent:
         self.runtime_identity = runtime_identity
         self._active: dict[str, asyncio.subprocess.Process] = {}
         self._overlay_lock = asyncio.Lock()
-        self._overlay_leases: dict[Path, tuple[Path, int]] = {}
+        self._overlay_leases: dict[Path, tuple[Path, int, int, bool]] = {}
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         sandbox = (
@@ -157,26 +158,55 @@ class CodexWorkcellAgent:
         async with self._overlay_lock:
             lease = self._overlay_leases.get(workspace)
             if lease is None:
-                _install_bmad_project_overlay(workspace, runtime_source, invocation)
-                self._overlay_leases[workspace] = (runtime_source, 1)
+                original_mode = stat.S_IMODE(workspace.stat().st_mode)
+                read_only_candidate = invocation.workspace_access == "candidate_read"
+                _install_bmad_project_overlay_with_access(
+                    workspace,
+                    runtime_source,
+                    invocation,
+                    original_mode=original_mode,
+                    read_only_candidate=read_only_candidate,
+                )
+                self._overlay_leases[workspace] = (
+                    runtime_source,
+                    1,
+                    original_mode,
+                    read_only_candidate,
+                )
             else:
-                leased_source, count = lease
+                leased_source, count, original_mode, read_only_candidate = lease
                 if leased_source != runtime_source:
                     raise _error(
                         "METHOD_WORKSPACE_OVERLAY_SOURCE_CONFLICT",
                         "同一 Workspace 的并发 AgentAttempt 引用了不同 BMAD Snapshot。",
                     )
-                self._overlay_leases[workspace] = (leased_source, count + 1)
+                self._overlay_leases[workspace] = (
+                    leased_source,
+                    count + 1,
+                    original_mode,
+                    read_only_candidate,
+                )
         try:
             yield _git_exclude_environment(environment, exclude_file)
         finally:
             async with self._overlay_lock:
-                leased_source, count = self._overlay_leases[workspace]
+                leased_source, count, original_mode, read_only_candidate = (
+                    self._overlay_leases[workspace]
+                )
                 if count > 1:
-                    self._overlay_leases[workspace] = (leased_source, count - 1)
+                    self._overlay_leases[workspace] = (
+                        leased_source,
+                        count - 1,
+                        original_mode,
+                        read_only_candidate,
+                    )
                 else:
                     self._overlay_leases.pop(workspace)
-                    _remove_bmad_project_overlay(workspace)
+                    _remove_bmad_project_overlay_with_access(
+                        workspace,
+                        original_mode=original_mode,
+                        read_only_candidate=read_only_candidate,
+                    )
 
     async def cancel(self, agent_run_id: str) -> bool:
         process = self._active.get(agent_run_id)
@@ -279,6 +309,25 @@ def _install_bmad_project_overlay(
         raise
 
 
+def _install_bmad_project_overlay_with_access(
+    workspace: Path,
+    runtime_source: Path,
+    invocation: WorkcellAgentInvocation,
+    *,
+    original_mode: int,
+    read_only_candidate: bool,
+) -> None:
+    if not read_only_candidate:
+        _install_bmad_project_overlay(workspace, runtime_source, invocation)
+        return
+    workspace.chmod(original_mode | stat.S_IWUSR)
+    try:
+        _install_bmad_project_overlay(workspace, runtime_source, invocation)
+        _make_overlay_read_only(workspace / "_bmad")
+    finally:
+        workspace.chmod(original_mode)
+
+
 def _remove_bmad_project_overlay(workspace: Path) -> None:
     overlay = workspace / "_bmad"
     marker = overlay / _BMAD_OVERLAY_MARKER
@@ -301,6 +350,41 @@ def _remove_bmad_project_overlay(workspace: Path) -> None:
             "METHOD_WORKSPACE_OVERLAY_CLEANUP_FAILED",
             "BMAD Project Support Overlay 无法在 Candidate 冻结前移除。",
         ) from error
+
+
+def _remove_bmad_project_overlay_with_access(
+    workspace: Path,
+    *,
+    original_mode: int,
+    read_only_candidate: bool,
+) -> None:
+    if not read_only_candidate:
+        _remove_bmad_project_overlay(workspace)
+        return
+    workspace.chmod(original_mode | stat.S_IWUSR)
+    try:
+        _make_overlay_writable(workspace / "_bmad")
+        _remove_bmad_project_overlay(workspace)
+    finally:
+        workspace.chmod(original_mode)
+
+
+def _make_overlay_read_only(overlay: Path) -> None:
+    for item in overlay.rglob("*"):
+        if item.is_symlink():
+            continue
+        item.chmod(0o555 if item.is_dir() else 0o444)
+    overlay.chmod(0o555)
+
+
+def _make_overlay_writable(overlay: Path) -> None:
+    if not overlay.exists():
+        return
+    overlay.chmod(0o755)
+    for item in overlay.rglob("*"):
+        if item.is_symlink():
+            continue
+        item.chmod(0o755 if item.is_dir() else 0o644)
 
 
 def _bmad_config(

@@ -219,6 +219,10 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - Project Support 脚本必须来自同一内容寻址 Snapshot；内部 Source 路径不传给
   Codex 子进程。Overlay 通过 Attempt 局部 Git Exclude 隐藏，在 Candidate 冻结前删除，
   Candidate Path Policy 仍独立禁止 `_bmad/**`。冲突、篡改或清理失败均 Fail Closed。
+- `candidate_read` Reviewer 的 Overlay 由产品在 Provider 启动前通过短暂 root owner-write
+  租约装配；运行期间 Detached View 根目录、Overlay 和 Candidate 文件保持只读，
+  Codex 同时使用 `read-only` Sandbox。最后一个并发 Reviewer 结束后由产品移除
+  Overlay 并恢复原权限；该租约不暴露给 Agent。
 - Codex 子进程只继承最小系统环境白名单与 Adapter 授权 Override；产品进程中的
   Feishu/GitHub Token、Secret 和 Password 不会被隐式传入 AgentAttempt。
 - 该机制只证明本地 Codex CLI 能执行已登记 Attempt，不会把 Codex 模拟规划提升为真实 Hermes
@@ -577,6 +581,30 @@ Implemented evidence: Catalog 公共接口同图双 Revision 回归、v0.4 数�
                       项目默认 Revision。
 ```
 
+#### 12.2.6 `ARCH-20260904-03` 只读 Reviewer 的 Method Overlay 租约
+
+```text
+State: Implemented/Verified
+Maturity: Regression Verified; Live rerun pending
+Accepted at: 2026-09-04
+Architecture Impact: Cross-boundary
+Decision: candidate_read Detached View 的跟踪文件全程只读；产品只在 Provider 启动前和
+          最后 Reviewer 结束后短暂获得根目录 owner-write 租约，用于装配/移除
+          内容寻址 BMAD Project Support Overlay。Provider 运行期间根目录与 Overlay
+          均恢复只读，并受 Codex read-only Sandbox 二次约束。
+Affected authorities/modules/data/states: Codex Workcell Adapter、Method Overlay 租约、
+                                         Reviewer Detached View 权限；不改变
+                                         Candidate、Verification、Review 或 Release 权威。
+Compatibility and migration: 无 API/数据库 Migration；Writer 和 Artifact-only Attempt 行为不变；
+                             已有非产品 `_bmad`、Overlay 篡改与清理失败仍 Fail Closed。
+Plan/ADR reference: ADR-0014（2026-09-04 修订）
+Implemented evidence: 真实 Live Design Writer Candidate `077ab9a3...` 机器验证 7/7 通过后，
+                      两个 Reviewer 在子进程启动前因只读根目录无法装配 `_bmad`
+                      而失败；新增回归精确复现并验证 Candidate 0444、Overlay 运行期只读、
+                      根目录 0555 恢复与零残留清理。
+Remaining Live evidence: 重启当前 Revision 并重跑四 Workcell Candidate/Verification/Review/PR 闭环。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -603,6 +631,7 @@ Acceptance evidence required:
 | `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
 | `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live R2 已冻结 22 个 Slot 并绑定项目，真实四仓 Delivery 待执行 |
 | `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口与升级兼容测试通过；live-v051 R1/R2 共存且 R2 已激活 |
+| `ARCH-20260904-03` | 2026-09-04 | `Implemented/Verified` | 只读 Reviewer 使用产品内部短暂租约装配 Method Overlay，Agent 运行期仍为双重只读 | ADR-0014 修订 | Live 失败定位到 Overlay 装配阶段；新增权限保持、Overlay 清理与 Writer 不回归测试通过；待重跑四仓 Live 闭环 |
 
 ## 14. Plan Architecture Review 与文档对账
 
