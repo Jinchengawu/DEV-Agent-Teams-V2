@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import agent_team_os.modules.workcells.stage_driver as workcell_stage_driver
 from agent_team_os.delivery import (
     DeliveryExecutionSnapshot,
     DeliveryKnowledgeContextSnapshot,
@@ -133,6 +134,18 @@ class PassedVerifier:
             status="passed",
             report={"commands": [{"command": ["fixture"], "exit_code": 0}]},
         )
+
+
+def test_review_output_requires_explicit_blocking_findings() -> None:
+    with pytest.raises(ProductError) as invalid:
+        workcell_stage_driver._validated_blocking_findings(
+            {
+                "verdict": "changes_required",
+                "findings": [],
+            }
+        )
+
+    assert invalid.value.code == "WORKCELL_REVIEW_ARTIFACT_INVALID"
 
 
 class DeterministicPRSurface:
@@ -357,6 +370,16 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     assert '"design/**"' in writer_instruction
     assert '"tests/**"' in writer_instruction
     assert "禁止修改允许路径之外的文件" in writer_instruction
+    assert "不得自行替换验收 ID" in writer_instruction
+    review_instructions = [
+        item.instruction
+        for item in agent.invocations
+        if item.workspace_access == "candidate_read"
+    ]
+    assert review_instructions
+    assert all("blocking_findings" in item for item in review_instructions)
+    assert all("缺失该键必须视为无效" in item for item in review_instructions)
+    assert all("必须审查当前只读 Candidate Workspace" in item for item in review_instructions)
     assert len(knowledge_guard.admissions) >= len(agent.invocations)
     assert pull_requests.calls == 2
     assert release_repository.get_pr(outcome.candidate.id) is not None

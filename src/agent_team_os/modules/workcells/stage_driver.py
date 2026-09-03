@@ -11,7 +11,7 @@ from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ...delivery import DeliveryExecutionSnapshot, DeliveryMethodSnapshot, DeliveryRun
 from ...infrastructure.git import (
@@ -802,13 +802,7 @@ class WorkcellStageDriver:
                     ),
                 ),
             )
-            raw_findings = result.content.get("blocking_findings", [])
-            if not isinstance(raw_findings, list):
-                raise _error(
-                    "WORKCELL_REVIEW_ARTIFACT_INVALID",
-                    "Reviewer 输出的 blocking_findings 不是数组。",
-                )
-            findings = tuple(BlockingFinding.model_validate(item) for item in raw_findings)
+            findings = _validated_blocking_findings(result.content)
             tree = self.kernel.record_review(
                 tree.workcell_run.id,
                 ReviewArtifactCreate(
@@ -1079,12 +1073,31 @@ def _delegate_invocation(
     workspace: Path,
     attachment_payload: str,
 ) -> WorkcellAgentInvocation:
+    workspace_contract = "只读取冻结 ArtifactAttachment；不得访问任何 Git Repository。"
+    if child.workspace_access == "workspace_write":
+        workspace_contract = (
+            "允许读写当前 Primary Workspace；跨 Workcell 输入只能读取冻结 ArtifactAttachment。"
+        )
+    elif child.workspace_access == "candidate_read":
+        workspace_contract = (
+            "必须审查当前只读 Candidate Workspace 的 HEAD 与变更；"
+            "跨 Workcell 输入只能读取冻结 ArtifactAttachment。"
+        )
     path_policy = ""
     if child.delegate_purpose == "workspace_write":
         path_policy = (
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+        )
+    review_contract = ""
+    if child.delegate_purpose == "review":
+        review_contract = (
+            "\nReview Output Contract：最终 JSON 必须显式包含 blocking_findings 数组，"
+            "缺失该键必须视为无效。每个 Blocking Finding 必须且只能包含 code、summary、"
+            "evidence_sha256；evidence_sha256 必须是 64 位小写十六进制。"
+            "只有确认 Candidate 不存在阻断问题时才允许返回空数组；不得用 findings、verdict"
+            " 或 decision 代替 blocking_findings。"
         )
     return WorkcellAgentInvocation(
         delivery_id=delivery.id,
@@ -1095,11 +1108,14 @@ def _delegate_invocation(
         stage_path=tree.workcell_run.stage_path,
         instruction=(
             f"使用 ${method_id} 完成唯一 Delegate Purpose {child.delegate_purpose}。"
-            "只读取冻结 ArtifactAttachment；禁止派生 Child。\n"
+            f"{workspace_contract}禁止派生 Child。\n"
             f"{_knowledge_trust_boundary()}\n"
             f"用户目标：{delivery.user_request}\n"
             f"冻结 ArtifactAttachment（已验证内容哈希）：{attachment_payload}"
+            "\n冻结 ArtifactAttachment 中的验收 ID 与契约要求是规范输入，"
+            "不得自行替换验收 ID、降低验收强度或另建冲突事实源。"
             f"{path_policy}"
+            f"{review_contract}"
         ),
         workspace=workspace,
         workspace_access=child.workspace_access,  # type: ignore[arg-type]
@@ -1127,6 +1143,41 @@ def _stage_citation_ids(delivery: DeliveryRun, stage_path: str) -> tuple[str, ..
         return ()
     context = snapshot.knowledge_contexts.get(stage_path)
     return () if context is None else context.citation_ids
+
+
+def _validated_blocking_findings(content: dict[str, object]) -> tuple[BlockingFinding, ...]:
+    if "blocking_findings" not in content:
+        raise _error(
+            "WORKCELL_REVIEW_ARTIFACT_INVALID",
+            "Reviewer 输出缺少必需的 blocking_findings 数组。",
+        )
+    raw_findings = content["blocking_findings"]
+    if not isinstance(raw_findings, list):
+        raise _error(
+            "WORKCELL_REVIEW_ARTIFACT_INVALID",
+            "Reviewer 输出的 blocking_findings 不是数组。",
+        )
+    try:
+        findings = tuple(BlockingFinding.model_validate(item) for item in raw_findings)
+    except ValidationError as error:
+        raise _error(
+            "WORKCELL_REVIEW_ARTIFACT_INVALID",
+            "Reviewer 输出的 Blocking Finding 不符合冻结 Schema。",
+        ) from error
+    verdict = content.get("verdict", content.get("decision"))
+    if isinstance(verdict, str) and verdict.lower() in {
+        "blocked",
+        "changes_required",
+        "fail",
+        "failed",
+        "reject",
+        "rejected",
+    } and not findings:
+        raise _error(
+            "WORKCELL_REVIEW_ARTIFACT_INVALID",
+            "Reviewer 给出阻断结论但没有结构化 Blocking Finding。",
+        )
+    return findings
 
 
 def _allowed_paths(workcell_key: str) -> tuple[str, ...]:
