@@ -436,7 +436,7 @@ def _validate_changed_files(
     invalid = tuple(
         item
         for item in changed_files
-        if not any(PurePosixPath(item).match(pattern) for pattern in policy.allowed_paths)
+        if not any(_matches_allowed_path(item, pattern) for pattern in policy.allowed_paths)
     )
     if invalid:
         raise _git_error(
@@ -459,6 +459,19 @@ def _validate_changed_files(
                 "EXTERNAL_WORKSPACE_SECRET_MATERIAL_DETECTED",
                 f"Candidate 文件 {item} 包含疑似凭证。",
             )
+
+
+def _matches_allowed_path(item: str, pattern: str) -> bool:
+    path = PurePosixPath(item)
+    if path.is_absolute() or ".." in path.parts:
+        return False
+    if pattern.endswith("/**"):
+        prefix = PurePosixPath(pattern.removesuffix("/**"))
+        return (
+            len(path.parts) > len(prefix.parts)
+            and path.parts[: len(prefix.parts)] == prefix.parts
+        )
+    return path.match(pattern)
 
 
 def _optional_revision(

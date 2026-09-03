@@ -57,7 +57,7 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
         binding=binding,
         expected_base_revision=base,
     )
-    source = writer.worktree / "src" / "app.ts"
+    source = writer.worktree / "src" / "components" / "app.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const ready = true;\n", encoding="utf-8")
 
@@ -73,8 +73,10 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
         writer,
         candidate_revision=evidence.candidate_revision,
     )
-    assert (review / "src" / "app.ts").read_text(encoding="utf-8").endswith("true;\n")
-    assert (review / "src" / "app.ts").stat().st_mode & 0o222 == 0
+    assert (review / "src" / "components" / "app.ts").read_text(
+        encoding="utf-8"
+    ).endswith("true;\n")
+    assert (review / "src" / "components" / "app.ts").stat().st_mode & 0o222 == 0
 
     candidate_payload = {
         "delivery_id": "delivery-123",
