@@ -268,6 +268,9 @@ Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管�
 - [外部 Git Forward-only Release](docs/architecture/ADR-0015-EXTERNAL-FORWARD-ONLY-RELEASE.md)；
 - [v0.5.0 交付说明](docs/releases/V0.5.0-AGENT-WORKCELL-KERNEL.md)。
 
+外部方案观察（非 ADR、非 Roadmap）：
+[Google Teamwork 对 Agent-Team-OS 的启发](docs/research/GOOGLE-TEAMWORK-OBSERVATION.md)。
+
 ## 运行身份
 
 | 路径 | 当前身份 | 可以证明什么 |
@@ -443,6 +446,7 @@ config/                  ACWM Capability、Journey 与框架锁
 migrations/              带 Checksum 的 SQLite 迁移
 docs/architecture/       当前架构总览、图源与架构决策记录
 docs/design/             产品与集成设计
+docs/research/           外部方案观察与延后评估记录
 scripts/                 OpenAPI 与浏览器验证工具
 tests/                   单元、合同、集成和发布行为测试
 tasks/spark/             版本化、受限的实现任务清单
