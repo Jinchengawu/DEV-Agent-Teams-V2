@@ -55,6 +55,9 @@ Agent-Team-OS 引入 `Agent Workcell` 作为 Stage 内的产品级执行单元�
     AgentScope 不得产生 `Hidden Child`（隐藏派生），即在产品不可见的位置派生 Child 或新的运行身份。
 12. Candidate 冻结前必须拒绝 `_bmad`、`.agents/skills`、`__pycache__`、`*.pyc`、`*.pyo` 等方法安装产物
     或运行时生成物；凭据检查必须覆盖完整 Diff，包括删除行，防止敏感内容进入 Artifact Bus。
+13. Product Machine Verification 子进程只能继承运行测试所需的系统环境白名单，不得继承 Feishu、
+    GitHub 或其他 Token/Secret/Password；Python 验证固定设置 `PYTHONDONTWRITEBYTECODE=1`，避免验证器
+    自身在已冻结 Candidate Worktree 中生成缓存文件并改变观察环境。
 
 ## AgentScope Attempt Runtime 边界
 

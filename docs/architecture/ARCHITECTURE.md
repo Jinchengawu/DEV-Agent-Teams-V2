@@ -209,6 +209,8 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   不获得上游 Repository 路径或挂载权限。
 - Candidate 冻结时拒绝 `_bmad`、`.agents/skills`、`__pycache__`、`*.pyc` 与 `*.pyo` 等方法安装产物或
   运行时生成物；Diff 凭据扫描覆盖新增、修改和删除内容，命中时不允许进入 Artifact Bus。
+- Product Machine Verification 使用最小系统环境白名单，不继承产品进程中的 Feishu/GitHub Credential；
+  Python 验证固定禁用字节码写入，防止验证器自身在已冻结 Candidate Worktree 生成缓存并污染观察环境。
 
 ### 6.3 Codex Credential Reference 与 Method Overlay
 
@@ -622,7 +624,8 @@ Maturity: Regression Verified; Live rerun pending
 Accepted at: 2026-09-04
 Architecture Impact: Cross-boundary
 Decision: Git Writer 在 Candidate Metadata 之外发布内容寻址 `workspace-candidate-diff-v1`；
-          Product 在发布前校验冻结 Diff SHA、扫描凭据并拒绝 Python 运行时生成物。下游仅从
+          Product 在发布前校验冻结 Diff SHA、扫描凭据并拒绝 Python 运行时生成物。Machine
+          Verification 使用无业务凭据的最小环境并禁用 Python 字节码写入。下游仅从
           Artifact Store 读取 Diff 正文，不挂载上游仓库。Main synthesis 必须获得本 Workcell
           Child Artifact、Machine Verification、Result Validation 与 Review Artifact 冻结证据。
 Affected authorities/modules/data/states: External Git Workspace Manager、Artifact Store、Workcell Stage
@@ -633,7 +636,9 @@ Compatibility and migration: 无 API/数据库 Migration；新增 Artifact Contr
 Plan/ADR reference: ADR-0014（2026-09-04 修订）
 Implemented evidence: External Git Diff SHA 重读、生成物拒绝、Writer 双 Artifact、Main 本地证据和四仓
                       下游 Diff 消费的公共接口回归通过。真实 Delivery `73ce4dbb...` 精确暴露了旧链路仅传
-                      Metadata、Main 缺少本地证据及 `__pycache__` 进入 Candidate 的失败模式。
+                      Metadata、Main 缺少本地证据及 `__pycache__` 进入 Candidate 的失败模式；Delivery
+                      `4c203d87...` 进一步证明 Machine Verification 自身生成字节码可造成三轮伪失败，
+                      已新增最小环境、业务凭据隔离和禁写字节码回归。
 Remaining Live evidence: 新 Revision 重跑四 Workcell Candidate/Verification/Review/PR 闭环；人工确认前不 Apply main。
 ```
 
@@ -664,7 +669,7 @@ Acceptance evidence required:
 | `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live R2 已冻结 22 个 Slot 并绑定项目，真实四仓 Delivery 待执行 |
 | `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口与升级兼容测试通过；live-v051 R1/R2 共存且 R2 已激活 |
 | `ARCH-20260904-03` | 2026-09-04 | `Implemented/Verified` | 只读 Reviewer 使用产品内部短暂租约装配 Method Overlay，Agent 运行期仍为双重只读 | ADR-0014 修订 | 修复后的 Live Delivery 已验证两个并发 Design Reviewer 成功运行；完整四仓闭环仍待另行问题修复后重跑 |
-| `ARCH-20260904-04` | 2026-09-04 | `Implemented/Verified` | 发布 Hash-bound Candidate Diff，并为 Main synthesis 注入本 Workcell 冻结证据；生成物和含凭据 Diff Fail Closed | ADR-0014 修订 | Diff SHA/凭据扫描、字节码拒绝、双 Artifact、Main 合成输入与四仓下游消费回归通过；Live 重跑待执行 |
+| `ARCH-20260904-04` | 2026-09-04 | `Implemented/Verified` | 发布 Hash-bound Candidate Diff，为 Main synthesis 注入本 Workcell 冻结证据，并隔离 Machine Verification 环境；生成物和含凭据 Diff Fail Closed | ADR-0014 修订 | Diff SHA/凭据扫描、字节码拒绝、验证子进程凭据隔离与禁写字节码、双 Artifact、Main 合成输入和四仓下游消费回归通过；Live 重跑待执行 |
 
 ## 14. Plan Architecture Review 与文档对账
 

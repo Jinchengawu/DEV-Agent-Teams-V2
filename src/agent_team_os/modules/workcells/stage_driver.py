@@ -240,6 +240,7 @@ class CommandWorkcellMachineVerifier:
                 text=True,
                 check=False,
                 timeout=self.timeout_seconds,
+                env=_machine_verification_environment(),
             )
             log = _redact(completed.stdout + completed.stderr)
             reports.append(
@@ -261,6 +262,37 @@ class CommandWorkcellMachineVerifier:
                 "commands": reports,
             },
         )
+
+
+_INHERITED_MACHINE_VERIFICATION_ENVIRONMENT = frozenset(
+    {
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LOGNAME",
+        "PATH",
+        "SHELL",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "SYSTEMROOT",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "TEMP",
+        "USER",
+    }
+)
+
+
+def _machine_verification_environment() -> dict[str, str]:
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in _INHERITED_MACHINE_VERIFICATION_ENVIRONMENT
+    }
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return environment
 
 
 class PullRequestSurface(Protocol):

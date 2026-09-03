@@ -70,6 +70,44 @@ def test_content_addressed_method_runtime_discovers_explicit_codex_auth_referenc
     assert runtime.codex_auth_file == auth_file
 
 
+def test_machine_verifier_disables_python_bytecode_writes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def run_command(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout="passed", stderr="")
+
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
+    monkeypatch.setenv("AGENT_TEAM_OS_GITHUB_TOKEN", "must-not-reach-verification")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "must-not-reach-verification")
+    monkeypatch.setattr(workcell_stage_driver.subprocess, "run", run_command)
+    verifier = workcell_stage_driver.CommandWorkcellMachineVerifier(
+        lambda _workcell: (("python", "-m", "unittest"),)
+    )
+
+    outcome = asyncio.run(
+        verifier.verify(
+            workcell_key="design",
+            workspace=tmp_path,
+            candidate=workcell_stage_driver.ExternalCandidateEvidence(
+                base_revision="1" * 40,
+                candidate_revision="2" * 40,
+                diff_sha256="3" * 64,
+                candidate_branch="agent-team-os/delivery/design",
+                changed_files=("design/contract.json",),
+            ),
+        )
+    )
+
+    assert outcome.status == "passed"
+    assert captured["env"]["PYTHONDONTWRITEBYTECODE"] == "1"  # type: ignore[index]
+    assert "AGENT_TEAM_OS_GITHUB_TOKEN" not in captured["env"]  # type: ignore[operator]
+    assert "FEISHU_APP_SECRET" not in captured["env"]  # type: ignore[operator]
+
+
 class DeterministicWorkcellAgent:
     def __init__(
         self,
