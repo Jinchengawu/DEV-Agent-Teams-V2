@@ -758,6 +758,21 @@ class WorkcellStageDriver:
             candidate[0],
             candidate_revision=candidate[1].candidate_revision,
         )
+        verification = tree.verification
+        if verification is None or verification.status != "passed":
+            raise _error(
+                "REVIEW_CANDIDATE_NOT_VERIFIED",
+                "Reviewer 缺少已通过的 Product Machine Verification。",
+            )
+        review_evidence: dict[str, object] = {
+            "base_revision": tree.workcell_run.workcell_snapshot.workspace.base_revision,
+            "candidate_revision": candidate[1].candidate_revision,
+            "diff_sha256": candidate[1].diff_sha256,
+            "changed_files": candidate[1].changed_files,
+            "machine_verification_sha256": verification.sha256,
+            "machine_verification_status": verification.status,
+            "machine_verification_report": verification.report,
+        }
         for child in reviewers:
             self.kernel.start_child(child.id)
         results = await asyncio.gather(
@@ -772,6 +787,7 @@ class WorkcellStageDriver:
                         _method_for(tree, child),
                         review_workspace,
                         self._attachment_payload(tree),
+                        review_evidence=review_evidence,
                     ),
                 )
                 for child in reviewers
@@ -793,7 +809,11 @@ class WorkcellStageDriver:
                 continue
             try:
                 _require_runtime_identity(child, result)
-                findings = _validated_blocking_findings(result.content)
+                findings = _validated_review_output(
+                    result.content,
+                    candidate_sha=candidate[1].candidate_revision,
+                    diff_sha256=candidate[1].diff_sha256,
+                )
                 reference = self.artifacts.put_json(result.content)
             except BaseException as error:
                 self.kernel.finish_child(
@@ -1086,6 +1106,8 @@ def _delegate_invocation(
     method_id: str,
     workspace: Path,
     attachment_payload: str,
+    *,
+    review_evidence: dict[str, object] | None = None,
 ) -> WorkcellAgentInvocation:
     workspace_contract = "只读取冻结 ArtifactAttachment；不得访问任何 Git Repository。"
     if child.workspace_access == "workspace_write":
@@ -1106,10 +1128,22 @@ def _delegate_invocation(
         )
     review_contract = ""
     if child.delegate_purpose == "review":
+        if review_evidence is None:
+            raise _error(
+                "WORKCELL_REVIEW_EVIDENCE_MISSING",
+                "Reviewer 调用缺少 Product 生成的 Candidate Review Evidence。",
+            )
         review_contract = (
+            "\nCandidate Review Evidence："
+            + json.dumps(review_evidence, ensure_ascii=False, sort_keys=True)
+            + "\n当前工作目录已经是上述 Candidate SHA 的只读 Detached View。"
+            "必须实际执行 git rev-parse HEAD，检查 Base..HEAD diff 并读取变更文件；"
+            "命令 exit 0 时应忽略只读 macOS 沙箱产生的临时缓存警告。"
             "\nReview Output Contract：最终 JSON 必须显式包含 blocking_findings 数组，"
             "缺失该键必须视为无效。每个 Blocking Finding 必须且只能包含 code、summary、"
             "evidence_sha256；evidence_sha256 必须是 64 位小写十六进制。"
+            "最终 JSON 还必须包含 reviewed_candidate_sha 与 reviewed_diff_sha256，且必须逐字"
+            "等于 Candidate Review Evidence 中的 candidate_revision 与 diff_sha256。"
             "只有确认 Candidate 不存在阻断问题时才允许返回空数组；不得用 findings、verdict"
             " 或 decision 代替 blocking_findings。"
         )
@@ -1192,6 +1226,23 @@ def _validated_blocking_findings(content: dict[str, object]) -> tuple[BlockingFi
             "Reviewer 给出阻断结论但没有结构化 Blocking Finding。",
         )
     return findings
+
+
+def _validated_review_output(
+    content: dict[str, object],
+    *,
+    candidate_sha: str,
+    diff_sha256: str,
+) -> tuple[BlockingFinding, ...]:
+    if (
+        content.get("reviewed_candidate_sha") != candidate_sha
+        or content.get("reviewed_diff_sha256") != diff_sha256
+    ):
+        raise _error(
+            "WORKCELL_REVIEW_EVIDENCE_MISMATCH",
+            "Reviewer 输出没有绑定 Product 已验证的 Candidate SHA 与 Diff SHA。",
+        )
+    return _validated_blocking_findings(content)
 
 
 def _allowed_paths(workcell_key: str) -> tuple[str, ...]:

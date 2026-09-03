@@ -107,6 +107,9 @@ class DeterministicWorkcellAgent:
                 knowledge_citation_ids=self.citation_ids,
             )
         self.review_calls += 1
+        review_evidence = json.loads(
+            invocation.instruction.split("Candidate Review Evidence：", 1)[1].splitlines()[0]
+        )
         findings = (
             [
                 {
@@ -120,7 +123,12 @@ class DeterministicWorkcellAgent:
         )
         return WorkcellAgentOutput(
             runtime_identity="deterministic-workcell",
-            content={"blocking_findings": findings, "method_id": invocation.method_id},
+            content={
+                "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                "blocking_findings": findings,
+                "method_id": invocation.method_id,
+            },
             knowledge_citation_ids=self.citation_ids,
         )
 
@@ -165,6 +173,30 @@ def test_review_output_requires_explicit_blocking_findings() -> None:
         )
 
     assert invalid.value.code == "WORKCELL_REVIEW_ARTIFACT_INVALID"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"blocking_findings": []},
+        {
+            "reviewed_candidate_sha": "a" * 40,
+            "reviewed_diff_sha256": "b" * 64,
+            "blocking_findings": [],
+        },
+    ],
+)
+def test_review_output_must_bind_the_verified_candidate(
+    content: dict[str, object],
+) -> None:
+    with pytest.raises(ProductError) as invalid:
+        workcell_stage_driver._validated_review_output(
+            content,
+            candidate_sha="c" * 40,
+            diff_sha256="d" * 64,
+        )
+
+    assert invalid.value.code == "WORKCELL_REVIEW_EVIDENCE_MISMATCH"
 
 
 class DeterministicPRSurface:
@@ -421,6 +453,9 @@ def test_stage_driver_terminalizes_parallel_reviews_and_preserves_evidence(
     ]
     assert review_instructions
     assert all("blocking_findings" in item for item in review_instructions)
+    assert all("Candidate Review Evidence：" in item for item in review_instructions)
+    assert all("reviewed_candidate_sha" in item for item in review_instructions)
+    assert all("reviewed_diff_sha256" in item for item in review_instructions)
     assert all("缺失该键必须视为无效" in item for item in review_instructions)
     assert all("必须审查当前只读 Candidate Workspace" in item for item in review_instructions)
     assert len(knowledge_guard.admissions) >= len(agent.invocations)
