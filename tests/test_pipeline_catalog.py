@@ -282,6 +282,55 @@ def test_catalog_publishes_an_immutable_compiled_pipeline_revision(tmp_path: Pat
     assert catalog.get_revision("backend-delivery", 1) == revision
 
 
+def test_catalog_allows_a_new_revision_when_the_graph_fingerprint_is_unchanged(
+    tmp_path: Path,
+) -> None:
+    catalog = _catalog(tmp_path)
+    created = catalog.create_pipeline(
+        PipelineCreate(
+            id="backend-delivery",
+            name="后端交付",
+            definition={
+                "id": "backend-delivery",
+                "version": "4.0.0",
+                "nodes": [{"kind": "stage", "id": "plan"}],
+                "edges": [],
+            },
+        ),
+        created_by="admin",
+    )
+    first_validated = catalog.validate_draft(
+        created.draft.id, expected_version=created.draft.version
+    )
+    first = catalog.publish_draft(
+        first_validated.id,
+        expected_version=first_validated.version,
+        published_by="admin",
+    )
+    updated = catalog.patch_draft(
+        created.draft.id,
+        PipelineDraftPatch(
+            expected_version=first_validated.version,
+            layout={"plan": {"x": 120, "y": 80}},
+        ),
+    )
+    second_validated = catalog.validate_draft(
+        updated.id, expected_version=updated.version
+    )
+
+    second = catalog.publish_draft(
+        second_validated.id,
+        expected_version=second_validated.version,
+        published_by="admin",
+    )
+
+    assert first.revision == 1
+    assert second.revision == 2
+    assert first.fingerprint == second.fingerprint == "a" * 64
+    assert catalog.get_revision("backend-delivery", 1) == first
+    assert catalog.get_revision("backend-delivery", 2) == second
+
+
 def test_pipeline_http_interface_creates_validates_and_publishes(tmp_path: Path) -> None:
     catalog = _catalog(tmp_path)
     app = FastAPI()

@@ -191,7 +191,7 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 
 - `agent-team-os.sqlite` 保存产品状态、Revision、Event、Reference 和 Receipt；
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
-- Migration `0001–0043` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- Migration `0001–0044` 按校验和串行执行，已应用文件被修改时 Fail Closed；
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
 - Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。
 
@@ -557,6 +557,25 @@ Remaining Live evidence: 发布并绑定新 Codex Planning Pipeline Revision，�
                          重跑四 Workcell 交付并生成同 Revision 零容差 Report。
 ```
 
+#### 12.2.5 `ARCH-20260904-02` Pipeline Revision 身份与图指纹解耦
+
+```text
+State: Implemented/Verified
+Maturity: Persistence Contract Verified; Live R2 Publication Pending
+Accepted at: 2026-09-04
+Architecture Impact: Cross-boundary
+Decision: Pipeline Revision 的身份是 (pipeline_id, revision)；fingerprint 只表示 ACWM 编译图
+          完整性，不承担全局 Revision 去重。图不变但冻结 Binding、Workcell/Knowledge Contract、
+          Policy Snapshot 或展示元数据变化时，允许发布新的不可变 Revision。
+Affected authorities/modules/data/states: Pipeline Catalog、SQLite Migration、Published Revision、
+                                         Delivery Snapshot 编译与审计历史。
+Compatibility and migration: Migration 0044 原样复制既有 Revision 并移除 fingerprint 全局唯一约束；
+                             不改写 fingerprint、不改变历史 Revision ID 或 Delivery 引用。
+Plan/ADR reference: ADR-0009（2026-09-04 修订）
+Implemented evidence: Catalog 公共接口同图双 Revision 回归、v0.4 数据库升级与既有 Pipeline 测试通过。
+Remaining Live evidence: 在 live-v051 数据目录完成 0044 升级并发布、激活 Codex Planning R2。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -582,6 +601,7 @@ Acceptance evidence required:
 | `ARCH-20260903-01` | 2026-09-03 | `Implemented/Verified` | 临时 Method Overlay 以受限引用复用操作员 Codex 登录态，凭据不进入 Store、Snapshot、Hash、日志或 Evidence | ADR-0014 修订 | Credential 权限/生命周期与日志脱敏回归、真实 Codex 临时 `CODEX_HOME` 登录探针通过；正式 Live Gate 仍受 Hermes 缺失阻塞 |
 | `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
 | `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live Gate 待执行 |
+| `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口回归及升级兼容测试通过；Live R2 待发布 |
 
 ## 14. Plan Architecture Review 与文档对账
 

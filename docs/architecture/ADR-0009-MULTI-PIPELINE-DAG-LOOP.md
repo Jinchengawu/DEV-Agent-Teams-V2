@@ -2,6 +2,8 @@
 
 Status: accepted
 
+Latest reconciliation: 2026-09-04
+
 ## Context
 
 The V0.2 control plane can persist more than one Journey id, but creation defaults to
@@ -33,6 +35,12 @@ compiled Journey Graph and Capability binding snapshot.
   same bootstrap actor. If another actor published the active Revision, startup preserves it and
   must not patch its draft, publish a duplicate fingerprint, or reactivate an older built-in
   definition.
+- A Pipeline Revision is identified by `(pipeline_id, revision)`. Its `fingerprint` is the ACWM
+  compiled graph integrity value, not a global Revision identity or deduplication key. The same
+  graph may therefore be republished as a new immutable Revision when frozen Provider Bindings,
+  Workcell contracts, Knowledge context bindings, policy snapshots or presentation metadata
+  change. Publication must preserve both Revisions instead of rejecting the new snapshot or
+  silently reusing the previous one.
 
 ## Delivery order
 
@@ -53,3 +61,7 @@ Operator-published Pipeline Revisions therefore survive process restart without 
 Changing such a Revision remains an explicit Draft/Validate/Publish/Activate operation; a future
 built-in definition cannot take ownership merely because application code was upgraded or rolled
 back.
+
+Removing global uniqueness from `pipeline_revisions.fingerprint` does not weaken graph integrity:
+each Revision still freezes and exposes that fingerprint, while the composite primary key remains
+the consistency boundary for lookup, activation, Delivery Snapshot compilation and audit history.
