@@ -430,11 +430,15 @@ def _redact(value: str) -> str:
 
 _INHERITED_CODEX_ENVIRONMENT = frozenset(
     {
+        "ALL_PROXY",
         "HOME",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
         "LANG",
         "LC_ALL",
         "LC_CTYPE",
         "LOGNAME",
+        "NO_PROXY",
         "PATH",
         "SHELL",
         "SSL_CERT_DIR",
@@ -444,6 +448,10 @@ _INHERITED_CODEX_ENVIRONMENT = frozenset(
         "TMPDIR",
         "TEMP",
         "USER",
+        "all_proxy",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
     }
 )
 

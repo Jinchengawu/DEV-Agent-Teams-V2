@@ -284,6 +284,50 @@ def test_codex_workcell_does_not_inherit_namespaced_service_credentials(
     assert "not-inherited" in error.value.detail
 
 
+def test_codex_workcell_inherits_process_only_proxy_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = "http://127.0.0.1:7890"
+    monkeypatch.setenv("HTTPS_PROXY", proxy)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+    monkeypatch.setenv("UNRELATED_PARENT_SETTING", "must-not-be-inherited")
+    code = (
+        "import json,os,sys; sys.stdin.read(); "
+        "payload={'https_proxy':os.environ.get('HTTPS_PROXY'),"
+        "'no_proxy':os.environ.get('NO_PROXY'),"
+        "'unrelated_present':'UNRELATED_PARENT_SETTING' in os.environ}; "
+        "event={'type':'item.completed','item':{'type':'agent_message',"
+        "'text':json.dumps(payload)}}; print(json.dumps(event))"
+    )
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-proxy",
+                workcell_run_id="workcell-proxy",
+                agent_run_id="agent-proxy",
+                phase="planning",
+                workcell_key="design",
+                stage_path="design-repair/design",
+                instruction="plan",
+                workspace=tmp_path,
+                workspace_access="none",
+            )
+        )
+    )
+
+    assert output.content == {
+        "https_proxy": proxy,
+        "no_proxy": "127.0.0.1,localhost",
+        "unrelated_present": False,
+    }
+
+
 def test_codex_workcell_agent_filters_shell_metadata_and_non_utf8_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
