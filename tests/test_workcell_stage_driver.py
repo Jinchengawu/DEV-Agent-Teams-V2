@@ -570,6 +570,17 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert tree.result is not None
     assert tree.result.knowledge_citation_ids == ("citation-allowed",)
     assert all(item.result_artifact_sha256 is not None for item in tree.attempts)
+    writer = next(
+        item for item in tree.agent_runs if item.delegate_purpose == "workspace_write"
+    )
+    assert [item.contract_id for item in writer.artifact_envelopes] == [
+        "workspace-candidate-v2",
+        "workspace-candidate-diff-v1",
+    ]
+    diff_envelope = writer.artifact_envelopes[1]
+    assert diff_envelope.artifact_key == "diff"
+    assert diff_envelope.reference is not None
+    assert b"+# Candidate" in artifact_storage.get_bytes(diff_envelope.reference)
     delegate_instructions = [
         item.instruction for item in agent.invocations if item.phase == "delegate"
     ]
@@ -594,7 +605,15 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert "当前 AgentAttempt 的唯一交付目标是 design Workcell" in writer_instruction
     assert "用户目标中的其他 Workcell 条目仅是交付背景" in writer_instruction
     assert "当前为 bounded Loop 第 1 轮" in writer_instruction
+    assert "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo" in writer_instruction
     assert "必须在当前 Workspace 产生非空 Git Candidate" in writer_instruction
+    synthesis_instruction = next(
+        item.instruction for item in agent.invocations if item.phase == "synthesis"
+    )
+    assert "本 Workcell 冻结执行证据" in synthesis_instruction
+    assert "workspace-candidate-diff-v1" in synthesis_instruction
+    assert "machine_verification" in synthesis_instruction
+    assert "review_artifacts" in synthesis_instruction
     review_instructions = [
         item.instruction
         for item in agent.invocations

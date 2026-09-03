@@ -670,14 +670,15 @@ class WorkcellStageDriver:
                         error_code=getattr(result, "code", "WORKCELL_DELEGATE_FAILED"),
                     )
                     raise result
-                envelope, writer, child_citations = result
-                self.kernel.finish_child(child.id, status="succeeded", artifacts=(envelope,))
-                if envelope.reference is None:
-                    raise _error(
-                        "WORKCELL_ARTIFACT_REFERENCE_MISSING",
-                        "Delegate 结果没有内容寻址 Artifact Reference。",
-                    )
-                outputs.append(envelope.reference)
+                envelopes, writer, child_citations = result
+                self.kernel.finish_child(child.id, status="succeeded", artifacts=envelopes)
+                for envelope in envelopes:
+                    if envelope.reference is None:
+                        raise _error(
+                            "WORKCELL_ARTIFACT_REFERENCE_MISSING",
+                            "Delegate 结果没有内容寻址 Artifact Reference。",
+                        )
+                    outputs.append(envelope.reference)
                 citations.update(child_citations)
                 if writer is not None:
                     candidate = writer
@@ -691,7 +692,7 @@ class WorkcellStageDriver:
         child: AgentRun,
         methods: WorkcellMethodContext,
     ) -> tuple[
-        ArtifactEnvelope,
+        tuple[ArtifactEnvelope, ...],
         tuple[ExternalWriterWorkspace, ExternalCandidateEvidence] | None,
         tuple[str, ...],
     ]:
@@ -756,11 +757,36 @@ class WorkcellStageDriver:
                     **evidence.model_dump(mode="json"),
                 }
             )
+            candidate_diff = self.workspaces.candidate_diff(writer, evidence).decode("utf-8")
+            diff_reference = self.artifacts.put_json(
+                {
+                    "contract_id": "workspace-candidate-diff-v1",
+                    "base_revision": evidence.base_revision,
+                    "candidate_revision": evidence.candidate_revision,
+                    "diff_sha256": evidence.diff_sha256,
+                    "diff_media_type": "text/x-diff",
+                    "diff_content": candidate_diff,
+                },
+                media_type="application/vnd.agent-team-os.candidate-diff+json",
+            )
+            if hashlib.sha256(candidate_diff.encode()).hexdigest() != evidence.diff_sha256:
+                raise _error(
+                    "WORKCELL_CANDIDATE_DIFF_ARTIFACT_MISMATCH",
+                    "Candidate Diff Artifact 没有绑定冻结的 Diff SHA-256。",
+                )
             return (
-                ArtifactEnvelope(
-                    contract_id="workspace-candidate-v2",
-                    reference=reference,
-                    sha256=reference.sha256,
+                (
+                    ArtifactEnvelope(
+                        contract_id="workspace-candidate-v2",
+                        reference=reference,
+                        sha256=reference.sha256,
+                    ),
+                    ArtifactEnvelope(
+                        contract_id="workspace-candidate-diff-v1",
+                        artifact_key="diff",
+                        reference=diff_reference,
+                        sha256=diff_reference.sha256,
+                    ),
                 ),
                 (writer, evidence),
                 output.knowledge_citation_ids,
@@ -786,10 +812,12 @@ class WorkcellStageDriver:
             }
         )
         return (
-            ArtifactEnvelope(
-                contract_id="workcell-method-artifact-v1",
-                reference=reference,
-                sha256=reference.sha256,
+            (
+                ArtifactEnvelope(
+                    contract_id="workcell-method-artifact-v1",
+                    reference=reference,
+                    sha256=reference.sha256,
+                ),
             ),
             None,
             output.knowledge_citation_ids,
@@ -932,6 +960,8 @@ class WorkcellStageDriver:
                     + _knowledge_trust_boundary()
                     + "\n冻结 ArtifactAttachment："
                     + self._attachment_payload(tree)
+                    + "\n本 Workcell 冻结执行证据："
+                    + self._synthesis_evidence_payload(tree)
                 ),
                 workspace=methods.control_workspace,
                 workspace_access="none",
@@ -1058,9 +1088,19 @@ class WorkcellStageDriver:
         return output.model_copy(update={"knowledge_citation_ids": citations})
 
     def _attachment_payload(self, tree: WorkcellRunTree) -> str:
+        return json.dumps(
+            self._artifact_contents(tree.workcell_run.workcell_snapshot.input_artifacts),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def _artifact_contents(
+        self,
+        references: tuple[ArtifactReference, ...],
+    ) -> list[dict[str, object]]:
         attachments: list[dict[str, object]] = []
         total_size = 0
-        for reference in tree.workcell_run.workcell_snapshot.input_artifacts:
+        for reference in references:
             total_size += reference.size_bytes
             if total_size > 1_048_576:
                 raise _error(
@@ -1095,7 +1135,44 @@ class WorkcellStageDriver:
                     "content": content,
                 }
             )
-        return json.dumps(attachments, ensure_ascii=False, sort_keys=True)
+        return attachments
+
+    def _synthesis_evidence_payload(self, tree: WorkcellRunTree) -> str:
+        envelopes = tuple(
+            envelope
+            for child in tree.agent_runs
+            if child.run_role == "child"
+            for envelope in child.artifact_envelopes
+            if envelope.reference is not None
+        )
+        references = tuple(cast(ArtifactReference, item.reference) for item in envelopes)
+        contents = {
+            str(reference.sha256): attachment["content"]
+            for reference, attachment in zip(
+                references,
+                self._artifact_contents(references),
+                strict=True,
+            )
+        }
+        payload = {
+            "child_artifacts": [
+                {
+                    "envelope": envelope.model_dump(mode="json"),
+                    "content": contents[str(cast(ArtifactReference, envelope.reference).sha256)],
+                }
+                for envelope in envelopes
+            ],
+            "machine_verification": (
+                None if tree.verification is None else tree.verification.model_dump(mode="json")
+            ),
+            "result_validation": (
+                None
+                if tree.result_validation is None
+                else tree.result_validation.model_dump(mode="json")
+            ),
+            "review_artifacts": [item.model_dump(mode="json") for item in tree.reviews],
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
     def _completed_outcome(
         self,
@@ -1198,6 +1275,8 @@ def _delegate_invocation(
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+            "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo 等 Python 运行时生成物；"
+            "运行测试后必须清理这些文件或确保其未被 Git 跟踪。"
             "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
         )
     review_contract = ""

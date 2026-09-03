@@ -14,6 +14,13 @@ from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
 from .external import ExternalGitBinding, external_git_environment
 
+_SECRET_PATTERNS = (
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)(token|secret|password|api[_-]?key)\s*[=:]\s*['\"]?[^\s'\"]{8,}"),
+)
+
 
 class ExternalWriterPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -224,6 +231,7 @@ class ExternalGitWorkspaceManager:
                 cwd=workspace.worktree,
                 environment=environment,
             )
+            _validate_diff_content(unified_diff)
             _git(
                 "push",
                 "--porcelain",
@@ -253,6 +261,32 @@ class ExternalGitWorkspaceManager:
             candidate_branch=workspace.candidate_branch,
             changed_files=final_files,
         )
+
+    def candidate_diff(
+        self,
+        workspace: ExternalWriterWorkspace,
+        evidence: ExternalCandidateEvidence,
+    ) -> bytes:
+        """Return the exact, hash-bound Candidate diff without exposing the repository."""
+
+        with external_git_environment(workspace.credential_reference) as environment:
+            unified_diff = _git(
+                "diff",
+                "--binary",
+                "--no-ext-diff",
+                evidence.base_revision,
+                evidence.candidate_revision,
+                "--",
+                cwd=workspace.worktree,
+                environment=environment,
+            )
+        payload = unified_diff.encode()
+        if hashlib.sha256(payload).hexdigest() != evidence.diff_sha256:
+            raise _git_error(
+                "EXTERNAL_CANDIDATE_DIFF_HASH_MISMATCH",
+                "Candidate Diff 内容与冻结 Diff SHA-256 不一致。",
+            )
+        return payload
 
     def prepare_review_view(
         self,
@@ -433,6 +467,17 @@ def _validate_changed_files(
             "METHOD_OVERLAY_WORKSPACE_POLLUTION",
             "Candidate Diff 包含 BMAD/TEA Runtime Overlay 安装产物。",
         )
+    generated = tuple(
+        item
+        for item in changed_files
+        if "__pycache__" in PurePosixPath(item).parts
+        or PurePosixPath(item).suffix in {".pyc", ".pyo"}
+    )
+    if generated:
+        raise _git_error(
+            "EXTERNAL_WORKSPACE_GENERATED_ARTIFACT_FORBIDDEN",
+            "Candidate Diff 包含 Python 运行时字节码或缓存生成物。",
+        )
     invalid = tuple(
         item
         for item in changed_files
@@ -443,22 +488,24 @@ def _validate_changed_files(
             "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
             "Candidate 修改了 Workcell Policy 未授权路径。",
         )
-    secret_patterns = (
-        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-        re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
-        re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-        re.compile(r"(?i)(token|secret|password|api[_-]?key)\s*[=:]\s*['\"]?[^\s'\"]{8,}"),
-    )
     for item in changed_files:
         target = worktree / item
         if target.is_file() and any(
             pattern.search(target.read_text(encoding="utf-8", errors="replace"))
-            for pattern in secret_patterns
+            for pattern in _SECRET_PATTERNS
         ):
             raise _git_error(
                 "EXTERNAL_WORKSPACE_SECRET_MATERIAL_DETECTED",
                 f"Candidate 文件 {item} 包含疑似凭证。",
             )
+
+
+def _validate_diff_content(unified_diff: str) -> None:
+    if any(pattern.search(unified_diff) for pattern in _SECRET_PATTERNS):
+        raise _git_error(
+            "EXTERNAL_WORKSPACE_SECRET_MATERIAL_DETECTED",
+            "Candidate Diff 中包含疑似凭证，不得进入跨 Workcell Artifact Bus。",
+        )
 
 
 def _matches_allowed_path(item: str, pattern: str) -> bool:

@@ -136,8 +136,10 @@ class StaticMethodRuntime:
 class FourRepositoryAgent:
     def __init__(self, runtime_identity: str = "deterministic-test") -> None:
         self.runtime_identity = runtime_identity
+        self.invocations: list[WorkcellAgentInvocation] = []
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
+        self.invocations.append(invocation)
         if invocation.phase == "planning":
             content = {
                 "assignments": json.loads(invocation.instruction.split("：", 1)[1])
@@ -350,11 +352,12 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         f"workspace-{role}": ExternalGitBinding(remote_uri=str(remote))
         for role, (remote, _base) in remotes.items()
     }
+    workcell_agent = FourRepositoryAgent("codex-cli:acceptance-test")
     driver = WorkcellStageDriver(
         kernel=kernel,
         artifacts=artifacts,
         methods=StaticMethodRuntime(tmp_path / "method-runtime"),
-        agent=FourRepositoryAgent("codex-cli:acceptance-test"),
+        agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(tmp_path / "workcell-runtime"),
         binding_resolver=bindings.__getitem__,
         verifier=CommandWorkcellMachineVerifier(
@@ -423,6 +426,17 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
     assert set(gated.workcell_candidates) == set(builtin_release_contract())
     assert gated.release_bundle_v2_sha256 is not None
     assert len(kernel.list_delivery(delivery.id)) == 5
+    frontend_writer = next(
+        item
+        for item in workcell_agent.invocations
+        if item.stage_path == "frontend-repair/frontend"
+        and item.workspace_access == "workspace_write"
+    )
+    assert "workspace-candidate-diff-v1" in frontend_writer.instruction
+    assert "diff --git a/design/candidate.md b/design/candidate.md" in (
+        frontend_writer.instruction
+    )
+    assert "+design candidate" in frontend_writer.instruction
 
     await execution.decide_candidate(
         gated,

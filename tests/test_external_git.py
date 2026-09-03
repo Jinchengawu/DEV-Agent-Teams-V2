@@ -65,10 +65,13 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
         writer,
         policy=ExternalWriterPolicy(allowed_paths=("src/**",)),
     )
+    candidate_diff = manager.candidate_diff(writer, evidence)
 
     refs = _refs(remote)
     assert refs["refs/heads/main"] == base
     assert refs[f"refs/heads/{evidence.candidate_branch}"] == evidence.candidate_revision
+    assert b"diff --git a/src/components/app.ts b/src/components/app.ts" in candidate_diff
+    assert b"+export const ready = true;" in candidate_diff
     review = manager.prepare_review_view(
         writer,
         candidate_revision=evidence.candidate_revision,
@@ -103,6 +106,31 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
     assert receipt.after_revision == evidence.candidate_revision
     assert receipt.recovered is False
     assert _refs(remote)["refs/heads/main"] == evidence.candidate_revision
+
+
+def test_external_writer_rejects_generated_python_bytecode(tmp_path: Path) -> None:
+    remote = _seed_bare_repository(tmp_path)
+    base = _refs(remote)["refs/heads/main"]
+    manager = ExternalGitWorkspaceManager(tmp_path / "workspace-manager")
+    writer = manager.prepare_writer(
+        workspace_binding_id="workspace-frontend",
+        delivery_id="delivery-bytecode",
+        workcell_key="frontend",
+        binding=ExternalGitBinding(remote_uri=str(remote)),
+        expected_base_revision=base,
+    )
+    generated = writer.worktree / "src" / "__pycache__" / "health.cpython-312.pyc"
+    generated.parent.mkdir(parents=True)
+    generated.write_bytes(b"generated-bytecode")
+
+    with pytest.raises(ProductError) as rejected:
+        manager.freeze_candidate(
+            writer,
+            policy=ExternalWriterPolicy(allowed_paths=("src/**",)),
+        )
+
+    assert rejected.value.code == "EXTERNAL_WORKSPACE_GENERATED_ARTIFACT_FORBIDDEN"
+    assert _refs(remote)["refs/heads/main"] == base
 
 
 def test_external_git_failure_keeps_bounded_redacted_diagnostic(

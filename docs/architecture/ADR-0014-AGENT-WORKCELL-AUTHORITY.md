@@ -2,7 +2,7 @@
 
 状态：已接受
 日期：2026-08-31
-修订：2026-09-03
+修订：2026-09-04
 
 ## 背景
 
@@ -41,14 +41,20 @@ Agent-Team-OS 引入 `Agent Workcell` 作为 Stage 内的产品级执行单元�
    `workspace_write` Child。
 5. Writer 使用本 Workcell 的隔离可写 Worktree；Reviewer 只读同仓已冻结 Candidate。
 6. 不挂载其他 Workcell Repository，也不用 Codex `--add-dir` 伪装只读跨仓输入。
-7. 跨 Workcell 仅传递已校验的内容寻址 `ArtifactEnvelope`；不传 Session、Memory 或原始聊天历史。
-8. Writer 的机器验证通过后 Reviewer 才能启动；Main 不能覆盖机器失败或
+7. 跨 Workcell 仅传递已校验的内容寻址 `ArtifactEnvelope`；Git Candidate Workcell 必须同时输出
+   `workspace-candidate-v2` 元数据和 `workspace-candidate-diff-v1` Diff 正文。Diff 正文必须绑定冻结
+   `diff_sha256`、通过凭据扫描并受总 Attachment 大小限制；下游从 Artifact Store 读取，不挂载上游仓库。
+   不传 Session、Memory 或原始聊天历史。
+8. Writer 的机器验证通过后 Reviewer 才能启动；Main synthesis 必须获得本 Workcell 的 Child Artifact、
+   Machine Verification 和 Review Artifact 冻结证据，不能从缺失的局部事实推断成功；Main 不能覆盖机器失败或
    Blocking Review。
 9. Repair 由 ACWM bounded Loop 创建新 `WorkcellRun`，不在 Child 中递归派生。
 10. 取消 Workcell 会取消其 Delivery 执行任务，传播到未完成 Child，并终止正在运行的
     Codex 子进程。重启时未完成 Codex Attempt 标记为 `interrupted`，不伪装续跑成功。
 11. 每个 Main/Child 必须先由产品创建 `AgentRun` 与 `AgentAttempt`，Runtime Adapter 才能执行；
     AgentScope 不得产生 `Hidden Child`（隐藏派生），即在产品不可见的位置派生 Child 或新的运行身份。
+12. Candidate 冻结前必须拒绝 `_bmad`、`.agents/skills`、`__pycache__`、`*.pyc`、`*.pyo` 等方法安装产物
+    或运行时生成物；凭据检查必须覆盖完整 Diff，包括删除行，防止敏感内容进入 Artifact Bus。
 
 ## AgentScope Attempt Runtime 边界
 

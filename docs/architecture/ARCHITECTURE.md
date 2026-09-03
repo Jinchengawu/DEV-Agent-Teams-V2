@@ -78,8 +78,8 @@ Agent-Team-OS 是将多 Agent 工作组织为可验证、可审批、可恢复�
 - 已经通过真实四仓 Live Gate 的生产交付平台。
 
 当前软件交付模型中，Design、Frontend、Backend、QA 是四个独立 Workcell，每个 Workcell 绑定一个
-独立 Git Repository Workspace。跨 Workcell 协作只传递内容寻址 Artifact、Candidate/Diff Reference
-和冻结的 Provider Snapshot，不挂载其他 Workcell 的仓库。
+独立 Git Repository Workspace。跨 Workcell 协作只传递内容寻址 Artifact、Candidate Metadata、
+绑定冻结 SHA-256 的 Candidate Diff 正文和 Provider Snapshot，不挂载其他 Workcell 的仓库。
 
 ## 3. 系统上下文
 
@@ -204,6 +204,11 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   `keychain:`/`keychain://` Reference，不保存 Secret Value。
 - Candidate、Diff、Verification、Review 和 Release Gate 均绑定精确 SHA；过期或不可验证 Hash
   不能驱动成功状态。
+- Git Writer 同时发布 `workspace-candidate-v2` 元数据和 `workspace-candidate-diff-v1` Diff Artifact。
+  下游 Workcell 只从 Artifact Store 读取经 Hash 校验、凭据扫描且受 1 MiB 聚合输入预算约束的 Diff 正文；
+  不获得上游 Repository 路径或挂载权限。
+- Candidate 冻结时拒绝 `_bmad`、`.agents/skills`、`__pycache__`、`*.pyc` 与 `*.pyo` 等方法安装产物或
+  运行时生成物；Diff 凭据扫描覆盖新增、修改和删除内容，命中时不允许进入 Artifact Bus。
 
 ### 6.3 Codex Credential Reference 与 Method Overlay
 
@@ -296,7 +301,10 @@ Main planning
 - 每个 Main/Child 都必须先有产品创建的 AgentRun/AgentAttempt；Runtime Adapter 不得隐藏派生。
 - Writer 使用本 Workcell 的隔离可写 Worktree；Reviewer 只读取同一 SHA 的 detached Candidate。
 - Writer 的机器验证失败时 Reviewer 不启动；Blocking Review 或失败 Verification 不能被 Main 覆盖。
-- Child 之间只传递内容寻址 ArtifactEnvelope，不传原始 Session、Memory 或聊天历史。
+- Main synthesis 必须读取本 Workcell 已冻结的 Child Artifact 正文、Machine Verification、
+  Result Validation 与 Review Artifact，不得在缺少局部执行事实时合成成功结果。
+- Child 之间只传递内容寻址 ArtifactEnvelope；Git Candidate 以 Metadata + Hash-bound Diff Artifact 表达，
+  不传原始 Session、Memory、聊天历史或 Repository 挂载。
 - Cancel 向未完成 Child 传播并终止 Codex 进程；重启时不可恢复 Attempt 标记为 `interrupted`。
 
 ## 9. Release V1/V2 与故障恢复
@@ -585,7 +593,7 @@ Implemented evidence: Catalog 公共接口同图双 Revision 回归、v0.4 数�
 
 ```text
 State: Implemented/Verified
-Maturity: Regression Verified; Live rerun pending
+Maturity: Live Reviewer Verified
 Accepted at: 2026-09-04
 Architecture Impact: Cross-boundary
 Decision: candidate_read Detached View 的跟踪文件全程只读；产品只在 Provider 启动前和
@@ -601,8 +609,32 @@ Plan/ADR reference: ADR-0014（2026-09-04 修订）
 Implemented evidence: 真实 Live Design Writer Candidate `077ab9a3...` 机器验证 7/7 通过后，
                       两个 Reviewer 在子进程启动前因只读根目录无法装配 `_bmad`
                       而失败；新增回归精确复现并验证 Candidate 0444、Overlay 运行期只读、
-                      根目录 0555 恢复与零残留清理。
-Remaining Live evidence: 重启当前 Revision 并重跑四 Workcell Candidate/Verification/Review/PR 闭环。
+                      根目录 0555 恢复与零残留清理。修复后的真实 Delivery `73ce4dbb...`
+                      已证明两个并发 Design Reviewer 均能在只读 Candidate 上成功运行，随后进入 Main synthesis。
+Remaining Live evidence: 完成另行发现的跨 Workcell Diff 传递修复后，重跑四 Workcell/PR/Release 闭环。
+```
+
+#### 12.2.7 `ARCH-20260904-04` Hash-bound Candidate Diff 与 Workcell 合成证据
+
+```text
+State: Implemented/Verified
+Maturity: Regression Verified; Live rerun pending
+Accepted at: 2026-09-04
+Architecture Impact: Cross-boundary
+Decision: Git Writer 在 Candidate Metadata 之外发布内容寻址 `workspace-candidate-diff-v1`；
+          Product 在发布前校验冻结 Diff SHA、扫描凭据并拒绝 Python 运行时生成物。下游仅从
+          Artifact Store 读取 Diff 正文，不挂载上游仓库。Main synthesis 必须获得本 Workcell
+          Child Artifact、Machine Verification、Result Validation 与 Review Artifact 冻结证据。
+Affected authorities/modules/data/states: External Git Workspace Manager、Artifact Store、Workcell Stage
+                                         Driver、Main synthesis 输入；不改变 Git Candidate、Verification、
+                                         Review、ACWM Stage 或 Release Apply 权威。
+Compatibility and migration: 无 API/数据库 Migration；新增 Artifact Contract 对旧 Delivery 保持只读兼容；
+                             1 MiB 输入预算与 Fail Closed 规则继续生效。
+Plan/ADR reference: ADR-0014（2026-09-04 修订）
+Implemented evidence: External Git Diff SHA 重读、生成物拒绝、Writer 双 Artifact、Main 本地证据和四仓
+                      下游 Diff 消费的公共接口回归通过。真实 Delivery `73ce4dbb...` 精确暴露了旧链路仅传
+                      Metadata、Main 缺少本地证据及 `__pycache__` 进入 Candidate 的失败模式。
+Remaining Live evidence: 新 Revision 重跑四 Workcell Candidate/Verification/Review/PR 闭环；人工确认前不 Apply main。
 ```
 
 新条目必须使用以下结构：
@@ -631,7 +663,8 @@ Acceptance evidence required:
 | `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
 | `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live R2 已冻结 22 个 Slot 并绑定项目，真实四仓 Delivery 待执行 |
 | `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口与升级兼容测试通过；live-v051 R1/R2 共存且 R2 已激活 |
-| `ARCH-20260904-03` | 2026-09-04 | `Implemented/Verified` | 只读 Reviewer 使用产品内部短暂租约装配 Method Overlay，Agent 运行期仍为双重只读 | ADR-0014 修订 | Live 失败定位到 Overlay 装配阶段；新增权限保持、Overlay 清理与 Writer 不回归测试通过；待重跑四仓 Live 闭环 |
+| `ARCH-20260904-03` | 2026-09-04 | `Implemented/Verified` | 只读 Reviewer 使用产品内部短暂租约装配 Method Overlay，Agent 运行期仍为双重只读 | ADR-0014 修订 | 修复后的 Live Delivery 已验证两个并发 Design Reviewer 成功运行；完整四仓闭环仍待另行问题修复后重跑 |
+| `ARCH-20260904-04` | 2026-09-04 | `Implemented/Verified` | 发布 Hash-bound Candidate Diff，并为 Main synthesis 注入本 Workcell 冻结证据；生成物和含凭据 Diff Fail Closed | ADR-0014 修订 | Diff SHA/凭据扫描、字节码拒绝、双 Artifact、Main 合成输入与四仓下游消费回归通过；Live 重跑待执行 |
 
 ## 14. Plan Architecture Review 与文档对账
 
