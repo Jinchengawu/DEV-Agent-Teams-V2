@@ -38,7 +38,7 @@ class CodexWorkcellAgent:
         sandbox = (
             "workspace-write" if invocation.workspace_access == "workspace_write" else "read-only"
         )
-        environment = {**os.environ, **invocation.environment}
+        environment = _codex_environment(invocation.environment)
         citation_contract = (
             "允许列表非空时，knowledge_citation_ids 必须至少包含其中一个 ID，"
             "不得返回空数组。"
@@ -179,6 +179,28 @@ def _redact(value: str) -> str:
     redacted = re.sub(r"\bgh[a-z]_[A-Za-z0-9]{16,}\b", "[REDACTED]", redacted)
     redacted = re.sub(r"\bsk-[A-Za-z0-9_-]{16,}\b", "[REDACTED]", redacted)
     return redacted
+
+
+def _codex_environment(overrides: dict[str, str]) -> dict[str, str]:
+    environment = {**os.environ, **overrides}
+    # ``_`` is shell bookkeeping, not part of the Provider contract.  When the
+    # parent executable lives below a non-ASCII path, some macOS launch paths
+    # expose it with surrogate-escaped bytes.  Codex's code-mode host currently
+    # treats that value as UTF-8 and can panic before the requested tool runs.
+    environment.pop("_", None)
+    return {
+        key: value
+        for key, value in environment.items()
+        if _is_utf8(key) and _is_utf8(value)
+    }
+
+
+def _is_utf8(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _error(code: str, detail: str) -> ProductError:

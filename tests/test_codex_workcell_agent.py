@@ -208,3 +208,47 @@ def test_codex_workcell_failure_redacts_namespaced_credentials(
     assert error.value.code == "CODEX_WORKCELL_ATTEMPT_FAILED"
     assert credential not in error.value.detail
     assert "[REDACTED]" in error.value.detail
+
+
+def test_codex_workcell_agent_filters_shell_metadata_and_non_utf8_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("_", "/tmp/invalid-\udcff-python")
+    monkeypatch.setenv("AGENT_TEAM_OS_INVALID_UTF8", "invalid-\udcff-value")
+    code = (
+        "import json,os,sys; sys.stdin.read(); "
+        "payload={'shell_metadata_present':'_' in os.environ,"
+        "'invalid_value_present':'AGENT_TEAM_OS_INVALID_UTF8' in os.environ,"
+        "'valid_marker':os.environ.get('AGENT_TEAM_OS_VALID_MARKER')}; "
+        "event={'type':'item.completed','item':{'type':'agent_message',"
+        "'text':json.dumps(payload)}}; print(json.dumps(event))"
+    )
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-environment",
+                workcell_run_id="workcell-environment",
+                agent_run_id="agent-environment",
+                phase="delegate",
+                workcell_key="design",
+                stage_path="design-repair/design",
+                instruction="review",
+                workspace=tmp_path,
+                workspace_access="candidate_read",
+                method_id="bmad-review",
+                environment={"AGENT_TEAM_OS_VALID_MARKER": "preserved"},
+            )
+        )
+    )
+
+    assert output.content == {
+        "shell_metadata_present": False,
+        "invalid_value_present": False,
+        "valid_marker": "preserved",
+    }
