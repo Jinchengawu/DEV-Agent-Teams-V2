@@ -510,7 +510,7 @@ def build_preview_app() -> FastAPI:
     workcell_stage_driver = WorkcellStageDriver(
         kernel=workcell_execution,
         artifacts=artifact_storage,
-        methods=ContentAddressedMethodRuntime(method_store),
+        methods=ContentAddressedMethodRuntime.from_environment(method_store),
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,

@@ -7,6 +7,7 @@ import pytest
 
 from agent_team_os.infrastructure.acwm import CodexWorkcellAgent
 from agent_team_os.modules.workcells import WorkcellAgentInvocation
+from agent_team_os.shared.errors import ProductError
 
 
 def test_codex_workcell_agent_returns_only_observable_structured_attempt(
@@ -82,3 +83,42 @@ def test_cancelling_the_parent_task_terminates_the_codex_attempt(tmp_path: Path)
         assert await agent.cancel("agent-cancel") is False
 
     asyncio.run(scenario())
+
+
+def test_codex_workcell_failure_redacts_namespaced_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential = "ghp_livecredentialmustnotleak"
+    monkeypatch.setenv("AGENT_TEAM_OS_GITHUB_TOKEN", credential)
+    agent = CodexWorkcellAgent(
+        command=(
+            sys.executable,
+            "-c",
+            "import os,sys; "
+            "sys.stderr.write(os.environ['AGENT_TEAM_OS_GITHUB_TOKEN']); "
+            "sys.exit(7)",
+        ),
+        runtime_identity="codex-test",
+    )
+
+    with pytest.raises(ProductError) as error:
+        asyncio.run(
+            agent.run(
+                WorkcellAgentInvocation(
+                    delivery_id="delivery-redaction",
+                    workcell_run_id="workcell-redaction",
+                    agent_run_id="agent-redaction",
+                    phase="planning",
+                    workcell_key="design",
+                    stage_path="design-repair/design",
+                    instruction="plan",
+                    workspace=tmp_path,
+                    workspace_access="none",
+                )
+            )
+        )
+
+    assert error.value.code == "CODEX_WORKCELL_ATTEMPT_FAILED"
+    assert credential not in error.value.detail
+    assert "[REDACTED]" in error.value.detail

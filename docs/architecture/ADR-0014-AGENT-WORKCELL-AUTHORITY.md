@@ -2,7 +2,7 @@
 
 状态：已接受
 日期：2026-08-31
-修订：2026-09-02
+修订：2026-09-03
 
 ## 背景
 
@@ -66,6 +66,13 @@ Transport。这样既保留 AgentScope 的运行时能力，又避免其内部 T
 BMAD/TEA 是方法扩展，不是新的 Pipeline 或 Git 权威。产品只从锁定的 npm 归档构建
 内容寻址、只读、临时 `CODEX_HOME` Overlay；不执行安装脚本，不将 `_bmad`、
 `.agents/skills` 或其他安装产物写入业务仓库。Party Mode 不在允许入口中。
+
+本地可信运行时需要复用操作员已经建立的 Codex 登录态时，只允许在临时 `CODEX_HOME`
+中创建指向操作员 `auth.json` 的文件引用。该来源必须是当前运行用户持有、Group/Other
+无权限的普通文件；凭据内容不得复制进 Method Store、业务仓库、Snapshot、Hash、日志或
+Evidence。Overlay 清理只移除引用，禁止跟随链接修改或删除凭据源。此规则只解决本地
+Codex Attempt 的 Credential Transport，不改变 Provider Binding、Runtime Identity 或 Live Gate
+的证据要求。
 
 ## 结果
 

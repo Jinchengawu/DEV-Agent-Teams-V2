@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import subprocess
 from collections.abc import Callable, Iterator
@@ -64,8 +65,28 @@ class WorkcellMethodRuntime(Protocol):
 class ContentAddressedMethodRuntime:
     """Rehydrate exactly the Method Pack objects frozen into a Delivery Snapshot."""
 
-    def __init__(self, store: ContentAddressedMethodPackStore) -> None:
+    def __init__(
+        self,
+        store: ContentAddressedMethodPackStore,
+        *,
+        codex_auth_file: Path | None = None,
+    ) -> None:
         self.store = store
+        self.codex_auth_file = codex_auth_file
+
+    @classmethod
+    def from_environment(
+        cls,
+        store: ContentAddressedMethodPackStore,
+    ) -> ContentAddressedMethodRuntime:
+        configured = os.environ.get("AGENT_TEAM_OS_CODEX_AUTH_FILE", "").strip()
+        if configured:
+            auth_file = Path(configured)
+        else:
+            configured_home = os.environ.get("CODEX_HOME", "").strip()
+            codex_home = Path(configured_home) if configured_home else Path.home() / ".codex"
+            auth_file = codex_home / "auth.json"
+        return cls(store, codex_auth_file=auth_file)
 
     @contextmanager
     def activate(self, snapshot: DeliveryMethodSnapshot) -> Iterator[WorkcellMethodContext]:
@@ -95,7 +116,10 @@ class ContentAddressedMethodRuntime:
                 "METHOD_PACK_SET_QUALIFICATION_MISMATCH",
                 "Delivery Method Pack Set 资格哈希无效。",
             )
-        with self.store.runtime_overlay(packages) as overlay:
+        with self.store.runtime_overlay(
+            packages,
+            codex_auth_file=self.codex_auth_file,
+        ) as overlay:
             control = overlay.root / "control-workspace"
             control.mkdir()
             yield WorkcellMethodContext(

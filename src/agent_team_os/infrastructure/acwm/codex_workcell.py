@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 
 from ...modules.workcells.stage_driver import (
     WorkcellAgentInvocation,
@@ -163,10 +164,13 @@ def _final_messages(stdout: str) -> str:
 
 def _redact(value: str) -> str:
     redacted = value
-    for name in ("TOKEN", "SECRET", "PASSWORD", "API_KEY"):
-        marker = os.environ.get(name)
-        if marker:
+    sensitive_names = ("TOKEN", "SECRET", "PASSWORD", "API_KEY")
+    for name, marker in os.environ.items():
+        if any(fragment in name.upper() for fragment in sensitive_names) and len(marker) >= 8:
             redacted = redacted.replace(marker, "[REDACTED]")
+    redacted = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[REDACTED]", redacted)
+    redacted = re.sub(r"\bgh[a-z]_[A-Za-z0-9]{16,}\b", "[REDACTED]", redacted)
+    redacted = re.sub(r"\bsk-[A-Za-z0-9_-]{16,}\b", "[REDACTED]", redacted)
     return redacted
 
 

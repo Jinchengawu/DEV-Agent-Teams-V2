@@ -205,6 +205,17 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - Candidate、Diff、Verification、Review 和 Release Gate 均绑定精确 SHA；过期或不可验证 Hash
   不能驱动成功状态。
 
+### 6.3 Codex Credential Reference 与 Method Overlay
+
+- Live Codex Workcell 从 `AGENT_TEAM_OS_CODEX_AUTH_FILE`、现有 `CODEX_HOME` 或默认
+  `~/.codex/auth.json` 解析操作员拥有的 Credential Reference；产品不读取或保存凭据值。
+- 临时 `CODEX_HOME` 只通过符号引用暴露该文件；BMAD/TEA Skill 内容继续只读且由 Method Hash
+  冻结，Credential Reference 不属于 Method Pack、Delivery Snapshot 或 Evidence。
+- 引用目标必须是当前运行用户持有、Group/Other 无权限的普通文件。Overlay 清理不得跟随链接
+  修改或删除目标；无效引用 Fail Closed。
+- 该机制只证明本地 Codex CLI 能执行已登记 Attempt，不会把 Codex 模拟规划提升为真实 Hermes
+  证据，也不放宽同 Revision Live Release Gate。
+
 ## 7. Project、Team、Pipeline 与 Snapshot
 
 ### 7.1 治理编译链
@@ -370,7 +381,7 @@ Main planning
 | Pipeline Catalog、ACWM GraphRun、Gate/Loop | `Implemented`、`Deterministic Verified` | 本地 Pipeline 与浏览器门禁；真实 Runtime 仍需 Live Gate。 |
 | Project/Team/Workspace/Delivery Snapshot | `Implemented`、`Deterministic Verified` | 本地多 Project 和四 Bare Remote。 |
 | Workcell Main/Child/Attempt Kernel | `Implemented`、`Deterministic Verified` | 调度、验证、Review、取消和恢复；不证明模型质量。 |
-| BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified` | 包完整性和无业务仓库污染；不证明方法效果。 |
+| BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified` | 包完整性、无业务仓库污染及临时 Codex Credential Reference；不证明方法效果或正式 Live 验收。 |
 | External Git、GitHub PR、Forward-only V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 真实四个私有 GitHub 仓库与直推身份尚无合格 Report。 |
 | Hermes ACP Role Turn | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 产品 Dispatcher/空沙箱/工具拒绝/Schema/Citation 合同已验证；默认规划仍为 `codex-simulated-hermes`，没有真实 Attempt Report。 |
 | AgentScope Attempt Runtime | Manifest/合同 `Implemented`；Workcell Live Adapter `Accepted/Not Implemented` | 当前 Main/Child 由产品直接调度 Codex Attempt，不是 AgentScope Live 证据。 |
@@ -476,6 +487,25 @@ Remaining Live evidence: 使用真实 Tenant/Ollama/Hermes/Codex 与四个 GitHu
                          基于已锁定 ACWM Revision 生成同 Revision Live Report。
 ```
 
+#### 12.2.2 `ARCH-20260903-01` Codex Credential Reference 进入临时 Method Overlay
+
+```text
+State: Implemented/Verified
+Maturity: Local Integration Verified; Formal Live Gate remains blocked by Hermes substitution
+Accepted at: 2026-09-03
+Architecture Impact: Cross-boundary
+Decision: 临时 CODEX_HOME 只创建到操作员 Codex auth.json 的受限符号引用；不复制、持久化、
+          哈希或记录凭据值，Overlay 清理不得跟随链接修改凭据源。
+Affected authorities/modules/data/states: Method Pack Store、Workcell Method Runtime、Codex Attempt；
+                                         不改变 Provider/Runtime/Release 权威和 Delivery Snapshot。
+Compatibility and migration: 无数据库或 API 迁移；Deterministic Runtime 可继续不绑定 Credential；
+                             Live Preview 从显式环境、现有 CODEX_HOME 或默认 Codex Home 解析引用。
+Plan/ADR reference: ADR-0014（2026-09-03 修订）
+Implemented evidence: Credential owner/mode Fail Closed、链接生命周期与源文件权限保持回归、
+                      Namespaced Secret stderr 脱敏、真实 Codex 临时 CODEX_HOME 登录探针。
+Remaining Live evidence: 完成四仓 Candidate/PR 流程；真实 Hermes 缺失仍按既有 Gate 标记 blocked/not_run。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -498,6 +528,7 @@ Acceptance evidence required:
 | `ARCH-20260902-02` | 2026-09-02 | `Accepted/Not Implemented` | 产品拥有可观察 Workcell Composition；AgentScope 仅拥有单次 Attempt Runtime，禁止隐藏 Child | ADR-0014 修订 | 待完成 AgentScope Adapter 合同、取消/中断和 Live Gate |
 | `ARCH-20260902-03` | 2026-09-02 | `Accepted/Not Implemented` | Tenant App 项目知识经可靠同步、不可变索引与 ACWM Artifact Binding 编译为 Delivery Context | ADR-0016、ADR-0017、ADR-0018；ADR-0013 Runtime 对账；ADR-0006/0008/0011 关系修订；ADR-0014 权威澄清 | Gate A/B/C 可重放 Deterministic 闭环、持久化 Scheduler/Worker、VectorIndexPort、100k 容量基准、ACWM `0.5.1` 回锁、Hermes ACP 产品 Dispatcher 合同与独立 Live Readiness 投影已验证；待真实 Tenant/Ollama/Hermes、四个 GitHub 仓库和同 Revision 零跳过 Release Gate |
 | `ARCH-20260902-04` | 2026-09-02 | `Implemented/Verified` | 冻结 Delivery Build Identity，并以只读 Release Acceptance V2 组合四仓与 Knowledge Live 证据 | ADR-0019；补充 ADR-0015/0018 | Build/Dependency、Pipeline/Attempt、Knowledge、Workcell Result、Candidate/PR、Receipt/Manifest 的 Deterministic 正反闭环及跨 Snapshot/Attempt Phase 篡改回归已验证；Live `blocked/not_run` |
+| `ARCH-20260903-01` | 2026-09-03 | `Implemented/Verified` | 临时 Method Overlay 以受限引用复用操作员 Codex 登录态，凭据不进入 Store、Snapshot、Hash、日志或 Evidence | ADR-0014 修订 | Credential 权限/生命周期与日志脱敏回归、真实 Codex 临时 `CODEX_HOME` 登录探针通过；正式 Live Gate 仍受 Hermes 缺失阻塞 |
 
 ## 14. Plan Architecture Review 与文档对账
 

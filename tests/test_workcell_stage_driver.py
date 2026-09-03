@@ -21,12 +21,14 @@ from agent_team_os.delivery import (
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ExternalGitBinding, ExternalGitWorkspaceManager
 from agent_team_os.modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
+from agent_team_os.modules.extensions import ContentAddressedMethodPackStore
 from agent_team_os.modules.releases import (
     ExternalReleaseCatalog,
     GitHubPRReceiptCreate,
     SQLiteExternalReleaseRepository,
 )
 from agent_team_os.modules.workcells import (
+    ContentAddressedMethodRuntime,
     MachineVerificationOutcome,
     SQLiteWorkcellExecutionRepository,
     WorkcellAgentInvocation,
@@ -51,6 +53,20 @@ class StaticMethodRuntime:
             environment={"CODEX_HOME": str(self.root / "codex-home")},
             method_entries=snapshot.method_entries,
         )
+
+
+def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth_file = tmp_path / "operator-auth.json"
+    monkeypatch.setenv("AGENT_TEAM_OS_CODEX_AUTH_FILE", str(auth_file))
+
+    runtime = ContentAddressedMethodRuntime.from_environment(
+        ContentAddressedMethodPackStore(tmp_path / "method-packs")
+    )
+
+    assert runtime.codex_auth_file == auth_file
 
 
 class DeterministicWorkcellAgent:
