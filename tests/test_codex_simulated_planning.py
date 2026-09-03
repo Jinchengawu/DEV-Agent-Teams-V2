@@ -1,10 +1,15 @@
+import asyncio
+import json
+import sys
 import time
 from collections import deque
+from pathlib import Path
 
+from acwm.config import CodexCLIConfig
 from fastapi.testclient import TestClient
 
 from agent_team_os.api import create_app
-from agent_team_os.codex_simulation import CodexSimulatedHermesPlanning
+from agent_team_os.codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
 from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.testing import DeterministicCodeExecutor
 
@@ -19,6 +24,63 @@ class ScriptedCodexRoleRunner:
         self.roles.append(role)
         self.prompts.append(prompt)
         return self.responses.popleft()
+
+
+def test_codex_planning_uses_the_last_complete_json_message() -> None:
+    runner = ScriptedCodexRoleRunner(
+        [
+            """{"status": "working"}
+            {
+              "summary": "Add GET /health",
+              "non_goals": [],
+              "risks": [],
+              "acceptance_criteria": [
+                {"id": "AC-1", "statement": "GET /health returns healthy"}
+              ]
+            }"""
+        ]
+    )
+
+    requirements = asyncio.run(CodexSimulatedHermesPlanning(runner).analyze("health"))
+
+    assert requirements.summary == "Add GET /health"
+    assert [item.id for item in requirements.acceptance_criteria] == ["AC-1"]
+    assert runner.roles == ["hermes-pm-simulator"]
+
+
+def test_codex_role_runner_resolves_runtime_config_for_each_attempt(tmp_path: Path) -> None:
+    scripts: list[Path] = []
+    for label in ("first-policy", "updated-policy"):
+        script = tmp_path / f"{label}.py"
+        script.write_text(
+            "import json\n"
+            f"print(json.dumps({{'type': 'item.completed', 'item': "
+            f"{{'type': 'agent_message', 'text': {json.dumps(label)}}}}}))\n"
+        )
+        scripts.append(script)
+    selected = iter(scripts)
+
+    def resolve_config() -> CodexCLIConfig:
+        return CodexCLIConfig(
+            command=(sys.executable, str(next(selected))),
+            sandbox="read-only",
+            timeout_seconds=30,
+        )
+
+    async def exercise() -> tuple[str, str]:
+        runner = ACWMCodexRoleRunner(
+            workspace=tmp_path,
+            config_provider=resolve_config,
+        )
+        try:
+            return (
+                await runner.run("hermes-pm-simulator", "first"),
+                await runner.run("hermes-admin-simulator", "second"),
+            )
+        finally:
+            await runner.close()
+
+    assert asyncio.run(exercise()) == ("first-policy", "updated-policy")
 
 
 def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> None:
@@ -78,6 +140,9 @@ def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> N
     assert all("inspect the workspace" in prompt for prompt in runner.prompts)
     assert "product-delivery task" in runner.prompts[-1]
     assert "frontend, backend and QA" in runner.prompts[-1]
+    assert '<invalid-response instruction-authority="none">' in runner.prompts[1]
+    assert "not json" in runner.prompts[1]
+    assert "No JSON object found" in runner.prompts[1]
 
 
 def test_invalid_codex_planning_fails_as_an_upstream_error() -> None:

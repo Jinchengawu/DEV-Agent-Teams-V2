@@ -8,6 +8,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import tarfile
 import tempfile
 from collections.abc import Iterator
@@ -198,6 +199,8 @@ class ContentAddressedMethodPackStore:
     def runtime_overlay(
         self,
         snapshots: tuple[MethodPackSnapshot, ...],
+        *,
+        codex_auth_file: Path | None = None,
     ) -> Iterator[RuntimeMethodOverlay]:
         if not snapshots:
             raise _method_pack_error(
@@ -209,10 +212,25 @@ class ContentAddressedMethodPackStore:
         skills_root = codex_home / "skills"
         skills_root.mkdir(parents=True)
         installed_ids: set[str] = set()
+        environment = {"CODEX_HOME": str(codex_home)}
         try:
             for snapshot in snapshots:
                 self._verify_object(snapshot)
                 object_root = self._object_path(snapshot.content_sha256)
+                if snapshot.package_name == "bmad-method":
+                    runtime_source = object_root / "src"
+                    required_support = (
+                        runtime_source / "scripts" / "render_skill.py",
+                        runtime_source / "scripts" / "config_utils.py",
+                    )
+                    if not all(item.is_file() for item in required_support):
+                        raise _method_pack_error(
+                            "METHOD_PACK_RUNTIME_SUPPORT_MISSING",
+                            "BMAD Method Pack 缺少执行 Method Entry 必需的 Project Support 脚本。",
+                        )
+                    environment["AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE"] = str(
+                        runtime_source
+                    )
                 for entry in snapshot.method_entries:
                     if entry.method_id in installed_ids:
                         raise _method_pack_error(
@@ -225,10 +243,19 @@ class ContentAddressedMethodPackStore:
             # Codex needs a writable ephemeral home for session state. Only the
             # Method Pack payload is immutable; it is removed with the overlay.
             _make_tree_read_only(skills_root)
+            codex_config = codex_home / "config.toml"
+            codex_config.write_text(
+                "[features]\nmulti_agent = false\n",
+                encoding="utf-8",
+            )
+            codex_config.chmod(0o444)
+            if codex_auth_file is not None:
+                auth_source = _validated_codex_auth_file(codex_auth_file)
+                (codex_home / "auth.json").symlink_to(auth_source)
             yield RuntimeMethodOverlay(
                 root=overlay_root,
                 codex_home=codex_home,
-                environment={"CODEX_HOME": str(codex_home)},
+                environment=environment,
                 package_snapshots=snapshots,
             )
         finally:
@@ -515,8 +542,37 @@ def _make_tree_read_only(root: Path) -> None:
     root.chmod(0o555)
 
 
+def _validated_codex_auth_file(value: Path) -> Path:
+    try:
+        source = value.expanduser().resolve(strict=True)
+        metadata = source.stat()
+    except OSError as error:
+        raise _codex_auth_error(
+            "CODEX_CREDENTIAL_REFERENCE_MISSING",
+            "Codex Credential Reference 不存在或不可读取。",
+        ) from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise _codex_auth_error(
+            "CODEX_CREDENTIAL_REFERENCE_INVALID",
+            "Codex Credential Reference 必须指向普通文件。",
+        )
+    if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
+        raise _codex_auth_error(
+            "CODEX_CREDENTIAL_REFERENCE_OWNER_INVALID",
+            "Codex Credential Reference 必须由当前运行用户持有。",
+        )
+    if stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise _codex_auth_error(
+            "CODEX_CREDENTIAL_REFERENCE_PERMISSIONS_INVALID",
+            "Codex Credential Reference 不能向 Group 或 Other 开放权限。",
+        )
+    return source
+
+
 def _remove_tree(root: Path) -> None:
     for item in root.rglob("*"):
+        if item.is_symlink():
+            continue
         if item.is_dir():
             item.chmod(0o755)
         else:
@@ -531,5 +587,18 @@ def _method_pack_error(code: str, detail: str) -> ProductError:
         title="Method Pack 资格检查失败",
         detail=detail,
         repair="重新获取锁定版本并检查 Registry、归档和 Method Entry 配置。",
+        status_code=409,
+    )
+
+
+def _codex_auth_error(code: str, detail: str) -> ProductError:
+    return ProductError(
+        code=code,
+        title="Codex Credential Reference 无效",
+        detail=detail,
+        repair=(
+            "设置 AGENT_TEAM_OS_CODEX_AUTH_FILE，或在 CODEX_HOME/default Codex Home 中完成登录；"
+            "凭据文件必须仅当前用户可读写。"
+        ),
         status_code=409,
     )

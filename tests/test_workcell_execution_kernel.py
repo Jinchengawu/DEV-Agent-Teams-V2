@@ -352,6 +352,31 @@ def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Pa
     assert cannot_override.value.code == "WORKCELL_BLOCKING_REVIEW"
 
 
+def test_unexpected_workcell_failure_terminalizes_main_attempt(tmp_path: Path) -> None:
+    kernel, _artifacts = _kernel(tmp_path)
+    created = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-run-failure",
+            stage_attempt_id="frontend-attempt-failure",
+            snapshot=_snapshot(),
+        )
+    )
+
+    failed = kernel.fail(
+        created.workcell_run.id,
+        error_code="WORKCELL_MAIN_DELEGATION_PLAN_INVALID",
+    )
+
+    assert failed.workcell_run.status == "failed"
+    assert failed.workcell_run.error_code == "WORKCELL_MAIN_DELEGATION_PLAN_INVALID"
+    assert [item.status for item in failed.agent_runs] == ["failed"]
+    assert [item.status for item in failed.attempts] == ["failed"]
+    assert [item.error_code for item in failed.attempts] == [
+        "WORKCELL_MAIN_DELEGATION_PLAN_INVALID"
+    ]
+
+
 def test_workcell_cancel_endpoint_notifies_the_runtime_parent(tmp_path: Path) -> None:
     kernel, _artifacts = _kernel(tmp_path)
     created = kernel.create(

@@ -453,7 +453,10 @@ Writer Commit
 
 系统校验 Registry Integrity、Archive SHA-256、内容 Hash、包身份、路径穿越、链接、重复路径、文件数、
 大小和 Method Entry；不执行不受信任安装脚本。运行时从 Content-Addressed Store 构建临时只读
-`CODEX_HOME` Overlay，结束后移除。业务仓库 Diff 不得出现 `_bmad`、`.agents/skills` 或安装产物。
+`CODEX_HOME` 发现 Overlay，并仅在已登记 Attempt 的当前 Workspace 装配同 Snapshot 的
+临时 `_bmad` Project Support Overlay。后者对 Attempt 的 Git 视图隐藏，且在 Candidate 冻结前移除；
+Candidate Policy 仍独立禁止 `_bmad/**`。业务仓库 Diff 不得出现 `_bmad`、`.agents/skills`
+或安装产物。
 Method 资格失败时必须阻塞，不得退回复制 Prompt。
 
 ---

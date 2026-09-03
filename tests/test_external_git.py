@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from agent_team_os.infrastructure.git import (
     ExternalForwardGitRemote,
@@ -9,8 +12,10 @@ from agent_team_os.infrastructure.git import (
     ExternalGitCapabilityProbe,
     ExternalGitWorkspaceManager,
     ExternalWriterPolicy,
+    workspace_v2,
 )
 from agent_team_os.modules.releases import WorkspaceCandidateV2
+from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
 
 
@@ -52,7 +57,7 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
         binding=binding,
         expected_base_revision=base,
     )
-    source = writer.worktree / "src" / "app.ts"
+    source = writer.worktree / "src" / "components" / "app.ts"
     source.parent.mkdir(parents=True)
     source.write_text("export const ready = true;\n", encoding="utf-8")
 
@@ -68,8 +73,10 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
         writer,
         candidate_revision=evidence.candidate_revision,
     )
-    assert (review / "src" / "app.ts").read_text(encoding="utf-8").endswith("true;\n")
-    assert (review / "src" / "app.ts").stat().st_mode & 0o222 == 0
+    assert (review / "src" / "components" / "app.ts").read_text(
+        encoding="utf-8"
+    ).endswith("true;\n")
+    assert (review / "src" / "components" / "app.ts").stat().st_mode & 0o222 == 0
 
     candidate_payload = {
         "delivery_id": "delivery-123",
@@ -96,6 +103,36 @@ def test_external_writer_candidate_review_view_and_forward_only_apply(
     assert receipt.after_revision == evidence.candidate_revision
     assert receipt.recovered is False
     assert _refs(remote)["refs/heads/main"] == evidence.candidate_revision
+
+
+def test_external_git_failure_keeps_bounded_redacted_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "unit-test-secret-value-1234567890"
+    monkeypatch.setenv("AGENT_TEAM_OS_GITHUB_TOKEN", secret)
+
+    def fail_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["git", "fetch"],
+            returncode=128,
+            stdout="",
+            stderr=f"fatal: authentication failed for {secret}\n",
+        )
+
+    monkeypatch.setattr(workspace_v2.subprocess, "run", fail_git)
+
+    with pytest.raises(ProductError) as raised:
+        workspace_v2._git(
+            "fetch",
+            "origin",
+            environment={**os.environ},
+        )
+
+    assert raised.value.code == "EXTERNAL_GIT_COMMAND_FAILED"
+    assert "Git fetch 失败（exit 128）" in raised.value.detail
+    assert "authentication failed" in raised.value.detail
+    assert secret not in raised.value.detail
+    assert "[REDACTED]" in raised.value.detail
 
 
 def _seed_bare_repository(tmp_path: Path) -> Path:

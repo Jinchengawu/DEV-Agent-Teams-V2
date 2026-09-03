@@ -144,6 +144,32 @@ class PipelineExecutionModule:
             run_id=delivery.pipeline_run_id,
         )
 
+    def reconcile_terminal(self, delivery_id: str) -> bool:
+        """Project an authoritative ACWM terminal into the Delivery aggregate."""
+
+        delivery = self._get(delivery_id)
+        run = self._runs.get_for_delivery(delivery_id)
+        if run.status not in {"failed", "cancelled", "needs_attention"}:
+            return False
+        if delivery.status in {"completed", "rejected", "failed", "cancelled"}:
+            return True
+        target_status = run.status
+        error_code = delivery.error_code
+        if target_status == "failed" and error_code is None:
+            error_code = "PIPELINE_EXECUTION_FAILED"
+        elif target_status == "needs_attention" and error_code is None:
+            error_code = "PIPELINE_EXECUTION_NEEDS_ATTENTION"
+        self._repository.save(
+            delivery.model_copy(
+                update={
+                    "status": target_status,
+                    "error_code": error_code,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+        )
+        return True
+
     async def advance(self, delivery_id: str) -> None:
         """Execute only nodes ACWM marks ready."""
         try:
@@ -173,7 +199,7 @@ class PipelineExecutionModule:
                         )
                     )
                     return
-                if run.status in {"failed", "cancelled", "needs_attention"}:
+                if self.reconcile_terminal(delivery_id):
                     return
                 ready = tuple(
                     str(node["node_id"])

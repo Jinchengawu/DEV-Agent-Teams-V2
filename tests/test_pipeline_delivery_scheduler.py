@@ -81,6 +81,18 @@ class RepairVerifier:
         )
 
 
+class AlwaysFailVerifier:
+    async def verify(self, candidate, task, workspace_id):  # type: ignore[no-untyped-def]
+        return VerificationRun(
+            status="failed",
+            commands=("python -m unittest discover -s tests -v",),
+            exit_code=1,
+            log_sha256="f" * 64,
+            redacted_log="verification keeps failing",
+            acceptance_ids=task.acceptance_ids,
+        )
+
+
 class ConcurrentPlanningService(DeterministicPlanningService):
     def __init__(self) -> None:
         self.active = 0
@@ -541,6 +553,82 @@ def test_code_repair_loop_retries_until_machine_tests_pass(tmp_path: Path) -> No
         assert candidate.verification.status == "passed"
         assert candidate.candidate is not None
         assert candidate.candidate.candidate_revision == "2" * 40
+
+    asyncio.run(scenario())
+
+
+def test_exhausted_repair_loop_terminalizes_delivery_projection(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        definition = _revision().definition.copy()
+        nodes = list(definition["nodes"])  # type: ignore[arg-type]
+        code = next(node for node in nodes if node["id"] == "delivery")
+        loop = {
+            "id": "repair-loop",
+            "kind": "loop",
+            "policy": {
+                "exit_condition": "machine-tests-passed",
+                "max_iterations": 2,
+                "timeout_seconds": 60,
+                "on_exhausted": "fail",
+            },
+            "nodes": [code],
+            "edges": [],
+        }
+        definition["nodes"] = [
+            loop if node["id"] == "delivery" else node for node in nodes
+        ]
+        definition["edges"] = [
+            {
+                "source": edge["source"],
+                "target": "repair-loop" if edge["target"] == "delivery" else edge["target"],
+            }
+            for edge in definition["edges"]  # type: ignore[union-attr]
+            if edge["source"] != "delivery"
+        ] + [{"source": "repair-loop", "target": "approve-candidate"}]
+        revision = _revision_for(definition)
+        database = tmp_path / "agent-team-os.sqlite"
+        MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+        runs = PipelineRunLedger(
+            SQLitePipelineRunRepository(database), ACWMPipelineGraphRuntime()
+        )
+        repository = InMemoryDeliveryRepository()
+        coordinator = DeliveryCoordinator(
+            planning=DeterministicPlanningService(),
+            executor=RepairingExecutor(),
+            verifier=AlwaysFailVerifier(),
+            applier=ExactApplier(),
+            repository=repository,
+            resolved_journey_sha256="f" * 64,
+        )
+        coordinator.configure_pipeline_runtime(RevisionCatalog(revision), runs)
+        created = coordinator.enqueue(
+            workspace_id="backend-demo",
+            user_request="验证持续失败时收敛 Delivery 状态",
+            pipeline_revision_id="backend-delivery:1",
+            journey_binding_snapshot=revision.binding_snapshot,
+            resolved_journey_sha256=revision.fingerprint,
+            resolved_pipeline_sha256=revision.fingerprint,
+        )
+        plan = await _wait_for(coordinator, created.id, "awaiting_plan_decision")
+
+        failed = await coordinator.decide_plan(
+            created.id,
+            decision="approve",
+            expected_version=plan.version,
+            expected_subject_sha256=plan.plan_gate.subject_sha256,  # type: ignore[union-attr]
+        )
+
+        assert runs.get_for_delivery(created.id).status == "failed"
+        assert failed.status == "failed"
+        assert failed.error_code == "PIPELINE_EXECUTION_FAILED"
+
+        repository.save(
+            failed.model_copy(update={"status": "verifying", "error_code": None})
+        )
+        await coordinator.recover()
+        recovered = coordinator.get(created.id)
+        assert recovered.status == "failed"
+        assert recovered.error_code == "PIPELINE_EXECUTION_FAILED"
 
     asyncio.run(scenario())
 

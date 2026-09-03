@@ -16,6 +16,7 @@ from importlib import import_module
 from pathlib import Path
 
 import uvicorn
+from acwm.config import CodexCLIConfig
 from fastapi import FastAPI
 
 from .api import create_app
@@ -255,10 +256,17 @@ def build_preview_app() -> FastAPI:
     migrations = MigrationRunner(database, project_root / "migrations")
     migrations.migrate()
     feature_flags = FeatureFlags.from_environment()
+    settings = SettingsManager(SQLiteSettingsRepository(database))
     LegacyDatabaseImporter(migrations, data_dir / "backups").import_if_present(
         data_dir / "preview.sqlite", data_dir / "control-plane.sqlite"
     )
-    runner = ACWMCodexRoleRunner(workspace=project_root)
+    runner = ACWMCodexRoleRunner(
+        workspace=project_root,
+        config_provider=lambda: CodexCLIConfig(
+            sandbox="read-only",
+            timeout_seconds=settings.get().planning_timeout_seconds,
+        ),
+    )
     code_agent = ACWMCodexWorkspaceAgent()
     project_workspaces = ProjectGitWorkspaces(data_dir / "workspaces")
     sandbox = project_workspaces.for_workspace("backend-demo")
@@ -510,7 +518,7 @@ def build_preview_app() -> FastAPI:
     workcell_stage_driver = WorkcellStageDriver(
         kernel=workcell_execution,
         artifacts=artifact_storage,
-        methods=ContentAddressedMethodRuntime(method_store),
+        methods=ContentAddressedMethodRuntime.from_environment(method_store),
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
@@ -552,7 +560,7 @@ def build_preview_app() -> FastAPI:
         workspace_reset=reset_workspace,
         control_plane=control_plane,
         evidence=evidence_ledger,
-        settings=SettingsManager(SQLiteSettingsRepository(database)),
+        settings=settings,
         identity=identity_service,
         knowledge=wiki_service,
         tenant_knowledge=tenant_knowledge,

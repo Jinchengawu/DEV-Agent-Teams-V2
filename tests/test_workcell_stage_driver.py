@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import agent_team_os.modules.workcells.stage_driver as workcell_stage_driver
 from agent_team_os.delivery import (
     DeliveryExecutionSnapshot,
     DeliveryKnowledgeContextSnapshot,
@@ -21,12 +22,14 @@ from agent_team_os.delivery import (
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ExternalGitBinding, ExternalGitWorkspaceManager
 from agent_team_os.modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
+from agent_team_os.modules.extensions import ContentAddressedMethodPackStore
 from agent_team_os.modules.releases import (
     ExternalReleaseCatalog,
     GitHubPRReceiptCreate,
     SQLiteExternalReleaseRepository,
 )
 from agent_team_os.modules.workcells import (
+    ContentAddressedMethodRuntime,
     MachineVerificationOutcome,
     SQLiteWorkcellExecutionRepository,
     WorkcellAgentInvocation,
@@ -53,10 +56,33 @@ class StaticMethodRuntime:
         )
 
 
+def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    auth_file = tmp_path / "operator-auth.json"
+    monkeypatch.setenv("AGENT_TEAM_OS_CODEX_AUTH_FILE", str(auth_file))
+
+    runtime = ContentAddressedMethodRuntime.from_environment(
+        ContentAddressedMethodPackStore(tmp_path / "method-packs")
+    )
+
+    assert runtime.codex_auth_file == auth_file
+
+
 class DeterministicWorkcellAgent:
-    def __init__(self, *, citation_ids: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        citation_ids: tuple[str, ...] = (),
+        blocking_review_calls: frozenset[int] = frozenset(),
+        writes_candidate: bool = True,
+    ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
         self.citation_ids = citation_ids
+        self.blocking_review_calls = blocking_review_calls
+        self.writes_candidate = writes_candidate
+        self.review_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -74,17 +100,38 @@ class DeterministicWorkcellAgent:
                 knowledge_citation_ids=self.citation_ids,
             )
         if invocation.workspace_access == "workspace_write":
-            target = invocation.workspace / "design" / "candidate.md"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text("# Candidate\n\nBMAD UX output.\n", encoding="utf-8")
+            if self.writes_candidate:
+                target = invocation.workspace / "design" / "candidate.md"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("# Candidate\n\nBMAD UX output.\n", encoding="utf-8")
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
-                content={"changed": "design/candidate.md"},
+                content={"changed": self.writes_candidate},
                 knowledge_citation_ids=self.citation_ids,
             )
+        self.review_calls += 1
+        review_evidence = json.loads(
+            invocation.instruction.split("Candidate Review Evidence：", 1)[1].splitlines()[0]
+        )
+        findings = (
+            [
+                {
+                    "code": "DESIGN_REVIEW_BLOCKING",
+                    "summary": "Candidate 缺少可验证的契约边界。",
+                    "evidence_sha256": "f" * 64,
+                }
+            ]
+            if self.review_calls in self.blocking_review_calls
+            else []
+        )
         return WorkcellAgentOutput(
             runtime_identity="deterministic-workcell",
-            content={"blocking_findings": [], "method_id": invocation.method_id},
+            content={
+                "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                "blocking_findings": findings,
+                "method_id": invocation.method_id,
+            },
             knowledge_citation_ids=self.citation_ids,
         )
 
@@ -117,6 +164,42 @@ class PassedVerifier:
             status="passed",
             report={"commands": [{"command": ["fixture"], "exit_code": 0}]},
         )
+
+
+def test_review_output_requires_explicit_blocking_findings() -> None:
+    with pytest.raises(ProductError) as invalid:
+        workcell_stage_driver._validated_blocking_findings(
+            {
+                "verdict": "changes_required",
+                "findings": [],
+            }
+        )
+
+    assert invalid.value.code == "WORKCELL_REVIEW_ARTIFACT_INVALID"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"blocking_findings": []},
+        {
+            "reviewed_candidate_sha": "a" * 40,
+            "reviewed_diff_sha256": "b" * 64,
+            "blocking_findings": [],
+        },
+    ],
+)
+def test_review_output_must_bind_the_verified_candidate(
+    content: dict[str, object],
+) -> None:
+    with pytest.raises(ProductError) as invalid:
+        workcell_stage_driver._validated_review_output(
+            content,
+            candidate_sha="c" * 40,
+            diff_sha256="d" * 64,
+        )
+
+    assert invalid.value.code == "WORKCELL_REVIEW_EVIDENCE_MISMATCH"
 
 
 class DeterministicPRSurface:
@@ -217,8 +300,131 @@ def test_running_workcell_agent_is_cancelled_when_authorization_is_revoked() -> 
     asyncio.run(scenario())
 
 
-def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
+def test_cancelling_workcell_execution_stops_the_active_agent() -> None:
+    class StableGuard:
+        def admit(self, _delivery: DeliveryRun, _stage_path: str) -> object:
+            return object()
+
+        def validate_citations(
+            self,
+            _delivery: DeliveryRun,
+            _stage_path: str,
+            citation_ids: tuple[str, ...],
+        ) -> tuple[str, ...]:
+            return citation_ids
+
+    class CancellableAgent:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.stopped = asyncio.Event()
+            self.cancelled: list[str] = []
+
+        async def run(self, _invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
+            self.started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.stopped.set()
+            raise AssertionError("cancelled Agent should not finish")
+
+        async def cancel(self, agent_run_id: str) -> None:
+            self.cancelled.append(agent_run_id)
+
+    async def scenario() -> None:
+        agent = CancellableAgent()
+        driver = WorkcellStageDriver(
+            kernel=object(),  # type: ignore[arg-type]
+            artifacts=object(),  # type: ignore[arg-type]
+            methods=object(),  # type: ignore[arg-type]
+            agent=agent,
+            workspaces=object(),  # type: ignore[arg-type]
+            binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri="unused"),
+            verifier=object(),  # type: ignore[arg-type]
+            releases=object(),  # type: ignore[arg-type]
+            pull_requests=object(),  # type: ignore[arg-type]
+            knowledge_guard=StableGuard(),
+            revocation_poll_seconds=60,
+        )
+        delivery = DeliveryRun(
+            id="delivery-cancelled",
+            project_id="project-cancelled",
+            workspace_id="project:project-cancelled",
+            user_request="stop the active attempt",
+            status="executing",
+            version=1,
+            resolved_journey_sha256="1" * 64,
+            evidence_identity="test",
+            planning_identity="test",
+        )
+        invocation = WorkcellAgentInvocation(
+            delivery_id=delivery.id,
+            workcell_run_id="workcell-run-cancelled",
+            agent_run_id="agent-run-cancelled",
+            phase="delegate",
+            workcell_key="backend",
+            stage_path="backend-repair/backend",
+            instruction="run until cancelled",
+            workspace=Path("/tmp"),
+            workspace_access="workspace_write",
+        )
+
+        running = asyncio.create_task(driver._run_agent(delivery, invocation))
+        await agent.started.wait()
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await running
+
+        assert agent.cancelled == ["agent-run-cancelled"]
+        await asyncio.wait_for(agent.stopped.wait(), timeout=1)
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
+    class Run:
+        status = "delegating"
+        version = 7
+
+    class Tree:
+        workcell_run = Run()
+
+    class RecordingKernel:
+        def __init__(self) -> None:
+            self.cancelled: list[tuple[str, int]] = []
+
+        def tree(self, _run_id: str) -> Tree:
+            return Tree()
+
+        def cancel(self, run_id: str, *, expected_version: int) -> Tree:
+            self.cancelled.append((run_id, expected_version))
+            return Tree()
+
+    kernel = RecordingKernel()
+
+    with pytest.raises(
+        asyncio.CancelledError
+    ), workcell_stage_driver._terminalize_workcell_failure(  # noqa: SLF001
+        kernel,  # type: ignore[arg-type]
+        "workcell-run-cancelled",
+    ):
+        raise asyncio.CancelledError
+
+    assert kernel.cancelled == [("workcell-run-cancelled", 7)]
+
+
+@pytest.mark.parametrize(
+    ("blocking_review_calls", "writes_candidate", "expected_status"),
+    [
+        (frozenset(), True, "succeeded"),
+        (frozenset({1}), True, "repair_required"),
+        (frozenset(), False, "repair_required"),
+    ],
+)
+def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     tmp_path: Path,
+    blocking_review_calls: frozenset[int],
+    writes_candidate: bool,
+    expected_status: str,
 ) -> None:
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
@@ -272,7 +478,11 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         artifact_storage=artifact_storage,
     )
     release_repository = SQLiteExternalReleaseRepository(database)
-    agent = DeterministicWorkcellAgent(citation_ids=("citation-allowed",))
+    agent = DeterministicWorkcellAgent(
+        citation_ids=("citation-allowed",),
+        blocking_review_calls=blocking_review_calls,
+        writes_candidate=writes_candidate,
+    )
     knowledge_guard = RecordingKnowledgeGuard()
     pull_requests = DeterministicPRSurface()
     driver = WorkcellStageDriver(
@@ -304,7 +514,48 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
         )
     )
 
-    assert outcome.status == "succeeded"
+    assert outcome.status == expected_status
+    tree = kernel.tree(outcome.workcell_run_id)
+    assert all(
+        item.status in {"succeeded", "failed", "cancelled", "timed_out", "interrupted"}
+        for item in tree.agent_runs
+        if item.run_role == "child"
+    )
+    if not writes_candidate:
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "EMPTY_WORKSPACE_CANDIDATE"
+        assert not tree.reviews
+        assert outcome.candidate is None
+        writer = next(
+            item
+            for item in tree.agent_runs
+            if item.delegate_purpose == "workspace_write"
+        )
+        assert len(writer.artifact_envelopes) == 1
+        diagnostic = writer.artifact_envelopes[0]
+        assert diagnostic.contract_id == "workcell-delegate-diagnostic-v1"
+        assert diagnostic.reference is not None
+        assert artifact_storage.get_json(diagnostic.reference) == {
+            "content": {"changed": False},
+            "failure_code": "EMPTY_WORKSPACE_CANDIDATE",
+            "knowledge_citation_ids": ["citation-allowed"],
+            "loop_iteration": 1,
+            "method_id": "bmad-ux",
+            "runtime_identity": "deterministic-workcell",
+            "stage_path": "design-repair/design",
+            "workcell_key": "design",
+        }
+        failed_attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
+        assert failed_attempt.result_artifact_sha256 == diagnostic.sha256
+        return
+    assert len(tree.reviews) == 2
+    if expected_status == "repair_required":
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "WORKCELL_BLOCKING_REVIEW"
+        assert any(item.blocking_findings for item in tree.reviews)
+        assert outcome.candidate is None
+        return
+
     assert outcome.activated_conditions == (
         "design-workcell-passed",
         "release-bundle-verified",
@@ -312,11 +563,9 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     assert outcome.candidate is not None
     assert outcome.candidate.candidate_branch == "agent-team-os/delivery-driver/design"
     assert outcome.release_bundle is not None
-    tree = kernel.tree(outcome.workcell_run_id)
     assert tree.workcell_run.status == "succeeded"
     assert [item.run_role for item in tree.agent_runs].count("main") == 1
     assert [item.run_role for item in tree.agent_runs].count("child") == 3
-    assert len(tree.reviews) == 2
     assert tree.verification is not None and tree.verification.status == "passed"
     assert tree.result is not None
     assert tree.result.knowledge_citation_ids == ("citation-allowed",)
@@ -324,9 +573,40 @@ def test_stage_driver_creates_observable_main_children_candidate_reviews_and_pr(
     delegate_instructions = [
         item.instruction for item in agent.invocations if item.phase == "delegate"
     ]
+    planning_instruction = next(
+        item.instruction for item in agent.invocations if item.phase == "planning"
+    )
+    assert "assignments 必须逐项等于" in planning_instruction
+    assert "禁止改名为 delegations" in planning_instruction
+    assert "禁止添加 depends_on" in planning_instruction
     assert delegate_instructions
     assert all("AC-LOGIN" in item for item in delegate_instructions)
     assert all("external-collaborative" in item for item in delegate_instructions)
+    writer_instruction = next(
+        item.instruction
+        for item in agent.invocations
+        if item.workspace_access == "workspace_write"
+    )
+    assert '"design/**"' in writer_instruction
+    assert '"tests/**"' in writer_instruction
+    assert "禁止修改允许路径之外的文件" in writer_instruction
+    assert "不得自行替换验收 ID" in writer_instruction
+    assert "当前 AgentAttempt 的唯一交付目标是 design Workcell" in writer_instruction
+    assert "用户目标中的其他 Workcell 条目仅是交付背景" in writer_instruction
+    assert "当前为 bounded Loop 第 1 轮" in writer_instruction
+    assert "必须在当前 Workspace 产生非空 Git Candidate" in writer_instruction
+    review_instructions = [
+        item.instruction
+        for item in agent.invocations
+        if item.workspace_access == "candidate_read"
+    ]
+    assert review_instructions
+    assert all("blocking_findings" in item for item in review_instructions)
+    assert all("Candidate Review Evidence：" in item for item in review_instructions)
+    assert all("reviewed_candidate_sha" in item for item in review_instructions)
+    assert all("reviewed_diff_sha256" in item for item in review_instructions)
+    assert all("缺失该键必须视为无效" in item for item in review_instructions)
+    assert all("必须审查当前只读 Candidate Workspace" in item for item in review_instructions)
     assert len(knowledge_guard.admissions) >= len(agent.invocations)
     assert pull_requests.calls == 2
     assert release_repository.get_pr(outcome.candidate.id) is not None

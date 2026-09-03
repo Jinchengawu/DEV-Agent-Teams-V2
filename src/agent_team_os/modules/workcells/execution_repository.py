@@ -379,6 +379,12 @@ class SQLiteWorkcellExecutionRepository:
                         child.workcell_run_id,
                     ),
                 )
+                connection.execute(
+                    """UPDATE agent_runs SET status='cancelled',updated_at=?
+                    WHERE workcell_run_id=? AND id<>?
+                      AND status IN ('planned','waiting')""",
+                    (now.isoformat(), child.workcell_run_id, child.id),
+                )
             else:
                 _bump_workcell(connection, child.workcell_run_id, now)
         return finished
@@ -466,7 +472,9 @@ class SQLiteWorkcellExecutionRepository:
         run: WorkcellRun,
         review: ReviewArtifact,
     ) -> WorkcellRun:
-        blocked = bool(review.blocking_findings)
+        blocked = bool(review.blocking_findings) or (
+            run.status == "failed" and run.error_code == "WORKCELL_BLOCKING_REVIEW"
+        )
         updated = run.model_copy(
             update={
                 "status": "failed" if blocked else "reviewing",
@@ -620,6 +628,23 @@ class SQLiteWorkcellExecutionRepository:
             status="timed_out",
             error_code="WORKCELL_WALL_CLOCK_BUDGET_EXCEEDED",
             attempt_error_code="PARENT_TIMED_OUT",
+        )
+
+    def fail(
+        self,
+        run: WorkcellRun,
+        *,
+        expected_version: int,
+        error_code: str,
+    ) -> WorkcellRun:
+        """Fail a Workcell and every unfinished observable AgentRun atomically."""
+
+        return self._terminate(
+            run,
+            expected_version=expected_version,
+            status="failed",
+            error_code=error_code,
+            attempt_error_code=error_code,
         )
 
     def _terminate(

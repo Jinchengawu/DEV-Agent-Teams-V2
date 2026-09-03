@@ -168,7 +168,15 @@ class FourRepositoryAgent:
             )
             content = {"changed_files": [source, test]}
         elif invocation.workspace_access == "candidate_read":
-            content = {"blocking_findings": [], "method_id": invocation.method_id}
+            review_evidence = json.loads(
+                invocation.instruction.split("Candidate Review Evidence：", 1)[1].splitlines()[0]
+            )
+            content = {
+                "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                "blocking_findings": [],
+                "method_id": invocation.method_id,
+            }
         else:
             content = {
                 "artifact": invocation.method_id,

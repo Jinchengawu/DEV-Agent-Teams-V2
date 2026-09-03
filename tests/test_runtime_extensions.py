@@ -40,6 +40,8 @@ def test_verified_method_pack_is_materialized_as_a_temporary_read_only_codex_ove
         {
             "package/src/bmm-skills/ship/bmad-build/SKILL.md": b"# BMAD Build\n",
             "package/src/bmm-skills/ship/bmad-build/workflow.md": b"Build workflow\n",
+            "package/src/scripts/render_skill.py": b"# renderer\n",
+            "package/src/scripts/config_utils.py": b"# config helpers\n",
             "package/package.json": b'{"name":"bmad-method","version":"6.11.0"}\n',
         }
     )
@@ -69,13 +71,37 @@ def test_verified_method_pack_is_materialized_as_a_temporary_read_only_codex_ove
     assert snapshot.package_name == "bmad-method"
     assert snapshot.archive_sha256 == archive_sha256
     assert snapshot.qualification_sha256
-    with store.runtime_overlay((snapshot,)) as overlay:
+    auth_file = tmp_path / "operator-auth.json"
+    auth_file.write_text('{"auth_mode":"test"}\n', encoding="utf-8")
+    auth_file.chmod(0o600)
+    with store.runtime_overlay((snapshot,), codex_auth_file=auth_file) as overlay:
         skill = overlay.codex_home / "skills" / "bmad-build" / "SKILL.md"
+        auth_reference = overlay.codex_home / "auth.json"
         assert skill.read_text(encoding="utf-8") == "# BMAD Build\n"
-        assert overlay.environment == {"CODEX_HOME": str(overlay.codex_home)}
+        assert (overlay.codex_home / "config.toml").read_text(encoding="utf-8") == (
+            "[features]\nmulti_agent = false\n"
+        )
+        assert overlay.environment == {
+            "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(
+                store._object_path(snapshot.content_sha256) / "src"  # noqa: SLF001
+            ),
+            "CODEX_HOME": str(overlay.codex_home),
+        }
         assert skill.stat().st_mode & 0o222 == 0
+        assert auth_reference.is_symlink()
+        assert auth_reference.resolve() == auth_file.resolve()
         overlay_root = overlay.root
     assert not overlay_root.exists()
+    assert auth_file.read_text(encoding="utf-8") == '{"auth_mode":"test"}\n'
+    assert auth_file.stat().st_mode & 0o777 == 0o600
+
+    auth_file.chmod(0o644)
+    with (
+        pytest.raises(ProductError) as error,
+        store.runtime_overlay((snapshot,), codex_auth_file=auth_file),
+    ):
+        pass
+    assert error.value.code == "CODEX_CREDENTIAL_REFERENCE_PERMISSIONS_INVALID"
 
 
 def _method_pack_archive(files: dict[str, bytes]) -> bytes:
