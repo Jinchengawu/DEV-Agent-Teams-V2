@@ -576,6 +576,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         assert artifact_storage.get_json(diagnostic.reference) == {
             "content": {"changed": False},
             "failure_code": "EMPTY_WORKSPACE_CANDIDATE",
+            "failure_detail": "Writer 没有产生相对 Base Revision 的 Candidate Commit。",
             "knowledge_citation_ids": ["citation-allowed"],
             "loop_iteration": 1,
             "method_id": "bmad-ux",

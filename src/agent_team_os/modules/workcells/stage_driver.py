@@ -764,6 +764,7 @@ class WorkcellStageDriver:
                     {
                         "content": output.content,
                         "failure_code": error.code,
+                        "failure_detail": _redact(error.detail),
                         "knowledge_citation_ids": list(output.knowledge_citation_ids),
                         "loop_iteration": tree.workcell_run.loop_iteration,
                         "method_id": method_id,
