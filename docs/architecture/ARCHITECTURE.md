@@ -541,7 +541,7 @@ Remaining Live evidence: 重跑真实四 Workcell Candidate/Verification/Review/
 
 ```text
 State: Implemented/Verified
-Maturity: Deterministic Contract Verified; Live Gate Not Run
+Maturity: Live Binding Verified; Live Delivery Not Run
 Accepted at: 2026-09-04
 Architecture Impact: Cross-boundary
 Decision: Requirements/Tasking 可显式冻结 Codex 或 Hermes Planning Provider；Runtime Readiness
@@ -552,16 +552,16 @@ Compatibility and migration: 无数据库迁移；已发布 Revision 与历史 `
                              快照不改写并且不能通过 Live 门禁；Hermes 路径继续受支持。
 Plan/ADR reference: ADR-0013（2026-09-04 修订）
 Implemented evidence: Codex/Hermes 冻结合同、混合/模拟身份拒绝、Runtime 条件化探针、
-                      Dynamic Acceptance Check 和 Legacy 回归测试通过。
-Remaining Live evidence: 发布并绑定新 Codex Planning Pipeline Revision，以真实 Attempt
-                         重跑四 Workcell 交付并生成同 Revision 零容差 Report。
+                      Dynamic Acceptance Check 和 Legacy 回归测试通过；Live Pipeline R2
+                      已发布、激活并绑定项目，22 个 Slot 冻结且 Planning 身份为 codex-cli。
+Remaining Live evidence: 以真实 Attempt 重跑四 Workcell 交付并生成同 Revision 零容差 Report。
 ```
 
 #### 12.2.5 `ARCH-20260904-02` Pipeline Revision 身份与图指纹解耦
 
 ```text
 State: Implemented/Verified
-Maturity: Persistence Contract Verified; Live R2 Publication Pending
+Maturity: Live Migration and R2 Publication Verified
 Accepted at: 2026-09-04
 Architecture Impact: Cross-boundary
 Decision: Pipeline Revision 的身份是 (pipeline_id, revision)；fingerprint 只表示 ACWM 编译图
@@ -572,8 +572,9 @@ Affected authorities/modules/data/states: Pipeline Catalog、SQLite Migration、
 Compatibility and migration: Migration 0044 原样复制既有 Revision 并移除 fingerprint 全局唯一约束；
                              不改写 fingerprint、不改变历史 Revision ID 或 Delivery 引用。
 Plan/ADR reference: ADR-0009（2026-09-04 修订）
-Implemented evidence: Catalog 公共接口同图双 Revision 回归、v0.4 数据库升级与既有 Pipeline 测试通过。
-Remaining Live evidence: 在 live-v051 数据目录完成 0044 升级并发布、激活 Codex Planning R2。
+Implemented evidence: Catalog 公共接口同图双 Revision 回归、v0.4 数据库升级与既有 Pipeline 测试通过；
+                      live-v051 数据库完成 Migration 0044，同图 R1/R2 共存，R2 已发布、激活并成为
+                      项目默认 Revision。
 ```
 
 新条目必须使用以下结构：
@@ -600,8 +601,8 @@ Acceptance evidence required:
 | `ARCH-20260902-04` | 2026-09-02 | `Implemented/Verified` | 冻结 Delivery Build Identity，并以只读 Release Acceptance V2 组合四仓与 Knowledge Live 证据 | ADR-0019；补充 ADR-0015/0018 | Build/Dependency、Pipeline/Attempt、Knowledge、Workcell Result、Candidate/PR、Receipt/Manifest 的 Deterministic 正反闭环及跨 Snapshot/Attempt Phase 篡改回归已验证；Live `blocked/not_run` |
 | `ARCH-20260903-01` | 2026-09-03 | `Implemented/Verified` | 临时 Method Overlay 以受限引用复用操作员 Codex 登录态，凭据不进入 Store、Snapshot、Hash、日志或 Evidence | ADR-0014 修订 | Credential 权限/生命周期与日志脱敏回归、真实 Codex 临时 `CODEX_HOME` 登录探针通过；正式 Live Gate 仍受 Hermes 缺失阻塞 |
 | `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
-| `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live Gate 待执行 |
-| `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口回归及升级兼容测试通过；Live R2 待发布 |
+| `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live R2 已冻结 22 个 Slot 并绑定项目，真实四仓 Delivery 待执行 |
+| `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口与升级兼容测试通过；live-v051 R1/R2 共存且 R2 已激活 |
 
 ## 14. Plan Architecture Review 与文档对账
 
