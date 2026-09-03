@@ -1,7 +1,8 @@
-"""Temporary Codex-backed simulation of the Hermes planning roles.
+"""Structured planning services backed by the controlled Codex CLI runtime.
 
-The simulator preserves role boundaries and evidence identity. It is not valid
-proof that a Hermes instance was called.
+The legacy simulator remains readable for historical Delivery snapshots. New
+product Pipelines use :class:`CodexPlanningService` and record Codex as Codex;
+they never claim that a Hermes instance was invoked.
 """
 
 from __future__ import annotations
@@ -99,10 +100,7 @@ Approved requirements:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        prompt += (
-            "\n\nExact JSON Schema (authoritative data contract):\n"
-            f"{schema}"
-        )
+        prompt += f"\n\nExact JSON Schema (authoritative data contract):\n{schema}"
         last_error: Exception | None = None
         for attempt in range(2):
             response = await self._runner.run(role, prompt)
@@ -156,6 +154,48 @@ problem and return one raw JSON object only.
         return objects[-1]
 
 
+class CodexPlanningService(CodexSimulatedHermesPlanning):
+    """Planning-only Codex role turns with an explicit Codex evidence identity."""
+
+    evidence_identity = "codex-cli"
+
+    async def analyze(self, user_request: str) -> RequirementArtifact:
+        prompt = f"""You are the product analysis role in Agent-Team-OS.
+Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
+Each acceptance criterion must have a stable id and a machine-verifiable statement.
+This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
+Do not include permissions, commands, paths, markdown or commentary.
+
+User request:
+{user_request}
+"""
+        return await self._structured("product-analysis", prompt, RequirementArtifact)
+
+    async def plan(self, requirements: RequirementArtifact) -> TaskContract:
+        prompt = f"""You are the task planning role in Agent-Team-OS.
+Return raw JSON only with: title, instructions, acceptance_ids.
+Create exactly one bounded product-delivery task. Preserve every approved product, UI,
+frontend, backend and QA concern that appears in the input; backend-only requests must
+remain backend-only. Use only acceptance ids from the input.
+This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
+The instructions must require non-empty implementation or specification changes and
+corresponding machine-verifiable tests in every repository role selected by the Pipeline.
+Do not include permissions, commands, paths, system_policy, markdown or commentary.
+
+Approved requirements:
+{requirements.model_dump_json(indent=2)}
+"""
+        semantics = await self._structured("task-planning", prompt, _TaskSemantics)
+        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
+        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
+            raise PlanningOutputError("Task referenced unknown acceptance criteria")
+        return TaskContract(
+            title=semantics.title,
+            instructions=semantics.instructions,
+            acceptance_ids=semantics.acceptance_ids,
+        )
+
+
 class ACWMCodexRoleRunner:
     """AgentScope role turn backed by ACWM's controlled Codex Capability."""
 
@@ -169,9 +209,7 @@ class ACWMCodexRoleRunner:
         if config is not None and config_provider is not None:
             raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
-        self._config = config or CodexCLIConfig(
-            sandbox="read-only", timeout_seconds=120
-        )
+        self._config = config or CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
         self._config_provider = config_provider
         self._role_turn = AgentScopeRoleTurnAdapter()
         self._active_adapters: set[CodexCLICapabilityAdapter] = set()

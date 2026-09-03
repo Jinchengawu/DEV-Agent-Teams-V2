@@ -92,7 +92,7 @@ Agent-Team-OS 是将多 Agent 工作组织为可验证、可审批、可恢复�
 | Auditor / Viewer | 只读查看交付状态、不可变证据、Attempt、PR Receipt 与 Apply Receipt。 |
 | ACWM | 编译并运行跨 Stage Journey、DAG、Gate、Handoff 和 bounded Loop。 |
 | AgentScope | 单个产品已创建 AgentAttempt 内的 Stage-local Session、消息和 Runtime Transport 合同所有者；不得创建隐藏 Child；当前尚未接入 Workcell Live Runtime。 |
-| Hermes | PM 与 Project Admin 角色智能的合同所有者；产品已有 `hermes.acp` Role Turn Adapter，默认规划仍是 `codex-simulated-hermes`。 |
+| Hermes | 可选 PM 与 Project Admin Runtime Provider；产品已有 `hermes.acp` Role Turn Adapter，只在 Published Pipeline 显式冻结 Hermes 时要求其 CLI、凭据与 Attempt 证据。 |
 | Codex | 在隔离 Workspace 中执行受控 Role Turn 或 Workspace Write；Live 仍受凭据与 Gate 限制。 |
 | GitHub / Git Remote | 提供外部 Repository 和 PR Review Surface；不拥有产品 Release Gate 或 Apply 决策。 |
 | BMAD / TEA | 以冻结、只读 Method Pack Overlay 提供工作方法，不拥有 Pipeline、Workspace 或 Release。 |
@@ -372,9 +372,10 @@ Main planning
   删除的 `0700` 空沙箱，Read/Search/Fetch、Edit 与 Command 默认拒绝，输出必须通过结构化 Schema、
   Acceptance ID 和冻结 Citation 集校验。Runtime Readiness 实际执行 `hermes acp --check`；
   `http.sync` 尚未接线。
-- 当前默认规划身份仍是 `codex-simulated-hermes`，因此当前内置 Pipeline 的
-  `live-provider-bindings=blocked` 与 `product-runtime-adapters=blocked`；Adapter 代码存在不等于真实
-  Hermes Attempt 或 Live Gate 通过。
+- Preview 新建 Pipeline 的默认 Planning Provider 为显式 `codex-cli-provider` / `codex.cli`。
+  Live Readiness 和 Release Acceptance 按 Published Pipeline 的冻结 Provider 选择 Codex 或 Hermes
+  证据合同，分别生成 `CODEX_PLANNING_ATTEMPTS_VERIFIED` 或
+  `HERMES_PLANNING_ATTEMPTS_VERIFIED`；历史 `codex-simulated-hermes` 仍保持可读，但永远不能通过 Live 门禁。
 - Legacy `ProviderActor` / User Token Adapter 保留但不参与 Tenant App RAG；默认关闭三个 Feature Flag
   时，v0.5.0 既有 Delivery 路径不变。
 - Feishu 是显式链接的协作知识正文权威；产品仍拥有 Binding、Snapshot、Provenance、SHA、Source Policy
@@ -391,7 +392,7 @@ Main planning
 | Workcell Main/Child/Attempt Kernel | `Implemented`、`Deterministic Verified` | 调度、验证、Review、取消和恢复；不证明模型质量。 |
 | BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified`、本地真实 Codex 激活已验证 | 包完整性、发现/执行双层 Overlay、Git 零污染、清理及临时 Credential Reference；不证明方法输出质量或正式四仓 Live 验收。 |
 | External Git、GitHub PR、Forward-only V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 真实四个私有 GitHub 仓库与直推身份尚无合格 Report。 |
-| Hermes ACP Role Turn | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 产品 Dispatcher/空沙箱/工具拒绝/Schema/Citation 合同已验证；默认规划仍为 `codex-simulated-hermes`，没有真实 Attempt Report。 |
+| Planning Role Turn（Codex / Hermes） | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 产品 Dispatcher 按冻结 Provider 选择 `codex.cli` 或 `hermes.acp`；历史模拟身份被拒绝；尚无同 Revision 正式 Report。 |
 | AgentScope Attempt Runtime | Manifest/合同 `Implemented`；Workcell Live Adapter `Accepted/Not Implemented` | 当前 Main/Child 由产品直接调度 Codex Attempt，不是 AgentScope Live 证据。 |
 | Local Knowledge | `Implemented` | Wiki/Search/Publication 已接线。 |
 | Feishu Tenant Sync（Gate A） | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | Feature-flagged Tenant App、15 分钟幂等 Scheduler、Lease Worker、Source 新鲜度、Snapshot 与 Project Scope；未验证真实租户。 |
@@ -511,7 +512,7 @@ Compatibility and migration: 无数据库或 API 迁移；Deterministic Runtime 
 Plan/ADR reference: ADR-0014（2026-09-03 修订）
 Implemented evidence: Credential owner/mode Fail Closed、链接生命周期与源文件权限保持回归、
                       Namespaced Secret stderr 脱敏、真实 Codex 临时 CODEX_HOME 登录探针。
-Remaining Live evidence: 完成四仓 Candidate/PR 流程；真实 Hermes 缺失仍按既有 Gate 标记 blocked/not_run。
+Remaining Live evidence: 完成四仓 Candidate/PR 流程和同 Revision Release Report。
 ```
 
 #### 12.2.3 `ARCH-20260903-02` BMAD Project Support Runtime Overlay
@@ -534,6 +535,26 @@ Implemented evidence: Overlay Source 哈希绑定、安装/隐藏/清理、内�
                       Stage-scoped Writer 指令与空 Candidate 诊断工件回归；真实 Codex
                       在临时 Git 仓库激活 `bmad-build`、产生业务文件且 `_bmad` 零 Diff。
 Remaining Live evidence: 重跑真实四 Workcell Candidate/Verification/Review/PR 闭环；在人工确认前不 Apply main。
+```
+
+#### 12.2.4 `ARCH-20260904-01` Planning Provider 冻结驱动 Live 证据
+
+```text
+State: Implemented/Verified
+Maturity: Deterministic Contract Verified; Live Gate Not Run
+Accepted at: 2026-09-04
+Architecture Impact: Cross-boundary
+Decision: Requirements/Tasking 可显式冻结 Codex 或 Hermes Planning Provider；Runtime Readiness
+          与 Release Acceptance 必须跟随 Published Binding，禁止 Codex 伪装 Hermes。
+Affected authorities/modules/data/states: Agent Deployment、Pipeline ResolvedProviderBinding、
+                                         Runtime Readiness、AgentRun/Attempt、Release Acceptance。
+Compatibility and migration: 无数据库迁移；已发布 Revision 与历史 `codex-simulated-hermes`
+                             快照不改写并且不能通过 Live 门禁；Hermes 路径继续受支持。
+Plan/ADR reference: ADR-0013（2026-09-04 修订）
+Implemented evidence: Codex/Hermes 冻结合同、混合/模拟身份拒绝、Runtime 条件化探针、
+                      Dynamic Acceptance Check 和 Legacy 回归测试通过。
+Remaining Live evidence: 发布并绑定新 Codex Planning Pipeline Revision，以真实 Attempt
+                         重跑四 Workcell 交付并生成同 Revision 零容差 Report。
 ```
 
 新条目必须使用以下结构：
@@ -560,6 +581,7 @@ Acceptance evidence required:
 | `ARCH-20260902-04` | 2026-09-02 | `Implemented/Verified` | 冻结 Delivery Build Identity，并以只读 Release Acceptance V2 组合四仓与 Knowledge Live 证据 | ADR-0019；补充 ADR-0015/0018 | Build/Dependency、Pipeline/Attempt、Knowledge、Workcell Result、Candidate/PR、Receipt/Manifest 的 Deterministic 正反闭环及跨 Snapshot/Attempt Phase 篡改回归已验证；Live `blocked/not_run` |
 | `ARCH-20260903-01` | 2026-09-03 | `Implemented/Verified` | 临时 Method Overlay 以受限引用复用操作员 Codex 登录态，凭据不进入 Store、Snapshot、Hash、日志或 Evidence | ADR-0014 修订 | Credential 权限/生命周期与日志脱敏回归、真实 Codex 临时 `CODEX_HOME` 登录探针通过；正式 Live Gate 仍受 Hermes 缺失阻塞 |
 | `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
+| `ARCH-20260904-01` | 2026-09-04 | `Implemented/Verified` | Planning Runtime 与验收跟随已发布 Provider Binding，Codex 不再伪装 Hermes | ADR-0013 修订 | Codex/Hermes 合同、Runtime 条件探针、模拟身份拒绝和 Dynamic Acceptance Check 回归通过；Live Gate 待执行 |
 
 ## 14. Plan Architecture Review 与文档对账
 

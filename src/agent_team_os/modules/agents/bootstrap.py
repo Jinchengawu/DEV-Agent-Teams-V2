@@ -31,7 +31,12 @@ def ensure_builtin_agent_deployments(
         (
             "builtin-planning-agent",
             "内置规划 Agent",
-            ("hermes-pm", "hermes-project-admin"),
+            (
+                "hermes-pm",
+                "hermes-project-admin",
+                "product.analysis",
+                "task.planning",
+            ),
             planning_instance_id,
             "builtin-planning-deployment",
             (
@@ -113,14 +118,10 @@ def ensure_builtin_agent_deployments(
                 "description": "系统内置的五角色交付角色",
                 "tags": ["builtin"],
                 "instructions": {
-                    "custom_text": (
-                        "遵守已发布 Pipeline 与系统安全策略。\n" + instructions
-                    ),
+                    "custom_text": ("遵守已发布 Pipeline 与系统安全策略。\n" + instructions),
                     "examples": [],
                 },
-                "capabilities": [
-                    {"id": item, "version": ">=1,<2"} for item in capabilities
-                ],
+                "capabilities": [{"id": item, "version": ">=1,<2"} for item in capabilities],
                 "policies": policies,
                 "isolation_preference": "shared",
                 "extensions": {
@@ -224,8 +225,7 @@ def _refresh_builtin_deployment(
         current = deployments.qualify(deployment_id, current.version)
         if current.qualification_status != "qualified":
             raise RuntimeError(
-                "built-in Agent Deployment qualification failed: "
-                f"{current.qualification_errors}"
+                f"built-in Agent Deployment qualification failed: {current.qualification_errors}"
             )
     if not current.enabled:
         deployments.set_enabled(deployment_id, current.version, True)
@@ -399,9 +399,7 @@ def ensure_builtin_workcell_agent_deployments(
                     profile_id=profile_id,
                     profile_revision=profile_revision,
                     instance_id=execution_instance_id,
-                    provider_id=_provider_id_for_instance(
-                        deployments, execution_instance_id
-                    ),
+                    provider_id=_provider_id_for_instance(deployments, execution_instance_id),
                 ),
                 actor_id="system",
             )
@@ -420,9 +418,7 @@ def ensure_builtin_workcell_agent_deployments(
                 profile_id=profile_id,
                 profile_revision=profile_revision,
                 instance_id=execution_instance_id,
-                provider_id=_provider_id_for_instance(
-                    deployments, execution_instance_id
-                ),
+                provider_id=_provider_id_for_instance(deployments, execution_instance_id),
             )
     assignments = dict(base)
     assignments.pop("code-repair/delivery.developer", None)

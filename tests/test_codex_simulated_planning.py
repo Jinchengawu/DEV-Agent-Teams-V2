@@ -9,7 +9,11 @@ from acwm.config import CodexCLIConfig
 from fastapi.testclient import TestClient
 
 from agent_team_os.api import create_app
-from agent_team_os.codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
+from agent_team_os.codex_simulation import (
+    ACWMCodexRoleRunner,
+    CodexPlanningService,
+    CodexSimulatedHermesPlanning,
+)
 from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.testing import DeterministicCodeExecutor
 
@@ -46,6 +50,28 @@ def test_codex_planning_uses_the_last_complete_json_message() -> None:
     assert requirements.summary == "Add GET /health"
     assert [item.id for item in requirements.acceptance_criteria] == ["AC-1"]
     assert runner.roles == ["hermes-pm-simulator"]
+
+
+def test_codex_planning_service_uses_explicit_codex_identity() -> None:
+    runner = ScriptedCodexRoleRunner(
+        [
+            json.dumps(
+                {
+                    "summary": "Add health endpoint",
+                    "non_goals": [],
+                    "risks": [],
+                    "acceptance_criteria": [{"id": "AC-1", "statement": "GET /health returns 200"}],
+                }
+            )
+        ]
+    )
+
+    requirements = asyncio.run(CodexPlanningService(runner).analyze("health"))
+
+    assert requirements.summary == "Add health endpoint"
+    assert CodexPlanningService.evidence_identity == "codex-cli"
+    assert runner.roles == ["product-analysis"]
+    assert "simulat" not in runner.prompts[0].lower()
 
 
 def test_codex_role_runner_resolves_runtime_config_for_each_attempt(tmp_path: Path) -> None:

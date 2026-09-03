@@ -1063,7 +1063,7 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
 
 | 路径 | 当前身份 | 成熟度结论 |
 |---|---|---|
-| 默认 Requirements / Tasking | `codex-simulated-hermes` | **[已实现]** 结构化规划 Adapter；不是 Hermes Live 证据 |
+| 默认 Requirements / Tasking | `codex-cli` | **[已实现]** 结构化 Codex Planning Adapter；正式 Live 仍需同 Revision Attempt Report |
 | Workcell Main / Child | `codex-cli` | **[已实现]** 受冻结 Slot/Workspace/Method 控制；Live 仍需凭据与实际门禁 |
 | AgentScope Attempt Runtime | 尚未接线 | **[未来规划]**；架构状态为 `Accepted/Not Implemented`，只承载产品已创建 Attempt，不拥有 Workcell Composition |
 | 本地四仓 E2E | `deterministic-test` | **[Deterministic 已验证]** 产品调度、Git 和证据链 |
@@ -1088,7 +1088,8 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
 - v0.5 只实现 `git_repository_v1`；Document/Case/Ledger/Dataset Workspace Adapter 未实现；
 - 每 Project 最多一个活动 Delivery；没有 Workspace-Set 跨 Delivery 并发 Lease；
 - Child 深度固定为 1；每 Workcell 最多 3 个 Child、2 个并发、1 个 Writer；
-- 默认规划身份是 `codex-simulated-hermes`，真实 Hermes PM/Admin 尚未通过版本门禁；
+- 默认规划身份为显式 `codex-cli`；Published Pipeline 也可选 Hermes，两者均必须以冻结
+  Binding 和真实 Attempt 通过对应门禁，历史 `codex-simulated-hermes` 不能作为 Live 证据；
 - AgentScope Workcell Attempt Runtime 尚未接线；Workflow Manifest 与依赖存在不能作为 Live 证据；
 - Live 四仓需要外部凭据、四个私有 GitHub 仓库和直推 `main` 权限，当前为 `blocked/not_run`；
 - External Git 只支持 GitHub HTTPS 与间接 Credential Reference，不管理 SSH Credential；

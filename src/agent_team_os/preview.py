@@ -20,7 +20,7 @@ from acwm.config import CodexCLIConfig
 from fastapi import FastAPI
 
 from .api import create_app
-from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
+from .codex_simulation import ACWMCodexRoleRunner, CodexPlanningService
 from .control_plane import ControlPlaneService
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
 from .git_delivery import (
@@ -308,7 +308,7 @@ def build_preview_app() -> FastAPI:
         SQLiteDeliveryRepository(database), projects
     )
     candidate_applier = GitCandidateApplier(project_workspaces)
-    planning = CodexSimulatedHermesPlanning(runner)
+    planning = CodexPlanningService(runner)
     executor = GitCodeExecutor(project_workspaces, code_agent)
     coordinator = DeliveryCoordinator(
         planning=planning,
@@ -320,7 +320,7 @@ def build_preview_app() -> FastAPI:
     )
     control_plane = ControlPlaneService(database, config_root=project_root / "config")
     control_plane.import_builtin_journey(
-        planning_identity="codex-simulated-hermes",
+        planning_identity="codex-cli",
         execution_identity="codex-cli",
     )
     agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
@@ -333,13 +333,20 @@ def build_preview_app() -> FastAPI:
         provider_manifests,
         extensions=runtime_extensions,
     )
-    builtin_assignments = ensure_builtin_agent_deployments(agent_profiles, agent_deployments)
+    builtin_assignments = ensure_builtin_agent_deployments(
+        agent_profiles,
+        agent_deployments,
+        planning_instance_id="builtin:codex-cli",
+    )
     fullstack_assignments = ensure_builtin_fullstack_agent_deployments(
-        agent_profiles, agent_deployments
+        agent_profiles,
+        agent_deployments,
+        planning_instance_id="builtin:codex-cli",
     )
     workcell_assignments = ensure_builtin_workcell_agent_deployments(
         agent_profiles,
         agent_deployments,
+        planning_instance_id="builtin:codex-cli",
     )
     hermes_runtime = HermesPlanningRoleTurnRuntimeAdapter(
         control_plane.get_instance,

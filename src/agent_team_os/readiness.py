@@ -172,22 +172,17 @@ def _project_acwm_dependency_repair(
     try:
         pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
         dependencies = pyproject["project"]["dependencies"]
-        source = pyproject["tool"]["uv"]["sources"][
-            "agent-capability-workflow-matrix"
-        ]
+        source = pyproject["tool"]["uv"]["sources"]["agent-capability-workflow-matrix"]
     except (KeyError, OSError, tomllib.TOMLDecodeError, TypeError):
         return "修复 pyproject.toml 中 ACWM 的精确版本与 Git Revision 声明。"
-    expected_requirement = (
-        f"agent-capability-workflow-matrix=={locked.version}"
-    )
+    expected_requirement = f"agent-capability-workflow-matrix=={locked.version}"
     if (
         not isinstance(dependencies, list)
         or any(not isinstance(item, str) for item in dependencies)
         or expected_requirement not in dependencies
     ):
         return (
-            "pyproject.toml 必须精确声明 "
-            f"{expected_requirement}，并与 framework-lock.json 一致。"
+            f"pyproject.toml 必须精确声明 {expected_requirement}，并与 framework-lock.json 一致。"
         )
     if not isinstance(source, dict) or source.get("rev") != locked.revision:
         return (
@@ -210,22 +205,13 @@ def _project_acwm_dependency_repair(
     except (KeyError, OSError, tomllib.TOMLDecodeError, TypeError):
         return "修复 uv.lock，并重新解析 framework-lock.json 指定的 ACWM。"
     if len(resolved) != 1 or resolved[0].get("version") != locked.version:
-        return (
-            "uv.lock 必须唯一解析 "
-            f"agent-capability-workflow-matrix=={locked.version}。"
-        )
+        return f"uv.lock 必须唯一解析 agent-capability-workflow-matrix=={locked.version}。"
     resolved_source = resolved[0].get("source")
-    resolved_git = (
-        resolved_source.get("git") if isinstance(resolved_source, dict) else None
-    )
+    resolved_git = resolved_source.get("git") if isinstance(resolved_source, dict) else None
     if not isinstance(resolved_git, str) or not all(
-        marker in resolved_git
-        for marker in (f"?rev={locked.revision}", f"#{locked.revision}")
+        marker in resolved_git for marker in (f"?rev={locked.revision}", f"#{locked.revision}")
     ):
-        return (
-            "uv.lock 的 ACWM 请求与解析 Revision 必须同时固定为 "
-            f"{locked.revision}。"
-        )
+        return f"uv.lock 的 ACWM 请求与解析 Revision 必须同时固定为 {locked.revision}。"
     return None
 
 
@@ -241,9 +227,9 @@ def imported_acwm_revision() -> str:
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-    direct_url = importlib.metadata.distribution(
-        "agent-capability-workflow-matrix"
-    ).read_text("direct_url.json")
+    direct_url = importlib.metadata.distribution("agent-capability-workflow-matrix").read_text(
+        "direct_url.json"
+    )
     if direct_url:
         data = json.loads(direct_url)
         commit = data.get("vcs_info", {}).get("commit_id")
@@ -287,15 +273,25 @@ def _editable_acwm_repository() -> Path | None:
 class RuntimeReadiness:
     """Inspect identities and credentials without exposing secret values."""
 
+    def __init__(self, *, planning_runtime_kind: Literal["hermes", "codex"] = "hermes") -> None:
+        self.planning_runtime_kind = planning_runtime_kind
+
     def inspect(self) -> ReadinessReport:
-        checks = (
+        common = (
             self._package("acwm", "Install the locked ACWM dependency."),
             self._package("agentscope", "Run `uv sync --extra live`."),
-            self._command("hermes", "Install Hermes CLI and ensure it is on PATH."),
-            self._hermes_acp_protocol(),
-            self._hermes_credentials(),
             self._codex_login(),
         )
+        planning = (
+            (
+                self._command("hermes", "Install Hermes CLI and ensure it is on PATH."),
+                self._hermes_acp_protocol(),
+                self._hermes_credentials(),
+            )
+            if self.planning_runtime_kind == "hermes"
+            else ()
+        )
+        checks = (*common, *planning)
         return ReadinessReport(
             status="ready" if all(check.status == "ready" for check in checks) else "not_ready",
             checks=checks,

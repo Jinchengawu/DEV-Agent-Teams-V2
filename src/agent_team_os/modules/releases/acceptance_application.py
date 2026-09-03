@@ -143,16 +143,10 @@ class ReleaseAcceptanceVerifierV2:
             )
         )
 
-        snapshot_hash_ok = (
-            snapshot is not None
-            and snapshot.snapshot_sha256
-            == sha256_json(
-                snapshot.model_dump(mode="json", exclude={"snapshot_sha256"})
-            )
+        snapshot_hash_ok = snapshot is not None and snapshot.snapshot_sha256 == sha256_json(
+            snapshot.model_dump(mode="json", exclude={"snapshot_sha256"})
         )
-        delivery_ok = (
-            delivery.status == "completed" and snapshot is not None and snapshot_hash_ok
-        )
+        delivery_ok = delivery.status == "completed" and snapshot is not None and snapshot_hash_ok
         checks.append(
             _check(
                 "DELIVERY_TERMINAL_VERIFIED",
@@ -182,16 +176,29 @@ class ReleaseAcceptanceVerifierV2:
             )
         )
 
-        planning_ok = self._verify_planning_runtime(delivery)
+        planning_contract = _planning_runtime_contract(
+            {} if snapshot is None else snapshot.resolved_provider_bindings
+        )
+        planning_code, expected_planning_adapter, planning_name = (
+            planning_contract
+            if planning_contract is not None
+            else ("PLANNING_ATTEMPTS_VERIFIED", "", "Planning")
+        )
+        planning_ok = bool(expected_planning_adapter) and self._verify_planning_runtime(
+            delivery,
+            expected_adapter=expected_planning_adapter,
+        )
         checks.append(
             _check(
-                "HERMES_PLANNING_ATTEMPTS_VERIFIED",
+                planning_code,
                 planning_ok,
                 passed_detail=(
-                    "Requirements/Tasking 的 Hermes AgentRun 与 AgentAttempt "
+                    f"Requirements/Tasking 的 {planning_name} AgentRun 与 AgentAttempt "
                     "均匹配冻结 Binding。"
                 ),
-                failed_detail="Hermes Planning Run/Attempt 缺失、失败、模拟化或 Binding 已漂移。",
+                failed_detail=(
+                    f"{planning_name} Run/Attempt 缺失、失败、模拟化或 Binding 已漂移。"
+                ),
                 evidence={"delivery_id": delivery.id, "planning_verified": planning_ok},
             )
         )
@@ -214,12 +221,7 @@ class ReleaseAcceptanceVerifierV2:
         workcell_results_ok = self._verify_workcell_results(final_trees)
         workcell_evidence_sha256 = (
             _workcell_evidence_sha256(final_trees)
-            if (
-                final_trees
-                and workcell_state_ok
-                and workcell_runtime_ok
-                and workcell_results_ok
-            )
+            if (final_trees and workcell_state_ok and workcell_runtime_ok and workcell_results_ok)
             else None
         )
         checks.append(
@@ -227,8 +229,7 @@ class ReleaseAcceptanceVerifierV2:
                 "CODEX_WORKCELL_ATTEMPTS_VERIFIED",
                 workcell_runtime_ok,
                 passed_detail=(
-                    "最终 Workcell 的 Main/Child/Attempt 均成功并匹配冻结 "
-                    "Codex Slot Binding。"
+                    "最终 Workcell 的 Main/Child/Attempt 均成功并匹配冻结 Codex Slot Binding。"
                 ),
                 failed_detail=(
                     "最终 Workcell 的 Agent/Attempt 缺失、失败、模拟化或 Binding 已漂移。"
@@ -260,9 +261,7 @@ class ReleaseAcceptanceVerifierV2:
             )
         )
 
-        knowledge_ok, knowledge_context_set_sha256 = self._verify_knowledge(
-            delivery, final_trees
-        )
+        knowledge_ok, knowledge_context_set_sha256 = self._verify_knowledge(delivery, final_trees)
         checks.append(
             _check(
                 "KNOWLEDGE_CONTEXTS_VERIFIED",
@@ -283,8 +282,7 @@ class ReleaseAcceptanceVerifierV2:
                 "CANDIDATE_EVIDENCE_VERIFIED",
                 candidate_ok,
                 passed_detail=(
-                    "四仓 Candidate、机器 Verification、零 Blocking Review "
-                    "与 PR Receipt 一致。"
+                    "四仓 Candidate、机器 Verification、零 Blocking Review 与 PR Receipt 一致。"
                 ),
                 failed_detail=(
                     "Candidate 集、Verification、Review、PR 或其内容 Hash 不完整或不一致。"
@@ -346,9 +344,7 @@ class ReleaseAcceptanceVerifierV2:
                 ),
                 evidence={
                     "delivery_id": delivery.id,
-                    "manifest_sha256": (
-                        None if manifest is None else manifest.manifest_sha256
-                    ),
+                    "manifest_sha256": (None if manifest is None else manifest.manifest_sha256),
                     "manifest_verified": manifest_ok,
                 },
             )
@@ -370,22 +366,14 @@ class ReleaseAcceptanceVerifierV2:
             project_id=project_id,
             delivery_id=delivery_id,
             checks=tuple(checks),
-            product_revision=(
-                None if frozen_build is None else frozen_build.product_revision
-            ),
+            product_revision=(None if frozen_build is None else frozen_build.product_revision),
             acwm_revision=None if frozen_build is None else frozen_build.acwm_revision,
-            pipeline_revision_id=(
-                None if snapshot is None else snapshot.pipeline_revision_id
-            ),
-            build_identity_sha256=(
-                None if frozen_build is None else frozen_build.snapshot_sha256
-            ),
+            pipeline_revision_id=(None if snapshot is None else snapshot.pipeline_revision_id),
+            build_identity_sha256=(None if frozen_build is None else frozen_build.snapshot_sha256),
             knowledge_context_set_sha256=knowledge_context_set_sha256,
             workcell_evidence_sha256=workcell_evidence_sha256,
             release_bundle_sha256=None if bundle is None else bundle.bundle_sha256,
-            release_manifest_sha256=(
-                None if manifest is None else manifest.manifest_sha256
-            ),
+            release_manifest_sha256=(None if manifest is None else manifest.manifest_sha256),
             created_at=self.clock(),
         )
 
@@ -404,9 +392,7 @@ class ReleaseAcceptanceVerifierV2:
             and frozen.product_worktree_clean
             and frozen.framework_dependency_status == "ready"
             and frozen.snapshot_sha256
-            == sha256_json(
-                frozen.model_dump(mode="json", exclude={"snapshot_sha256"})
-            )
+            == sha256_json(frozen.model_dump(mode="json", exclude={"snapshot_sha256"}))
             and current_clean is True
             and current_dependency == "ready"
             and current_sha == frozen.snapshot_sha256
@@ -432,15 +418,13 @@ class ReleaseAcceptanceVerifierV2:
             and delivery.pipeline_revision_id == run.pipeline_revision_id
             and delivery.resolved_pipeline_sha256 == run.graph_fingerprint
             and revision.fingerprint == expected_sha
-            and revision.resolved_provider_bindings
-            == snapshot.resolved_provider_bindings
+            and revision.resolved_provider_bindings == snapshot.resolved_provider_bindings
             and {
                 key: value.model_dump(mode="json")
                 for key, value in revision.workcell_stage_map.items()
             }
             == snapshot.workcell_stage_map
-            and revision.release_contract_snapshot
-            == snapshot.release_contract_snapshot
+            and revision.release_contract_snapshot == snapshot.release_contract_snapshot
             and {
                 key: value.model_dump(mode="json")
                 for key, value in revision.knowledge_context_bindings.items()
@@ -448,7 +432,12 @@ class ReleaseAcceptanceVerifierV2:
             == snapshot.knowledge_context_bindings
         ), run.graph_fingerprint
 
-    def _verify_planning_runtime(self, delivery: DeliveryRun) -> bool:
+    def _verify_planning_runtime(
+        self,
+        delivery: DeliveryRun,
+        *,
+        expected_adapter: str,
+    ) -> bool:
         snapshot = delivery.delivery_execution_snapshot
         if snapshot is None:
             return False
@@ -494,7 +483,7 @@ class ReleaseAcceptanceVerifierV2:
                         run,
                         attempts[0],
                         frozen,
-                        expected_adapter="hermes.acp",
+                        expected_adapter=expected_adapter,
                     )
                     or not run.artifact_envelopes
                     or not self._artifact_envelopes_are_valid(run)
@@ -518,9 +507,7 @@ class ReleaseAcceptanceVerifierV2:
                 continue
             max_iteration = max(item.workcell_run.loop_iteration for item in stage)
             latest = tuple(
-                item
-                for item in stage
-                if item.workcell_run.loop_iteration == max_iteration
+                item for item in stage if item.workcell_run.loop_iteration == max_iteration
             )
             if len(latest) == 1:
                 final.append(latest[0])
@@ -551,24 +538,16 @@ class ReleaseAcceptanceVerifierV2:
         final_paths = {item.workcell_run.stage_path for item in final_trees}
         return (
             bool(trees)
-            and all(
-                item.workcell_run.status in _TERMINAL_WORKCELL_STATUSES
-                for item in trees
-            )
+            and all(item.workcell_run.status in _TERMINAL_WORKCELL_STATUSES for item in trees)
             and final_paths == expected
             and len(final_trees) == len(expected)
             and all(item.workcell_run.status == "succeeded" for item in final_trees)
             and all(
                 item.workcell_run.workcell_snapshot_sha256
-                == sha256_json(
-                    item.workcell_run.workcell_snapshot.model_dump(mode="json")
-                )
+                == sha256_json(item.workcell_run.workcell_snapshot.model_dump(mode="json"))
                 for item in trees
             )
-            and all(
-                self._workcell_snapshot_matches_delivery(delivery, item)
-                for item in trees
-            )
+            and all(self._workcell_snapshot_matches_delivery(delivery, item) for item in trees)
         )
 
     def _workcell_snapshot_matches_delivery(
@@ -593,9 +572,7 @@ class ReleaseAcceptanceVerifierV2:
         except (KeyError, ValueError):
             return False
         workspaces = tuple(
-            item
-            for item in delivery_snapshot.workspaces
-            if item.workcell_key == run.workcell_key
+            item for item in delivery_snapshot.workspaces if item.workcell_key == run.workcell_key
         )
         if len(workspaces) != 1:
             return False
@@ -606,21 +583,16 @@ class ReleaseAcceptanceVerifierV2:
             or run.stage_path != workcell.stage_path
             or run.workcell_key != workcell.workcell_key
             or stage.workcell_key != run.workcell_key
-            or workcell.team_template_revision_id
-            != delivery_snapshot.team_template_revision_id
-            or workcell.team_template_sha256
-            != delivery_snapshot.team_template_sha256
+            or workcell.team_template_revision_id != delivery_snapshot.team_template_revision_id
+            or workcell.team_template_sha256 != delivery_snapshot.team_template_sha256
             or workcell.pipeline_revision_id != delivery_snapshot.pipeline_revision_id
-            or workcell.pipeline_revision_sha256
-            != delivery_snapshot.pipeline_revision_sha256
-            or workcell.workspace.workspace_binding_id
-            != delivery_workspace.workspace_binding_id
+            or workcell.pipeline_revision_sha256 != delivery_snapshot.pipeline_revision_sha256
+            or workcell.workspace.workspace_binding_id != delivery_workspace.workspace_binding_id
             or workcell.workspace.kind != delivery_workspace.kind
             or workcell.workspace.adapter_type != delivery_workspace.adapter_type
             or workcell.workspace.repository_uri != delivery_workspace.repository_uri
             or workcell.workspace.base_revision != delivery_workspace.base_revision
-            or workcell.workspace.verification_sha256
-            != delivery_workspace.verification_sha256
+            or workcell.workspace.verification_sha256 != delivery_workspace.verification_sha256
             or workcell.delegation_policy != definition.delegation_policy
             or workcell.slot_method_bindings != stage.delegate_methods
             or workcell.slot_purpose_bindings != stage.delegate_purposes
@@ -629,9 +601,8 @@ class ReleaseAcceptanceVerifierV2:
         ):
             return False
         frozen_by_slot = {item.slot_key: item for item in workcell.slot_bindings}
-        if (
-            len(frozen_by_slot) != len(workcell.slot_bindings)
-            or set(frozen_by_slot) != set(stage.slot_bindings)
+        if len(frozen_by_slot) != len(workcell.slot_bindings) or set(frozen_by_slot) != set(
+            stage.slot_bindings
         ):
             return False
         for slot_key, binding_site in stage.slot_bindings.items():
@@ -646,8 +617,7 @@ class ReleaseAcceptanceVerifierV2:
             if (
                 frozen.deployment_snapshot != provider
                 or frozen.deployment_id != deployment.get("id")
-                or frozen.resolved_provider_binding_hash
-                != binding.get("binding_fingerprint")
+                or frozen.resolved_provider_binding_hash != binding.get("binding_fingerprint")
             ):
                 return False
         required_references = []
@@ -682,9 +652,7 @@ class ReleaseAcceptanceVerifierV2:
                 plan_payload = {
                     "workcell_run_id": run.id,
                     "main_agent_run_id": run.main_agent_run_id,
-                    "assignments": [
-                        item.model_dump(mode="json") for item in plan.assignments
-                    ],
+                    "assignments": [item.model_dump(mode="json") for item in plan.assignments],
                 }
                 if (
                     plan.workcell_run_id != run.id
@@ -699,17 +667,13 @@ class ReleaseAcceptanceVerifierV2:
                     or len(assignments) != len(plan.assignments)
                     or not set(assignments).issubset(set(bindings) - {"main"})
                     or len(assignments) > snapshot.delegation_policy.max_children
-                    or sum(
-                        item.workspace_access == "workspace_write"
-                        for item in plan.assignments
-                    )
+                    or sum(item.workspace_access == "workspace_write" for item in plan.assignments)
                     > snapshot.delegation_policy.max_writers
                 ):
                     return False
                 for slot_key, assignment in assignments.items():
                     if (
-                        assignment.method_id
-                        != snapshot.slot_method_bindings.get(slot_key)
+                        assignment.method_id != snapshot.slot_method_bindings.get(slot_key)
                         or assignment.delegate_purpose
                         != snapshot.slot_purpose_bindings.get(slot_key)
                         or any(
@@ -721,12 +685,8 @@ class ReleaseAcceptanceVerifierV2:
                     for reference in assignment.input_artifacts:
                         self.artifacts.get_bytes(reference)
 
-                mains = tuple(
-                    item for item in tree.agent_runs if item.run_role == "main"
-                )
-                children = tuple(
-                    item for item in tree.agent_runs if item.run_role == "child"
-                )
+                mains = tuple(item for item in tree.agent_runs if item.run_role == "main")
+                children = tuple(item for item in tree.agent_runs if item.run_role == "child")
                 if (
                     len(mains) != 1
                     or len(children) != len(assignments)
@@ -821,8 +781,7 @@ class ReleaseAcceptanceVerifierV2:
         frozen = binding.deployment_snapshot
         return not (
             run.deployment_snapshot != frozen
-            or run.resolved_binding_hash
-            != binding.resolved_provider_binding_hash
+            or run.resolved_binding_hash != binding.resolved_provider_binding_hash
             or any(
                 not _run_matches_frozen_binding(
                     run,
@@ -850,10 +809,7 @@ class ReleaseAcceptanceVerifierV2:
         for envelope in run.artifact_envelopes:
             if envelope.reference is not None:
                 self.artifacts.get_bytes(envelope.reference)
-            elif (
-                envelope.content is None
-                or envelope.sha256 != sha256_json(envelope.content)
-            ):
+            elif envelope.content is None or envelope.sha256 != sha256_json(envelope.content):
                 return False
         return True
 
@@ -890,15 +846,12 @@ class ReleaseAcceptanceVerifierV2:
                         or result.candidate_sha is not None
                         or result.diff_sha256 is not None
                         or result.verification_sha256 != validation.sha256
-                        or result.output_artifact_references
-                        != validation.artifact_references
+                        or result.output_artifact_references != validation.artifact_references
                     ):
                         return False
                     for reference in validation.artifact_references:
                         self.artifacts.get_bytes(reference)
-                if set(result.review_artifact_ids) != {
-                    review.id for review in tree.reviews
-                }:
+                if set(result.review_artifact_ids) != {review.id for review in tree.reviews}:
                     return False
         except Exception:
             return False
@@ -935,19 +888,12 @@ class ReleaseAcceptanceVerifierV2:
                 or preparation.preparation_input != preparation_input
                 or preparation.input_sha256 != preparation_input.input_sha256
                 or preparation_input.input_sha256
-                != sha256_json(
-                    preparation_input.model_dump(
-                        mode="json", exclude={"input_sha256"}
-                    )
-                )
+                != sha256_json(preparation_input.model_dump(mode="json", exclude={"input_sha256"}))
                 or preparation.knowledge_binding_hash
                 != sha256_json(preparation_input.stage_bindings)
-                or preparation_input.stage_bindings
-                != snapshot.knowledge_context_bindings
-                or preparation_input.pipeline_revision_id
-                != snapshot.pipeline_revision_id
-                or preparation_input.pipeline_revision_sha256
-                != snapshot.pipeline_revision_sha256
+                or preparation_input.stage_bindings != snapshot.knowledge_context_bindings
+                or preparation_input.pipeline_revision_id != snapshot.pipeline_revision_id
+                or preparation_input.pipeline_revision_sha256 != snapshot.pipeline_revision_sha256
                 or preparation_input.project_id != delivery.project_id
                 or preparation_input.delivery_id != delivery.id
                 or preparation.authorization_stamp is None
@@ -955,17 +901,14 @@ class ReleaseAcceptanceVerifierV2:
                 or not stamp.approvals
                 or not stamp.connections
                 or not _authorization_stamp_hash_is_valid(stamp)
-                or preparation.authorization_epoch_hash
-                != stamp.authorization_epoch_hash
+                or preparation.authorization_epoch_hash != stamp.authorization_epoch_hash
                 or preparation.final_snapshot is None
                 or preparation.final_snapshot != snapshot
-                or snapshot.knowledge_preparation_input_sha256
-                != preparation_input.input_sha256
+                or snapshot.knowledge_preparation_input_sha256 != preparation_input.input_sha256
             ):
                 return False, None
             stage_results = {
-                item.stage_path: item
-                for item in self.knowledge.list_stage_results(preparation.id)
+                item.stage_path: item for item in self.knowledge.list_stage_results(preparation.id)
             }
             if set(stage_results) != set(required):
                 return False, None
@@ -982,8 +925,7 @@ class ReleaseAcceptanceVerifierV2:
                     or stage_result.preparation_run_id != preparation.id
                     or stage_result.retrieval_policy_revision_id
                     != binding.get("retrieval_policy_revision_id")
-                    or context.authorization_epoch_hash
-                    != stamp.authorization_epoch_hash
+                    or context.authorization_epoch_hash != stamp.authorization_epoch_hash
                 ):
                     return False, None
                 if guard.admit(delivery, stage_path) is None:
@@ -1206,9 +1148,7 @@ class ReleaseAcceptanceVerifierV2:
             and delivery.release_manifest_v2_sha256 == manifest.manifest_sha256
         ), manifest
 
-    def _verify_release_health(
-        self, delivery: DeliveryRun, bundle: ReleaseBundleV2 | None
-    ) -> bool:
+    def _verify_release_health(self, delivery: DeliveryRun, bundle: ReleaseBundleV2 | None) -> bool:
         if bundle is None:
             return False
         health = self.releases.get_health(delivery.project_id)
@@ -1228,9 +1168,7 @@ def write_release_acceptance_report_v2(
 
     report_dir.mkdir(parents=True, exist_ok=True)
     timestamp = report.created_at.strftime("%Y%m%dT%H%M%SZ")
-    subject = hashlib.sha256(
-        f"{report.project_id}:{report.delivery_id}".encode()
-    ).hexdigest()[:12]
+    subject = hashlib.sha256(f"{report.project_id}:{report.delivery_id}".encode()).hexdigest()[:12]
     stem = f"{timestamp}-release-acceptance-v2-{subject}-{report.report_sha256[:12]}"
     json_path = report_dir / f"{stem}.json"
     markdown_path = report_dir / f"{stem}.md"
@@ -1254,9 +1192,7 @@ def write_release_acceptance_report_v2(
     ]
     for check in report.checks:
         detail = check.detail.replace("|", "\\|")
-        lines.append(
-            f"| {check.code} | {check.status} | `{check.evidence_sha256}` | {detail} |"
-        )
+        lines.append(f"| {check.code} | {check.status} | `{check.evidence_sha256}` | {detail} |")
     _atomic_write(markdown_path, "\n".join(lines) + "\n")
     return json_path, markdown_path
 
@@ -1281,6 +1217,33 @@ def _check(
         detail=passed_detail if passed else failed_detail,
         evidence_sha256=sha256_json(evidence),
     )
+
+
+def _planning_runtime_contract(
+    resolved_provider_bindings: dict[str, dict[str, object]],
+) -> tuple[str, str, str] | None:
+    """Resolve one explicit Planning contract from the frozen Pipeline snapshot."""
+
+    contracts: set[tuple[str, str, str]] = set()
+    for site in _PLANNING_BINDING_SITES:
+        frozen = resolved_provider_bindings.get(site)
+        if not isinstance(frozen, dict):
+            return None
+        deployment = frozen.get("deployment")
+        runtime_identity = frozen.get("runtime_identity")
+        if not isinstance(deployment, dict) or not isinstance(runtime_identity, str):
+            return None
+        if runtime_identity in {"deterministic-test", "codex-simulated-hermes"}:
+            return None
+        provider_id = deployment.get("provider_id")
+        adapter_id = deployment.get("adapter_id")
+        if provider_id == "hermes-provider" and adapter_id == "hermes.acp":
+            contracts.add(("HERMES_PLANNING_ATTEMPTS_VERIFIED", "hermes.acp", "Hermes"))
+        elif provider_id == "codex-cli-provider" and adapter_id == "codex.cli":
+            contracts.add(("CODEX_PLANNING_ATTEMPTS_VERIFIED", "codex.cli", "Codex"))
+        else:
+            return None
+    return next(iter(contracts)) if len(contracts) == 1 else None
 
 
 def _run_matches_frozen_binding(
@@ -1354,15 +1317,11 @@ def _workcell_evidence_sha256(trees: tuple[WorkcellRunTree, ...]) -> Sha256:
                     }
                     for item in tree.attempts
                 ],
-                "verification": (
-                    None if tree.verification is None else tree.verification.sha256
-                ),
+                "verification": (None if tree.verification is None else tree.verification.sha256),
                 "reviews": [item.sha256 for item in tree.reviews],
                 "result": None if tree.result is None else tree.result.sha256,
                 "validation": (
-                    None
-                    if tree.result_validation is None
-                    else tree.result_validation.sha256
+                    None if tree.result_validation is None else tree.result_validation.sha256
                 ),
             }
             for tree in trees
@@ -1419,9 +1378,7 @@ def _review_hash_is_valid(review: ReviewArtifact) -> bool:
         "reviewer_agent_run_id": review.reviewer_agent_run_id,
         "candidate_sha": review.candidate_sha,
         "diff_sha256": review.diff_sha256,
-        "blocking_findings": [
-            item.model_dump(mode="json") for item in review.blocking_findings
-        ],
+        "blocking_findings": [item.model_dump(mode="json") for item in review.blocking_findings],
         "artifact_reference": review.artifact_reference.model_dump(mode="json"),
     }
     return review.sha256 == sha256_json(payload)
