@@ -1,10 +1,10 @@
 ---
 title: Agent-Team-OS 当前架构总览
-document_version: "1.2"
+document_version: "1.3"
 product_version: "0.5.1-in-progress"
 truth_scope: repository_revision_containing_this_file
 initial_audit_baseline: 7401fa281a201728fa3cc504daa05d3a724fa7c6
-last_reviewed: 2026-09-02
+last_reviewed: 2026-09-03
 language: zh-CN
 ---
 
@@ -213,6 +213,14 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   冻结，Credential Reference 不属于 Method Pack、Delivery Snapshot 或 Evidence。
 - 引用目标必须是当前运行用户持有、Group/Other 无权限的普通文件。Overlay 清理不得跟随链接
   修改或删除目标；无效引用 Fail Closed。
+- Method 发现层与执行层分离：临时 `CODEX_HOME` 提供只读 Skill，并关闭
+  `multi_agent`；已登记 Attempt 运行时才在它的当前 Workspace 装配临时 `_bmad`
+  Project Support Overlay，以支持锁定 Method 的渲染和配置解析。
+- Project Support 脚本必须来自同一内容寻址 Snapshot；内部 Source 路径不传给
+  Codex 子进程。Overlay 通过 Attempt 局部 Git Exclude 隐藏，在 Candidate 冻结前删除，
+  Candidate Path Policy 仍独立禁止 `_bmad/**`。冲突、篡改或清理失败均 Fail Closed。
+- Codex 子进程只继承最小系统环境白名单与 Adapter 授权 Override；产品进程中的
+  Feishu/GitHub Token、Secret 和 Password 不会被隐式传入 AgentAttempt。
 - 该机制只证明本地 Codex CLI 能执行已登记 Attempt，不会把 Codex 模拟规划提升为真实 Hermes
   证据，也不放宽同 Revision Live Release Gate。
 
@@ -381,7 +389,7 @@ Main planning
 | Pipeline Catalog、ACWM GraphRun、Gate/Loop | `Implemented`、`Deterministic Verified` | 本地 Pipeline 与浏览器门禁；真实 Runtime 仍需 Live Gate。 |
 | Project/Team/Workspace/Delivery Snapshot | `Implemented`、`Deterministic Verified` | 本地多 Project 和四 Bare Remote。 |
 | Workcell Main/Child/Attempt Kernel | `Implemented`、`Deterministic Verified` | 调度、验证、Review、取消和恢复；不证明模型质量。 |
-| BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified` | 包完整性、无业务仓库污染及临时 Codex Credential Reference；不证明方法效果或正式 Live 验收。 |
+| BMAD/TEA Content-Addressed Overlay | `Implemented`、`Deterministic Verified`、本地真实 Codex 激活已验证 | 包完整性、发现/执行双层 Overlay、Git 零污染、清理及临时 Credential Reference；不证明方法输出质量或正式四仓 Live 验收。 |
 | External Git、GitHub PR、Forward-only V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 真实四个私有 GitHub 仓库与直推身份尚无合格 Report。 |
 | Hermes ACP Role Turn | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 产品 Dispatcher/空沙箱/工具拒绝/Schema/Citation 合同已验证；默认规划仍为 `codex-simulated-hermes`，没有真实 Attempt Report。 |
 | AgentScope Attempt Runtime | Manifest/合同 `Implemented`；Workcell Live Adapter `Accepted/Not Implemented` | 当前 Main/Child 由产品直接调度 Codex Attempt，不是 AgentScope Live 证据。 |
@@ -506,6 +514,28 @@ Implemented evidence: Credential owner/mode Fail Closed、链接生命周期与�
 Remaining Live evidence: 完成四仓 Candidate/PR 流程；真实 Hermes 缺失仍按既有 Gate 标记 blocked/not_run。
 ```
 
+#### 12.2.3 `ARCH-20260903-02` BMAD Project Support Runtime Overlay
+
+```text
+State: Implemented/Verified
+Maturity: Deterministic Verified; Local real Codex + bmad-build activation verified
+Accepted at: 2026-09-03
+Architecture Impact: Cross-boundary
+Decision: 将 Method 发现与 Method 执行资格分开；从同一内容寻址 Snapshot 为已登记
+          AgentAttempt 装配临时 `_bmad` Project Support Overlay，使用 Attempt 局部
+          Git Exclude，并在 Candidate 冻结前删除。Codex `multi_agent` 显式关闭。
+Affected authorities/modules/data/states: Method Pack Store、Workcell Method Runtime、Codex Adapter、
+                                         Workcell Stage Driver 与 AgentAttempt Artifact；不改变
+                                         Pipeline、Workspace、Candidate 或 Release 权威。
+Compatibility and migration: 无数据库和 API Migration；Deterministic Adapter 不受影响；旧用户 `_bmad`
+                             不被覆盖，冲突或清理异常 Fail Closed。
+Plan/ADR reference: ADR-0014（2026-09-03 修订）
+Implemented evidence: Overlay Source 哈希绑定、安装/隐藏/清理、内部环境隔离、
+                      Stage-scoped Writer 指令与空 Candidate 诊断工件回归；真实 Codex
+                      在临时 Git 仓库激活 `bmad-build`、产生业务文件且 `_bmad` 零 Diff。
+Remaining Live evidence: 重跑真实四 Workcell Candidate/Verification/Review/PR 闭环；在人工确认前不 Apply main。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -529,6 +559,7 @@ Acceptance evidence required:
 | `ARCH-20260902-03` | 2026-09-02 | `Accepted/Not Implemented` | Tenant App 项目知识经可靠同步、不可变索引与 ACWM Artifact Binding 编译为 Delivery Context | ADR-0016、ADR-0017、ADR-0018；ADR-0013 Runtime 对账；ADR-0006/0008/0011 关系修订；ADR-0014 权威澄清 | Gate A/B/C 可重放 Deterministic 闭环、持久化 Scheduler/Worker、VectorIndexPort、100k 容量基准、ACWM `0.5.1` 回锁、Hermes ACP 产品 Dispatcher 合同与独立 Live Readiness 投影已验证；待真实 Tenant/Ollama/Hermes、四个 GitHub 仓库和同 Revision 零跳过 Release Gate |
 | `ARCH-20260902-04` | 2026-09-02 | `Implemented/Verified` | 冻结 Delivery Build Identity，并以只读 Release Acceptance V2 组合四仓与 Knowledge Live 证据 | ADR-0019；补充 ADR-0015/0018 | Build/Dependency、Pipeline/Attempt、Knowledge、Workcell Result、Candidate/PR、Receipt/Manifest 的 Deterministic 正反闭环及跨 Snapshot/Attempt Phase 篡改回归已验证；Live `blocked/not_run` |
 | `ARCH-20260903-01` | 2026-09-03 | `Implemented/Verified` | 临时 Method Overlay 以受限引用复用操作员 Codex 登录态，凭据不进入 Store、Snapshot、Hash、日志或 Evidence | ADR-0014 修订 | Credential 权限/生命周期与日志脱敏回归、真实 Codex 临时 `CODEX_HOME` 登录探针通过；正式 Live Gate 仍受 Hermes 缺失阻塞 |
+| `ARCH-20260903-02` | 2026-09-03 | `Implemented/Verified` | 从锁定 Method Snapshot 为已登记 Attempt 装配临时 BMAD Project Support，并在 Candidate 冻结前清理 | ADR-0014 修订 | 双层 Overlay、Git 隐藏/清理、Stage Scope 和失败诊断回归通过；真实 Codex + `bmad-build` 临时仓库探针产生业务改动且无 `_bmad` Diff；待四 Workcell Live 闭环 |
 
 ## 14. Plan Architecture Review 与文档对账
 

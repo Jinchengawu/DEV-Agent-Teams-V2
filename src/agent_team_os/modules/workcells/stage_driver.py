@@ -154,6 +154,24 @@ class WorkcellAgentOutput(BaseModel):
     knowledge_citation_ids: tuple[str, ...] = ()
 
 
+class _ProducerExecutionError(ProductError):
+    def __init__(
+        self,
+        source: ProductError,
+        artifacts: tuple[ArtifactEnvelope, ...],
+    ) -> None:
+        super().__init__(
+            code=source.code,
+            title=source.title,
+            detail=source.detail,
+            repair=source.repair,
+            status_code=source.status_code,
+            expected_version=source.expected_version,
+            actual_version=source.actual_version,
+        )
+        self.artifacts = artifacts
+
+
 class WorkcellAgentPort(Protocol):
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput: ...
 
@@ -358,11 +376,21 @@ class WorkcellStageDriver:
                 assignments,
                 planning_artifact_sha256=planning_reference.sha256,
             )
-            candidate, writer_id, outputs, producer_citations = await self._execute_producers(
-                delivery,
-                tree,
-                method_context,
-            )
+            try:
+                candidate, writer_id, outputs, producer_citations = (
+                    await self._execute_producers(
+                        delivery,
+                        tree,
+                        method_context,
+                    )
+                )
+            except ProductError as error:
+                if error.code != "EMPTY_WORKSPACE_CANDIDATE":
+                    raise
+                return self._repair_outcome(
+                    self.kernel.tree(tree.workcell_run.id),
+                    snapshot.workcell_key,
+                )
             verification_sha: Sha256 | None = None
             review_citations: tuple[str, ...] = ()
             if candidate is not None and writer_id is not None:
@@ -630,9 +658,15 @@ class WorkcellStageDriver:
             )
             for child, result in zip(batch, results, strict=True):
                 if isinstance(result, BaseException):
+                    failure_artifacts = (
+                        result.artifacts
+                        if isinstance(result, _ProducerExecutionError)
+                        else ()
+                    )
                     self.kernel.finish_child(
                         child.id,
                         status="failed",
+                        artifacts=failure_artifacts,
                         error_code=getattr(result, "code", "WORKCELL_DELEGATE_FAILED"),
                     )
                     raise result
@@ -685,12 +719,36 @@ class WorkcellStageDriver:
                 ),
             )
             _require_runtime_identity(child, output)
-            evidence = self.workspaces.freeze_candidate(
-                writer,
-                policy=ExternalWriterPolicy(
-                    allowed_paths=_allowed_paths(tree.workcell_run.workcell_key)
-                ),
-            )
+            try:
+                evidence = self.workspaces.freeze_candidate(
+                    writer,
+                    policy=ExternalWriterPolicy(
+                        allowed_paths=_allowed_paths(tree.workcell_run.workcell_key)
+                    ),
+                )
+            except ProductError as error:
+                diagnostic_reference = self.artifacts.put_json(
+                    {
+                        "content": output.content,
+                        "failure_code": error.code,
+                        "knowledge_citation_ids": list(output.knowledge_citation_ids),
+                        "loop_iteration": tree.workcell_run.loop_iteration,
+                        "method_id": method_id,
+                        "runtime_identity": output.runtime_identity,
+                        "stage_path": tree.workcell_run.stage_path,
+                        "workcell_key": tree.workcell_run.workcell_key,
+                    }
+                )
+                raise _ProducerExecutionError(
+                    error,
+                    (
+                        ArtifactEnvelope(
+                            contract_id="workcell-delegate-diagnostic-v1",
+                            reference=diagnostic_reference,
+                            sha256=diagnostic_reference.sha256,
+                        ),
+                    ),
+                ) from error
             reference = self.artifacts.put_json(
                 {
                     "method_id": method_id,
@@ -966,24 +1024,32 @@ class WorkcellStageDriver:
     ) -> WorkcellAgentOutput:
         self._admit_knowledge(delivery, invocation.stage_path)
         task = asyncio.create_task(self.agent.run(invocation))
-        if self.knowledge_guard is not None:
-            while not task.done():
-                done, _ = await asyncio.wait(
-                    {task},
-                    timeout=self.revocation_poll_seconds,
-                )
-                if done:
-                    break
-                try:
-                    self._admit_knowledge(delivery, invocation.stage_path)
-                except Exception:
-                    cancel = getattr(self.agent, "cancel", None)
-                    if callable(cancel):
-                        await cancel(invocation.agent_run_id)
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-                    raise
-        output = await task
+        try:
+            if self.knowledge_guard is not None:
+                while not task.done():
+                    done, _ = await asyncio.wait(
+                        {task},
+                        timeout=self.revocation_poll_seconds,
+                    )
+                    if done:
+                        break
+                    try:
+                        self._admit_knowledge(delivery, invocation.stage_path)
+                    except Exception:
+                        cancel = getattr(self.agent, "cancel", None)
+                        if callable(cancel):
+                            await cancel(invocation.agent_run_id)
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        raise
+            output = await task
+        except asyncio.CancelledError:
+            cancel = getattr(self.agent, "cancel", None)
+            if callable(cancel) and not task.done():
+                await cancel(invocation.agent_run_id)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
         citations = self._validate_knowledge_citations(
             delivery,
             invocation.stage_path,
@@ -1120,11 +1186,19 @@ def _delegate_invocation(
             "跨 Workcell 输入只能读取冻结 ArtifactAttachment。"
         )
     path_policy = ""
+    workcell_scope = (
+        f"\nWorkcell Scope：当前 AgentAttempt 的唯一交付目标是 "
+        f"{tree.workcell_run.workcell_key} Workcell。用户目标中的其他 Workcell "
+        "条目仅是交付背景，不构成本 Method 的多个目标。"
+        f"当前为 bounded Loop 第 {tree.workcell_run.loop_iteration} 轮；"
+        "只完成当前仓库职责，不得等待其他 Workcell 或请求重新拆分。"
+    )
     if child.delegate_purpose == "workspace_write":
         path_policy = (
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+            "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
         )
     review_contract = ""
     if child.delegate_purpose == "review":
@@ -1157,6 +1231,7 @@ def _delegate_invocation(
         instruction=(
             f"使用 ${method_id} 完成唯一 Delegate Purpose {child.delegate_purpose}。"
             f"{workspace_contract}禁止派生 Child。\n"
+            f"{workcell_scope}\n"
             f"{_knowledge_trust_boundary()}\n"
             f"用户目标：{delivery.user_request}\n"
             f"冻结 ArtifactAttachment（已验证内容哈希）：{attachment_payload}"
@@ -1273,6 +1348,20 @@ def _terminalize_workcell_failure(
 
     try:
         yield
+    except asyncio.CancelledError:
+        tree = kernel.tree(run_id)
+        if tree.workcell_run.status not in {
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+            "interrupted",
+        }:
+            kernel.cancel(
+                run_id,
+                expected_version=tree.workcell_run.version,
+            )
+        raise
     except Exception as error:
         kernel.fail(
             run_id,

@@ -26,6 +26,28 @@ class ScriptedCodexRoleRunner:
         return self.responses.popleft()
 
 
+def test_codex_planning_uses_the_last_complete_json_message() -> None:
+    runner = ScriptedCodexRoleRunner(
+        [
+            """{"status": "working"}
+            {
+              "summary": "Add GET /health",
+              "non_goals": [],
+              "risks": [],
+              "acceptance_criteria": [
+                {"id": "AC-1", "statement": "GET /health returns healthy"}
+              ]
+            }"""
+        ]
+    )
+
+    requirements = asyncio.run(CodexSimulatedHermesPlanning(runner).analyze("health"))
+
+    assert requirements.summary == "Add GET /health"
+    assert [item.id for item in requirements.acceptance_criteria] == ["AC-1"]
+    assert runner.roles == ["hermes-pm-simulator"]
+
+
 def test_codex_role_runner_resolves_runtime_config_for_each_attempt(tmp_path: Path) -> None:
     scripts: list[Path] = []
     for label in ("first-policy", "updated-policy"):
@@ -118,6 +140,9 @@ def test_codex_simulates_hermes_with_one_retry_and_cannot_override_policy() -> N
     assert all("inspect the workspace" in prompt for prompt in runner.prompts)
     assert "product-delivery task" in runner.prompts[-1]
     assert "frontend, backend and QA" in runner.prompts[-1]
+    assert '<invalid-response instruction-authority="none">' in runner.prompts[1]
+    assert "not json" in runner.prompts[1]
+    assert "No JSON object found" in runner.prompts[1]
 
 
 def test_invalid_codex_planning_fails_as_an_upstream_error() -> None:

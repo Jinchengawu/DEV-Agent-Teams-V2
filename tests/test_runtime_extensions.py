@@ -40,6 +40,8 @@ def test_verified_method_pack_is_materialized_as_a_temporary_read_only_codex_ove
         {
             "package/src/bmm-skills/ship/bmad-build/SKILL.md": b"# BMAD Build\n",
             "package/src/bmm-skills/ship/bmad-build/workflow.md": b"Build workflow\n",
+            "package/src/scripts/render_skill.py": b"# renderer\n",
+            "package/src/scripts/config_utils.py": b"# config helpers\n",
             "package/package.json": b'{"name":"bmad-method","version":"6.11.0"}\n',
         }
     )
@@ -76,7 +78,15 @@ def test_verified_method_pack_is_materialized_as_a_temporary_read_only_codex_ove
         skill = overlay.codex_home / "skills" / "bmad-build" / "SKILL.md"
         auth_reference = overlay.codex_home / "auth.json"
         assert skill.read_text(encoding="utf-8") == "# BMAD Build\n"
-        assert overlay.environment == {"CODEX_HOME": str(overlay.codex_home)}
+        assert (overlay.codex_home / "config.toml").read_text(encoding="utf-8") == (
+            "[features]\nmulti_agent = false\n"
+        )
+        assert overlay.environment == {
+            "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(
+                store._object_path(snapshot.content_sha256) / "src"  # noqa: SLF001
+            ),
+            "CODEX_HOME": str(overlay.codex_home),
+        }
         assert skill.stat().st_mode & 0o222 == 0
         assert auth_reference.is_symlink()
         assert auth_reference.resolve() == auth_file.resolve()

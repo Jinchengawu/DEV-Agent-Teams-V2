@@ -379,6 +379,12 @@ class SQLiteWorkcellExecutionRepository:
                         child.workcell_run_id,
                     ),
                 )
+                connection.execute(
+                    """UPDATE agent_runs SET status='cancelled',updated_at=?
+                    WHERE workcell_run_id=? AND id<>?
+                      AND status IN ('planned','waiting')""",
+                    (now.isoformat(), child.workcell_run_id, child.id),
+                )
             else:
                 _bump_workcell(connection, child.workcell_run_id, now)
         return finished
