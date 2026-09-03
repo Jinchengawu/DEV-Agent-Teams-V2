@@ -560,7 +560,7 @@ class WorkcellStageDriver:
                     + "\n冻结 ArtifactAttachment:"
                     + self._attachment_payload(tree)
                     + "\n生成 DelegationPlan JSON。最终 JSON object 必须且只能包含 "
-                    "assignments 与可选的 knowledge_citation_ids 两个键；"
+                    "assignments 与 knowledge_citation_ids 两个键；"
                     "assignments 必须逐项等于下列冻结数组。"
                     "禁止改名为 delegations，禁止添加 depends_on 或其他字段，"
                     "禁止改变 Slot/Method/Purpose/权限。"

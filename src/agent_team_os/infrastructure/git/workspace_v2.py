@@ -483,6 +483,7 @@ def _git(
     cwd: Path | None = None,
     environment: dict[str, str],
 ) -> str:
+    operation = _git_operation(arguments)
     try:
         completed = subprocess.run(
             ["git", *arguments],
@@ -493,14 +494,57 @@ def _git(
             check=False,
             timeout=120,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise _git_error("EXTERNAL_GIT_COMMAND_FAILED", "Git 命令无法完成。") from error
-    if completed.returncode != 0:
+    except subprocess.TimeoutExpired as error:
         raise _git_error(
             "EXTERNAL_GIT_COMMAND_FAILED",
-            "Git 拒绝操作；未执行 Force Push 或自动改写历史。",
+            f"Git {operation} 超过 120 秒，命令已终止。",
+        ) from error
+    except OSError as error:
+        raise _git_error(
+            "EXTERNAL_GIT_COMMAND_FAILED",
+            f"Git {operation} 无法启动或完成。",
+        ) from error
+    if completed.returncode != 0:
+        diagnostic = _redact_git_diagnostic(completed.stderr, environment)
+        suffix = f"：{diagnostic}" if diagnostic else "；Git 未提供错误详情。"
+        raise _git_error(
+            "EXTERNAL_GIT_COMMAND_FAILED",
+            f"Git {operation} 失败（exit {completed.returncode}）{suffix}",
         )
     return completed.stdout
+
+
+def _git_operation(arguments: tuple[str, ...]) -> str:
+    known_operations = {
+        "add",
+        "branch",
+        "clone",
+        "commit",
+        "diff",
+        "fetch",
+        "init",
+        "ls-files",
+        "ls-remote",
+        "merge-base",
+        "push",
+        "remote",
+        "rev-parse",
+        "worktree",
+    }
+    return next((item for item in arguments if item in known_operations), "command")
+
+
+def _redact_git_diagnostic(value: str, environment: dict[str, str]) -> str:
+    redacted = value
+    sensitive_names = ("TOKEN", "SECRET", "PASSWORD", "API_KEY")
+    for name, marker in environment.items():
+        if any(fragment in name.upper() for fragment in sensitive_names) and len(marker) >= 8:
+            redacted = redacted.replace(marker, "[REDACTED]")
+    redacted = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[REDACTED]", redacted)
+    redacted = re.sub(r"\bgh[a-z]_[A-Za-z0-9]{16,}\b", "[REDACTED]", redacted)
+    redacted = re.sub(r"https://[^\s/@]+@", "https://[REDACTED]@", redacted)
+    normalized = " | ".join(line.strip() for line in redacted.splitlines() if line.strip())
+    return normalized[-2_000:]
 
 
 def _safe_identifier(value: str) -> None:

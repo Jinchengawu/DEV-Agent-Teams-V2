@@ -50,6 +50,46 @@ def test_codex_workcell_agent_returns_only_observable_structured_attempt(
     assert output.content == {"blocking_findings": []}
 
 
+def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
+    tmp_path: Path,
+) -> None:
+    required_clause = (
+        "允许列表非空时，knowledge_citation_ids 必须至少包含其中一个 ID"
+    )
+    code = (
+        "import json,sys; text=sys.stdin.read(); "
+        f"required={required_clause!r} in text; "
+        "payload={'requires_citation': required, "
+        "'knowledge_citation_ids': ['citation-allowed']}; "
+        "event={'type':'item.completed','item':{'type':'agent_message',"
+        "'text':json.dumps(payload)}}; print(json.dumps(event))"
+    )
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-citation",
+                workcell_run_id="workcell-citation",
+                agent_run_id="agent-citation",
+                phase="planning",
+                workcell_key="design",
+                stage_path="design-repair/design",
+                instruction="plan",
+                workspace=tmp_path,
+                workspace_access="none",
+                allowed_knowledge_citation_ids=("citation-allowed",),
+            )
+        )
+    )
+
+    assert output.content == {"requires_citation": True}
+    assert output.knowledge_citation_ids == ("citation-allowed",)
+
+
 def test_cancelling_the_parent_task_terminates_the_codex_attempt(tmp_path: Path) -> None:
     async def scenario() -> None:
         agent = CodexWorkcellAgent(

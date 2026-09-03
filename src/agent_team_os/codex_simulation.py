@@ -6,7 +6,7 @@ proof that a Hermes instance was called.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol, TypeVar
@@ -127,16 +127,26 @@ class ACWMCodexRoleRunner:
         *,
         workspace: Path,
         config: CodexCLIConfig | None = None,
+        config_provider: Callable[[], CodexCLIConfig] | None = None,
     ) -> None:
+        if config is not None and config_provider is not None:
+            raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
         self._config = config or CodexCLIConfig(
             sandbox="read-only", timeout_seconds=120
         )
-        self._adapter = CodexCLICapabilityAdapter(self._config)
+        self._config_provider = config_provider
         self._role_turn = AgentScopeRoleTurnAdapter()
+        self._active_adapters: set[CodexCLICapabilityAdapter] = set()
+        self._closed = False
 
     async def run(self, role: str, prompt: str) -> str:
-        manifest = self._adapter.manifest
+        if self._closed:
+            raise RuntimeError("Codex role runner is closed")
+        config = self._config_provider() if self._config_provider else self._config
+        adapter = CodexCLICapabilityAdapter(config)
+        self._active_adapters.add(adapter)
+        manifest = adapter.manifest
         capability = ResolvedCapability(
             capability_id=f"codex-{role}",
             capability_version="1.0.0",
@@ -144,7 +154,7 @@ class ACWMCodexRoleRunner:
             adapter_version=manifest.adapter_version,
             features=manifest.features,
             required_features=frozenset(),
-            config_fingerprint=sha256_json(self._config.model_dump(mode="json")),
+            config_fingerprint=sha256_json(config.model_dump(mode="json")),
             policy_version="1.0",
             policy_fingerprint=sha256_json(
                 {
@@ -177,7 +187,7 @@ class ACWMCodexRoleRunner:
         class CapabilityBoundary:
             @asynccontextmanager
             async def stage(boundary_self, run_spec: StageRunSpec) -> AsyncIterator[Any]:
-                async with self._adapter.stage(run_spec, emit) as exchange:
+                async with adapter.stage(run_spec, emit) as exchange:
                     yield exchange
 
         async def emit(
@@ -187,8 +197,16 @@ class ACWMCodexRoleRunner:
         ) -> None:
             return None
 
-        result = await self._role_turn.execute(spec, stage, CapabilityBoundary())
-        return result.output
+        try:
+            result = await self._role_turn.execute(spec, stage, CapabilityBoundary())
+            return result.output
+        finally:
+            self._active_adapters.discard(adapter)
+            await adapter.close()
 
     async def close(self) -> None:
-        await self._adapter.close()
+        self._closed = True
+        adapters = tuple(self._active_adapters)
+        for adapter in adapters:
+            await adapter.close()
+        self._active_adapters.clear()

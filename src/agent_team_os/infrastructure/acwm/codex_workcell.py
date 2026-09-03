@@ -39,12 +39,19 @@ class CodexWorkcellAgent:
             "workspace-write" if invocation.workspace_access == "workspace_write" else "read-only"
         )
         environment = {**os.environ, **invocation.environment}
+        citation_contract = (
+            "允许列表非空时，knowledge_citation_ids 必须至少包含其中一个 ID，"
+            "不得返回空数组。"
+            if invocation.allowed_knowledge_citation_ids
+            else "允许列表为空时，knowledge_citation_ids 必须为空数组。"
+        )
         instruction = (
             f"{invocation.instruction}\n\n"
             "本次调用就是一个已经登记的 AgentAttempt。不得派生子 Agent，不得使用 Party Mode，"
             "不得读取其他 Workcell Repository。最终只返回一个 JSON object，不要 Markdown。"
             "允许返回的 knowledge_citation_ids 为："
             f"{json.dumps(invocation.allowed_knowledge_citation_ids, ensure_ascii=False)}。"
+            f"{citation_contract}"
         )
         command = (
             *self.command,
