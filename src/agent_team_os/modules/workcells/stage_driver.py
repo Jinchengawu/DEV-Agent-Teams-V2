@@ -1319,9 +1319,17 @@ def _delegate_invocation(
                 "WORKCELL_REVIEW_EVIDENCE_MISSING",
                 "Reviewer 调用缺少 Product 生成的 Candidate Review Evidence。",
             )
+        frozen_acceptance = []
+        if delivery.requirements is not None:
+            frozen_acceptance = [
+                item.model_dump(mode="json")
+                for item in delivery.requirements.acceptance_criteria
+            ]
         review_contract = (
             "\nCandidate Review Evidence："
             + json.dumps(review_evidence, ensure_ascii=False, sort_keys=True)
+            + "\nFrozen Acceptance Contract："
+            + json.dumps(frozen_acceptance, ensure_ascii=False, sort_keys=True)
             + "\n当前工作目录已经是上述 Candidate SHA 的只读 Detached View。"
             "必须实际执行 git rev-parse HEAD，检查 Base..HEAD diff 并读取变更文件；"
             "命令 exit 0 时应忽略只读 macOS 沙箱产生的临时缓存警告。"
@@ -1332,6 +1340,14 @@ def _delegate_invocation(
             "等于 Candidate Review Evidence 中的 candidate_revision 与 diff_sha256。"
             "只有确认 Candidate 不存在阻断问题时才允许返回空数组；不得用 findings、verdict"
             " 或 decision 代替 blocking_findings。"
+            "\nBlocking Scope：Review 是对当前 Workcell Candidate 的合规审查，不是重新设计"
+            "需求。Blocking Finding 只能报告当前 Workcell Candidate 对 Frozen Acceptance "
+            "Contract 中明确由当前 Workcell 承担的条目，或对显式 Workspace/System Policy "
+            "的直接违反；code 必须使用对应 Acceptance ID 或明确的 SYSTEM-POLICY 标识。"
+            "不得因其他 Workcell 尚未交付其验收条目而阻断当前 Workcell，不得把建议性增强、"
+            "未来风险、个人偏好或冻结契约未要求的防御措施升级为 Blocking Finding。"
+            "Candidate 的完整 Base..HEAD Diff 已由产品以 diff_sha256 内容寻址并校验；除非"
+            "Frozen Acceptance Contract 明确要求，不得另行要求仓库内 manifest 覆盖辅助文件。"
         )
     return WorkcellAgentInvocation(
         delivery_id=delivery.id,

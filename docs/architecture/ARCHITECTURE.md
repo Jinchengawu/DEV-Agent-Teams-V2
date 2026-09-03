@@ -303,6 +303,9 @@ Main planning
 - 每个 Main/Child 都必须先有产品创建的 AgentRun/AgentAttempt；Runtime Adapter 不得隐藏派生。
 - Writer 使用本 Workcell 的隔离可写 Worktree；Reviewer 只读取同一 SHA 的 detached Candidate。
 - Writer 的机器验证失败时 Reviewer 不启动；Blocking Review 或失败 Verification 不能被 Main 覆盖。
+- Blocking Finding 必须直接依据当前 Workcell 承担的冻结 Acceptance Contract 或显式
+  Workspace/System Policy；其他 Workcell 尚未交付、建议性增强和未冻结的新要求不得阻断当前
+  Workcell。产品已对完整 Candidate Diff 做内容寻址，仓库内额外 manifest 不是隐式验收前提。
 - Main synthesis 必须读取本 Workcell 已冻结的 Child Artifact 正文、Machine Verification、
   Result Validation 与 Review Artifact，不得在缺少局部执行事实时合成成功结果。
 - Child 之间只传递内容寻址 ArtifactEnvelope；Git Candidate 以 Metadata + Hash-bound Diff Artifact 表达，
