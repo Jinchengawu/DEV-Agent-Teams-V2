@@ -587,3 +587,26 @@ GitHub CI `33955281014` 在收集 `test_codex_simulated_planning.py` 时报告
 - ADR Required: No
 - Architecture Document Delta: None
 - Outcome: Approved；7 项定向回归通过，pytest 脚本入口完整收集 537 项通过。
+
+### P0-04：V2 核心配置与证据的主题可读性修复
+
+`e814819` 的 CI、Deterministic Gate 与 R2 原生浏览器均通过。独立 V2 Console 补验进一步通过了
+逐仓方案过滤、保存/资格、同 Delivery 实际四工具执行、冻结方案和机器报告正文；运行身份为
+Deterministic，正式 Live 仍待完成。实际截图发现浅色主题下四仓卡片继承深色文字却保留固定深色背景，
+Repository、Profile 与保存/资格按钮几乎不可读。执行树与 Candidate 证据区域存在相同原因。
+
+Draft Plan：使用既有主题颜色修复这些核心区域，保持布局、权限、验证与产品状态不变。
+独立 Architecture Review 后的 Final Plan：
+
+- Architecture Impact: None
+- Findings: 旧 `styles.css` 的 Workcell 固定深色容器与现行主题文字/Ant Design 控件冲突；
+  配置、执行树、Method、Attempt、Release/Candidate 区域具有同一原因，影响核心证据可审查性。
+- Required Revisions: 仅在最后加载的 `compatibility.css` 映射八个既有 Selector 的背景/文字到
+  `role-surface`、`role-surface-subtle`、`role-text-primary`；仅 Method/Attempt 内部固定边框改用
+  `role-border`，保留 ready/failed、Main/Child 与 Candidate 的语义边缘。不新增 Token、
+  全站覆盖或 `!important`。真实浏览器检查浅/深主题已绑定 Repository、方案/资格、
+  可用/禁用按钮、有数据执行树和 Candidate 摘要。
+- ADR Required: No
+- Architecture Document Delta: None；仅记录局部审查与验证，不制造架构状态条目。
+- Outcome: Approved；按以上范围实施。修复后的正式浏览器/Deterministic/Live 仍须绑定同一新提交，
+  不改写 `e814819` 的历史报告。CSS 变更以构建、真实双主题浏览器和 CI 验证，不新增镜像实现的单元测试。
