@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkcellExecutionPanel } from "./WorkcellExecutionPanel";
 
@@ -10,6 +11,25 @@ const response = (body: unknown) => new Response(JSON.stringify(body), { status:
 
 describe("Workcell 运行可观测性", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("显示无效 Review 的错误原因与保留证据，不能显示为零问题通过", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo) => {
+      if (String(input).includes("/artifacts/")) return response({ reference: { sha256: hash, media_type: "application/json" }, content: JSON.stringify({ summary: "<img src=x onerror=alert(1)>", blocking_findings: [] }) });
+      if (String(input).endsWith("/workcell-runs")) return response([{
+        workcell_run: { id: "invalid-review", delivery_id: "delivery-1", stage_path: "frontend", workcell_key: "frontend", status: "failed", loop_iteration: 1, version: 4, workcell_snapshot_sha256: hash, error_code: "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE", workcell_snapshot: { workspace: { repository_uri: "project/frontend" }, method_snapshot_sha256: hash } },
+        agent_runs: [{ id: "reviewer", run_role: "child", delegate_purpose: "review", status: "failed", slot_key: "delegate_2", workspace_access: "candidate_read", depth: 1, resolved_binding_hash: hash, artifact_envelopes: [{ contract_id: "review-artifact-v1", reference: { sha256: hash } }] }],
+        attempts: [{ id: "review-attempt", agent_run_id: "reviewer", phase: "delegate", ordinal: 1, status: "failed", error_code: "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE", result_artifact_sha256: hash }], reviews: [],
+      }]);
+      return response({ candidates: [], pull_requests: [], remote_apply_receipts: [] });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><WorkcellExecutionPanel deliveryId="delivery-1" projectId="project-1"/></QueryClientProvider>);
+    expect(await screen.findByText("Review 输出无效，当前轮次未通过")).toBeTruthy();
+    expect(screen.getAllByText("WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: /查看 Review 原始输出/ }));
+    expect(await screen.findByText(/<img src=x onerror=alert\(1\)>/)).toBeTruthy();
+    expect(document.querySelector("img")).toBeNull();
+  });
 
   it("同时显示 Main/Child/Attempt、Method Hash、PR 和 Remote Apply Receipt", async () => {
     vi.stubGlobal("fetch", async (input: RequestInfo) => {

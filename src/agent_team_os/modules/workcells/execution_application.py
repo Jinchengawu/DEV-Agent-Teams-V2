@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
+from ...shared.review_scope import (
+    INVALID_REVIEW_CODES,
+    validate_review_output,
+    validate_review_scope,
+)
 from ..agents import ArtifactEnvelope
 from ..artifacts import ContentAddressedArtifactStorage
 from .execution_domain import (
@@ -36,6 +42,9 @@ class WorkcellExecutionModule:
         self.artifact_storage = artifact_storage
 
     def create(self, request: WorkcellRunCreate) -> WorkcellRunTree:
+        validate_review_scope(
+            request.snapshot.review_scope, workcell_key=request.snapshot.workcell_key
+        )
         try:
             run = self.repository.create(request)
         except Exception as error:
@@ -115,12 +124,8 @@ class WorkcellExecutionModule:
                 "保留一个 workspace_write Child，其余改为 Review 或 Artifact-only。",
             )
         for assignment in assignments:
-            frozen_purpose = run.workcell_snapshot.slot_purpose_bindings.get(
-                assignment.slot_key
-            )
-            frozen_method = run.workcell_snapshot.slot_method_bindings.get(
-                assignment.slot_key
-            )
+            frozen_purpose = run.workcell_snapshot.slot_purpose_bindings.get(assignment.slot_key)
+            frozen_method = run.workcell_snapshot.slot_method_bindings.get(assignment.slot_key)
             if frozen_purpose is not None and assignment.delegate_purpose != frozen_purpose:
                 raise _error(
                     "WORKCELL_DELEGATE_PURPOSE_NOT_FROZEN",
@@ -133,9 +138,7 @@ class WorkcellExecutionModule:
                     "DelegationPlan 改变了 Published Pipeline 的 Method Entry",
                     "使用 Workcell Snapshot 中冻结的 Method Entry。",
                 )
-        allowed_inputs = {
-            reference.sha256 for reference in run.workcell_snapshot.input_artifacts
-        }
+        allowed_inputs = {reference.sha256 for reference in run.workcell_snapshot.input_artifacts}
         for assignment in assignments:
             for reference in assignment.input_artifacts:
                 self.artifact_storage.get_bytes(reference)
@@ -292,15 +295,12 @@ class WorkcellExecutionModule:
         tree = self.tree(run_id)
         run = tree.workcell_run
         verification = tree.verification
-        collecting_launched_batch = (
-            run.status == "failed" and run.error_code == "WORKCELL_BLOCKING_REVIEW"
-        )
+        collecting_launched_batch = run.status == "failed" and run.error_code in {
+            *INVALID_REVIEW_CODES,
+            "WORKCELL_BLOCKING_REVIEW",
+        }
         accepts_review_evidence = run.status == "reviewing" or collecting_launched_batch
-        if (
-            not accepts_review_evidence
-            or verification is None
-            or verification.status != "passed"
-        ):
+        if not accepts_review_evidence or verification is None or verification.status != "passed":
             raise _error(
                 "REVIEW_CANDIDATE_NOT_VERIFIED",
                 "Reviewer 只能审查已通过机器验证的不可变 Candidate",
@@ -329,7 +329,43 @@ class WorkcellExecutionModule:
                 "ReviewArtifact 与机器验证 Candidate 不一致",
                 "对同一 Candidate SHA 与 Diff SHA 重新执行审查。",
             )
-        self.artifact_storage.get_bytes(request.artifact_reference)
+        if not any(
+            item.contract_id == "review-artifact-v1"
+            and item.reference == request.artifact_reference
+            and item.sha256 == request.artifact_reference.sha256
+            for item in reviewer.artifact_envelopes
+        ):
+            raise _error(
+                "WORKCELL_REVIEW_OUTPUT_NOT_REGISTERED",
+                "ReviewArtifact 不是该 Reviewer Child 已登记的原始输出",
+                "不得用另一个 Artifact 替换 Reviewer 的真实问题证据。",
+            )
+        try:
+            raw_output = json.loads(self.artifact_storage.get_bytes(request.artifact_reference))
+        except (ValueError, UnicodeError) as error:
+            raise _error(
+                "WORKCELL_REVIEW_ARTIFACT_INVALID",
+                "Review 原始 Artifact 不是合法 JSON",
+                "保留原始证据并重新执行 Reviewer。",
+            ) from error
+        if not isinstance(raw_output, dict):
+            raise _error(
+                "WORKCELL_REVIEW_ARTIFACT_INVALID",
+                "Review 原始 Artifact 不是 JSON object",
+                "保留原始证据并重新执行 Reviewer。",
+            )
+        findings = validate_review_output(
+            raw_output,
+            scope=run.workcell_snapshot.review_scope,
+            candidate_sha=verification.candidate_sha,
+            diff_sha256=verification.diff_sha256,
+        )
+        if findings != request.blocking_findings:
+            raise _error(
+                "WORKCELL_REVIEW_ARTIFACT_INVALID",
+                "提交的 Finding 与原始 Review Artifact 不一致",
+                "不得删除或替换 Reviewer 的 Finding。",
+            )
         payload = {
             "workcell_run_id": run_id,
             "reviewer_binding_hash": reviewer.resolved_binding_hash,
@@ -374,9 +410,7 @@ class WorkcellExecutionModule:
                 "完成 Product Machine Verification 后再合成结果。",
             )
         reviewers = tuple(item for item in children if item.delegate_purpose == "review")
-        if {item.id for item in reviewers} != {
-            item.reviewer_agent_run_id for item in tree.reviews
-        }:
+        if {item.id for item in reviewers} != {item.reviewer_agent_run_id for item in tree.reviews}:
             raise _error(
                 "WORKCELL_REVIEW_ARTIFACTS_INCOMPLETE",
                 "Reviewer 尚未全部提交结构化 ReviewArtifact",

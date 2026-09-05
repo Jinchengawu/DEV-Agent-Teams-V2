@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...shared.hashes import Sha256
-from ...shared.verification import VerificationProfileSnapshot
+from ...shared.verification import VerificationSnapshot
 
 
 def utc_now() -> datetime:
@@ -201,7 +201,7 @@ class WorkspaceBinding(BaseModel):
     verification_sha256: Sha256 | None = None
     verification: dict[str, object] = Field(default_factory=dict)
     verification_profile_id: str | None = None
-    verification_profile: VerificationProfileSnapshot | None = None
+    verification_profile: VerificationSnapshot | None = None
     verification_profile_error_code: str | None = None
     error_code: str | None = None
     version: int = Field(ge=1)

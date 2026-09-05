@@ -74,6 +74,10 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
         assert {profile["id"] for profile in profiles.json()} == {
             "python-unittest-v1",
             "node-native-test-v1",
+            "design-contract-v1",
+            "frontend-ts-vite-vitest-v1",
+            "backend-python-http-v1",
+            "qa-playwright-artifacts-v1",
         }
 
         workspace_ids: list[str] = []

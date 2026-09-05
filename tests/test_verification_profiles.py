@@ -20,7 +20,10 @@ from agent_team_os.shared.hashes import sha256_json
 
 def test_product_profiles_refuse_zero_tests_and_do_not_publish_unqualified_pnpm() -> None:
     catalog = VerificationProfileCatalog()
-    assert {item.id for item in catalog.list()} == {"python-unittest-v1", "node-native-test-v1"}
+    assert {"python-unittest-v1", "node-native-test-v1"}.issubset(
+        item.id for item in catalog.list()
+    )
+    assert "pnpm-project-check-v1" not in {item.id for item in catalog.list()}
     assert not validate_test_result("python-unittest-v1", "Ran 0 tests in 0.000s\n\nOK\n")
     assert validate_test_result("python-unittest-v1", "Ran 2 tests in 0.001s\n\nOK\n")
     assert not validate_test_result(
@@ -280,3 +283,28 @@ def _candidate() -> ExternalCandidateEvidence:
         candidate_branch="candidate",
         changed_files=("tests/test_one.py",),
     )
+
+
+def test_successful_verification_reaps_detached_output_child_before_returning(
+    tmp_path: Path,
+) -> None:
+    profile = VerificationProfileCatalog().qualify(
+        "python-unittest-v1", LocalVerificationToolchain()
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_child.py").write_text(
+        "import unittest,subprocess,sys\n"
+        "class Child(unittest.TestCase):\n def test_spawn(self):\n"
+        "  subprocess.Popen([sys.executable, '-c', "
+        '"import time;from pathlib import Path;time.sleep(0.7);'
+        "Path('orphan_after_success').write_text('unexpected')\"], "
+        "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+    )
+    outcome = asyncio.run(
+        CommandWorkcellMachineVerifier().verify(
+            workcell_key="backend", workspace=tmp_path, profile=profile, candidate=_candidate()
+        )
+    )
+    assert outcome.status == "passed", outcome.report
+    asyncio.run(asyncio.sleep(0.9))
+    assert not (tmp_path / "orphan_after_success").exists()

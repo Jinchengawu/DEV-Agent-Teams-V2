@@ -528,7 +528,7 @@ def build_preview_app() -> FastAPI:
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
-        verifier=CommandWorkcellMachineVerifier(),
+        verifier=CommandWorkcellMachineVerifier(artifact_storage),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=GitHubPullRequestProvider(),
         knowledge_guard=knowledge_runtime_guard,

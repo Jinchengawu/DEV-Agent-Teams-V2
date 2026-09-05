@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ...infrastructure.git import (
     ExternalGitBinding,
@@ -12,6 +14,7 @@ from ...infrastructure.verification.command_toolchain import LocalVerificationTo
 from ...shared.errors import ProductError
 from ...shared.hashes import sha256_json
 from ...shared.ids import new_id
+from ...shared.verification import VerificationProfileV2, VerificationQualificationV2
 from ..projects.ports import ProjectRepository
 from .application import TeamTemplateCatalog
 from .domain import (
@@ -142,7 +145,7 @@ class ProjectWorkcellGovernance:
     ) -> WorkspaceBindingAssignment:
         body = WorkspaceBindingCreate.model_validate(request)
         if body.verification_profile_id is not None:
-            self.verification_profiles.get(body.verification_profile_id)
+            self._require_profile_role(body.verification_profile_id, body.workcell_key)
         topology = self.topology(project_id)
         if topology.team_binding.status != "provisioning":
             raise _error(
@@ -203,7 +206,12 @@ class ProjectWorkcellGovernance:
         profile_id: str,
     ) -> WorkspaceBinding:
         current = self.repository.get_workspace(workspace_id)
-        self.verification_profiles.get(profile_id)
+        role = next(
+            item.workcell_key
+            for item in self.repository.list_workcells(current.project_id)
+            if item.workspace_binding_id == workspace_id
+        )
+        self._require_profile_role(profile_id, role)
         if current.version != expected_version:
             raise _version_error("WORKSPACE_BINDING_VERSION_CONFLICT")
         updated = current.model_copy(
@@ -233,9 +241,18 @@ class ProjectWorkcellGovernance:
                 "WORKCELL_VERIFICATION_PROFILE_REQUIRED", "请先为此工作区选择产品验证方案。"
             )
         try:
-            snapshot = self.verification_profiles.qualify(
-                current.verification_profile_id, self.verification_toolchain
-            )
+            profile = self.verification_profiles.get(current.verification_profile_id)
+            if isinstance(profile, VerificationProfileV2):
+                with self._verification_configuration(current, profile) as configuration:
+                    snapshot = self.verification_profiles.qualify(
+                        current.verification_profile_id,
+                        self.verification_toolchain,
+                        workspace=configuration,
+                    )
+            else:
+                snapshot = self.verification_profiles.qualify(
+                    current.verification_profile_id, self.verification_toolchain
+                )
         except ProductError as error:
             failed = current.model_copy(
                 update={
@@ -257,6 +274,51 @@ class ProjectWorkcellGovernance:
         )
         self._swap_profile(current, updated)
         return updated
+
+    def _require_profile_role(self, profile_id: str, workcell_key: str) -> None:
+        profile = self.verification_profiles.get(profile_id)
+        if isinstance(profile, VerificationProfileV2) and profile.workcell_key != workcell_key:
+            raise profile_error(
+                "WORKCELL_VERIFICATION_PROFILE_ROLE_MISMATCH", "验证方案不适用于绑定的 Workcell。"
+            )
+
+    def _verification_configuration(
+        self, workspace: WorkspaceBinding, profile: VerificationProfileV2
+    ) -> AbstractContextManager[Path]:
+        from ...infrastructure.verification.workspace_source import read_configuration
+
+        revision = workspace.verification.get("remote_main_sha") or workspace.verification.get(
+            "main_sha"
+        )
+        if workspace.status != "ready" or not isinstance(revision, str):
+            raise profile_error(
+                "WORKCELL_VERIFICATION_WORKSPACE_REQUIRED", "请先验证 Workspace Git Revision。"
+            )
+        remote = (
+            self.managed_git.remote_uri(workspace.repository_uri)
+            if workspace.adapter_type == "managed-bare-git"
+            else workspace.repository_uri
+        )
+        return read_configuration(
+            ExternalGitBinding(
+                remote_uri=remote, credential_reference=workspace.credential_reference
+            ),
+            revision,
+            profile.config_paths,
+        )
+
+    def validate_workspace_verification(
+        self, workspace: WorkspaceBinding, workcell_key: str
+    ) -> None:
+        snapshot = workspace.verification_profile
+        if isinstance(snapshot, VerificationQualificationV2):
+            self._require_profile_role(snapshot.profile.id, workcell_key)
+            with self._verification_configuration(workspace, snapshot.profile) as configuration:
+                self.verification_profiles.validate(
+                    snapshot, self.verification_toolchain, workspace=configuration
+                )
+        else:
+            self.verification_profiles.validate(snapshot, self.verification_toolchain)
 
     def _profile_admission(self, workspace: WorkspaceBinding) -> None:
         if self.projects.active_delivery_id(workspace.project_id) is not None:

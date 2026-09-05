@@ -5,7 +5,7 @@ import { request } from "../../shared/api/client";
 export type ProjectWorkcellTopology = components["schemas"]["ProjectWorkcellTopology"];
 export type WorkspaceBinding = components["schemas"]["WorkspaceBinding"];
 export type WorkspaceBindingCreate = components["schemas"]["WorkspaceBindingCreate"];
-export type VerificationProfile = components["schemas"]["VerificationProfile"];
+export type VerificationProfile = components["schemas"]["VerificationProfile"] | components["schemas"]["VerificationProfileV2"];
 export type WorkcellRunTree = components["schemas"]["WorkcellRunTree"];
 export type ReleaseHealthV2 = components["schemas"]["ReleaseHealthV2"];
 export type ReleaseManifestV2 = components["schemas"]["ReleaseManifestV2"];
@@ -109,6 +109,17 @@ export function useDeliveryWorkcellRuns(deliveryId?: string) {
     ),
     enabled: Boolean(deliveryId),
     refetchInterval: 1_000,
+  });
+}
+
+export function useWorkcellArtifact(deliveryId: string, runId: string, sha256: string) {
+  return useQuery({
+    queryKey: ["workcell-artifact", deliveryId, runId, sha256],
+    queryFn: ({ signal }) => request<components["schemas"]["WorkcellArtifactPreview"]>(
+      `/v1/deliveries/${encodeURIComponent(deliveryId)}/workcell-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(sha256)}`, { signal },
+    ),
+    retry: false,
+    gcTime: 0,
   });
 }
 

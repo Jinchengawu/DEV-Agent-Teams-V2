@@ -30,6 +30,14 @@ jobs:
         run: uv sync --extra dev --extra live --locked
       - name: Install locked console dependencies
         run: pnpm --dir console install --frozen-lockfile
+      - name: Install locked four-repository verification tools
+        run: pnpm --dir examples/health-contract-v1/frontend install --frozen-lockfile --ignore-scripts
+      - name: Explicitly prepare isolated offline verification environment
+        run: |
+          uv run python scripts/prepare_verification_tools.py --source-node-modules examples/health-contract-v1/frontend/node_modules --target "$RUNNER_TEMP/agent-team-os-verification-tools"
+          echo "AGENT_TEAM_OS_VERIFICATION_TOOLS_DIR=$RUNNER_TEMP/agent-team-os-verification-tools" >> "$GITHUB_ENV"
+      - name: Install matching Chromium and operating system dependencies
+        run: uv run python -m playwright install --with-deps chromium
       - name: Validate evaluation dataset
         run: uv run agent-team-os-dev eval validate-dataset
       - name: Validate migrations on a fresh database

@@ -28,6 +28,16 @@ function delivery(): Delivery {
 }
 
 describe("交付黄金纵切", () => {
+  it("计划审批前展示每仓验收责任和原始验收正文", async () => {
+    const planned = delivery();
+    planned.task!.workcell_acceptance = [{ workcell_key: "frontend", acceptance: [{ acceptance_id: "AC-001", responsibility: "展示健康状态和请求失败状态" }] }];
+    render(<MemoryRouter><DeliveryDetail delivery={planned} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
+    expect(screen.getByText("展示健康状态和请求失败状态")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "审查计划" }));
+    await userEvent.click(screen.getByRole("tab", { name: "边界" }));
+    expect(screen.getAllByText("展示健康状态和请求失败状态").length).toBeGreaterThan(1);
+  });
+
   it("把计划审批映射为带明确语义的真实命令", async () => {
     const onDecision = vi.fn();
     render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={onDecision}/></MemoryRouter>);

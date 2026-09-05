@@ -21,7 +21,8 @@ Git Workspace，跨 Workcell 只传递内容寻址 Artifact。产品在 Agent Ru
 > Agent-Team-OS 当前是本地 Alpha，不是生产稳定服务。Deterministic 四仓闭环只证明产品调度、
 > Git 和证据状态机，不证明真实模型能力。Live 闭环需要已验证的 BMAD/TEA Method Store、Codex
 > 登录、四个私有 GitHub HTTPS 仓库和可直推 `main` 的服务身份；任一缺失都必须标记为
-> `blocked/not_run`。默认规划身份仍是 `codex-simulated-hermes`，不能作为真实 Hermes 证据。
+> `blocked/not_run`。当前默认规划身份为 `codex-cli`；验收跟随冻结 Provider Binding，
+> Codex Planning 通过不能作为真实 Hermes 证据。
 
 ## 当前架构
 
@@ -233,9 +234,10 @@ flowchart TB
     API --> KNOWLEDGE[Wiki 与知识投影]
     DELIVERY --> ACWM[ACWM 图与 Capability Runtime]
     AGENTS --> ACWM
-    ACWM --> AS[AgentScope Workcell Team]
-    AS --> H[Hermes PM / Project Admin]
-    AS --> C[Codex Main / Child Attempt]
+    ACWM --> WC[产品 Workcell Composition 与生命周期]
+    ACWM --> P[冻结 Binding 的 Planning Provider]
+    WC --> C[Codex Main / Child Attempt]
+    WC -. 待接入的 Attempt Runtime .-> AS[AgentScope Session 与 Transport]
     DELIVERY --> ART[Content-addressed Artifact]
     DELIVERY --> GIT[4 × 隔离 Repository Workspace]
     DELIVERY --> GH[GitHub PR Review Surface]
@@ -248,10 +250,10 @@ flowchart TB
 | 权威方 | 职责 |
 |---|---|
 | **ACWM** | 跨 Stage 的 Workflow、Capability、Provider、Artifact 与 Gate 语义 |
-| **AgentScope** | Stage 内的通信与 Agent 组合 |
+| **AgentScope** | 单个已登记 AgentAttempt 内的 Session、消息和 Transport；Workcell Live Adapter 待接入 |
 | **Hermes 兼容实例** | 显式配置后承担 PM 与 Project Admin 角色智能 |
-| **Codex** | 受控代码执行，以及当前模拟规划 Adapter |
-| **Agent-Team-OS** | 身份、权限、项目、Git 安全、候选校验、机器验证、审批、应用策略、证据和 UI |
+| **Codex** | 受控代码执行，以及显式冻结的 Codex Planning Adapter |
+| **Agent-Team-OS** | 可观察 Workcell/Main/Child 组合与生命周期，以及身份、权限、Git 安全、验证、审批、应用、证据和 UI |
 
 Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管跨 Stage 的产品状态机。
 
@@ -275,7 +277,8 @@ Agent-Team-OS 不复制 ACWM Runtime Contract，也不会让 AgentScope 接管�
 
 | 路径 | 当前身份 | 可以证明什么 |
 |---|---|---|
-| 默认需求/任务规划 | `codex-simulated-hermes` | Codex 执行了结构化规划 Adapter；不能证明调用了 Hermes |
+| 默认需求/任务规划 | `codex-cli` | 真实 Codex 执行已发布 Binding 的结构化规划；不能证明调用了 Hermes |
+| 保留的 Legacy 模拟规划 | `codex-simulated-hermes` | 可读的旧规划路径，不能满足真实 Hermes 或当前 Live Provider 资格 |
 | Workcell Main / Child Attempt | `codex-cli` | Codex 在冻结 Slot、Workspace Access 和临时 Method Overlay 内执行；不允许隐藏派生 |
 | 确定性四仓门禁 | `deterministic-test` | 只证明 Workcell、Artifact、Git、PR Receipt 和 Forward-only 状态机，不证明真实模型质量 |
 | Hermes Adapter | `hermes-acp` / `hermes-http` | `hermes.acp` 产品 Role Turn 已接线；`hermes-http` 仅可注册/健康检查；真实使用仍需显式 Published Binding 与 Live 证据 |
@@ -366,10 +369,9 @@ Readiness 通过后，它只校验既有 `completed` Delivery，并把去敏的 
 只有 `FAIL=0`、`WARN=0`、`skipped=0` 才返回 `passed`。
 产品 Runtime Dispatcher 已接入 `hermes.acp` role-turn，并对 Published Runtime Instance、连接指纹、
 逐 Attempt 空沙箱、工具拒绝、结构化输出与 Citation 做失败关闭校验；`http.sync` 尚未接入。
-Runtime Readiness 还会实际执行 `hermes acp --check`，仅能找到 CLI 不足以通过 ACP 协议前置检查。
-默认内置 Planning Slot 仍是 `codex-simulated-hermes`，所以即使本机安装 Hermes CLI 并配置 API Key，
-在重新资格化、发布真实 `hermes.acp` Binding 之前，`live-provider-bindings` 与
-`product-runtime-adapters` 仍会保持 `blocked`。
+选择 Hermes Binding 时，Runtime Readiness 会实际执行 `hermes acp --check`；仅能找到 CLI
+不足以通过 ACP 协议前置检查。当前默认内置 Planning Slot 使用显式 `codex-cli`，对应检查
+跟随其冻结 Binding。安装 Hermes 不会自动改变已经发布的 Pipeline 或历史 Delivery 身份。
 
 保留的 v0.4 单仓回归门禁：
 
@@ -389,8 +391,9 @@ Candidate/Bundle/Manifest Hash、机器验证、Runtime Identity 和远端 SHA �
 
 README 不保存会随 Revision 漂移的测试数量、构建模块数或临时工作树结论。当前验收状态必须从绑定同一
 Git SHA 的命令输出、Evidence 与 `Release Report` 读取；代码合入 `main` 也不等于正式 Release 通过。
-仓库当前没有可证明真实 Hermes、AgentScope、Codex 与四个 GitHub 仓库全部通过的同 Revision Live
-Report，因此四 Workcell Live Release 仍是 `blocked/not_run`，不得由 Deterministic 结果换算为通过。
+当前四仓 R2 的正式 Live 验收仍待完成，不得由 Deterministic 结果换算为通过。
+该验收核对冻结的 Planning Provider、真实 Codex、Tenant/Ollama 和四个 GitHub 仓库；
+Hermes 与 AgentScope 各自的资格和 Live 证据保持独立。
 完整证据规则见[产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md#101-当前-revision-的证据读取规则)。
 
 ## 当前限制
@@ -400,10 +403,10 @@ Report，因此四 Workcell Live Release 仍是 `blocked/not_run`，不得由 De
 - Child 深度固定为 1，每个 Workcell 最多 3 个 Child、2 个并发、1 个 Writer。
 - External Git Live 参考实现只支持 GitHub HTTPS 与 `env://` / `keychain://` 凭据引用；不管理 SSH 凭据。
 - 仓库保护若禁止服务身份直推 `main`，该仓库不能通过 v0.5 Live Readiness；v0.5 不使用 Provider-native PR Merge。
-- 默认由 Codex 模拟 Hermes PM/Admin；`hermes.acp` 产品 Adapter 已实现，但真实 Hermes 尚未通过
-  同 Revision Live 发布门禁。
+- 默认由显式 Codex Planning Adapter 处理规划；`hermes.acp` 产品 Adapter 已实现，但真实 Hermes
+  仍需独立 Binding 资格与同 Revision Live 证据。
 - Feature-flagged Hybrid Retrieval 与 Delivery Context 已有 Deterministic 闭环，但尚无真实
-  Feishu/Ollama/Hermes 四仓 Live 证据；没有共享长期 Agent Memory 或多租户。
+  Feishu/Ollama 与冻结 Planning Provider 的四仓 Live 验收；没有共享长期 Agent Memory 或生产多租户。
 - 项目级 RBAC 已实现；生产多租户、逐用户 Feishu ACL 与跨租户隔离仍未实现。
 - v0.5 当前工作树没有发布安装包、Git Tag 或 GitHub Release。
 - 仓库当前没有 License；公开可见不代表获得复用授权。
@@ -459,7 +462,7 @@ reviews/spark/           候选代码审查记录
 
 1. 阅读 [`AGENTS.md`](AGENTS.md) 和相关 ADR；
 2. 保持 ACWM 为跨 Stage 语义权威；
-3. 保持 AgentScope 只负责 Stage 内组合；
+3. 保持产品拥有 Workcell Composition，AgentScope 仅负责已登记 Attempt 内的 Session/Transport；
 4. 保留产品层对权限、Git 安全、Evidence、审批和应用策略的所有权；
 5. 为纵切功能增加公共接口测试，不得把确定性证据描述成真实 Agent 证据。
 

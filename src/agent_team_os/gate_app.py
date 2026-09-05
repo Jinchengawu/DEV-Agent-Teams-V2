@@ -475,7 +475,7 @@ def build_gate_app() -> FastAPI:
         agent=DeterministicWorkcellAgent(),
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
-        verifier=CommandWorkcellMachineVerifier(),
+        verifier=CommandWorkcellMachineVerifier(artifact_storage),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=DeterministicPullRequestSurface(),
         knowledge_guard=knowledge_runtime_guard,

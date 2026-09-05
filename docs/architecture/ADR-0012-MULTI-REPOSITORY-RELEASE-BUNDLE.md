@@ -30,3 +30,19 @@ Bare Repo”的实现约束；其他不变量继续有效。
 
 现有 ProjectWorkspace 作为 Backend-only 兼容视图保留。旧项目不会自动创建新仓库；管理员
 显式执行全栈 Provisioning 后才能选择 Full-stack Pipeline。
+
+## 2026-09-05 修订：已验证产物包的跨仓消费
+
+四仓继续隔离 Git Workspace。`health-contract-v1` 验证切片中，Design 发布合同包，Frontend
+发布实际构建产物，Backend 发布已验证的 HTTP Runtime；QA 从 Artifact Store 物化这些包，
+在产品临时目录启动本机服务与浏览器，验证四个规定场景。QA 不获得其他仓库路径或可变挂载。
+
+产物成员采用产品固定合同和路径白名单，禁止越界路径、符号链接、重复成员与超出字节预算的包。
+Publication 绑定 Delivery、Workcell、Candidate、实际 CandidateVerification Hash 与 Manifest；
+Manifest 绑定 Profile/Qualification Hash 和每个成员的内容寻址引用。
+
+Release Acceptance 把每个消费者输入接回同一 Delivery 的最终成功 Workcell Result，并核对其
+实际 Verification、已登记 Publication 与消费者冻结输入。仅在 Store 放入自洽 Hash 的对象，
+不能取得已验证上游资格。本修订不改变 Release Bundle、Apply、恢复或补偿权威。
+
+实现和验证状态见 `ARCH-20260905-04`；本机真实工具回归与正式 Live 发布证据分别记录。

@@ -29,7 +29,10 @@ def _review_invocation(workspace: Path, instruction: str) -> WorkcellAgentInvoca
 def test_public_deterministic_reviewer_returns_frozen_candidate_evidence(tmp_path: Path) -> None:
     candidate_sha = "0123456789abcdef0123456789abcdef01234567"
     diff_sha = "abcdef0123456789" * 4
-    evidence = {"candidate_revision": candidate_sha, "diff_sha256": diff_sha}
+    evidence = {
+        "candidate_revision": candidate_sha, "diff_sha256": diff_sha,
+        "review_scope_sha256": "a" * 64,
+    }
     invocation = _review_invocation(
         tmp_path,
         "执行只读 Review。\nCandidate Review Evidence："
@@ -42,12 +45,22 @@ def test_public_deterministic_reviewer_returns_frozen_candidate_evidence(tmp_pat
     assert result.content == {
         "reviewed_candidate_sha": candidate_sha,
         "reviewed_diff_sha256": diff_sha,
+        "review_scope_sha256": "a" * 64,
         "blocking_findings": [],
         "method_id": "design-review",
     }
     assert result.runtime_identity == "deterministic-model-boundary"
     assert result.knowledge_citation_ids == ("frozen-citation",)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_public_deterministic_main_reads_assignment_marker_after_review_scope(tmp_path: Path):
+    invocation = _review_invocation(tmp_path, "").model_copy(update={
+        "phase": "planning", "workspace_access": "none",
+        "instruction": 'Frozen Review Scope：{"sha256":"scope"}\n冻结 assignments 数组：[]',
+    })
+    result = asyncio.run(DeterministicWorkcellAgent().run(invocation))
+    assert result.content == {"assignments": []}
 
 
 @pytest.mark.parametrize(

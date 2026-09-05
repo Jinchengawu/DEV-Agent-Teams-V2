@@ -197,6 +197,8 @@ def test_delivery_snapshot_compiles_team_pipeline_provider_workspace_and_method_
     assert len({item.repository_uri for item in snapshot.workspaces}) == 4
     assert snapshot.method_snapshot == methods
     assert snapshot.build_identity == build_identity
+    assert snapshot.review_policies is not None
+    assert set(snapshot.review_policies.workcells) == set(roles)
     assert (
         compiler.compile("snapshot-project", "four-workcell-delivery:1").snapshot_sha256
         == snapshot.snapshot_sha256

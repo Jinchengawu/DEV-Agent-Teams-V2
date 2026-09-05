@@ -764,6 +764,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deliveries/{delivery_id}/workcell-runs/{run_id}/artifacts/{sha256}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workcell Artifact */
+        get: operations["get_workcell_artifact_v1_deliveries__delivery_id__workcell_runs__run_id__artifacts__sha256__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deliveries/{delivery_id}/workcell-runs": {
         parameters: {
             query?: never;
@@ -3053,6 +3070,10 @@ export interface components {
             summary: string;
             /** Evidence Sha256 */
             evidence_sha256: string;
+            /** Acceptance Id */
+            acceptance_id?: string | null;
+            /** System Policy Id */
+            system_policy_id?: string | null;
         };
         /** BootstrapRequest */
         BootstrapRequest: {
@@ -3353,6 +3374,7 @@ export interface components {
             workspaces: components["schemas"]["DeliveryWorkspaceSnapshot"][];
             method_snapshot: components["schemas"]["DeliveryMethodSnapshot"];
             build_identity?: components["schemas"]["DeliveryBuildIdentitySnapshot"] | null;
+            review_policies?: components["schemas"]["ReviewPolicySnapshot"] | null;
             /** Knowledge Contexts */
             knowledge_contexts?: {
                 [key: string]: components["schemas"]["DeliveryKnowledgeContextSnapshot"];
@@ -3563,7 +3585,8 @@ export interface components {
             base_revision: string;
             /** Verification Sha256 */
             verification_sha256: string;
-            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
+            /** Verification Profile */
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | components["schemas"]["VerificationQualificationV2"] | null;
         };
         /** DesignDecisionRequest */
         DesignDecisionRequest: {
@@ -3840,6 +3863,15 @@ export interface components {
              * @default false
              */
             delivery_knowledge_context_v1: boolean;
+        };
+        /** FrozenAcceptanceResponsibility */
+        FrozenAcceptanceResponsibility: {
+            /** Acceptance Id */
+            acceptance_id: string;
+            /** Responsibility */
+            responsibility: string;
+            /** Statement */
+            statement: string;
         };
         /** FrozenSlotBinding */
         FrozenSlotBinding: {
@@ -6202,6 +6234,29 @@ export interface components {
              */
             created_at?: string;
         };
+        /** ReviewPolicySnapshot */
+        ReviewPolicySnapshot: {
+            /** Workcells */
+            workcells: {
+                [key: string]: components["schemas"]["ReviewSystemPolicy"][];
+            };
+            /** Sha256 */
+            sha256: string;
+        };
+        /** ReviewSystemPolicy */
+        ReviewSystemPolicy: {
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: number;
+            /** Statement */
+            statement: string;
+            /**
+             * Allowed Paths
+             * @default []
+             */
+            allowed_paths: string[];
+        };
         /** Revision */
         Revision: {
             /** Document Id */
@@ -6391,6 +6446,8 @@ export interface components {
              * @default []
              */
             knowledge_citation_ids: string[];
+            /** Workcell Acceptance */
+            workcell_acceptance?: components["schemas"]["WorkcellAcceptanceAssignment"][] | null;
         };
         /** TeamActivationRequest */
         TeamActivationRequest: {
@@ -6749,6 +6806,24 @@ export interface components {
             /** Password */
             password?: string | null;
         };
+        /** VerificationDependencyIdentity */
+        VerificationDependencyIdentity: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+            /** Root */
+            root: string;
+            /** Content Sha256 */
+            content_sha256: string;
+        };
+        /** VerificationFileIdentity */
+        VerificationFileIdentity: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
+        };
         /** VerificationProfile */
         VerificationProfile: {
             /** Id */
@@ -6780,6 +6855,73 @@ export interface components {
             profile_sha256: string;
             /** Tools */
             tools: components["schemas"]["VerificationToolIdentity"][];
+            /** Qualification Sha256 */
+            qualification_sha256: string;
+        };
+        /** VerificationProfileV2 */
+        VerificationProfileV2: {
+            /**
+             * Contract Version
+             * @default verification-profile-v2
+             * @constant
+             */
+            contract_version: "verification-profile-v2";
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: number;
+            /** Name */
+            name: string;
+            /**
+             * Workcell Key
+             * @enum {string}
+             */
+            workcell_key: "design" | "frontend" | "backend" | "qa";
+            /** Commands */
+            commands: string[][];
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Environment */
+            environment: {
+                [key: string]: string;
+            };
+            /**
+             * Result Contract
+             * @default fullstack-verification-v2
+             * @constant
+             */
+            result_contract: "fullstack-verification-v2";
+            /** Tool Names */
+            tool_names: ("python" | "node")[];
+            /** Config Paths */
+            config_paths: string[];
+            /** Dependency Names */
+            dependency_names: string[];
+            /**
+             * Input Contracts
+             * @default []
+             */
+            input_contracts: string[];
+            /** Output Contract */
+            output_contract?: string | null;
+        };
+        /** VerificationQualificationV2 */
+        VerificationQualificationV2: {
+            /**
+             * Contract Version
+             * @default verification-qualification-v2
+             * @constant
+             */
+            contract_version: "verification-qualification-v2";
+            profile: components["schemas"]["VerificationProfileV2"];
+            /** Profile Sha256 */
+            profile_sha256: string;
+            /** Tools */
+            tools: components["schemas"]["VerificationToolIdentity"][];
+            /** Dependencies */
+            dependencies: components["schemas"]["VerificationDependencyIdentity"][];
+            /** Workspace Files */
+            workspace_files: components["schemas"]["VerificationFileIdentity"][];
             /** Qualification Sha256 */
             qualification_sha256: string;
         };
@@ -6869,6 +7011,26 @@ export interface components {
             /** Expected Version */
             expected_version: number;
         };
+        /** WorkcellAcceptanceAssignment */
+        WorkcellAcceptanceAssignment: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** Acceptance */
+            acceptance: components["schemas"]["WorkcellAcceptanceResponsibility"][];
+        };
+        /** WorkcellAcceptanceResponsibility */
+        WorkcellAcceptanceResponsibility: {
+            /** Acceptance Id */
+            acceptance_id: string;
+            /** Responsibility */
+            responsibility: string;
+        };
+        /** WorkcellArtifactPreview */
+        WorkcellArtifactPreview: {
+            reference: components["schemas"]["ArtifactReference"];
+            /** Content */
+            content: string;
+        };
         /** WorkcellCandidateProjection */
         WorkcellCandidateProjection: {
             /** Candidate Id */
@@ -6936,6 +7098,7 @@ export interface components {
              * @default []
              */
             input_artifacts: components["schemas"]["ArtifactReference"][];
+            review_scope?: components["schemas"]["WorkcellReviewScope"] | null;
         };
         /** WorkcellResult */
         WorkcellResult: {
@@ -6996,6 +7159,23 @@ export interface components {
              * Format: date-time
              */
             created_at?: string;
+        };
+        /** WorkcellReviewScope */
+        WorkcellReviewScope: {
+            /** Workcell Key */
+            workcell_key: string;
+            /** Source Plan Sha256 */
+            source_plan_sha256: string;
+            /** Requirements Sha256 */
+            requirements_sha256: string;
+            /** Task Sha256 */
+            task_sha256: string;
+            /** Acceptance */
+            acceptance: components["schemas"]["FrozenAcceptanceResponsibility"][];
+            /** System Policies */
+            system_policies: components["schemas"]["ReviewSystemPolicy"][];
+            /** Sha256 */
+            sha256: string;
         };
         /** WorkcellRun */
         WorkcellRun: {
@@ -7108,7 +7288,8 @@ export interface components {
             base_revision: string;
             /** Verification Sha256 */
             verification_sha256: string;
-            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
+            /** Verification Profile */
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | components["schemas"]["VerificationQualificationV2"] | null;
         };
         /** WorkspaceBinding */
         WorkspaceBinding: {
@@ -7143,7 +7324,8 @@ export interface components {
             };
             /** Verification Profile Id */
             verification_profile_id?: string | null;
-            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
+            /** Verification Profile */
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | components["schemas"]["VerificationQualificationV2"] | null;
             /** Verification Profile Error Code */
             verification_profile_error_code?: string | null;
             /** Error Code */
@@ -10198,7 +10380,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VerificationProfile"][];
+                    "application/json": (components["schemas"]["VerificationProfile"] | components["schemas"]["VerificationProfileV2"])[];
                 };
             };
             /** @description 目标资源不存在 */
@@ -10567,6 +10749,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectWorkcellTopology"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_workcell_artifact_v1_deliveries__delivery_id__workcell_runs__run_id__artifacts__sha256__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+                run_id: string;
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkcellArtifactPreview"];
                 };
             };
             /** @description 目标资源不存在 */

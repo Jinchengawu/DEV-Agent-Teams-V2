@@ -30,7 +30,8 @@ from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
 from .shared.repositories import RepositoryRole, RepositorySnapshot
-from .shared.verification import VerificationProfileSnapshot
+from .shared.review_scope import ReviewPolicySnapshot, WorkcellAcceptanceAssignment
+from .shared.verification import VerificationSnapshot
 
 if TYPE_CHECKING:
     from .modules.delivery.publication import (
@@ -70,6 +71,14 @@ class TaskContract(ImmutableModel):
     acceptance_ids: tuple[str, ...]
     system_policy: SystemPolicy = SystemPolicy()
     knowledge_citation_ids: tuple[str, ...] = ()
+    workcell_acceptance: tuple[WorkcellAcceptanceAssignment, ...] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_compatible(self, handler: Any):  # type: ignore[no-untyped-def]
+        result = cast(dict[str, Any], handler(self))
+        if self.workcell_acceptance is None:
+            result.pop("workcell_acceptance", None)
+        return result
 
 
 class CandidateChange(ImmutableModel):
@@ -166,7 +175,7 @@ class DeliveryWorkspaceSnapshot(ImmutableModel):
     repository_uri: str
     base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     verification_sha256: Sha256
-    verification_profile: VerificationProfileSnapshot | None = None
+    verification_profile: VerificationSnapshot | None = None
 
     @model_serializer(mode="wrap")
     # 返回注解会覆盖 Pydantic 的结构化响应 schema；仅此 serializer 保留推导。
@@ -239,6 +248,7 @@ class DeliveryExecutionSnapshot(ImmutableModel):
     workspaces: tuple[DeliveryWorkspaceSnapshot, ...]
     method_snapshot: DeliveryMethodSnapshot
     build_identity: DeliveryBuildIdentitySnapshot | None = None
+    review_policies: ReviewPolicySnapshot | None = None
     knowledge_contexts: dict[str, DeliveryKnowledgeContextSnapshot] = Field(default_factory=dict)
     knowledge_context_unavailable: dict[str, DeliveryKnowledgeContextUnavailableSnapshot] = Field(
         default_factory=dict
@@ -247,6 +257,13 @@ class DeliveryExecutionSnapshot(ImmutableModel):
     knowledge_preparation_input_sha256: Sha256 | None = None
     snapshot_sha256: Sha256
     compiled_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_serializer(mode="wrap")
+    def serialize_compatible(self, handler: Any):  # type: ignore[no-untyped-def]
+        result = cast(dict[str, Any], handler(self))
+        if self.review_policies is None:
+            result.pop("review_policies", None)
+        return result
 
 
 class WorkcellCandidateProjection(ImmutableModel):
@@ -322,7 +339,9 @@ class PlanningService(Protocol):
 
     async def analyze(self, user_request: str) -> RequirementArtifact: ...
 
-    async def plan(self, requirements: RequirementArtifact) -> TaskContract: ...
+    async def plan(
+        self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
+    ) -> TaskContract: ...
 
 
 class CodeExecutor(Protocol):

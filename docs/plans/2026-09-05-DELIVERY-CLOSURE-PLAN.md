@@ -1,7 +1,7 @@
 # Agent-Team-OS 后续执行清单与产品差距
 
 日期：2026-09-05
-状态：首批实现已验证；P0-00/P0-01 完成，P0-02 基础子切片及确定性浏览器闭环通过。
+状态：P0-00/P0-01 已提交并通过 CI；P0-02～04 第二批实现正在集成验收，正式 Live 与同 SHA 交接未完成。
 审计基线：`codex/v051-live-readiness-hardening@7a4c706a88dec302f51da035b760a31c63b94e9e`。
 本轮范围：本地 P0 代码、回归、契约和架构对账；真实业务 Gate 按原审批流程处理。
 本文件是计划和证据导航，不拥有 Delivery、Release、Approval 或架构状态权威。
@@ -29,7 +29,7 @@
 
 ### 1.1 原始 MVP：按业务能力逐项核对
 
-“存在回归”指当前仓库有相应可执行测试；本轮未重新运行测试。
+下表是初始审计时的能力覆盖；后续实施与实际重跑结果见第 7～9 节。
 
 | 原始能力 | 当前事实 | 剩余工作 |
 |---|---|---|
@@ -358,7 +358,8 @@ Draft → Review → Revise → Final → Implementation → Reconciliation。
 - P0-04：随本轮补了取消状态和 Profile 配置 UI；完整 Live 浏览器驱动仍未完成。
 - P0-05～07：未冻结最终 Product Revision；没有新增 Live 运行或业务 Gate 批准。
 
-改动当前位于本地工作区，未提交/推送；旧 Live Delivery 及远端 main 保持原业务状态。
+首批已提交并推送为 `5e5bf487e156caa85e4e2940710cc362aba24832`；后续切片仍在工作区实施。
+旧 Live Delivery 及远端 main 保持原业务状态。
 以上完成状态只覆盖本地实现和已列测试，不代表正式 Release 验收。
 
 ### 浏览器确定性 Adapter 兼容修复审查
@@ -396,3 +397,178 @@ Draft → Review → Revise → Final → Implementation → Reconciliation。
 用户最新授权：推送代码并持续推进，直到 P0-00～P0-07 全部完成。
 本轮先推送已验证首批，随后补齐真实四仓技术栈、Review 归属、UI 和同 Revision 三类验收。
 405/409 项本地测试、首批提交或 CI 通过都不是目标完成条件。正式验收必须逐项证明原 P0 范围。
+首批远端 CI run `33951230676` 已完成且全部通过，绑定 `5e5bf487e156caa85e4e2940710cc362aba24832`。
+
+### P0-04：评测账号密码生成修复审查
+
+- Architecture Impact: Local
+- Findings: 既有 Release 浏览器驱动仍在源码内配置固定评测密码，与账号会话级生成规则不符。
+- Required Revisions: 驱动使用安全随机密码，仅通过本次子进程环境传递；重启沿用同一次会话值，
+  不写入 State/Checkpoint/Report。浏览器认证缺少注入值时失败。
+- ADR Required: No；修复既有账号约束，不改变身份或审批权威。
+- Architecture Document Delta: None
+- Outcome: Approved
+
+### P0-03：Draft → Review/Revise → Final Plan
+
+- Architecture Impact: Cross-boundary
+- Findings: 现有 Task 缺少四仓 Acceptance 责任；Finding code 被误用为 Acceptance ID；无效输出可能早于原始 Artifact 持久化而丢失。
+- Required Revisions: Tasking 提议按 Workcell 的责任分配，Plan Gate 前校验完整覆盖，Gate 展示并批准；
+  Scope 从批准的 Requirements/Task 和产品发布的 Policy 快照派生，批准后重算来源哈希。
+  Finding 使用互斥 acceptance_id/system_policy_id，code 独立；Reviewer 回传 Scope/Candidate/Diff SHA。
+  并发 Review 无论有效性均先保留原始 Artifact；有效 blocker 不丢失，无效输出走既有 ACWM 有界修复。
+  Kernel 与 Release 重验真实内容，不能仅依赖 Prompt；新执行缺 Scope 失败关闭，历史 None 字段省略保留旧哈希。
+  若同批出现 Runtime 身份/传输等非 Review 合同错误，明确保留并抛出该 fatal 原因；
+  已返回输出仍登记原始 Artifact，但不接纳失败批次新的 ReviewRecord，不误归为 invalid Review 修复。
+- ADR Required: Yes，修订 ADR-0014、ADR-0019。
+- Architecture Document Delta: ARCH-20260905-03，Accepted/Not Implemented。
+- Outcome: Approved（修订后按以上边界实施）。
+
+### P0-02 完整四仓：Draft → Review/Revise → Final Plan
+
+- Architecture Impact: Cross-boundary
+- Findings: 四个现有真实测试仓仍为 Python 样例；仅更换命令无法证明 Frontend TypeScript/build 与 QA 浏览器端到端。
+- Required Revisions: 在可审查的独立本地基线实现 health-contract-v1 四仓切片：Design schema/正反向向量、
+  Backend HTTP、Frontend TS 页面、QA 真实浏览器。产品固定执行器直接执行实际工具，拒绝零测试/跳过/伪成功。
+  工具环境及配置/锁文件按内容冻结；资格化只读，不隐式安装或执行仓库脚本。生成工具环境是显式独立准备步骤。
+  V2 Profile/Qualification/Report 使用版本联合，V1 哈希保持。上游 Artifact 包绑定来源与内容，
+  发布顺序避免哈希循环；QA 仅物化已验证 Store 包，拒绝越界路径、符号链接、未知成员和来源错配。
+  不使用任意 URL、克隆或跨仓挂载；临时服务仅 loopback，超时/取消终止全部子进程。
+  当前实现是受控本机执行，不声称具备 OS 沙箱。远端基线发布和最终 Live 单独按具体结果推进。
+- ADR Required: Yes，修订 ADR-0014、ADR-0019，并对账 ADR-0012 的 Artifact 所有权。
+- Architecture Document Delta: ARCH-20260905-04，Accepted/Not Implemented。
+- Outcome: Approved（修订后按以上约束实施）；产品 Release/Apply 和账号权威不变。
+
+### P0-04：V2 审批证据正文入口 Final Plan
+
+- Architecture Impact: Local
+- Findings: V2 页面目前主要展示 Hash，缺少受项目权限保护的 Candidate Diff/Review 原始正文入口。
+- Required Revisions: 新 GET 路由带 Delivery/Run/SHA，先按 Delivery 授权再检查归属；
+  仅本 Run 已登记 output Artifact 可读，不接受 input ref、任意 URI 或 Store SHA。
+  未知、跨 Run/Delivery 统一不存在；登记大小和实际读取均限 1 MiB，Store Hash 复核。
+  只接受 JSON/text，固定 JSON 响应、no-store/nosniff，UI 纯文本显示；不扩展审批或 Apply 权威。
+  展示冻结 Scope、有效 Finding、无效 Review 错误及已保留的原始输出，不把缺数据显示为通过。
+- ADR Required: No（既有权限下的证据读取表达，不改变所有权或信任边界）。
+- Architecture Document Delta: None
+- Outcome: Approved（独立架构审查后修订为以上 Final Plan）。
+
+### P0-07：原生浏览器收据与交接引用索引 Final Plan
+
+- Architecture Impact: Local
+- Findings: 基础四仓浏览器与 Knowledge R2 浏览器范围不同；现有 V2 Live Report 不合并浏览器或
+  Deterministic 证据。报告和索引仅表达、关联已有断言结果，不接管 Release/Apply 或业务 Gate 权威。
+  已检查模块依赖、数据所有权、状态与并发恢复、权限隔离、Legacy、可观测性和 Deterministic/Live 边界。
+- Required Revisions: 首轮 Review 的基础四仓范围缺口已纳入修订。浏览器收据明确基础/R2 scenario，
+  R2 knowledge_scope 必须来自实际读取及断言，包括七个必需 Stage、Context Artifact/Citation/授权 Hash、
+  五个最终 Workcell Run 和 QA Preparation Run；QA Preparation 必须为无 Candidate 的 Artifact-only
+  成功运行且 result_validation 通过。复用既有 Feishu --gate-c 公共配置与产品链，外部边界仍明确
+  deterministic；三个 Knowledge Feature Flag 仅配置到临时评测 runner。
+  基础收据 knowledge_scope=None，R2 收据必须具备完整范围，基础不能满足 four-repo-r2-alpha 交接。
+  原生 runner 仅在完整用户闭环、正文证据、当前 HTTP Console Bundle、Console 无错误及前后干净
+  Build Identity 一致的实际断言全部通过后，原子写出 core-browser-run-receipt-v1。
+  启动严格收据模式先使本次指定输出失效；异常不得留下该路径上一轮 passed，其他历史报告保留。
+  收据模式不保存 storage_state，登录失败或仍在密码页面时不截图，账号密码不进入任何收据。
+  收据固定检查码，明确 deterministic Runtime；截图、Checkpoint、CLI exit 0 和 Readiness 不算成功收据。
+  交接索引固定目标 four-repo-r2-alpha，只读显式指定的浏览器、Deterministic GateReport 和
+  release-acceptance-report-v2，验证各自原生 Hash、完整检查集、实际范围及 fail/warn/skipped 全零。
+  三轨绑定同一干净 Product SHA 和 ACWM Revision，Browser/Live Build Identity 一致；保留不同轨的
+  Project/Delivery/Pipeline/Candidate 与 Provider 身份，不把 Codex Planning 改写为 Hermes。
+  Live 仍须现有 R2 完整验收；缺少 Knowledge 配置或真实断言时保留 incomplete/invalid，不补造事实。
+  索引仅输出 reference_check=consistent/incomplete/invalid，不新增 Release passed 权威、不启动 Live、
+  不审批 Gate、不访问业务远端。工具、合同、测试和本说明先提交，生成索引写入忽略的报告目录。
+- ADR Required: No（既有报告结果的本地表达和引用检查，没有新的持久化恢复或信任权威）。
+- Architecture Document Delta: None；若后续改变 Release 判断或事实所有权，重新架构审查。
+- Outcome: Approved（按首轮 Revise 后的 R2 范围修订复审；仅批准以上实现，不代表版本验收）。
+
+最小实现分工：浏览器驱动负责真实断言与原生收据；共享 DTO/只读索引 CLI 负责校验、关联来源。
+公共合同回归覆盖完整三轨、缺轨、基础浏览器冒充 R2、错 SHA/Build、原生 Hash/计数/检查集篡改、
+Checkpoint/Readiness/错误 kind、Dirty Runtime，以及浏览器异常使指定旧成功输出失效。
+
+## 9. 第二批本地集成进度（尚未冻结验收 SHA）
+
+本节对应 `5e5bf487…` 之后的工作树变更；提交前结果属于本地集成证据，不是正式同 Revision
+发布报告。P0 勾选以最终提交与证据对账为准。
+
+- P0-02：实际 Design 合同、Frontend TypeScript/Vitest/Vite、Backend HTTP、QA Chromium
+  已通过本机四仓引擎；V2 Profile/Qualification/Report 与上游 Artifact 包已接线。
+  Release 逐项把包接回同 Delivery 的最终成功 Verification，并与消费者冻结输入精确匹配。
+  GitHub CI 已新增显式锁定工具准备和 Chromium 安装，资格化本身不安装依赖。
+- P0-03：43 项 Scope/Kernel/Stage/R2 公共闭环专项通过；批准责任、原始 Review、越界/篡改拒绝、
+  有界修复成功和耗尽均有回归。架构 `ARCH-20260905-03` 晋升仅表示这些实现和本地验证完成。
+- P0-04：授权后的 Diff/Review 正文读取与 Console 已实现；纯文本渲染、1 MiB 上限、Hash 校验、
+  跨 Delivery/未登记输入拒绝均有覆盖。Live checkpoint 驱动只观察具体 Gate，不代替人工批准。
+- 最新基础四仓浏览器 Delivery `cb7ce7c6-0751-4568-b453-5c206703d5b8` 已 completed，
+  Manifest `b7022f31f7e138f39f1f79a1ae73162fbcadfd1d257429a5dfc8dfe6a2ae98c0`，Lease=0。
+  验证了最新 38 个静态文件的 HTTP 字节、Plan 责任、Diff/Review Modal 和 Scope 来源。
+  该运行 `dirty=true`，后续 Console Collapse 修复还须重新构建验证，不升级为正式收据。
+- 集成回归：464 项 Python 通过、1 项可选 Live 跳过；新增真实产物来源与交接索引组合 34 项通过；
+  架构/文档/Release 报告与版本漂移专项 21 项通过。可选 Live 跳过不计入正式 Release 合格证据。
+  全量 Console 首轮 84 项通过、原生控件边界 1 项失败；已换成 Ant Design Collapse，
+  控件边界和面板 3 项定向重验通过，最终全量与浏览器重验待进行。
+
+### 同 Revision 门禁的局部修复审查
+
+- Architecture Impact: Local
+- Findings: Legacy Gate 只比较运行前后 Git status，期间产生新提交后仍可保持 clean，不能证明同 SHA。
+- Required Revisions: 结束时同时核对 Product SHA、导入的 ACWM Revision 与起点相同，工作区仍 clean；
+  任意漂移只生成失败报告。保留旧 GateReport Schema、Hash 算法与已有验收范围。
+- ADR Required: No；落实既有同 Revision 要求，不新增验收权威。
+- Architecture Document Delta: None
+- Outcome: Approved；独立复审确认。Product/ACWM/dirty 三种漂移及稳定反例 4 项通过。
+
+### P0-04：R2 知识投影刷新修复审查
+
+- Architecture Impact: None
+- Findings: R2 浏览器实际运行完成七个 Context，但同页仍显示初次请求缓存的空列表；
+  `useDeliveryKnowledgeContext` 缺少运行期刷新，不能正确展示 Citation 后续接纳。
+- Required Revisions: 使用现有只读 Query 在运行期间每秒刷新，读取到终态后停止；
+  保留原浏览器断言，不用整页刷新或放宽检查绕过。初始空值→Context→已完成引用回归先失败再通过。
+- ADR Required: No
+- Architecture Document Delta: None
+- Outcome: Approved；不改变状态、权限、接口或数据权威，浏览器完整重验继续进行。
+
+### P0-06：独立 Live 环境与待开发基线 Final Plan
+
+- Architecture Impact: Local
+- Findings: 旧 live-v051 保留旧 SHA 的等待 Plan 交付与 Lease；完整示例已实现功能，
+  不能原样当作待开发任务，也不能由两个独立产品数据库同时协调同组远端。
+- Required Revisions: 拟新建四个 private GitHub 仓库 `atos-r2-20260905-{design,frontend,backend,qa}`，
+  采用固定验证配置及明确缺功能的健康页基线，四仓都要求真实业务或测试差异。
+  使用全新单一 DATA_DIR/数据库、独立账号与 loopback 端口；原凭据仅经安全引用复用。
+  新连接、索引、授权与运行全部由公共接口生成，不迁移旧运行事实。
+  基线只支持 ok/静态页面/landing smoke，任务补齐三状态封闭合同、HTTP400/404、
+  UI fetch/错误反馈与四个规定 Playwright 用例。正式 Live 执行依赖干净 SHA，
+  Plan/Design/Release 仍在具体产物出现后按产品 Gate 审批。
+- ADR Required: No；应用既有隔离和验证合同，不改变 Git/Apply、数据库或凭据信任模型。
+- Architecture Document Delta: None
+- Outcome: Approved（架构方案）；外部仓库创建及推送须另有明确授权。
+
+已在 `/tmp/atos-r2-baseline-draft-20260905` 形成 26 个基线文件和可审查的真实任务说明。
+自动审批审查拒绝首次创建/推送请求，原因是这些新 GitHub 目的地、持久仓库创建和代码外发
+尚无足够明确授权。已向用户提交具体授权问题；等待期间不创建远端、不推送这些基线。
+该拒绝不影响已授权产品分支的本地验证与后续正常提交推送。
+
+### 最新集成复验
+
+- Console 全量最终重跑 86 项通过，TypeScript 检查通过；全项目 Ruff 与 Mypy（188 个源文件）通过。
+- 最新 R2 浏览器 Delivery `f53b7762-49a2-4d30-864d-dd1e60a68b3b` completed，
+  七个 Context、五个 Workcell、四仓 PR/Apply、Manifest、Wiki 与同页知识投影全部通过；
+  Manifest `98e3344a3bfd84c5a2f3e792dc38873fe07accab49b54462fe3288fe4a7b3cde`，Lease=0。
+  本地 Model Boundary 明确为 Deterministic，工作树仍 dirty，未生成正式收据。
+- 真实 V2 Profile 的同 Delivery 回归已执行 Design 7 项、Frontend 类型检查/10 项测试/构建、
+  Backend 4 项 unittest+4 项 HTTP、QA 4 项 Chromium，并完成四仓本地 Apply/Manifest；
+  此时验收器暴露 QA Preparation 被误要求 CandidateVerification 的缺陷。
+  已修正为沿用完整 Artifact-only ResultValidation，不运行或伪造 QA Preparation 的仓库验证。
+  Architecture Impact: None；Findings: 错误套用机器验证；Required Revisions: 保持既有 Artifact-only
+  合同并保留失败证据后重跑；ADR Required: No；Architecture Document Delta: None；Outcome: Approved。
+  该修复的整链重验和最终全量回归正在执行，以上历史完成状态不自动升格正式 Release。
+
+最新 V2 整链与默认 R2 三项复验：4 项全部通过。该测试使用真实 Stage/Verification/Publication/
+四仓 Git/Release，在同一 Delivery 上验证全部四仓技术栈；只在模型与 PR Surface 边界使用明确
+Deterministic Adapter。QA Preparation 错误已按真实失败后重验闭合。`ARCH-20260905-04` 已对账
+为 Implemented/Verified，正式干净 SHA/Live 证据仍由 P0-05～07 提供。
+
+第二批最终本地验证：完整 Python 536 passed、1 skipped（仅未启用的可选 Live），Console 86 passed，
+全项目 Ruff、Mypy 188 个源文件、TypeScript 与 OpenAPI 再生成通过；架构/文档/Release 专项 21 项通过。
+108 个待提交文件已逐路径核对并通过强凭据模式扫描。下一步正常提交推送产品分支，然后在干净提交上
+生成 Deterministic Gate 与原生 R2 浏览器收据；新的外部四仓创建仍等待用户明确授权。

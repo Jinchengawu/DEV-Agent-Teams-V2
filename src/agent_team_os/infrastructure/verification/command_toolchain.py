@@ -12,7 +12,11 @@ from typing import Literal, cast
 
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256
-from ...shared.verification import VerificationToolIdentity
+from ...shared.verification import (
+    VerificationDependencyIdentity,
+    VerificationFileIdentity,
+    VerificationToolIdentity,
+)
 
 
 def verification_environment(additions: dict[str, str] | None = None) -> dict[str, str]:
@@ -45,6 +49,20 @@ def verification_environment(additions: dict[str, str] | None = None) -> dict[st
 
 
 class LocalVerificationToolchain:
+    def inspect_dependencies(
+        self, names: tuple[str, ...]
+    ) -> tuple[VerificationDependencyIdentity, ...]:
+        from .tool_environment import inspect_dependencies
+
+        return inspect_dependencies(names)
+
+    def inspect_files(
+        self, workspace: Path, names: tuple[str, ...], *, workcell_key: str | None = None
+    ) -> tuple[VerificationFileIdentity, ...]:
+        from .tool_environment import workspace_files
+
+        return workspace_files(workspace, names, workcell_key=workcell_key)
+
     def inspect(self, name: str) -> VerificationToolIdentity:
         executable = (
             sys.executable if name == "python" else shutil.which("node") if name == "node" else None

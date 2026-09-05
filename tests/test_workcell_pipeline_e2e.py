@@ -8,6 +8,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
+
+import pytest
 
 from agent_team_os.control_plane import (
     AgentInstanceCreate,
@@ -102,6 +105,8 @@ from agent_team_os.modules.workcells import (
 )
 from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.hashes import Sha256, sha256_json
+from agent_team_os.shared.review_scope import product_review_policies
+from agent_team_os.shared.verification import VerificationSnapshot
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
 
@@ -135,14 +140,24 @@ class StaticMethodRuntime:
 
 
 class FourRepositoryAgent:
-    def __init__(self, runtime_identity: str = "deterministic-test") -> None:
+    def __init__(
+        self, runtime_identity: str = "deterministic-test", *, invalid_design_runs: int = 0
+    ) -> None:
         self.runtime_identity = runtime_identity
         self.invocations: list[WorkcellAgentInvocation] = []
+        self.invalid_design_runs = invalid_design_runs
+        self.design_run_ids: list[str] = []
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
         if invocation.phase == "planning":
-            content = {"assignments": json.loads(invocation.instruction.split("：", 1)[1])}
+            if invocation.workcell_key == "design":
+                self.design_run_ids.append(invocation.workcell_run_id)
+            content = {
+                "assignments": json.loads(
+                    invocation.instruction.split("冻结 assignments 数组：", 1)[1]
+                )
+            }
         elif invocation.phase == "synthesis":
             content = {"status": "passed", "workcell": invocation.workcell_key}
         elif invocation.workspace_access == "workspace_write":
@@ -175,9 +190,22 @@ class FourRepositoryAgent:
             content = {
                 "reviewed_candidate_sha": review_evidence["candidate_revision"],
                 "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                "review_scope_sha256": review_evidence["review_scope_sha256"],
                 "blocking_findings": [],
                 "method_id": invocation.method_id,
             }
+            if (
+                invocation.workcell_key == "design"
+                and self.design_run_ids.index(invocation.workcell_run_id) < self.invalid_design_runs
+            ):
+                content["blocking_findings"] = [
+                    {
+                        "code": "UNOWNED_REVIEW",
+                        "summary": "有界重试保留每次原始问题",
+                        "evidence_sha256": "d" * 64,
+                        "acceptance_id": "AC-UNKNOWN",
+                    }
+                ]
         else:
             content = {
                 "artifact": invocation.method_id,
@@ -210,6 +238,21 @@ class StaticKnowledgeAuthorization:
 RepositorySet = dict[str, tuple[Path, str]]
 
 
+class PipelineScenario(Protocol):
+    agent: FourRepositoryAgent
+    profiles: dict[str, VerificationSnapshot]
+
+    def remote(self, root: Path, role: str) -> tuple[Path, str]: ...
+
+    def assert_completed(
+        self,
+        delivery: DeliveryRun,
+        kernel: WorkcellExecutionModule,
+        artifacts: ContentAddressedArtifactStorage,
+        acceptance: ReleaseAcceptanceReportV2,
+    ) -> None: ...
+
+
 class PRSurface:
     def ensure(
         self,
@@ -232,11 +275,22 @@ def test_four_repository_workcell_pipeline_and_forward_only_release(
     asyncio.run(_run_four_repository_pipeline(tmp_path))
 
 
-async def _run_four_repository_pipeline(tmp_path: Path) -> None:
+@pytest.mark.parametrize("invalid_design_runs", [1, 3])
+def test_invalid_review_repairs_are_bounded_and_preserve_failed_evidence(
+    tmp_path: Path,
+    invalid_design_runs: int,
+) -> None:
+    asyncio.run(_run_four_repository_pipeline(tmp_path, invalid_design_runs=invalid_design_runs))
+
+
+async def _run_four_repository_pipeline(
+    tmp_path: Path, *, invalid_design_runs: int = 0, scenario: PipelineScenario | None = None
+) -> None:
     root = Path(__file__).parents[1]
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, root / "migrations").migrate()
-    remotes = {role: _remote(tmp_path, role) for role in builtin_release_contract()}
+    remote_factory = _remote if scenario is None else scenario.remote
+    remotes = {role: remote_factory(tmp_path, role) for role in builtin_release_contract()}
     _project_and_workspaces(database, remotes)
     control_plane = ControlPlaneService(
         database,
@@ -317,6 +371,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         artifacts=artifacts,
         revision=revision,
         remotes=remotes,
+        verification_profiles=None if scenario is None else scenario.profiles,
     )
     delivery = DeliveryRun(
         id="delivery-four-repositories",
@@ -347,7 +402,11 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         f"workspace-{role}": ExternalGitBinding(remote_uri=str(remote))
         for role, (remote, _base) in remotes.items()
     }
-    workcell_agent = FourRepositoryAgent("codex-cli:acceptance-test")
+    workcell_agent = (
+        FourRepositoryAgent("codex-cli:acceptance-test", invalid_design_runs=invalid_design_runs)
+        if scenario is None
+        else scenario.agent
+    )
     driver = WorkcellStageDriver(
         kernel=kernel,
         artifacts=artifacts,
@@ -355,7 +414,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(tmp_path / "workcell-runtime"),
         binding_resolver=bindings.__getitem__,
-        verifier=CommandWorkcellMachineVerifier(),
+        verifier=CommandWorkcellMachineVerifier(artifacts),
         releases=ExternalReleaseCatalog(release_repository),
         pull_requests=PRSurface(),
         knowledge_guard=knowledge_guard,
@@ -397,6 +456,29 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         expected_subject_sha256=planned.plan_gate.subject_sha256,
     )
     designed = _delivery(delivery_repository, delivery.id)
+    failed_designs = [
+        tree for tree in kernel.list_delivery(delivery.id) if tree.workcell_run.status == "failed"
+    ]
+    assert len(failed_designs) == invalid_design_runs
+    for failed_tree in failed_designs:
+        assert failed_tree.workcell_run.error_code == "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE"
+        assert failed_tree.result is None
+        failed_reviewers = [
+            item for item in failed_tree.agent_runs if item.delegate_purpose == "review"
+        ]
+        assert len(failed_reviewers) == 2
+        for reviewer in failed_reviewers:
+            assert reviewer.status == "failed"
+            raw = artifacts.get_json(reviewer.artifact_envelopes[0].reference)
+            assert raw["blocking_findings"][0]["acceptance_id"] == "AC-UNKNOWN"
+    if invalid_design_runs == 3:
+        assert designed.status == "failed"
+        assert len(workcell_agent.design_run_ids) == 3
+        assert len(kernel.list_delivery(delivery.id)) == 3
+        assert release_repository.list_candidates(delivery.id) == ()
+        for remote, base in remotes.values():
+            assert _git(remote, "rev-parse", "refs/heads/main") == base
+        return
     assert designed.status == "awaiting_design_decision"
     assert designed.design_gate is not None
     await execution.decide_design(
@@ -416,7 +498,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
     assert gated.candidate_gate is not None
     assert set(gated.workcell_candidates) == set(builtin_release_contract())
     assert gated.release_bundle_v2_sha256 is not None
-    assert len(kernel.list_delivery(delivery.id)) == 5
+    assert len(kernel.list_delivery(delivery.id)) == 5 + invalid_design_runs
     frontend_writer = next(
         item
         for item in workcell_agent.invocations
@@ -424,8 +506,11 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         and item.workspace_access == "workspace_write"
     )
     assert "workspace-candidate-diff-v1" in frontend_writer.instruction
-    assert "diff --git a/design/candidate.md b/design/candidate.md" in (frontend_writer.instruction)
-    assert "+design candidate" in frontend_writer.instruction
+    if scenario is None:
+        assert (
+            "diff --git a/design/candidate.md b/design/candidate.md" in frontend_writer.instruction
+        )
+        assert "+design candidate" in frontend_writer.instruction
 
     await execution.decide_candidate(
         gated,
@@ -491,6 +576,118 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         "RELEASE_MANIFEST_VERIFIED",
         "RELEASE_HEALTH_VERIFIED",
     } <= {code for code, status in checks.items() if status == "passed"}
+
+    if scenario is not None:
+        scenario.assert_completed(completed, kernel, artifacts, acceptance)
+        return
+
+    frontend_tree = next(
+        tree
+        for tree in kernel.list_delivery(delivery.id)
+        if tree.workcell_run.workcell_key == "frontend"
+    )
+    scope_snapshot = frontend_tree.workcell_run.workcell_snapshot.model_dump(mode="json")
+    original_scope_snapshot = json.dumps(scope_snapshot)
+    original_scope_snapshot_sha = frontend_tree.workcell_run.workcell_snapshot_sha256
+    forged_scope = scope_snapshot["review_scope"]
+    forged_scope["acceptance"][0]["responsibility"] = "不需要实现任何功能"
+    forged_scope["sha256"] = sha256_json(
+        {key: value for key, value in forged_scope.items() if key != "sha256"}
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE workcell_runs SET workcell_snapshot_json=?,"
+            "workcell_snapshot_sha256=? WHERE id=?",
+            (
+                json.dumps(scope_snapshot),
+                sha256_json(scope_snapshot),
+                frontend_tree.workcell_run.id,
+            ),
+        )
+    resigned_scope = verifier.verify(project_id=delivery.project_id, delivery_id=delivery.id)
+    assert _check_status(resigned_scope, "WORKCELL_TERMINALS_VERIFIED") == "failed"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE workcell_runs SET workcell_snapshot_json=?,"
+            "workcell_snapshot_sha256=? WHERE id=?",
+            (original_scope_snapshot, original_scope_snapshot_sha, frontend_tree.workcell_run.id),
+        )
+
+    original_review = frontend_tree.reviews[0]
+    raw_review = artifacts.get_json(original_review.artifact_reference)
+    frozen_scope = frontend_tree.workcell_run.workcell_snapshot.review_scope
+    assert frozen_scope is not None
+    raw_review["blocking_findings"] = [
+        {
+            "code": "ACTUAL_UI_DEFECT",
+            "summary": "原始Review的真实问题不能被空记录覆盖",
+            "evidence_sha256": "d" * 64,
+            "acceptance_id": frozen_scope.acceptance[0].acceptance_id,
+        }
+    ]
+    forged_reference = artifacts.put_json(raw_review)
+    forged_review_payload = original_review.model_dump(
+        mode="json", exclude={"id", "created_at", "sha256"}
+    )
+    forged_review_payload["artifact_reference"] = forged_reference.model_dump(mode="json")
+    original_reviewer = next(
+        item
+        for item in frontend_tree.agent_runs
+        if item.id == original_review.reviewer_agent_run_id
+    )
+    original_review_attempt = next(
+        item for item in frontend_tree.attempts if item.agent_run_id == original_reviewer.id
+    )
+    forged_envelopes = [
+        item.model_copy(update={"reference": forged_reference, "sha256": forged_reference.sha256})
+        if item.reference == original_review.artifact_reference
+        else item
+        for item in original_reviewer.artifact_envelopes
+    ]
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE agent_runs SET artifact_envelopes_json=? WHERE id=?",
+            (
+                json.dumps([item.model_dump(mode="json") for item in forged_envelopes]),
+                original_reviewer.id,
+            ),
+        )
+        connection.execute(
+            "UPDATE agent_attempts SET result_artifact_sha256=? WHERE id=?",
+            (forged_reference.sha256, original_review_attempt.id),
+        )
+        connection.execute(
+            "UPDATE review_artifacts SET artifact_reference_json=?,sha256=? WHERE id=?",
+            (
+                json.dumps(forged_reference.model_dump(mode="json")),
+                sha256_json(forged_review_payload),
+                original_review.id,
+            ),
+        )
+    raw_review_mismatch = verifier.verify(project_id=delivery.project_id, delivery_id=delivery.id)
+    assert _check_status(raw_review_mismatch, "CANDIDATE_EVIDENCE_VERIFIED") == "failed"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE agent_runs SET artifact_envelopes_json=? WHERE id=?",
+            (
+                json.dumps(
+                    [item.model_dump(mode="json") for item in original_reviewer.artifact_envelopes]
+                ),
+                original_reviewer.id,
+            ),
+        )
+        connection.execute(
+            "UPDATE agent_attempts SET result_artifact_sha256=? WHERE id=?",
+            (original_review_attempt.result_artifact_sha256, original_review_attempt.id),
+        )
+        connection.execute(
+            "UPDATE review_artifacts SET artifact_reference_json=?,sha256=? WHERE id=?",
+            (
+                json.dumps(original_review.artifact_reference.model_dump(mode="json")),
+                original_review.sha256,
+                original_review.id,
+            ),
+        )
 
     with sqlite3.connect(database) as connection:
         planning_attempt_row = connection.execute(
@@ -612,6 +809,7 @@ def _prepare_knowledge_snapshot(
     artifacts: ContentAddressedArtifactStorage,
     revision: PipelineRevision,
     remotes: RepositorySet,
+    verification_profiles: dict[str, VerificationSnapshot] | None = None,
 ) -> tuple[
     KnowledgeContextRuntimeGuard,
     KnowledgePreparationInputV1,
@@ -694,6 +892,7 @@ def _prepare_knowledge_snapshot(
         contexts=contexts,
         stamp=stamp,
         preparation_input=preparation_input,
+        verification_profiles=verification_profiles,
     )
     repository = SQLiteKnowledgeContextRepository(database)
     now = datetime(2026, 9, 2, tzinfo=UTC)
@@ -790,6 +989,7 @@ def _snapshot(
     contexts: dict[str, DeliveryKnowledgeContextSnapshot],
     stamp: KnowledgeAuthorizationStampV1,
     preparation_input: KnowledgePreparationInputV1,
+    verification_profiles: dict[str, VerificationSnapshot] | None = None,
 ) -> DeliveryExecutionSnapshot:
     team = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database)).get_revision(
         "software-delivery-team",
@@ -815,8 +1015,12 @@ def _snapshot(
             repository_uri=str(remote),
             base_revision=base,
             verification_sha256=Sha256.validate(character * 64),
-            verification_profile=VerificationProfileCatalog().qualify(
-                "python-unittest-v1", LocalVerificationToolchain()
+            verification_profile=(
+                VerificationProfileCatalog().qualify(
+                    "python-unittest-v1", LocalVerificationToolchain()
+                )
+                if verification_profiles is None
+                else verification_profiles[role]
             ),
         )
         for (role, (remote, base)), character in zip(
@@ -857,6 +1061,7 @@ def _snapshot(
             key: value.model_dump(mode="json") for key, value in revision.workcell_stage_map.items()
         },
         "release_contract_snapshot": revision.release_contract_snapshot,
+        "review_policies": product_review_policies(tuple(sorted(remotes))).model_dump(mode="json"),
         "knowledge_context_bindings": {
             key: value.model_dump(mode="json")
             for key, value in revision.knowledge_context_bindings.items()

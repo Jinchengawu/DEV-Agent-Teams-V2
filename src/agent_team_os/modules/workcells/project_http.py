@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Request, status
 
-from ...shared.verification import VerificationProfile
+from ...shared.verification import VerificationProfileLike
 from .domain import (
     ProjectWorkcellTopology,
     TeamActivationRequest,
@@ -26,10 +26,10 @@ def create_project_workcell_router(
 ) -> APIRouter:
     router = APIRouter()
 
-    @router.get("/v1/verification-profiles", response_model=tuple[VerificationProfile, ...])
+    @router.get("/v1/verification-profiles", response_model=tuple[VerificationProfileLike, ...])
     def list_verification_profiles(
         project_id: str, request: Request
-    ) -> tuple[VerificationProfile, ...]:
+    ) -> tuple[VerificationProfileLike, ...]:
         if authorize_read is not None:
             authorize_read(request, project_id)
         return governance.verification_profiles.list()

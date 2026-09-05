@@ -133,3 +133,35 @@ QA E2E 适配。Python Runner 需先在隔离模块解析环境载入产品选�
 验证报告记录实际 argv、工具身份、超时、退出码、测试结果合同与日志 Hash，并与原 Candidate/Diff
 绑定。Readiness 只证明启动资格，仍为 not_run。具体本地验证结果见本轮执行清单；
 此工作区尚未冻结最终 Product Revision，正式 Live Gate 另行验收。
+
+## 2026-09-05 已接受修订：Review 责任与原始证据
+
+Tasking 只提议 `workcell_acceptance`：每个 Workcell 明确引用原始 Acceptance ID 并说明本仓责任。
+产品在 Plan Gate 前检查引用、唯一性、冻结 Workcell 集和任务验收覆盖；用户批准的 Gate Subject
+包含完整 Requirements 与 Task。不得用产品关键词匹配或把全部验收项默认指派给所有仓来替代该规划。
+
+产品预置 `ReviewPolicySnapshot` 仅冻结既有的允许路径、非空 Candidate 和生成物限制。
+Workcell `review_scope` 从批准的 Plan 与该 Policy 快照派生，冻结原始验收正文、责任、Policy
+及其哈希；批准后来源改变即失败。Agent 无权改写 Policy，QA Preparation 仍为 Artifact-only。
+
+Reviewer 输出必须绑定 Scope/Candidate/Diff SHA。`code` 是问题分类，不能冒充归属；
+每个 Finding 必须且只能引用本 Scope 的 `acceptance_id` 或 `system_policy_id`。
+产品先保存每个 Reviewer 的原始 Artifact，再验证合同并登记 Review；一份无效输出不能丢弃
+同批其他 Reviewer 的有效 blocker。无效输出走既有 ACWM bounded Loop，不能变成空 Review
+或通过 Main synthesis 复活失败 Run。
+
+历史可空字段在序列化中省略，保持旧 Hash；历史可读，新 Workcell 缺 Scope 失败关闭。
+状态以 ARCH-20260905-03 为准；专项实现通过不等于最终 Revision 或 Live 验收。
+
+## 2026-09-05 修订：按仓产品验证与 Artifact-only 阶段
+
+Workcell Governance 的 V2 Profile 明确适用 Workcell、固定命令、工具与配置身份、输入/输出包合同。
+Agent 只能提交 Candidate，不能重写产品命令、冻结配置或结果计数。执行 Adapter 在临时 Candidate
+副本中运行真实工具，发布日志、测试结果及内容寻址产物；产品 Stage 在实际 CandidateVerification
+持久化后才登记 Publication，下游只物化这些已验证来源。
+
+QA Preparation 虽共用 QA Workspace Snapshot，但保持 Artifact-only 职责：不写 Candidate、
+不运行 QA Delivery 的完整浏览器 Profile、不生产其机器验证包。产品仍校验其 ResultValidation、
+原始 Artifact 和 Citation，再允许后续阶段运行。该区分不由模型自行选择。
+
+状态见 `ARCH-20260905-04`；本机真实工具全链回归与真实 Agent/外部 Git Live 验收分开记录。

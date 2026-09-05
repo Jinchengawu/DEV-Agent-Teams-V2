@@ -3,23 +3,37 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Protocol
 
 from ...shared.errors import ProductError
 from ...shared.hashes import sha256_json
 from ...shared.verification import (
+    VerificationDependencyIdentity,
+    VerificationFileIdentity,
     VerificationProfile,
+    VerificationProfileLike,
     VerificationProfileSnapshot,
+    VerificationProfileV2,
+    VerificationQualificationV2,
+    VerificationSnapshot,
     VerificationToolIdentity,
 )
+from .verification_catalog_v2 import fullstack_profiles
 
 
 class VerificationToolchain(Protocol):
     def inspect(self, name: str) -> VerificationToolIdentity: ...
+    def inspect_dependencies(
+        self, names: tuple[str, ...]
+    ) -> tuple[VerificationDependencyIdentity, ...]: ...
+    def inspect_files(
+        self, workspace: Path, names: tuple[str, ...], *, workcell_key: str | None = None
+    ) -> tuple[VerificationFileIdentity, ...]: ...
 
 
 class VerificationProfileCatalog:
-    def list(self) -> tuple[VerificationProfile, ...]:
+    def list(self) -> tuple[VerificationProfileLike, ...]:
         return (
             VerificationProfile(
                 id="python-unittest-v1",
@@ -51,20 +65,47 @@ class VerificationProfileCatalog:
                 result_contract="node-tap-count-v1",
                 tool_names=("node",),
             ),
-        )
+        ) + fullstack_profiles()
 
-    def get(self, profile_id: str) -> VerificationProfile:
+    def get(self, profile_id: str) -> VerificationProfileLike:
         for profile in self.list():
             if profile.id == profile_id:
                 return profile
         raise profile_error("WORKCELL_VERIFICATION_PROFILE_UNKNOWN", "产品尚未发布该验证方案。")
 
     def qualify(
-        self, profile_id: str, toolchain: VerificationToolchain
-    ) -> VerificationProfileSnapshot:
+        self,
+        profile_id: str,
+        toolchain: VerificationToolchain,
+        *,
+        workspace: Path | None = None,
+    ) -> VerificationSnapshot:
         profile = self.get(profile_id)
         tools = tuple(toolchain.inspect(name) for name in profile.tool_names)
         profile_sha = sha256_json(profile.model_dump(mode="json"))
+        if isinstance(profile, VerificationProfileV2):
+            if workspace is None:
+                raise profile_error(
+                    "WORKCELL_VERIFICATION_WORKSPACE_REQUIRED", "V2 资格必须检查产品绑定仓库配置。"
+                )
+            dependencies = toolchain.inspect_dependencies(profile.dependency_names)
+            files = toolchain.inspect_files(
+                workspace, profile.config_paths, workcell_key=profile.workcell_key
+            )
+            payload = {
+                "profile_sha256": profile_sha,
+                "tools": [tool.model_dump(mode="json") for tool in tools],
+                "dependencies": [item.model_dump(mode="json") for item in dependencies],
+                "workspace_files": [item.model_dump(mode="json") for item in files],
+            }
+            return VerificationQualificationV2(
+                profile=profile,
+                profile_sha256=profile_sha,
+                tools=tools,
+                dependencies=dependencies,
+                workspace_files=files,
+                qualification_sha256=sha256_json(payload),
+            )
         return VerificationProfileSnapshot(
             profile=profile,
             profile_sha256=profile_sha,
@@ -79,11 +120,33 @@ class VerificationProfileCatalog:
 
     def validate(
         self,
-        snapshot: VerificationProfileSnapshot | None,
+        snapshot: VerificationSnapshot | None,
         toolchain: VerificationToolchain,
+        *,
+        workspace: Path | None = None,
     ) -> None:
         self.validate_frozen(snapshot)
         assert snapshot is not None
+        if isinstance(snapshot, VerificationQualificationV2):
+            if (
+                snapshot.tools
+                != tuple(toolchain.inspect(name) for name in snapshot.profile.tool_names)
+                or snapshot.dependencies
+                != toolchain.inspect_dependencies(snapshot.profile.dependency_names)
+                or (
+                    workspace is not None
+                    and snapshot.workspace_files
+                    != toolchain.inspect_files(
+                        workspace,
+                        snapshot.profile.config_paths,
+                        workcell_key=snapshot.profile.workcell_key,
+                    )
+                )
+            ):
+                raise profile_error(
+                    "WORKCELL_VERIFICATION_QUALIFICATION_CHANGED", "工具或冻结仓库配置已改变。"
+                )
+            return
         expected = self.qualify(snapshot.profile.id, toolchain)
         if snapshot != expected:
             raise profile_error(
@@ -91,7 +154,7 @@ class VerificationProfileCatalog:
                 "验证方案或工具链身份与产品当前资格不一致，请重新资格化并创建交付。",
             )
 
-    def validate_frozen(self, snapshot: VerificationProfileSnapshot | None) -> None:
+    def validate_frozen(self, snapshot: VerificationSnapshot | None) -> None:
         """检查历史冻结事实，不用今天的工具版本重写过去的资格结果。"""
         if snapshot is None:
             raise profile_error(
@@ -99,12 +162,28 @@ class VerificationProfileCatalog:
             )
         profile = self.get(snapshot.profile.id)
         profile_sha = sha256_json(profile.model_dump(mode="json"))
-        expected_qualification = sha256_json(
-            {
-                "profile_sha256": profile_sha,
-                "tools": [tool.model_dump(mode="json") for tool in snapshot.tools],
-            }
-        )
+        payload: dict[str, object] = {
+            "profile_sha256": profile_sha,
+            "tools": [tool.model_dump(mode="json") for tool in snapshot.tools],
+        }
+        if isinstance(snapshot, VerificationQualificationV2):
+            if (
+                not isinstance(profile, VerificationProfileV2)
+                or tuple(item.name for item in snapshot.dependencies) != profile.dependency_names
+                or tuple(item.path for item in snapshot.workspace_files) != profile.config_paths
+            ):
+                raise profile_error(
+                    "WORKCELL_VERIFICATION_PROFILE_INVALID", "V2 资格字段与产品合同不符。"
+                )
+            payload.update(
+                dependencies=[item.model_dump(mode="json") for item in snapshot.dependencies],
+                workspace_files=[item.model_dump(mode="json") for item in snapshot.workspace_files],
+            )
+        elif isinstance(profile, VerificationProfileV2):
+            raise profile_error(
+                "WORKCELL_VERIFICATION_PROFILE_INVALID", "V2 Profile 不能使用 V1 资格。"
+            )
+        expected_qualification = sha256_json(payload)
         if (
             snapshot.profile != profile
             or snapshot.profile_sha256 != profile_sha

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 
+from ...shared.errors import ProductError
+from .artifact_read import WorkcellArtifactPreview, read_workcell_artifact
 from .execution_application import WorkcellExecutionModule
 from .execution_domain import AgentAttempt, WorkcellRunCancelRequest, WorkcellRunTree
 
@@ -16,6 +20,29 @@ def create_workcell_execution_router(
     before_cancel: Callable[[WorkcellRunTree], Awaitable[None]] | None = None,
 ) -> APIRouter:
     router = APIRouter()
+
+    @router.get(
+        "/v1/deliveries/{delivery_id}/workcell-runs/{run_id}/artifacts/{sha256}",
+        response_model=WorkcellArtifactPreview,
+    )
+    def get_workcell_artifact(
+        delivery_id: str, run_id: str, sha256: str, request: Request, response: Response
+    ) -> WorkcellArtifactPreview | JSONResponse:
+        if authorize_read is not None:
+            authorize_read(request, delivery_id)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        try:
+            return read_workcell_artifact(
+                execution, delivery_id=delivery_id, run_id=run_id, sha256=sha256
+            )
+        except ProductError as error:
+            return JSONResponse(
+                status_code=error.status_code,
+                content=error.problem(str(uuid4())).model_dump(mode="json"),
+                media_type="application/problem+json",
+                headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+            )
 
     @router.get(
         "/v1/deliveries/{delivery_id}/workcell-runs",

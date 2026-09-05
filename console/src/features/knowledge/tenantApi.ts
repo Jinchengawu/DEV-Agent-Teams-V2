@@ -109,5 +109,6 @@ export function useDeliveryKnowledgeContext(projectId: string, deliveryId: strin
     queryKey: tenantKnowledgeKeys.deliveryContext(projectId, deliveryId),
     queryFn: ({ signal }) => request<DeliveryKnowledgeContextOverview>(`/v1/deliveries/${encodeURIComponent(deliveryId)}/knowledge-context`, { signal }),
     enabled: Boolean(projectId && deliveryId),
+    refetchInterval: (query) => ["completed", "failed", "cancelled", "rejected"].includes(query.state.data?.delivery_status ?? "") ? false : 1000,
   });
 }

@@ -10,6 +10,7 @@ from ...delivery import (
 )
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
+from ...shared.review_scope import product_review_policies
 from ..artifacts import ArtifactReference
 from ..orchestration import PipelineCatalog, WorkcellStageBinding
 from ..projects.ports import ProjectRepository
@@ -120,10 +121,7 @@ class DeliveryExecutionSnapshotCompiler:
                     "工作区所选方案与冻结资格不一致",
                     "重新选择验证方案并验证工具链后创建 Delivery。",
                 )
-            self.governance.verification_profiles.validate(
-                workspace.verification_profile,
-                self.governance.verification_toolchain,
-            )
+            self.governance.validate_workspace_verification(workspace, definition.workcell_key)
             workspaces.append(
                 DeliveryWorkspaceSnapshot(
                     workcell_key=definition.workcell_key,
@@ -137,6 +135,7 @@ class DeliveryExecutionSnapshotCompiler:
                 )
             )
         methods = self.method_snapshot()
+        review_policies = product_review_policies(tuple(sorted(mapped_keys)))
         build_identity = None if self.build_identity is None else self.build_identity()
         required_methods = {
             method_id
@@ -176,6 +175,7 @@ class DeliveryExecutionSnapshotCompiler:
             "resolved_provider_bindings": revision.resolved_provider_bindings,
             "workspaces": [item.model_dump(mode="json") for item in workspaces],
             "method_snapshot": methods.model_dump(mode="json"),
+            "review_policies": review_policies.model_dump(mode="json"),
         }
         if build_identity is not None:
             payload["build_identity"] = build_identity.model_dump(mode="json")
@@ -202,6 +202,7 @@ class DeliveryExecutionSnapshotCompiler:
             resolved_provider_bindings=revision.resolved_provider_bindings,
             workspaces=tuple(workspaces),
             method_snapshot=methods,
+            review_policies=review_policies,
             build_identity=build_identity,
             snapshot_sha256=sha256_json(payload),
         )

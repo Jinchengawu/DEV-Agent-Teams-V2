@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from review_scope_helpers import planning_payloads
 
 import agent_team_os.modules.workcells.stage_driver as workcell_stage_driver
 from agent_team_os.delivery import (
@@ -17,7 +18,10 @@ from agent_team_os.delivery import (
     DeliveryMethodSnapshot,
     DeliveryRun,
     DeliveryWorkspaceSnapshot,
+    GateRecord,
+    RequirementArtifact,
     SQLiteDeliveryRepository,
+    TaskContract,
 )
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ExternalGitBinding, ExternalGitWorkspaceManager
@@ -42,6 +46,7 @@ from agent_team_os.modules.workcells import (
 from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
+from agent_team_os.shared.review_scope import product_review_policies
 
 
 class StaticMethodRuntime:
@@ -126,18 +131,22 @@ class DeterministicWorkcellAgent:
         *,
         citation_ids: tuple[str, ...] = (),
         blocking_review_calls: frozenset[int] = frozenset(),
+        invalid_review_calls: frozenset[int] = frozenset(),
+        fatal_review_calls: frozenset[int] = frozenset(),
         writes_candidate: bool = True,
     ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
         self.citation_ids = citation_ids
         self.blocking_review_calls = blocking_review_calls
+        self.invalid_review_calls = invalid_review_calls
+        self.fatal_review_calls = fatal_review_calls
         self.writes_candidate = writes_candidate
         self.review_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
         if invocation.phase == "planning":
-            payload = json.loads(invocation.instruction.split("：", 1)[1])
+            payload = json.loads(invocation.instruction.split("冻结 assignments 数组：", 1)[1])
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"assignments": payload},
@@ -169,16 +178,31 @@ class DeterministicWorkcellAgent:
                     "code": "DESIGN_REVIEW_BLOCKING",
                     "summary": "Candidate 缺少可验证的契约边界。",
                     "evidence_sha256": "f" * 64,
+                    "acceptance_id": "AC-LOGIN",
                 }
             ]
             if self.review_calls in self.blocking_review_calls
             else []
         )
+        if self.review_calls in self.invalid_review_calls:
+            findings = [
+                {
+                    "code": "DESIGN_REVIEW_BLOCKING",
+                    "summary": "保留越界问题原文",
+                    "evidence_sha256": "f" * 64,
+                    "acceptance_id": "AC-UNKNOWN",
+                }
+            ]
         return WorkcellAgentOutput(
-            runtime_identity="deterministic-workcell",
+            runtime_identity=(
+                "unexpected-runtime"
+                if self.review_calls in self.fatal_review_calls
+                else "deterministic-workcell"
+            ),
             content={
                 "reviewed_candidate_sha": review_evidence["candidate_revision"],
                 "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                "review_scope_sha256": review_evidence["review_scope_sha256"],
                 "blocking_findings": findings,
                 "method_id": invocation.method_id,
             },
@@ -464,16 +488,27 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
 
 
 @pytest.mark.parametrize(
-    ("blocking_review_calls", "writes_candidate", "expected_status"),
+    (
+        "blocking_review_calls",
+        "invalid_review_calls",
+        "fatal_review_calls",
+        "writes_candidate",
+        "expected_status",
+    ),
     [
-        (frozenset(), True, "succeeded"),
-        (frozenset({1}), True, "repair_required"),
-        (frozenset(), False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), True, "succeeded"),
+        (frozenset({1}), frozenset(), frozenset(), True, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), False, "repair_required"),
+        (frozenset({2}), frozenset({1}), frozenset(), True, "repair_required"),
+        (frozenset(), frozenset({1}), frozenset({2}), True, "fatal"),
+        (frozenset({1}), frozenset(), frozenset({2}), True, "fatal"),
     ],
 )
 def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     tmp_path: Path,
     blocking_review_calls: frozenset[int],
+    invalid_review_calls: frozenset[int],
+    fatal_review_calls: frozenset[int],
     writes_candidate: bool,
     expected_status: str,
 ) -> None:
@@ -504,6 +539,10 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         },
         media_type="application/vnd.agent-team-os.knowledge-context+json",
     )
+    requirement_payload, task_payload = planning_payloads()
+    task_payload["workcell_acceptance"] = task_payload["workcell_acceptance"][:1]
+    requirement_model = RequirementArtifact.model_validate(requirement_payload)
+    task_model = TaskContract.model_validate(task_payload)
     delivery = DeliveryRun(
         id="delivery-driver",
         project_id="project-driver",
@@ -517,6 +556,21 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         resolved_journey_sha256="2" * 64,
         evidence_identity="deterministic-workcell",
         planning_identity="deterministic-workcell",
+        requirements=requirement_model,
+        task=task_model,
+        plan_gate=GateRecord(
+            gate_id="plan-gate",
+            subject_kind="delivery-plan",
+            artifact_id="plan",
+            revision=1,
+            decision="approve",
+            subject_sha256=sha256_json(
+                {
+                    "requirements": requirement_model.model_dump(mode="json"),
+                    "task": task_model.model_dump(mode="json"),
+                }
+            ),
+        ),
         delivery_execution_snapshot=_delivery_snapshot(
             str(remote),
             base,
@@ -532,6 +586,8 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     agent = DeterministicWorkcellAgent(
         citation_ids=("citation-allowed",),
         blocking_review_calls=blocking_review_calls,
+        invalid_review_calls=invalid_review_calls,
+        fatal_review_calls=fatal_review_calls,
         writes_candidate=writes_candidate,
     )
     knowledge_guard = RecordingKnowledgeGuard()
@@ -555,15 +611,31 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         }
     )
 
-    outcome = __import__("asyncio").run(
-        driver.execute(
-            delivery,
-            stage_path="design-repair/design",
-            stage_attempt_id="design-attempt-1",
-            loop_iteration=1,
-            input_artifacts=(requirements,),
-        )
+    execution = driver.execute(
+        delivery,
+        stage_path="design-repair/design",
+        stage_attempt_id="design-attempt-1",
+        loop_iteration=1,
+        input_artifacts=(requirements,),
     )
+    if fatal_review_calls:
+        with pytest.raises(ProductError) as fatal:
+            asyncio.run(execution)
+        assert fatal.value.code == "WORKCELL_RUNTIME_IDENTITY_MISMATCH"
+        tree = kernel.list_delivery(delivery.id)[0]
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "WORKCELL_RUNTIME_IDENTITY_MISMATCH"
+        assert not tree.reviews
+        reviewers = [item for item in tree.agent_runs if item.delegate_purpose == "review"]
+        assert all(item.artifact_envelopes for item in reviewers)
+        outputs = [
+            artifact_storage.get_json(item.artifact_envelopes[0].reference) for item in reviewers
+        ]
+        assert any(item["blocking_findings"] for item in outputs)
+        assert not any(item.phase == "synthesis" for item in agent.invocations)
+        assert pull_requests.calls == 0
+        return
+    outcome = asyncio.run(execution)
 
     assert outcome.status == expected_status
     tree = kernel.tree(outcome.workcell_run_id)
@@ -598,11 +670,26 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         failed_attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
         assert failed_attempt.result_artifact_sha256 == diagnostic.sha256
         return
-    assert len(tree.reviews) == 2
+    assert len(tree.reviews) == 2 - len(invalid_review_calls)
     if expected_status == "repair_required":
         assert tree.workcell_run.status == "failed"
-        assert tree.workcell_run.error_code == "WORKCELL_BLOCKING_REVIEW"
+        assert tree.workcell_run.error_code == (
+            "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE"
+            if invalid_review_calls
+            else "WORKCELL_BLOCKING_REVIEW"
+        )
         assert any(item.blocking_findings for item in tree.reviews)
+        reviewers = [item for item in tree.agent_runs if item.delegate_purpose == "review"]
+        assert all(item.artifact_envelopes for item in reviewers)
+        if invalid_review_calls:
+            invalid = next(item for item in reviewers if item.status == "failed")
+            assert (
+                artifact_storage.get_json(invalid.artifact_envelopes[0].reference)[
+                    "blocking_findings"
+                ][0]["acceptance_id"]
+                == "AC-UNKNOWN"
+            )
+            assert not any(item.phase == "synthesis" for item in agent.invocations)
         assert outcome.candidate is None
         return
 
@@ -776,6 +863,7 @@ def _delivery_snapshot(
         pipeline_revision_sha256="a" * 64,
         workcell_stage_map={"design-repair/design": stage},
         release_contract_snapshot=("design",),
+        review_policies=product_review_policies(("design",)),
         knowledge_context_bindings=(
             {} if knowledge_reference is None else {"design-repair/design": knowledge_binding}
         ),

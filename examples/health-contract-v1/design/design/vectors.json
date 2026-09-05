@@ -1,0 +1,13 @@
+{
+  "valid": [
+    {"id": "ok", "payload": {"status": "ok", "version": "health-contract-v1"}},
+    {"id": "degraded", "payload": {"status": "degraded", "version": "health-contract-v1"}},
+    {"id": "unavailable", "payload": {"status": "unavailable", "version": "health-contract-v1"}}
+  ],
+  "invalid": [
+    {"id": "unknown-status", "payload": {"status": "invalid", "version": "health-contract-v1"}},
+    {"id": "missing-version", "payload": {"status": "ok"}},
+    {"id": "wrong-version", "payload": {"status": "ok", "version": "health-contract-v0"}},
+    {"id": "extra-field", "payload": {"status": "ok", "version": "health-contract-v1", "extra": true}}
+  ]
+}
