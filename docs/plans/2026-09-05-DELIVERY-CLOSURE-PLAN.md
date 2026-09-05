@@ -1,7 +1,7 @@
 # Agent-Team-OS 后续执行清单与产品差距
 
 日期：2026-09-05
-状态：P0-00/P0-01 已提交并通过 CI；P0-02～04 第二批实现正在集成验收，正式 Live 与同 SHA 交接未完成。
+状态：P0-00/P0-01 已提交并通过 CI；P0-02～04 主体实现和本地回归已完成，核心配置可读性修复已纳入实现；正式 Live 与同 SHA 交接未完成，当前验收以对应 Revision 的原生报告为准。
 审计基线：`codex/v051-live-readiness-hardening@7a4c706a88dec302f51da035b760a31c63b94e9e`。
 本轮范围：本地 P0 代码、回归、契约和架构对账；真实业务 Gate 按原审批流程处理。
 本文件是计划和证据导航，不拥有 Delivery、Release、Approval 或架构状态权威。
@@ -610,3 +610,28 @@ Draft Plan：使用既有主题颜色修复这些核心区域，保持布局、�
 - Architecture Document Delta: None；仅记录局部审查与验证，不制造架构状态条目。
 - Outcome: Approved；按以上范围实施。修复后的正式浏览器/Deterministic/Live 仍须绑定同一新提交，
   不改写 `e814819` 的历史报告。CSS 变更以构建、真实双主题浏览器和 CI 验证，不新增镜像实现的单元测试。
+
+### P0-04：Profile 文字裁切与激活按钮样式泄漏修复
+
+`aa0aeac` 的主题容器修复已通过真实双主题截图核对；V2 四工具链、R2 浏览器、Deterministic Gate
+与 CI 均通过。继续核对核心控件发现选中 Profile 文字裁切，以及启用的主按钮文字被辅助说明样式覆盖。
+Draft Plan：先对真实 DOM 做单变量诊断，再限定两个 CSS 规则修复，不调整整个设计系统。
+
+诊断事实：Select 内容区域高 22px，但全局 input 最小高度令其内部绝对定位输入元素高 44px，
+内容 scrollHeight=44、scrollTop=9。仅清除该内部输入的最小高度后，输入/内容均为 22px、
+scrollTop=0，聚焦/失焦后文字完整且控件外框高度不变。激活按钮自身为白字 14px，但后代 span
+被 footer 辅助文字规则设为 muted/10px；仅将原 Selector 收窄为直接子元素后恢复按钮自身文字样式。
+这些临时覆盖只用于因果诊断，不作为修复后正式 Build 的验收证据。
+
+独立 Architecture Review 后的 Final Plan：
+
+- Architecture Impact: None
+- Findings: 全局原生 input 规则泄漏到 Ant Design Select 内部输入；footer 后代 span 规则泄漏到
+  Ant Design 主按钮文字。两项均是局部视觉层问题，没有权限、模块、状态或持久化变化。
+- Required Revisions: 仅增加 `.workspace-verification-profile .ant-select-input { min-height: 0; }`，
+  并将 `.workcell-activation-bar span` 收窄为 `.workcell-activation-bar > span`。
+  不硬编码 Select 高度、不覆盖全局 input/Select/Button、不增加 `!important`。
+  真实双主题检查切换选项与聚焦/失焦后的完整文字、启用/禁用按钮、辅助文案及已有交付证据。
+- ADR Required: No
+- Architecture Document Delta: None；本节记录审查与因果证据，架构总览无需新增状态条目。
+- Outcome: Approved；独立 Review 的单变量实测前提均已满足，按以上方案实施并重验新提交。

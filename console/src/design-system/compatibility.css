@@ -346,6 +346,10 @@ body {
   border-color: var(--role-border);
 }
 
+.workspace-verification-profile .ant-select-input {
+  min-height: 0;
+}
+
 .surface-card,
 .panel,
 .project-card,
