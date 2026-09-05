@@ -4,7 +4,6 @@ import asyncio
 import json
 import sqlite3
 import subprocess
-import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -37,6 +36,7 @@ from agent_team_os.infrastructure.git import (
     ExternalGitBinding,
     ExternalGitWorkspaceManager,
 )
+from agent_team_os.infrastructure.verification.command_toolchain import LocalVerificationToolchain
 from agent_team_os.journey import load_agent_workcell_knowledge_delivery_definition
 from agent_team_os.modules.agents import (
     AgentDeploymentCatalog,
@@ -100,6 +100,7 @@ from agent_team_os.modules.workcells import (
     builtin_release_contract,
     builtin_workcell_stage_map,
 )
+from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.hashes import Sha256, sha256_json
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
@@ -141,9 +142,7 @@ class FourRepositoryAgent:
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
         if invocation.phase == "planning":
-            content = {
-                "assignments": json.loads(invocation.instruction.split("：", 1)[1])
-            }
+            content = {"assignments": json.loads(invocation.instruction.split("：", 1)[1])}
         elif invocation.phase == "synthesis":
             content = {"status": "passed", "workcell": invocation.workcell_key}
         elif invocation.workspace_access == "workspace_write":
@@ -217,9 +216,7 @@ class PRSurface:
         candidate: WorkspaceCandidateV2,
         _binding: ExternalGitBinding,
     ) -> GitHubPRReceiptCreate:
-        ordinal = {"design": 1, "frontend": 2, "backend": 3, "qa": 4}[
-            candidate.workcell_key
-        ]
+        ordinal = {"design": 1, "frontend": 2, "backend": 3, "qa": 4}[candidate.workcell_key]
         return GitHubPRReceiptCreate(
             pull_request_id=ordinal,
             url=f"https://github.com/deterministic/{candidate.workcell_key}/pull/{ordinal}",
@@ -315,13 +312,11 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         published_by="system",
     )
     artifacts = ContentAddressedArtifactStorage(tmp_path / "artifacts")
-    knowledge_guard, preparation_input, preparation_run_id, snapshot = (
-        _prepare_knowledge_snapshot(
-            database=database,
-            artifacts=artifacts,
-            revision=revision,
-            remotes=remotes,
-        )
+    knowledge_guard, preparation_input, preparation_run_id, snapshot = _prepare_knowledge_snapshot(
+        database=database,
+        artifacts=artifacts,
+        revision=revision,
+        remotes=remotes,
     )
     delivery = DeliveryRun(
         id="delivery-four-repositories",
@@ -360,11 +355,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(tmp_path / "workcell-runtime"),
         binding_resolver=bindings.__getitem__,
-        verifier=CommandWorkcellMachineVerifier(
-            lambda _workcell: (
-                (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
-            )
-        ),
+        verifier=CommandWorkcellMachineVerifier(),
         releases=ExternalReleaseCatalog(release_repository),
         pull_requests=PRSurface(),
         knowledge_guard=knowledge_guard,
@@ -433,9 +424,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         and item.workspace_access == "workspace_write"
     )
     assert "workspace-candidate-diff-v1" in frontend_writer.instruction
-    assert "diff --git a/design/candidate.md b/design/candidate.md" in (
-        frontend_writer.instruction
-    )
+    assert "diff --git a/design/candidate.md b/design/candidate.md" in (frontend_writer.instruction)
     assert "+design candidate" in frontend_writer.instruction
 
     await execution.decide_candidate(
@@ -460,9 +449,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
     assert completed_snapshot is not None
     build_identity = completed_snapshot.build_identity
     assert build_identity is not None
-    persisted_preparation = SQLiteKnowledgeContextRepository(database).get(
-        preparation_run_id
-    )
+    persisted_preparation = SQLiteKnowledgeContextRepository(database).get(preparation_run_id)
     assert persisted_preparation.preparation_input == preparation_input
     assert persisted_preparation.authorization_stamp == _knowledge_stamp()
     assert persisted_preparation.final_snapshot == completed_snapshot
@@ -487,9 +474,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         delivery_id=delivery.id,
     )
     assert acceptance.status == "passed", [
-        (check.code, check.detail)
-        for check in acceptance.checks
-        if check.status == "failed"
+        (check.code, check.detail) for check in acceptance.checks if check.status == "failed"
     ]
     assert (acceptance.fail, acceptance.warn, acceptance.skipped) == (0, 0, 0)
     checks = {check.code: check.status for check in acceptance.checks}
@@ -524,10 +509,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         project_id=delivery.project_id,
         delivery_id=delivery.id,
     )
-    assert (
-        _check_status(planning_tampered, "HERMES_PLANNING_ATTEMPTS_VERIFIED")
-        == "failed"
-    )
+    assert _check_status(planning_tampered, "HERMES_PLANNING_ATTEMPTS_VERIFIED") == "failed"
     with sqlite3.connect(database) as connection:
         connection.execute(
             "UPDATE agent_attempts SET phase='legacy' WHERE id=?",
@@ -558,8 +540,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
             (original_validation_sha, qa_preparation.workcell_run.id),
         )
         snapshot_row = connection.execute(
-            "SELECT workcell_snapshot_json,workcell_snapshot_sha256 "
-            "FROM workcell_runs WHERE id=?",
+            "SELECT workcell_snapshot_json,workcell_snapshot_sha256 FROM workcell_runs WHERE id=?",
             (qa_preparation.workcell_run.id,),
         ).fetchone()
         assert snapshot_row is not None
@@ -593,8 +574,7 @@ async def _run_four_repository_pipeline(tmp_path: Path) -> None:
         )
         assert qa_preparation.workcell_run.main_agent_run_id is not None
         synthesis_row = connection.execute(
-            "SELECT id FROM agent_attempts "
-            "WHERE agent_run_id=? AND phase='synthesis'",
+            "SELECT id FROM agent_attempts WHERE agent_run_id=? AND phase='synthesis'",
             (qa_preparation.workcell_run.main_agent_run_id,),
         ).fetchone()
         assert synthesis_row is not None
@@ -663,9 +643,7 @@ def _prepare_knowledge_snapshot(
         "pipeline_revision_id": f"{revision.pipeline_id}:{revision.revision}",
         "pipeline_revision_sha256": revision.fingerprint,
         "authorization_access_component": stamp.access_component.model_dump(mode="json"),
-        "approved_knowledge_approval_ids": tuple(
-            item.approval_id for item in stamp.approvals
-        ),
+        "approved_knowledge_approval_ids": tuple(item.approval_id for item in stamp.approvals),
         "stage_bindings": stage_bindings,
         "stage_responsibilities": {
             stage_path: f"Verify {stage_path}" for stage_path in stage_bindings
@@ -689,12 +667,8 @@ def _prepare_knowledge_snapshot(
                 "project_id": preparation_input.project_id,
                 "stage_path": stage_path,
                 "query_sha256": sha256_json({"stage_path": stage_path}),
-                "retrieval_policy_revision_id": binding[
-                    "retrieval_policy_revision_id"
-                ],
-                "approved_scope": [
-                    item.model_dump(mode="json") for item in stamp.approvals
-                ],
+                "retrieval_policy_revision_id": binding["retrieval_policy_revision_id"],
+                "approved_scope": [item.model_dump(mode="json") for item in stamp.approvals],
                 "authorization_stamp": stamp.model_dump(mode="json"),
                 "retrievals": [
                     {
@@ -841,6 +815,9 @@ def _snapshot(
             repository_uri=str(remote),
             base_revision=base,
             verification_sha256=Sha256.validate(character * 64),
+            verification_profile=VerificationProfileCatalog().qualify(
+                "python-unittest-v1", LocalVerificationToolchain()
+            ),
         )
         for (role, (remote, base)), character in zip(
             remotes.items(),
@@ -877,8 +854,7 @@ def _snapshot(
         "pipeline_revision_id": f"{revision.pipeline_id}:{revision.revision}",
         "pipeline_revision_sha256": revision.fingerprint,
         "workcell_stage_map": {
-            key: value.model_dump(mode="json")
-            for key, value in revision.workcell_stage_map.items()
+            key: value.model_dump(mode="json") for key, value in revision.workcell_stage_map.items()
         },
         "release_contract_snapshot": revision.release_contract_snapshot,
         "knowledge_context_bindings": {

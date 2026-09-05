@@ -645,6 +645,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/verification-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Verification Profiles */
+        get: operations["list_verification_profiles_v1_verification_profiles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace-bindings/{workspace_id}/verification-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Verification Profile */
+        put: operations["set_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/workspace-bindings/{workspace_id}/verification-profile/qualify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Qualify Verification Profile */
+        post: operations["qualify_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_qualify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/workcells": {
         parameters: {
             query?: never;
@@ -3423,7 +3474,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "preparing_context" | "planning" | "awaiting_plan_decision" | "awaiting_design_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "needs_attention" | "completed" | "rejected" | "failed" | "cancelled";
+            status: "queued" | "preparing_context" | "planning" | "awaiting_plan_decision" | "awaiting_design_decision" | "executing" | "verifying" | "awaiting_candidate_decision" | "applying" | "needs_attention" | "cancelling" | "completed" | "rejected" | "failed" | "cancelled";
             /** Version */
             version: number;
             requirements?: components["schemas"]["RequirementArtifact"] | null;
@@ -3512,6 +3563,7 @@ export interface components {
             base_revision: string;
             /** Verification Sha256 */
             verification_sha256: string;
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
         };
         /** DesignDecisionRequest */
         DesignDecisionRequest: {
@@ -6697,6 +6749,40 @@ export interface components {
             /** Password */
             password?: string | null;
         };
+        /** VerificationProfile */
+        VerificationProfile: {
+            /** Id */
+            id: string;
+            /** Revision */
+            revision: number;
+            /** Name */
+            name: string;
+            /** Commands */
+            commands: string[][];
+            /** Timeout Seconds */
+            timeout_seconds: number;
+            /** Environment */
+            environment: {
+                [key: string]: string;
+            };
+            /**
+             * Result Contract
+             * @enum {string}
+             */
+            result_contract: "python-unittest-count-v1" | "node-tap-count-v1";
+            /** Tool Names */
+            tool_names: ("python" | "node")[];
+        };
+        /** VerificationProfileSnapshot */
+        VerificationProfileSnapshot: {
+            profile: components["schemas"]["VerificationProfile"];
+            /** Profile Sha256 */
+            profile_sha256: string;
+            /** Tools */
+            tools: components["schemas"]["VerificationToolIdentity"][];
+            /** Qualification Sha256 */
+            qualification_sha256: string;
+        };
         /** VerificationRun */
         VerificationRun: {
             /**
@@ -6720,6 +6806,20 @@ export interface components {
              * @default []
              */
             acceptance_ids: string[];
+        };
+        /** VerificationToolIdentity */
+        VerificationToolIdentity: {
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "python" | "node";
+            /** Executable */
+            executable: string;
+            /** Version */
+            version: string;
+            /** Executable Sha256 */
+            executable_sha256: string;
         };
         /**
          * WikiAccess
@@ -7008,6 +7108,7 @@ export interface components {
             base_revision: string;
             /** Verification Sha256 */
             verification_sha256: string;
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
         };
         /** WorkspaceBinding */
         WorkspaceBinding: {
@@ -7040,6 +7141,11 @@ export interface components {
             verification?: {
                 [key: string]: unknown;
             };
+            /** Verification Profile Id */
+            verification_profile_id?: string | null;
+            verification_profile?: components["schemas"]["VerificationProfileSnapshot"] | null;
+            /** Verification Profile Error Code */
+            verification_profile_error_code?: string | null;
             /** Error Code */
             error_code?: string | null;
             /** Version */
@@ -7078,6 +7184,8 @@ export interface components {
             repository_uri: string;
             /** Credential Reference */
             credential_reference?: string | null;
+            /** Verification Profile Id */
+            verification_profile_id?: string | null;
         };
         /** WorkspaceBindingVerificationRequest */
         WorkspaceBindingVerificationRequest: {
@@ -7136,6 +7244,13 @@ export interface components {
              * @constant
              */
             kind: "git_repository_v1";
+        };
+        /** WorkspaceVerificationProfileRequest */
+        WorkspaceVerificationProfileRequest: {
+            /** Expected Version */
+            expected_version: number;
+            /** Verification Profile Id */
+            verification_profile_id: string;
         };
     };
     responses: never;
@@ -10026,6 +10141,188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamTemplateRevision"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    list_verification_profiles_v1_verification_profiles_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerificationProfile"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    set_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceVerificationProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBinding"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    qualify_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_qualify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceBindingVerificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceBinding"];
                 };
             };
             /** @description 目标资源不存在 */

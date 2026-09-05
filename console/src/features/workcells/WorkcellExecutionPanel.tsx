@@ -48,11 +48,13 @@ export function WorkcellExecutionPanel({ deliveryId, projectId }: { deliveryId: 
 
 function WorkcellTree({ tree, cancel, cancelPending, cancellable }: { tree: WorkcellRunTree; cancel: () => void; cancelPending: boolean; cancellable: boolean }) {
   const snapshot = tree.workcell_run.workcell_snapshot;
+  const verificationProfile = snapshot.workspace.verification_profile;
   const main = tree.agent_runs.find((item) => item.run_role === "main");
   const children = tree.agent_runs.filter((item) => item.run_role === "child");
   return <article className="workcell-run-card">
     <header><div><span className="workcell-key"><Bot size={15}/>{tree.workcell_run.workcell_key}</span><b>{tree.workcell_run.stage_path}</b><small>Loop {tree.workcell_run.loop_iteration} · Snapshot {tree.workcell_run.workcell_snapshot_sha256.slice(0, 10)}</small></div><div><StatusBadge value={tree.workcell_run.status}/>{cancellable && <Button type="text" danger icon={<CircleStop size={14}/>} loading={cancelPending} onClick={cancel}>取消 Workcell</Button>}</div></header>
     <div className="method-freeze-strip"><span>Method Pack</span><code>{snapshot.method_snapshot_sha256}</code><span>Repository</span><code>{snapshot.workspace.repository_uri}</code></div>
+    <div className="method-freeze-strip"><span>冻结验证方案</span><code>{verificationProfile?.profile.id ?? "历史快照未冻结验证方案"}</code>{verificationProfile && <small>{verificationProfile.profile.commands.map((command) => command.join(" ")).join(" → ")} · 超时 {verificationProfile.profile.timeout_seconds} 秒</small>}</div>
     <div className="agent-tree">
       {main && <AgentNode tree={tree} agent={main} label="Main · planning + synthesis"/>}
       <div className="child-branch">

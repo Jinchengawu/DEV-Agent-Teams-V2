@@ -10,7 +10,9 @@ from typing import Protocol, cast
 from ...delivery import DeliveryRun, SQLiteDeliveryRepository
 from ...knowledge_context_contract import KNOWLEDGE_CONTEXT_STAGE_PATHS
 from ...readiness import snapshot_delivery_build_identity
+from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_bytes, sha256_json
+from ...shared.verification import VerificationProfileSnapshot
 from ..agents import AgentRun, AgentRunLedger
 from ..artifacts import ContentAddressedArtifactStorage
 from ..knowledge import KnowledgeAuthorizationStampV1, SQLiteKnowledgeContextRepository
@@ -30,6 +32,7 @@ from ..workcells import (
     WorkcellResultValidation,
     WorkcellRunTree,
 )
+from ..workcells.verification_application import VerificationProfileCatalog, validate_test_result
 from .acceptance_domain import (
     ReleaseAcceptanceCheckV2,
     ReleaseAcceptanceReportV2,
@@ -593,6 +596,7 @@ class ReleaseAcceptanceVerifierV2:
             or workcell.workspace.repository_uri != delivery_workspace.repository_uri
             or workcell.workspace.base_revision != delivery_workspace.base_revision
             or workcell.workspace.verification_sha256 != delivery_workspace.verification_sha256
+            or workcell.workspace.verification_profile != delivery_workspace.verification_profile
             or workcell.delegation_policy != definition.delegation_policy
             or workcell.slot_method_bindings != stage.delegate_methods
             or workcell.slot_purpose_bindings != stage.delegate_purposes
@@ -832,6 +836,10 @@ class ReleaseAcceptanceVerifierV2:
                         tree.result_validation is not None
                         or verification.status != "passed"
                         or not _verification_hash_is_valid(verification)
+                        or not _verification_profile_report_is_valid(
+                            tree.workcell_run.workcell_snapshot.workspace.verification_profile,
+                            verification,
+                        )
                         or result.candidate_sha != verification.candidate_sha
                         or result.diff_sha256 != verification.diff_sha256
                         or result.verification_sha256 != verification.sha256
@@ -1470,3 +1478,43 @@ def _receipt_matches_candidate(
         and receipt.after_revision == candidate.candidate_revision
         and receipt.receipt_sha256 == sha256_json(payload)
     )
+
+
+def _verification_profile_report_is_valid(
+    profile: VerificationProfileSnapshot | None, verification: CandidateVerification
+) -> bool:
+    try:
+        VerificationProfileCatalog().validate_frozen(profile)
+    except ProductError:
+        return False
+    assert profile is not None
+    report = verification.report
+    tools: dict[str, str] = {tool.name: tool.executable for tool in profile.tools}
+    expected_commands = [[tools[command[0]], *command[1:]] for command in profile.profile.commands]
+    commands = report.get("commands")
+    if (
+        report.get("profile_sha256") != profile.profile_sha256
+        or report.get("qualification_sha256") != profile.qualification_sha256
+        or report.get("tools") != [tool.model_dump(mode="json") for tool in profile.tools]
+        or report.get("result_contract") != profile.profile.result_contract
+        or report.get("candidate_sha") != verification.candidate_sha
+        or report.get("diff_sha256") != verification.diff_sha256
+        or not isinstance(commands, list)
+        or len(commands) != len(expected_commands)
+    ):
+        return False
+    for command, expected in zip(commands, expected_commands, strict=True):
+        if not isinstance(command, dict):
+            return False
+        log = command.get("redacted_log")
+        if (
+            command.get("command") != expected
+            or command.get("timeout_seconds") != profile.profile.timeout_seconds
+            or command.get("exit_code") != 0
+            or command.get("result_contract_passed") is not True
+            or not isinstance(log, str)
+            or command.get("log_sha256") != hashlib.sha256(log.encode()).hexdigest()
+            or not validate_test_result(profile.profile.id, log)
+        ):
+            return False
+    return True

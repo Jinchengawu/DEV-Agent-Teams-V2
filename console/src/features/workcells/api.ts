@@ -5,6 +5,7 @@ import { request } from "../../shared/api/client";
 export type ProjectWorkcellTopology = components["schemas"]["ProjectWorkcellTopology"];
 export type WorkspaceBinding = components["schemas"]["WorkspaceBinding"];
 export type WorkspaceBindingCreate = components["schemas"]["WorkspaceBindingCreate"];
+export type VerificationProfile = components["schemas"]["VerificationProfile"];
 export type WorkcellRunTree = components["schemas"]["WorkcellRunTree"];
 export type ReleaseHealthV2 = components["schemas"]["ReleaseHealthV2"];
 export type ReleaseManifestV2 = components["schemas"]["ReleaseManifestV2"];
@@ -25,6 +26,39 @@ export function useProjectWorkcells(projectId: string) {
     ),
     enabled: Boolean(projectId),
     retry: false,
+  });
+}
+
+export function useVerificationProfiles(projectId: string) {
+  return useQuery({
+    queryKey: ["verification-profiles", projectId],
+    queryFn: ({ signal }) => request<VerificationProfile[]>(
+      `/v1/verification-profiles?project_id=${encodeURIComponent(projectId)}`, { signal },
+    ),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useSetVerificationProfile(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, expectedVersion, profileId }: { workspaceId: string; expectedVersion: number; profileId: string }) => request<WorkspaceBinding>(
+      `/v1/workspace-bindings/${encodeURIComponent(workspaceId)}/verification-profile`,
+      { method: "PUT", body: JSON.stringify({ expected_version: expectedVersion, verification_profile_id: profileId }) },
+    ),
+    onSuccess: () => client.invalidateQueries({ queryKey: workcellKeys.project(projectId) }),
+  });
+}
+
+export function useQualifyVerificationProfile(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workspaceId, expectedVersion }: { workspaceId: string; expectedVersion: number }) => request<WorkspaceBinding>(
+      `/v1/workspace-bindings/${encodeURIComponent(workspaceId)}/verification-profile/qualify`,
+      { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) },
+    ),
+    onSuccess: () => client.invalidateQueries({ queryKey: workcellKeys.project(projectId) }),
+    onError: () => client.invalidateQueries({ queryKey: workcellKeys.project(projectId) }),
   });
 }
 

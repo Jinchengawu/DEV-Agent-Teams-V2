@@ -22,6 +22,7 @@ from agent_team_os.modules.workcells import (
     WorkcellResultCreate,
     WorkcellResultValidationCreate,
     WorkcellRunCreate,
+    WorkcellRunTree,
     WorkcellWorkspaceSnapshot,
     create_workcell_execution_router,
 )
@@ -142,9 +143,7 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
         kernel.start_child(reviewers[0].id)
     assert review_too_early.value.code == "REVIEW_CANDIDATE_NOT_VERIFIED"
 
-    candidate_reference = artifacts.put_json(
-        {"candidate_sha": "b" * 40, "diff_sha256": "c" * 64}
-    )
+    candidate_reference = artifacts.put_json({"candidate_sha": "b" * 40, "diff_sha256": "c" * 64})
     kernel.finish_child(
         writer.id,
         status="succeeded",
@@ -169,9 +168,9 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
 
     for reviewer in reviewers:
         kernel.start_child(reviewer.id)
-    assert sum(
-        item.status == "running" for item in kernel.tree(run.workcell_run.id).agent_runs
-    ) == 2
+    assert (
+        sum(item.status == "running" for item in kernel.tree(run.workcell_run.id).agent_runs) == 2
+    )
 
     review_ids: list[str] = []
     for reviewer in reviewers:
@@ -213,9 +212,7 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
     assert completed.result is not None
     assert len(completed.agent_runs) == 4
     delivery_attempts = kernel.list_delivery_attempts("delivery-workcell")
-    assert {item.id for item in delivery_attempts} == {
-        item.id for item in completed.attempts
-    }
+    assert {item.id for item in delivery_attempts} == {item.id for item in completed.attempts}
 
 
 def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Path) -> None:
@@ -309,9 +306,7 @@ def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Pa
         ),
     )
     children = {
-        item.delegate_purpose: item
-        for item in planned.agent_runs
-        if item.run_role == "child"
+        item.delegate_purpose: item for item in planned.agent_runs if item.run_role == "child"
     }
     kernel.start_child(children["workspace_write"].id)
     kernel.finish_child(children["workspace_write"].id, status="succeeded")
@@ -388,15 +383,12 @@ def test_workcell_cancel_endpoint_notifies_the_runtime_parent(tmp_path: Path) ->
         )
     )
     cancelled_deliveries: list[str] = []
+
+    async def before_cancel(tree: WorkcellRunTree) -> None:
+        cancelled_deliveries.append(tree.workcell_run.delivery_id)
+
     app = FastAPI()
-    app.include_router(
-        create_workcell_execution_router(
-            kernel,
-            after_cancel=lambda tree: cancelled_deliveries.append(
-                tree.workcell_run.delivery_id
-            ),
-        )
-    )
+    app.include_router(create_workcell_execution_router(kernel, before_cancel=before_cancel))
 
     with TestClient(app) as client:
         response = client.post(

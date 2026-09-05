@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ...shared.errors import ProductError
 from ...shared.hashes import sha256_json
@@ -59,6 +60,41 @@ class ProjectCatalog:
         self._membership_principal_validator: Callable[[str, ProjectRole], None] | None = None
         self.team_governance = team_governance
         self.access = ProjectAccessPolicy(repository)
+        self._release_recovery_query: Callable[[str], tuple[str, ...]] | None = None
+
+    def configure_release_recovery(
+        self, query: Callable[[str], tuple[str, ...]], *, database: Path
+    ) -> None:
+        """只读 Release Port；准入事务依赖同一 SQLite 文件。"""
+        project_database = getattr(self.repository, "database", None)
+        if project_database is None or Path(project_database).resolve() != database.resolve():
+            raise ValueError("Release and Project repositories must share one SQLite database")
+        self._release_recovery_query = query
+
+    def release_recovery_delivery_ids(self, project_id: str) -> tuple[str, ...]:
+        if self._release_recovery_query is not None:
+            return self._release_recovery_query(project_id)
+        workspace = self.repository.get_workspace(project_id)
+        if workspace is not None and workspace.repository_ref.startswith("workspace-set/"):
+            raise ProductError(
+                code="PROJECT_RELEASE_RECOVERY_GUARD_UNAVAILABLE",
+                title="发布恢复检查未配置",
+                detail="Workcell 项目需要同库 Release 恢复检查。",
+                repair="在组合根配置 Release 查询后重试。",
+                status_code=503,
+            )
+        return ()
+
+    def assert_release_ready(self, project_id: str) -> None:
+        owners = self.release_recovery_delivery_ids(project_id)
+        if owners:
+            raise ProductError(
+                code="PROJECT_RELEASE_RECOVERY_REQUIRED",
+                title="项目存在待恢复的外部发布",
+                detail="需要先处理交付：" + "、".join(owners),
+                repair="检查原 Bundle 的发布状态，完成 Forward-only 恢复后重试。",
+                status_code=409,
+            )
 
     def configure_resource_validators(
         self,
@@ -615,6 +651,7 @@ class ProjectCatalog:
         self, project_id: str, delivery_id: str, requested_pipeline_revision_id: str | None
     ) -> ProjectExecutionContext:
         project = self._project(project_id)
+        self.assert_release_ready(project_id)
         if project.lifecycle_status != "active":
             raise _archived() if project.lifecycle_status == "archived" else _not_ready()
         workspace = self._workspace(project_id)
@@ -669,6 +706,8 @@ class ProjectCatalog:
         )
 
     def release_delivery(self, project_id: str, delivery_id: str) -> None:
+        if delivery_id in self.release_recovery_delivery_ids(project_id):
+            return
         self.repository.release_lease(project_id, delivery_id)
 
     def ensure_legacy_defaults(

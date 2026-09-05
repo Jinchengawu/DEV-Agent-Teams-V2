@@ -9,6 +9,7 @@ import sqlite3
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import uuid4
 
@@ -21,7 +22,7 @@ from acwm.domain import (
     decide_gate,
     open_gate,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from .modules.agents import AgentRunLedger, AgentRuntimeDispatcher
 from .modules.artifacts import ArtifactReference
@@ -29,6 +30,7 @@ from .modules.orchestration import PipelineCatalog, PipelineRunLedger
 from .shared.events import ProductEvent
 from .shared.hashes import Sha256
 from .shared.repositories import RepositoryRole, RepositorySnapshot
+from .shared.verification import VerificationProfileSnapshot
 
 if TYPE_CHECKING:
     from .modules.delivery.publication import (
@@ -164,6 +166,15 @@ class DeliveryWorkspaceSnapshot(ImmutableModel):
     repository_uri: str
     base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     verification_sha256: Sha256
+    verification_profile: VerificationProfileSnapshot | None = None
+
+    @model_serializer(mode="wrap")
+    # 返回注解会覆盖 Pydantic 的结构化响应 schema；仅此 serializer 保留推导。
+    def serialize_compatible(self, handler: Any):  # type: ignore[no-untyped-def]
+        result = cast(dict[str, Any], handler(self))
+        if self.verification_profile is None:
+            result.pop("verification_profile", None)
+        return result
 
 
 class DeliveryMethodSnapshot(ImmutableModel):
@@ -270,6 +281,7 @@ class DeliveryRun(ImmutableModel):
         "awaiting_candidate_decision",
         "applying",
         "needs_attention",
+        "cancelling",
         "completed",
         "rejected",
         "failed",
@@ -347,6 +359,10 @@ class DeliveryVersionConflictError(RuntimeError):
     pass
 
 
+class DeliveryTransitionConflictError(DeliveryVersionConflictError):
+    """持久化裁决失败；调用方不得继续执行副作用。"""
+
+
 class DeliveryStateConflictError(RuntimeError):
     pass
 
@@ -382,6 +398,10 @@ class DeliveryKnowledgeContextPreparer(Protocol):
 
 class DeliveryRepository(Protocol):
     def save(self, delivery: DeliveryRun) -> None: ...
+
+    def save_if_current(
+        self, delivery: DeliveryRun, *, expected_version: int, expected_status: str
+    ) -> None: ...
 
     def get(self, delivery_id: str) -> DeliveryRun | None: ...
 
@@ -439,23 +459,40 @@ class PipelineExecution(Protocol):
 
 class InMemoryDeliveryRepository:
     def __init__(self) -> None:
+        self._lock = RLock()
         self._deliveries: dict[str, DeliveryRun] = {}
         self._events: list[ProductEvent] = []
 
     def save(self, delivery: DeliveryRun) -> None:
-        previous = self._deliveries.get(delivery.id)
-        self._deliveries[delivery.id] = delivery
-        if previous != delivery:
-            self._events.append(_delivery_event(delivery))
+        with self._lock:
+            previous = self._deliveries.get(delivery.id)
+            self._deliveries[delivery.id] = delivery
+            if previous != delivery:
+                self._events.append(_delivery_event(delivery))
+
+    def save_if_current(
+        self, delivery: DeliveryRun, *, expected_version: int, expected_status: str
+    ) -> None:
+        with self._lock:
+            current = self._deliveries.get(delivery.id)
+            if current is None or (current.version, current.status) != (
+                expected_version,
+                expected_status,
+            ):
+                raise DeliveryTransitionConflictError(delivery.id)
+            self.save(delivery)
 
     def get(self, delivery_id: str) -> DeliveryRun | None:
-        return self._deliveries.get(delivery_id)
+        with self._lock:
+            return self._deliveries.get(delivery_id)
 
     def list(self) -> tuple[DeliveryRun, ...]:
-        return tuple(self._deliveries.values())
+        with self._lock:
+            return tuple(self._deliveries.values())
 
     def list_events(self, delivery_id: str) -> tuple[ProductEvent, ...]:
-        return tuple(event for event in self._events if event.aggregate_id == delivery_id)
+        with self._lock:
+            return tuple(event for event in self._events if event.aggregate_id == delivery_id)
 
 
 class SQLiteDeliveryRepository:
@@ -487,6 +524,23 @@ class SQLiteDeliveryRepository:
 
     def save(self, delivery: DeliveryRun) -> None:
         with sqlite3.connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.save_on(connection, delivery)
+
+    def save_if_current(
+        self, delivery: DeliveryRun, *, expected_version: int, expected_status: str
+    ) -> None:
+        with sqlite3.connect(self.path, timeout=5) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT snapshot_json FROM deliveries WHERE id=?", (delivery.id,)
+            ).fetchone()
+            current = None if row is None else DeliveryRun.model_validate_json(row[0])
+            if current is None or (current.version, current.status) != (
+                expected_version,
+                expected_status,
+            ):
+                raise DeliveryTransitionConflictError(delivery.id)
             self.save_on(connection, delivery)
 
     def save_on(self, connection: sqlite3.Connection, delivery: DeliveryRun) -> None:
@@ -853,15 +907,29 @@ class DeliveryCoordinator:
         task.add_done_callback(lambda _task: self._background.pop(delivery_id, None))
 
     def _save_failed(self, delivery: DeliveryRun, error: Exception, fallback_code: str) -> None:
-        self._repository.save(
-            delivery.model_copy(
-                update={
-                    "status": "failed",
-                    "error_code": getattr(error, "code", fallback_code),
-                    "updated_at": datetime.now(UTC),
-                }
-            )
+        current = self.get(delivery.id)
+        if current.status in {"completed", "rejected", "cancelled", "failed"}:
+            return
+        status = (
+            current.status
+            if current.status in {"cancelling", "applying", "needs_attention"}
+            else "failed"
         )
+        try:
+            self._repository.save_if_current(
+                current.model_copy(
+                    update={
+                        "status": status,
+                        "error_code": getattr(error, "code", fallback_code),
+                        "updated_at": datetime.now(UTC),
+                    }
+                ),
+                expected_version=current.version,
+                expected_status=current.status,
+            )
+        except DeliveryTransitionConflictError:
+            # 并发裁决的胜者拥有当前状态；旧后台错误不能覆盖它。
+            return
 
     def _ensure_workspace_available(self, workspace_id: str) -> None:
         if workspace_id != "backend-demo" and not workspace_id.startswith("project:"):
@@ -876,6 +944,8 @@ class DeliveryCoordinator:
             "verifying",
             "awaiting_candidate_decision",
             "applying",
+            "needs_attention",
+            "cancelling",
         }
         if any(item.workspace_id == workspace_id and item.status in active for item in self.list()):
             raise ActiveDeliveryConflictError(workspace_id)
@@ -1066,6 +1136,8 @@ class DeliveryCoordinator:
                 expected_version=expected_version,
                 expected_subject_sha256=expected_subject_sha256,
             )
+        except DeliveryVersionConflictError:
+            return
         except Exception as error:
             self._save_failed(self.get(delivery_id), error, "APPLY_FAILED")
 
@@ -1212,6 +1284,37 @@ class DeliveryCoordinator:
         expected_subject_sha256: str,
     ) -> DeliveryRun:
         delivery = self.get(delivery_id)
+        if decision == "reject":
+            if delivery.candidate_gate is not None and delivery.candidate_gate.decision == "reject":
+                if delivery.status == "cancelling":
+                    return await self._finish_cancellation(delivery)
+                return delivery
+            self._validate_gate_request(
+                delivery,
+                gate=delivery.candidate_gate,
+                expected_status="awaiting_candidate_decision",
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
+            assert delivery.candidate_gate is not None
+            decided = _decide_gate(
+                delivery.candidate_gate,
+                decision="reject",
+                expected_version=expected_version,
+                expected_subject_sha256=expected_subject_sha256,
+            )
+            cancelling = delivery.model_copy(
+                update={
+                    "status": "cancelling",
+                    "version": delivery.version + 1,
+                    "candidate_gate": decided,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._repository.save_if_current(
+                cancelling, expected_version=delivery.version, expected_status=delivery.status
+            )
+            return await self._finish_cancellation(cancelling)
         if delivery.pipeline_revision_id is not None:
             if self._pipeline_execution is None:
                 raise DeliveryStateConflictError("pipeline runtime is unavailable")
@@ -1242,74 +1345,112 @@ class DeliveryCoordinator:
             expected_version=expected_version,
             expected_subject_sha256=expected_subject_sha256,
         )
-        if decision == "reject":
-            updated = delivery.model_copy(
-                update={
-                    "status": "rejected",
-                    "version": delivery.version + 1,
-                    "candidate_gate": decided_gate,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-        else:
-            if delivery.verification is None or delivery.verification.status != "passed":
-                raise DeliveryStateConflictError("candidate is not verified")
-            if self._applier is None:
-                raise DeliveryStateConflictError("candidate applier is not configured")
-            applying = delivery.model_copy(
-                update={
-                    "status": "applying",
-                    "version": delivery.version + 1,
-                    "candidate_gate": decided_gate,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
-            self._repository.save(applying)
-            receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
-            if (
-                receipt.before_revision != delivery.candidate.base_revision
-                or receipt.candidate_revision != delivery.candidate.candidate_revision
-                or receipt.after_revision != delivery.candidate.candidate_revision
-            ):
-                raise DeliveryStateConflictError("apply receipt does not match candidate")
-            updated = applying.model_copy(
-                update={
-                    "status": "completed",
-                    "apply_receipt": receipt,
-                    "updated_at": datetime.now(UTC),
-                }
-            )
+        if delivery.verification is None or delivery.verification.status != "passed":
+            raise DeliveryStateConflictError("candidate is not verified")
+        if self._applier is None:
+            raise DeliveryStateConflictError("candidate applier is not configured")
+        applying = delivery.model_copy(
+            update={
+                "status": "applying",
+                "version": delivery.version + 1,
+                "candidate_gate": decided_gate,
+                "updated_at": datetime.now(UTC),
+            }
+        )
+        self._repository.save_if_current(
+            applying, expected_version=delivery.version, expected_status=delivery.status
+        )
+        receipt = await self._applier.apply(delivery.candidate, delivery.workspace_id)
+        if (
+            receipt.before_revision != delivery.candidate.base_revision
+            or receipt.candidate_revision != delivery.candidate.candidate_revision
+            or receipt.after_revision != delivery.candidate.candidate_revision
+        ):
+            raise DeliveryStateConflictError("apply receipt does not match candidate")
+        updated = applying.model_copy(
+            update={
+                "status": "completed",
+                "apply_receipt": receipt,
+                "updated_at": datetime.now(UTC),
+            }
+        )
         self._repository.save(updated)
         return updated
 
-    def cancel(self, delivery_id: str, *, expected_version: int) -> DeliveryRun:
+    async def cancel(self, delivery_id: str, *, expected_version: int) -> DeliveryRun:
         delivery = self.get(delivery_id)
         if delivery.version != expected_version:
             raise DeliveryVersionConflictError(delivery_id)
-        if delivery.status in {"completed", "rejected", "failed", "cancelled"}:
+        if delivery.status in {
+            "completed",
+            "rejected",
+            "failed",
+            "cancelled",
+            "applying",
+            "needs_attention",
+        }:
             raise DeliveryStateConflictError(delivery_id)
-        task = self._background.get(delivery_id)
-        if task is not None:
-            task.cancel()
-        if delivery.status == "preparing_context" and self._knowledge_preparer is not None:
-            self._knowledge_preparer.cancel(delivery_id)
-        updated = delivery.model_copy(
+        if delivery.status == "cancelling":
+            return await self._finish_cancellation(delivery)
+        cancelling = delivery.model_copy(
             update={
-                "status": "cancelled",
+                "status": "cancelling",
                 "version": delivery.version + 1,
                 "updated_at": datetime.now(UTC),
             }
         )
-        if delivery.pipeline_revision_id is not None and delivery.status != "preparing_context":
-            if self._pipeline_execution is None:
-                raise DeliveryStateConflictError("pipeline runtime is unavailable")
-            self._pipeline_execution.cancel(delivery)
-        self._repository.save(updated)
-        return updated
+        self._repository.save_if_current(
+            cancelling, expected_version=delivery.version, expected_status=delivery.status
+        )
+        return await self._finish_cancellation(cancelling)
+
+    async def _finish_cancellation(self, delivery: DeliveryRun) -> DeliveryRun:
+        try:
+            task = self._background.get(delivery.id)
+            if task is not None and task is not asyncio.current_task():
+                if not task.cancelling():
+                    task.cancel()
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    if not task.done():
+                        raise
+            if self._knowledge_preparer is not None:
+                self._knowledge_preparer.cancel(delivery.id)
+            if delivery.pipeline_revision_id is not None and delivery.pipeline_run_id is not None:
+                if self._pipeline_execution is None:
+                    raise DeliveryStateConflictError("pipeline runtime is unavailable")
+                self._pipeline_execution.cancel(delivery)
+            current = self.get(delivery.id)
+            terminal = (
+                "rejected"
+                if (
+                    current.candidate_gate is not None
+                    and current.candidate_gate.decision == "reject"
+                )
+                else "cancelled"
+            )
+            updated = current.model_copy(
+                update={
+                    "status": terminal,
+                    "error_code": None,
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self._repository.save_if_current(
+                updated, expected_version=current.version, expected_status="cancelling"
+            )
+        except DeliveryTransitionConflictError:
+            return self.get(delivery.id)
+        except Exception as error:
+            self._save_failed(delivery, error, "DELIVERY_CANCELLATION_CLEANUP_FAILED")
+        return self.get(delivery.id)
 
     async def recover(self) -> None:
         for delivery in self.list():
-            if delivery.status == "preparing_context":
+            if delivery.status == "cancelling":
+                await self._finish_cancellation(delivery)
+            elif delivery.status == "preparing_context":
                 if self._knowledge_preparer is None:
                     self._save_failed(
                         delivery,

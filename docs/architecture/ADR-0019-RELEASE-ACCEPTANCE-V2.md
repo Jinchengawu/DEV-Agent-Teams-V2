@@ -97,3 +97,17 @@ Receipt、Manifest。
   不存在 Secret、Credential Reference、Repository URI 或正文；
 - 真实 Live 验收仍必须使用真实 Tenant/Ollama/Hermes/Codex 和四个 GitHub 私仓，并满足
   `FAIL=0`、`WARN=0`、`skipped=0`。
+
+## 2026-09-05 修订：验证方案与结果证据绑定
+
+Release Acceptance 逐字段比较 Delivery 与 Workcell Workspace 中冻结的 Verification Profile。
+Writer 的 CandidateVerification 必须包含同一 Profile/qualification Hash、工具身份、结果合同，
+实际命令及超时必须等于冻结方案；退出码和零测试/跳过规则均通过，日志内容与 Hash 一致。
+只重新计算自洽的 Report/Snapshot Hash，不能替换产品发布的验证方案或改变验证命令。
+
+历史验收校验冻结 Profile 与其资格 Hash，不执行今天的工具探针，不因今天工具升级推翻旧结果；
+新的执行资格另由 Stage Driver 检查。未冻结 Profile 的历史结果可以读取，但不能满足本版本新增的
+正式机器验证要求。旧 Snapshot 的空字段序列化不得改变原 Hash 输入。
+
+Knowledge Live Readiness 新增独立的按仓机器验证资格检查，四仓均通过才具备启动资格；
+检查通过仍为 execution_status=not_run，不是机器测试、Agent 执行或完整 Live 成功证据。

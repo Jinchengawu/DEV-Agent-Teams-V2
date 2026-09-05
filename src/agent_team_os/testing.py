@@ -125,7 +125,17 @@ class DeterministicWorkcellAgent:
             )
             content = {"changed_files": [source, test]}
         elif invocation.workspace_access == "candidate_read":
-            content = {"blocking_findings": [], "method_id": invocation.method_id}
+            try:
+                evidence_text = invocation.instruction.split("Candidate Review Evidence：", 1)[1]
+                review_evidence = json.loads(evidence_text.splitlines()[0])
+                content = {
+                    "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                    "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                    "blocking_findings": [],
+                    "method_id": invocation.method_id,
+                }
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
+                raise ValueError("DETERMINISTIC_REVIEW_EVIDENCE_MISSING") from error
         else:
             content = {
                 "artifact": invocation.method_id,

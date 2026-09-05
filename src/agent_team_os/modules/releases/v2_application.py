@@ -167,12 +167,8 @@ class ExternalForwardReleaseCoordinator:
         self.remote = remote
 
     def apply(self, bundle: ReleaseBundleV2) -> ReleaseManifestV2:
-        manifest = self.repository.get_manifest(bundle.project_id)
-        if (
-            manifest is not None
-            and manifest.delivery_id == bundle.delivery_id
-            and manifest.bundle_sha256 == bundle.bundle_sha256
-        ):
+        manifest = self.repository.get_finalized_manifest(bundle)
+        if manifest is not None:
             return manifest
         attempt = self.repository.get_attempt(bundle.delivery_id)
         if attempt is None:
@@ -206,6 +202,9 @@ class ExternalForwardReleaseCoordinator:
 
     def resume_forward(self, delivery_id: str) -> ReleaseManifestV2:
         bundle = self.repository.get_bundle(delivery_id)
+        manifest = self.repository.get_finalized_manifest(bundle)
+        if manifest is not None:
+            return manifest
         attempt = self.repository.get_attempt(delivery_id)
         if attempt is None or attempt.status != "needs_attention":
             raise ExternalReleaseError(
@@ -274,9 +273,7 @@ class ExternalForwardReleaseCoordinator:
             current = self.remote.revision(candidate)
             receipt = receipt_by_candidate.get(candidate.id)
             required = (
-                candidate.candidate_revision
-                if receipt is not None
-                else candidate.base_revision
+                candidate.candidate_revision if receipt is not None else candidate.base_revision
             )
             if current != required:
                 code = (
@@ -325,54 +322,45 @@ class ExternalForwardReleaseCoordinator:
                         f"{candidate.workcell_key} main readback differs from Candidate",
                     )
                 receipts[candidate.id] = self.repository.put_remote_receipt(receipt)
+            ordered = tuple(receipts[item.id] for item in bundle.candidates)
+            content = {
+                "project_id": bundle.project_id,
+                "delivery_id": bundle.delivery_id,
+                "pipeline_revision_id": bundle.pipeline_revision_id,
+                "bundle_sha256": bundle.bundle_sha256,
+                "repositories": [item.model_dump(mode="json") for item in ordered],
+                "policy_version": "external-forward-only-v1",
+            }
+            manifest = ReleaseManifestV2(
+                project_id=bundle.project_id,
+                delivery_id=bundle.delivery_id,
+                pipeline_revision_id=bundle.pipeline_revision_id,
+                bundle_sha256=bundle.bundle_sha256,
+                repositories=ordered,
+                manifest_sha256=sha256_json(content),
+            )
+            self.repository.finalize_release(bundle, attempt, manifest)
+            return manifest
         except Exception as error:
+            committed = self.repository.get_finalized_manifest(bundle)
+            if committed is not None:
+                return committed
             code = getattr(error, "code", "EXTERNAL_FORWARD_APPLY_FAILED")
-            self._needs_attention(bundle, attempt, str(code))
+            latest = self.repository.get_attempt(bundle.delivery_id)
+            if latest is None or latest.bundle_sha256 != bundle.bundle_sha256:
+                raise ExternalReleaseError(
+                    "RELEASE_ATTEMPT_IDENTITY_CONFLICT", "发布恢复缺少同一 Bundle 的 Attempt。"
+                ) from error
+            try:
+                self._needs_attention(bundle, latest, str(code))
+            except Exception:
+                committed = self.repository.get_finalized_manifest(bundle)
+                if committed is not None:
+                    return committed
+                raise
             if isinstance(error, ExternalReleaseError):
                 raise
             raise ExternalReleaseError(str(code), str(error)) from error
-        ordered = tuple(receipts[item.id] for item in bundle.candidates)
-        content = {
-            "project_id": bundle.project_id,
-            "delivery_id": bundle.delivery_id,
-            "pipeline_revision_id": bundle.pipeline_revision_id,
-            "bundle_sha256": bundle.bundle_sha256,
-            "repositories": [item.model_dump(mode="json") for item in ordered],
-            "policy_version": "external-forward-only-v1",
-        }
-        manifest = ReleaseManifestV2(
-            project_id=bundle.project_id,
-            delivery_id=bundle.delivery_id,
-            pipeline_revision_id=bundle.pipeline_revision_id,
-            bundle_sha256=bundle.bundle_sha256,
-            repositories=ordered,
-            manifest_sha256=sha256_json(content),
-        )
-        self.repository.activate_manifest(manifest)
-        completed = attempt.model_copy(
-            update={
-                "status": "completed",
-                "error_code": None,
-                "version": attempt.version + 1,
-                "updated_at": datetime.now(UTC),
-            }
-        )
-        self.repository.put_attempt(completed, expected_version=attempt.version)
-        current_health = self.repository.get_health(bundle.project_id)
-        self.repository.put_health(
-            ReleaseHealthV2(
-                project_id=bundle.project_id,
-                status="healthy",
-                delivery_id=bundle.delivery_id,
-                bundle_sha256=bundle.bundle_sha256,
-                version=current_health.version + 1,
-            )
-        )
-        self.repository.mark_delivery_release_completed(
-            bundle.delivery_id,
-            manifest.manifest_sha256,
-        )
-        return manifest
 
     def _needs_attention(
         self,

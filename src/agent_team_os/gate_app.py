@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -476,11 +475,7 @@ def build_gate_app() -> FastAPI:
         agent=DeterministicWorkcellAgent(),
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
-        verifier=CommandWorkcellMachineVerifier(
-            lambda _workcell: (
-                (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
-            )
-        ),
+        verifier=CommandWorkcellMachineVerifier(),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=DeterministicPullRequestSurface(),
         knowledge_guard=knowledge_runtime_guard,

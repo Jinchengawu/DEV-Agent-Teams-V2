@@ -352,21 +352,22 @@ class PipelineExecutionModule:
         )
         run = self._runs.get_for_delivery(delivery.id)
         if decision == "reject":
-            self._runs.transition(
-                run.id,
-                command="cancel",
-                node_id=delivery.candidate_gate.gate_id,
-                expected_version=run.version,
-            )
-            updated = delivery.model_copy(
+            cancelling = delivery.model_copy(
                 update={
-                    "status": "rejected",
+                    "status": "cancelling",
                     "version": delivery.version + 1,
                     "candidate_gate": decided,
                     "updated_at": datetime.now(UTC),
                 }
             )
-            self._repository.save(updated)
+            self._repository.save_if_current(
+                cancelling, expected_version=delivery.version, expected_status=delivery.status
+            )
+            self.cancel(cancelling)
+            updated = cancelling.model_copy(update={"status": "rejected"})
+            self._repository.save_if_current(
+                updated, expected_version=cancelling.version, expected_status="cancelling"
+            )
             return updated
         if delivery.release_bundle_v2_sha256 is not None:
             if self._external_release is None:
@@ -388,7 +389,9 @@ class PipelineExecutionModule:
                 "updated_at": datetime.now(UTC),
             }
         )
-        self._repository.save(applying)
+        self._repository.save_if_current(
+            applying, expected_version=delivery.version, expected_status=delivery.status
+        )
         if delivery.release_bundle_v2_sha256 is not None:
             external_release = self._external_release
             assert external_release is not None

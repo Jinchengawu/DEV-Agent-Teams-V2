@@ -1,10 +1,10 @@
 ---
 title: Agent-Team-OS 当前架构总览
-document_version: "1.3"
+document_version: "1.4"
 product_version: "0.5.1-in-progress"
 truth_scope: repository_revision_containing_this_file
 initial_audit_baseline: 7401fa281a201728fa3cc504daa05d3a724fa7c6
-last_reviewed: 2026-09-03
+last_reviewed: 2026-09-05
 language: zh-CN
 ---
 
@@ -254,11 +254,19 @@ TeamTemplateRevision
 - Project 绑定采用哪个 Team/Pipeline/Deployment，以及每个 Workcell 对应哪个真实 Workspace。
 - Delivery 启动后只使用冻结 Snapshot，不静默解析较新的 Team、Pipeline、Provider、Workspace 或 Method。
 
+机器验证采用单独的产品预置 Verification Profile：Workspace Governance 保存选择及工具资格，
+Snapshot 冻结命令、超时、非敏感环境、工具版本/路径/二进制 Hash 和资格 Hash。Writer 运行前复核当前
+工具身份，Release Acceptance 校验冻结方案与实际报告；Git Verification 的既有语义不变。
+首批支持 Python unittest 与 Node native test，零测试、全跳过和超时失败。历史缺失 Profile 可读且
+原 Hash 不变，但不能用于新执行；实际 Frontend/Design/QA 专用政策仍待补齐。
+
 ### 7.2 Project 隔离
 
 - Project 不是包含 Delivery、Evidence、Knowledge 和 Agent 的巨型 Aggregate；其他模块只保存
   `project_id` 或冻结 Snapshot。
-- v0.5 每个 Project 同时最多一个活动 Delivery；Lease 只在终态持久化后释放。
+- v0.5 每个 Project 同时最多一个活动 Delivery；Lease 在终态持久化且不存在该 Delivery 的外部发布恢复事实时释放。
+- Release 通过只读 Port 提供未完成 Attempt / drifted Health 的恢复所有者；新交付准入和首次 Lease 事务均复查。
+  重启对账优先保留恢复所有者，即使历史 Delivery 被误标终态；多个恢复所有者失败关闭。
 - 全局角色与 `ProjectMembership(owner | editor | viewer)` 共同约束项目资源；Global Role 是能力上限，
   ProjectRole 只能收窄权限，Administrator 旁路必须留下审计 Receipt。
 - Project RBAC、最后 Owner 约束、Identity Authorization Version 与 Approved Source Scope 已实现并有
@@ -331,6 +339,11 @@ Main planning
 - `resume-forward` 只接受原 Bundle，并验证已应用仓仍为 Candidate、未应用仓仍为 Base；
 - 条件不满足时继续人工协调，不自动 Rebase、改写 Bundle 或生成补偿提交。
 
+V2 完成时，在同一个 SQLite 事务中提交 Manifest、Attempt completed、Health healthy、Delivery completed、
+Product Event 和 Lease 释放；远端 Git 操作在事务外。异常先回读完整提交，已提交成功不能被降级为
+needs_attention；未完成则用最新 Attempt 版本记录恢复状态。Release/Project/Delivery 组合根必须验证
+同库前提，数据库不可写时保留原恢复事实与 Lease。详见 ADR-0015。
+
 ### 9.2 Managed Git V1
 
 历史 Managed Bare Git、`RepositoryCandidate`、`ReleaseBundleV1`、CAS Compensation 和旧 Manifest
@@ -343,12 +356,18 @@ Main planning
 | 对象 | 关键状态与终态规则 |
 |---|---|
 | Project | `provisioning → active | provision_failed`，`active → archived`；当前不恢复 archived。 |
-| Delivery | `queued`、可选 `preparing_context`、`planning`、人工 Gate、`executing`、`verifying`、`applying`、`needs_attention`；终态为 `completed/rejected/failed/cancelled`。 |
+| Delivery | `queued`、可选 `preparing_context`、`planning`、人工 Gate、`executing`、`verifying`、`applying`、`needs_attention`、`cancelling`；终态为 `completed/rejected/failed/cancelled`。 |
 | WorkcellRun | `planning → delegating → verifying → reviewing → synthesizing`；终态为 `succeeded/failed/cancelled/timed_out/interrupted`。 |
 | AgentAttempt | `running` 后进入 `succeeded/failed/cancelled/timed_out/interrupted`，非可恢复进程不伪装续跑。 |
 | Release Health | `healthy | release_drifted`；只有全部远端回读一致才能恢复 healthy。 |
 
-`needs_attention` 不是 Delivery 终态，因此不能释放 Project Lease，也不能激活不完整 Manifest。
+`needs_attention` 与 `cancelling` 都不是 Delivery 终态。Cancel/Candidate Reject/Apply 通过版本及状态 CAS
+裁决，失败方不执行 Graph、Git 或 Lease 副作用。Cancel/Reject 先进入 `cancelling`，异步清理完成后
+才持久化 `cancelled/rejected`；失败和重启保留既定意图与 Lease。重复取消不能再次中断清理。
+`applying/needs_attention` 拒绝普通取消；旧后台错误不能覆盖已提交的胜者。
+
+验证进程在独立进程组中执行，取消/超时先终止并回收该组；重复取消不打断回收。
+Python 使用隔离启动并禁用字节码，先载入标准库测试 Runner 再导入仓库代码，防止同名模块替换入口。
 
 ### 10.2 身份与信任
 
@@ -645,6 +664,28 @@ Implemented evidence: External Git Diff SHA 重读、生成物拒绝、Writer �
 Remaining Live evidence: 新 Revision 重跑四 Workcell Candidate/Verification/Review/PR 闭环；人工确认前不 Apply main。
 ```
 
+```text
+ARCH-20260905-01
+State: Implemented/Verified
+Accepted at: 2026-09-05
+Architecture Impact: Critical
+Decision: Cancel/Reject/Apply 原子裁决；cancelling 保留 Lease 至异步清理完成；外部发布最终状态同库原子提交。
+Affected authorities/modules/data/states: Delivery、Project Lease、External Release；新增 cancelling；Release 只读恢复 owner Port。
+Compatibility and migration: 旧 Snapshot 可读；SQLite 同库前提必须验证；不改变原 Bundle/Forward-only 策略。
+Plan/ADR reference: docs/plans/2026-09-05-DELIVERY-CLOSURE-PLAN.md；ADR-0015
+Implemented evidence: 26 项取消/CAS、7 项 Release、10 项 Guard 本地专项通过；当前工作区未冻结最终 Revision，Live 另行验收。
+
+ARCH-20260905-02
+State: Implemented/Verified
+Accepted at: 2026-09-05
+Architecture Impact: Cross-boundary
+Decision: Workcell Governance 拥有产品预置 Verification Profile 与工具资格；Delivery/Workcell 冻结并消费同一方案。
+Affected authorities/modules/data/states: Workspace 配置、Snapshot、Stage Driver、Release Acceptance；不改变 ACWM Runtime。
+Compatibility and migration: Migration 0045 增可空配置；缺 Profile 的历史 Snapshot 保持原 hash，新执行失败关闭。
+Plan/ADR reference: docs/plans/2026-09-05-DELIVERY-CLOSURE-PLAN.md；ADR-0014、ADR-0019
+Implemented evidence: Python/Node、权限/CAS、旧 hash/schema、篡改拒绝、真实进程取消与模块遮蔽回归通过；独立安全复审通过；不包含其他技术栈或 Live 验收。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -673,6 +714,8 @@ Acceptance evidence required:
 | `ARCH-20260904-02` | 2026-09-04 | `Implemented/Verified` | Pipeline Revision 身份与 ACWM 图指纹解耦，允许同图不同冻结快照发布新版本 | ADR-0009 修订 | Migration 0044、同图双 Revision 公共接口与升级兼容测试通过；live-v051 R1/R2 共存且 R2 已激活 |
 | `ARCH-20260904-03` | 2026-09-04 | `Implemented/Verified` | 只读 Reviewer 使用产品内部短暂租约装配 Method Overlay，Agent 运行期仍为双重只读 | ADR-0014 修订 | 修复后的 Live Delivery 已验证两个并发 Design Reviewer 成功运行；完整四仓闭环仍待另行问题修复后重跑 |
 | `ARCH-20260904-04` | 2026-09-04 | `Implemented/Verified` | 发布 Hash-bound Candidate Diff，为 Main synthesis 注入本 Workcell 冻结证据，并隔离 Machine Verification 环境；生成物和含凭据 Diff Fail Closed | ADR-0014 修订 | Diff SHA/凭据扫描、字节码拒绝、验证子进程凭据隔离与禁写字节码、双 Artifact、Main 合成输入和四仓下游消费回归通过；Live 重跑待执行 |
+| `ARCH-20260905-01` | 2026-09-05 | `Implemented/Verified` | Cancel/Reject/Apply CAS、cancelling 清理与恢复 Owner 准入、同库发布完成事务 | ADR-0015 修订 | 26 取消/CAS + 7 Release + 10 Guard 本地测试；正式 Revision/Live 验收待完成 |
+| `ARCH-20260905-02` | 2026-09-05 | `Implemented/Verified` | 首批 Python/Node 产品预置 Verification Profile、工具资格与冻结证据 | ADR-0014/0019 修订 | 25 项 Profile/配置/Snapshot/Stage/e2e 本地组合通过，独立安全复审通过；其他技术栈与 Live 未完成 |
 
 ## 14. Plan Architecture Review 与文档对账
 

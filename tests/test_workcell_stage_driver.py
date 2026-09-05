@@ -21,6 +21,7 @@ from agent_team_os.delivery import (
 )
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ExternalGitBinding, ExternalGitWorkspaceManager
+from agent_team_os.infrastructure.verification.command_toolchain import LocalVerificationToolchain
 from agent_team_os.modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
 from agent_team_os.modules.extensions import ContentAddressedMethodPackStore
 from agent_team_os.modules.releases import (
@@ -38,6 +39,7 @@ from agent_team_os.modules.workcells import (
     WorkcellMethodContext,
     WorkcellStageDriver,
 )
+from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
 
@@ -75,23 +77,32 @@ def test_machine_verifier_disables_python_bytecode_writes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
+    profile = VerificationProfileCatalog().qualify(
+        "python-unittest-v1", LocalVerificationToolchain()
+    )
+    original_spawn = asyncio.create_subprocess_exec
 
-    def run_command(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    async def run_command(*args, **kwargs):
         captured.update(kwargs)
-        return subprocess.CompletedProcess(args=args, returncode=0, stdout="passed", stderr="")
+        return await original_spawn(*args, **kwargs)
+
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_one.py").write_text(
+        "import unittest\nclass One(unittest.TestCase):\n def test_one(self):\n"
+        "  self.assertEqual(1, 1)\n"
+    )
 
     monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
     monkeypatch.setenv("AGENT_TEAM_OS_GITHUB_TOKEN", "must-not-reach-verification")
     monkeypatch.setenv("FEISHU_APP_SECRET", "must-not-reach-verification")
-    monkeypatch.setattr(workcell_stage_driver.subprocess, "run", run_command)
-    verifier = workcell_stage_driver.CommandWorkcellMachineVerifier(
-        lambda _workcell: (("python", "-m", "unittest"),)
-    )
+    monkeypatch.setattr(workcell_stage_driver.asyncio, "create_subprocess_exec", run_command)
+    verifier = workcell_stage_driver.CommandWorkcellMachineVerifier()
 
     outcome = asyncio.run(
         verifier.verify(
             workcell_key="design",
             workspace=tmp_path,
+            profile=profile,
             candidate=workcell_stage_driver.ExternalCandidateEvidence(
                 base_revision="1" * 40,
                 candidate_revision="2" * 40,
@@ -106,6 +117,7 @@ def test_machine_verifier_disables_python_bytecode_writes(
     assert captured["env"]["PYTHONDONTWRITEBYTECODE"] == "1"  # type: ignore[index]
     assert "AGENT_TEAM_OS_GITHUB_TOKEN" not in captured["env"]  # type: ignore[operator]
     assert "FEISHU_APP_SECRET" not in captured["env"]  # type: ignore[operator]
+    assert not list(tmp_path.rglob("*.pyc"))
 
 
 class DeterministicWorkcellAgent:
@@ -439,11 +451,12 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
 
     kernel = RecordingKernel()
 
-    with pytest.raises(
-        asyncio.CancelledError
-    ), workcell_stage_driver._terminalize_workcell_failure(  # noqa: SLF001
-        kernel,  # type: ignore[arg-type]
-        "workcell-run-cancelled",
+    with (
+        pytest.raises(asyncio.CancelledError),
+        workcell_stage_driver._terminalize_workcell_failure(  # noqa: SLF001
+            kernel,  # type: ignore[arg-type]
+            "workcell-run-cancelled",
+        ),
     ):
         raise asyncio.CancelledError
 
@@ -565,9 +578,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         assert not tree.reviews
         assert outcome.candidate is None
         writer = next(
-            item
-            for item in tree.agent_runs
-            if item.delegate_purpose == "workspace_write"
+            item for item in tree.agent_runs if item.delegate_purpose == "workspace_write"
         )
         assert len(writer.artifact_envelopes) == 1
         diagnostic = writer.artifact_envelopes[0]
@@ -609,9 +620,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert tree.result is not None
     assert tree.result.knowledge_citation_ids == ("citation-allowed",)
     assert all(item.result_artifact_sha256 is not None for item in tree.attempts)
-    writer = next(
-        item for item in tree.agent_runs if item.delegate_purpose == "workspace_write"
-    )
+    writer = next(item for item in tree.agent_runs if item.delegate_purpose == "workspace_write")
     assert [item.contract_id for item in writer.artifact_envelopes] == [
         "workspace-candidate-v2",
         "workspace-candidate-diff-v1",
@@ -633,9 +642,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert all("AC-LOGIN" in item for item in delegate_instructions)
     assert all("external-collaborative" in item for item in delegate_instructions)
     writer_instruction = next(
-        item.instruction
-        for item in agent.invocations
-        if item.workspace_access == "workspace_write"
+        item.instruction for item in agent.invocations if item.workspace_access == "workspace_write"
     )
     assert '"design/**"' in writer_instruction
     assert '"tests/**"' in writer_instruction
@@ -654,9 +661,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert "machine_verification" in synthesis_instruction
     assert "review_artifacts" in synthesis_instruction
     review_instructions = [
-        item.instruction
-        for item in agent.invocations
-        if item.workspace_access == "candidate_read"
+        item.instruction for item in agent.invocations if item.workspace_access == "candidate_read"
     ]
     assert review_instructions
     assert all("blocking_findings" in item for item in review_instructions)
@@ -784,6 +789,9 @@ def _delivery_snapshot(
                 repository_uri=repository_uri,
                 base_revision=base,
                 verification_sha256="b" * 64,
+                verification_profile=VerificationProfileCatalog().qualify(
+                    "python-unittest-v1", LocalVerificationToolchain()
+                ),
             ),
         ),
         method_snapshot=methods,

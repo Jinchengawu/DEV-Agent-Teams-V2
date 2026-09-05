@@ -150,6 +150,8 @@ function runSummary(status: string): string {
     failed: "运行失败，主分支保持受保护",
     rejected: "人工拒绝，候选未应用",
     cancelled: "运行已取消",
+    cancelling: "正在清理运行，完成前保留项目占用",
+    needs_attention: "发布需要恢复，项目仍被占用",
   };
   return summaries[status] ?? statusLabel(status);
 }

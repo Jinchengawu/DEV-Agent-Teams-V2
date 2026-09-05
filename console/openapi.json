@@ -3592,6 +3592,237 @@
         }
       }
     },
+    "/v1/verification-profiles": {
+      "get": {
+        "summary": "List Verification Profiles",
+        "operationId": "list_verification_profiles_v1_verification_profiles_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VerificationProfile"
+                  },
+                  "title": "Response List Verification Profiles V1 Verification Profiles Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspace-bindings/{workspace_id}/verification-profile": {
+      "put": {
+        "summary": "Set Verification Profile",
+        "operationId": "set_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_put",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceVerificationProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspace-bindings/{workspace_id}/verification-profile/qualify": {
+      "post": {
+        "summary": "Qualify Verification Profile",
+        "operationId": "qualify_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_qualify_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceBindingVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{project_id}/workcells": {
       "get": {
         "summary": "Get Project Workcells",
@@ -14845,6 +15076,7 @@
               "awaiting_candidate_decision",
               "applying",
               "needs_attention",
+              "cancelling",
               "completed",
               "rejected",
               "failed",
@@ -15154,6 +15386,16 @@
           "verification_sha256": {
             "type": "string",
             "title": "Verification Sha256"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -22975,6 +23217,111 @@
         ],
         "title": "UserPatch"
       },
+      "VerificationProfile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "commands": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Commands"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Environment"
+          },
+          "result_contract": {
+            "type": "string",
+            "enum": [
+              "python-unittest-count-v1",
+              "node-tap-count-v1"
+            ],
+            "title": "Result Contract"
+          },
+          "tool_names": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "python",
+                "node"
+              ]
+            },
+            "type": "array",
+            "title": "Tool Names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "name",
+          "commands",
+          "timeout_seconds",
+          "environment",
+          "result_contract",
+          "tool_names"
+        ],
+        "title": "VerificationProfile"
+      },
+      "VerificationProfileSnapshot": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/VerificationProfile"
+          },
+          "profile_sha256": {
+            "type": "string",
+            "title": "Profile Sha256"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationToolIdentity"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tools"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "profile_sha256",
+          "tools",
+          "qualification_sha256"
+        ],
+        "title": "VerificationProfileSnapshot"
+      },
       "VerificationRun": {
         "properties": {
           "status": {
@@ -23024,6 +23371,39 @@
           "log_sha256"
         ],
         "title": "VerificationRun"
+      },
+      "VerificationToolIdentity": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "python",
+              "node"
+            ],
+            "title": "Name"
+          },
+          "executable": {
+            "type": "string",
+            "title": "Executable"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "executable_sha256": {
+            "type": "string",
+            "title": "Executable Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "executable",
+          "version",
+          "executable_sha256"
+        ],
+        "title": "VerificationToolIdentity"
       },
       "WikiAccess": {
         "type": "string",
@@ -23790,6 +24170,16 @@
           "verification_sha256": {
             "type": "string",
             "title": "Verification Sha256"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -23869,6 +24259,38 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Verification"
+          },
+          "verification_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Id"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_profile_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Error Code"
           },
           "error_code": {
             "anyOf": [
@@ -23965,6 +24387,17 @@
               }
             ],
             "title": "Credential Reference"
+          },
+          "verification_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Id"
           }
         },
         "additionalProperties": false,
@@ -24108,6 +24541,26 @@
           "kind"
         ],
         "title": "WorkspaceRequirement"
+      },
+      "WorkspaceVerificationProfileRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "verification_profile_id": {
+            "type": "string",
+            "title": "Verification Profile Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "verification_profile_id"
+        ],
+        "title": "WorkspaceVerificationProfileRequest"
       }
     }
   }

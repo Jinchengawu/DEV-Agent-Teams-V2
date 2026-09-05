@@ -241,3 +241,69 @@ def test_live_gate_persists_sanitized_acceptance_report_after_readiness(
             "session-only-secret",
         )
     )
+
+
+def test_acceptance_verification_contract_rejects_resigned_profile_and_command_changes() -> None:
+    import copy
+    import hashlib
+
+    from agent_team_os.infrastructure.verification.command_toolchain import (
+        LocalVerificationToolchain,
+    )
+    from agent_team_os.modules.releases.acceptance_application import (
+        _verification_profile_report_is_valid,
+    )
+    from agent_team_os.modules.workcells import CandidateVerification
+    from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
+    from agent_team_os.shared.hashes import sha256_json
+
+    profile = VerificationProfileCatalog().qualify(
+        "python-unittest-v1", LocalVerificationToolchain()
+    )
+    executable = profile.tools[0].executable
+    log = "Ran 1 test in 0.001s\n\nOK\n"
+    report = {
+        "candidate_sha": "1" * 40,
+        "diff_sha256": "2" * 64,
+        "profile_sha256": profile.profile_sha256,
+        "qualification_sha256": profile.qualification_sha256,
+        "result_contract": profile.profile.result_contract,
+        "tools": [tool.model_dump(mode="json") for tool in profile.tools],
+        "commands": [
+            {
+                "command": [executable, *profile.profile.commands[0][1:]],
+                "exit_code": 0,
+                "timeout_seconds": profile.profile.timeout_seconds,
+                "redacted_log": log,
+                "log_sha256": hashlib.sha256(log.encode()).hexdigest(),
+                "result_contract_passed": True,
+            }
+        ],
+    }
+
+    def verification(payload):
+        content = {
+            "workcell_run_id": "workcell",
+            "writer_agent_run_id": "writer",
+            "candidate_sha": "1" * 40,
+            "diff_sha256": "2" * 64,
+            "status": "passed",
+            "report": payload,
+        }
+        return CandidateVerification(**content, sha256=sha256_json(content))
+
+    assert _verification_profile_report_is_valid(profile, verification(report))
+    assert not _verification_profile_report_is_valid(None, verification(report))
+    for field, value in [("profile_sha256", "f" * 64), ("qualification_sha256", "f" * 64)]:
+        forged = copy.deepcopy(report)
+        forged[field] = value
+        assert not _verification_profile_report_is_valid(profile, verification(forged))
+    forged = copy.deepcopy(report)
+    forged["commands"][0]["command"] = [executable, "-c", "print('OK')"]
+    assert not _verification_profile_report_is_valid(profile, verification(forged))
+    forged = copy.deepcopy(report)
+    zero_log = "Ran 0 tests in 0.001s\n\nOK\n"
+    forged["commands"][0].update(
+        {"redacted_log": zero_log, "log_sha256": hashlib.sha256(zero_log.encode()).hexdigest()}
+    )
+    assert not _verification_profile_report_is_valid(profile, verification(forged))

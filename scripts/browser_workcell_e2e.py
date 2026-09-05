@@ -140,6 +140,7 @@ def _execute_workcell_journey(
                 "adapter_type": "managed-bare-git",
                 "repository_uri": f"projects/{project_id}/{workcell_key}",
                 "credential_reference": None,
+                "verification_profile_id": "python-unittest-v1",
             },
             expected_status=201,
         )
@@ -151,6 +152,12 @@ def _execute_workcell_journey(
         )
         assert verified["status"] == "ready", verified
         assert verified["verification"]["direct_fast_forward_main"] is True
+        qualified = _post_json(
+            request,
+            f"{url}/v1/workspace-bindings/{workspace['id']}/verification-profile/qualify",
+            {"expected_version": verified["version"]},
+        )
+        assert qualified["verification_profile"]["profile"]["id"] == "python-unittest-v1"
 
     page.reload()
     page.wait_for_load_state("networkidle")

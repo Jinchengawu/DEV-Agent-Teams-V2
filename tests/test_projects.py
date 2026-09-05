@@ -409,7 +409,7 @@ def test_existing_v031_database_migrates_to_default_project_with_audit(tmp_path:
             )""",
             ("b" * 64,),
         )
-    assert MigrationRunner(database, ROOT / "migrations").migrate() == tuple(range(19, 45))
+    assert MigrationRunner(database, ROOT / "migrations").migrate() == tuple(range(19, 46))
     with sqlite3.connect(database) as connection:
         snapshot, project_id = connection.execute(
             "SELECT snapshot_json,project_id FROM deliveries WHERE id='legacy-delivery'"

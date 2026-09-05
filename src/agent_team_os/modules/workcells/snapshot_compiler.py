@@ -111,6 +111,19 @@ class DeliveryExecutionSnapshotCompiler:
                     f"Workspace {workspace.id} 的验证回执缺少 main SHA",
                     "重新执行 Workspace Verify。",
                 )
+            if (
+                workspace.verification_profile is not None
+                and workspace.verification_profile_id != workspace.verification_profile.profile.id
+            ):
+                raise _error(
+                    "WORKCELL_VERIFICATION_PROFILE_INVALID",
+                    "工作区所选方案与冻结资格不一致",
+                    "重新选择验证方案并验证工具链后创建 Delivery。",
+                )
+            self.governance.verification_profiles.validate(
+                workspace.verification_profile,
+                self.governance.verification_toolchain,
+            )
             workspaces.append(
                 DeliveryWorkspaceSnapshot(
                     workcell_key=definition.workcell_key,
@@ -120,6 +133,7 @@ class DeliveryExecutionSnapshotCompiler:
                     repository_uri=workspace.repository_uri,
                     base_revision=base_revision,
                     verification_sha256=workspace.verification_sha256,
+                    verification_profile=workspace.verification_profile,
                 )
             )
         methods = self.method_snapshot()
@@ -301,6 +315,7 @@ def compile_workcell_execution_snapshot(
             repository_uri=workspace.repository_uri,
             base_revision=workspace.base_revision,
             verification_sha256=workspace.verification_sha256,
+            verification_profile=workspace.verification_profile,
         ),
         delegation_policy=definition.delegation_policy,
         slot_bindings=tuple(bindings),

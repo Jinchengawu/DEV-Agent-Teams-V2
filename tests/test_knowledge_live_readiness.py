@@ -26,6 +26,7 @@ def _ready_facts() -> KnowledgeLiveFacts:
         workspace_count=4,
         external_workspace_count=4,
         ready_workspace_count=4,
+        qualified_verification_workspace_count=4,
         unique_repository_count=4,
         direct_fast_forward_main_count=4,
         resolvable_git_credential_count=4,
@@ -370,3 +371,23 @@ def test_cli_persists_blocked_not_run_report_without_a_configured_database(
     reports = tmp_path / "reports" / "readiness"
     assert len(tuple(reports.glob("*.json"))) == 1
     assert len(tuple(reports.glob("*.md"))) == 1
+
+
+def test_live_readiness_requires_each_workspace_machine_verification_qualification() -> None:
+    report = evaluate_knowledge_live_readiness(
+        project_id="alpha",
+        facts=_ready_facts().model_copy(update={"qualified_verification_workspace_count": 3}),
+        flags=FeatureFlags(
+            feishu_tenant_sync_v1=True,
+            knowledge_hybrid_index_v1=True,
+            delivery_knowledge_context_v1=True,
+        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
+        runtime=_runtime_ready(),
+    )
+    assert report.status == "blocked"
+    assert report.execution_status == "not_run"
+    assert (
+        next(c for c in report.checks if c.name == "workspace-verification-profiles").status
+        == "blocked"
+    )

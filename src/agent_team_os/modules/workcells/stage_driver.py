@@ -5,9 +5,10 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, suppress
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
@@ -21,6 +22,10 @@ from ...infrastructure.git import (
     ExternalWriterPolicy,
     ExternalWriterWorkspace,
 )
+from ...infrastructure.verification.command_toolchain import (
+    LocalVerificationToolchain,
+    verification_environment,
+)
 from ...modules.agents import AgentRun, ArtifactEnvelope
 from ...modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
 from ...modules.extensions import ContentAddressedMethodPackStore
@@ -33,6 +38,7 @@ from ...modules.releases import (
 )
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
+from ...shared.verification import VerificationProfileSnapshot
 from .execution_application import WorkcellExecutionModule
 from .execution_domain import (
     BlockingFinding,
@@ -45,6 +51,7 @@ from .execution_domain import (
     WorkcellRunTree,
 )
 from .snapshot_compiler import compile_workcell_execution_snapshot
+from .verification_application import VerificationProfileCatalog, validate_test_result
 
 
 class WorkcellMethodContext(BaseModel):
@@ -201,20 +208,12 @@ class WorkcellMachineVerifier(Protocol):
         workcell_key: str,
         workspace: Path,
         candidate: ExternalCandidateEvidence,
+        profile: VerificationProfileSnapshot,
     ) -> MachineVerificationOutcome: ...
 
 
 class CommandWorkcellMachineVerifier:
     """Run product-configured commands against the immutable Candidate worktree."""
-
-    def __init__(
-        self,
-        command_resolver: Callable[[str], tuple[tuple[str, ...], ...]],
-        *,
-        timeout_seconds: int = 300,
-    ) -> None:
-        self.command_resolver = command_resolver
-        self.timeout_seconds = timeout_seconds
 
     async def verify(
         self,
@@ -222,8 +221,13 @@ class CommandWorkcellMachineVerifier:
         workcell_key: str,
         workspace: Path,
         candidate: ExternalCandidateEvidence,
+        profile: VerificationProfileSnapshot,
     ) -> MachineVerificationOutcome:
-        commands = self.command_resolver(workcell_key)
+        VerificationProfileCatalog().validate(profile, LocalVerificationToolchain())
+        executables: dict[str, str] = {tool.name: tool.executable for tool in profile.tools}
+        commands = tuple(
+            (executables[command[0]], *command[1:]) for command in profile.profile.commands
+        )
         if not commands or any(not command for command in commands):
             raise _error(
                 "WORKCELL_MACHINE_VERIFICATION_COMMAND_MISSING",
@@ -232,26 +236,37 @@ class CommandWorkcellMachineVerifier:
         reports: list[dict[str, object]] = []
         passed = True
         for command in commands:
-            completed = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.timeout_seconds,
-                env=_machine_verification_environment(),
-            )
+            try:
+                completed = await _run_verification_command(
+                    command,
+                    workspace=workspace,
+                    timeout_seconds=profile.profile.timeout_seconds,
+                    environment=verification_environment(profile.profile.environment),
+                )
+            except subprocess.TimeoutExpired:
+                reports.append(
+                    {
+                        "command": list(command),
+                        "exit_code": None,
+                        "timeout_seconds": profile.profile.timeout_seconds,
+                        "error_code": "WORKCELL_MACHINE_VERIFICATION_TIMEOUT",
+                    }
+                )
+                passed = False
+                break
             log = _redact(completed.stdout + completed.stderr)
+            result_contract_passed = validate_test_result(profile.profile.id, log)
             reports.append(
                 {
                     "command": list(command),
                     "exit_code": completed.returncode,
                     "log_sha256": hashlib.sha256(log.encode()).hexdigest(),
                     "redacted_log": log,
+                    "result_contract_passed": result_contract_passed,
+                    "timeout_seconds": profile.profile.timeout_seconds,
                 }
             )
-            if completed.returncode != 0:
+            if completed.returncode != 0 or not result_contract_passed:
                 passed = False
                 break
         return MachineVerificationOutcome(
@@ -260,39 +275,85 @@ class CommandWorkcellMachineVerifier:
                 "candidate_sha": candidate.candidate_revision,
                 "diff_sha256": candidate.diff_sha256,
                 "commands": reports,
+                "profile_sha256": profile.profile_sha256,
+                "qualification_sha256": profile.qualification_sha256,
+                "result_contract": profile.profile.result_contract,
+                "tools": [tool.model_dump(mode="json") for tool in profile.tools],
             },
         )
 
 
-_INHERITED_MACHINE_VERIFICATION_ENVIRONMENT = frozenset(
-    {
-        "HOME",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "LOGNAME",
-        "PATH",
-        "SHELL",
-        "SSL_CERT_DIR",
-        "SSL_CERT_FILE",
-        "SYSTEMROOT",
-        "TERM",
-        "TMP",
-        "TMPDIR",
-        "TEMP",
-        "USER",
-    }
-)
+async def _run_verification_command(
+    command: tuple[str, ...],
+    *,
+    workspace: Path,
+    timeout_seconds: int,
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    spawning = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *command,
+            cwd=workspace,
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+    )
+    try:
+        process = await asyncio.shield(spawning)
+    except asyncio.CancelledError:
+
+        async def stop_after_spawn() -> None:
+            process = await spawning
+            await _terminate_verification_process(process)
+            await process.communicate()
+
+        await _await_verification_cleanup(asyncio.create_task(stop_after_spawn()))
+        raise
+    communication = asyncio.create_task(process.communicate())
+    try:
+        stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout_seconds)
+    except (asyncio.CancelledError, TimeoutError) as error:
+
+        async def stop_and_drain() -> None:
+            await _terminate_verification_process(process)
+            await communication
+
+        await _await_verification_cleanup(asyncio.create_task(stop_and_drain()))
+        if isinstance(error, TimeoutError):
+            raise subprocess.TimeoutExpired(command, timeout_seconds) from error
+        raise
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode or 0,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+    )
 
 
-def _machine_verification_environment() -> dict[str, str]:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if key in _INHERITED_MACHINE_VERIFICATION_ENVIRONMENT
-    }
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    return environment
+async def _await_verification_cleanup(cleanup: asyncio.Task[None]) -> None:
+    # 重复取消不得中断进程回收，否则上层可能过早释放 Workspace Lease。
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            continue
+    await cleanup
+
+
+async def _terminate_verification_process(process: asyncio.subprocess.Process) -> None:
+    """先停止整个验证进程组并回收主进程，再允许取消交付释放执行权。"""
+    with suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        await asyncio.wait_for(process.wait(), 1)
+    except TimeoutError:
+        pass
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
 
 
 class PullRequestSurface(Protocol):
@@ -382,6 +443,10 @@ class WorkcellStageDriver:
                     "已有 WorkcellRun 未成功且不能伪装为恢复。",
                 )
             return self._completed_outcome(delivery_snapshot, existing)
+        VerificationProfileCatalog().validate(
+            snapshot.workspace.verification_profile,
+            LocalVerificationToolchain(),
+        )
         self._admit_knowledge(delivery, stage_path)
         tree = self.kernel.create(
             WorkcellRunCreate(
@@ -392,10 +457,13 @@ class WorkcellStageDriver:
                 snapshot=snapshot,
             )
         )
-        with _terminalize_workcell_failure(
-            self.kernel,
-            tree.workcell_run.id,
-        ), self.methods.activate(delivery_snapshot.method_snapshot) as method_context:
+        with (
+            _terminalize_workcell_failure(
+                self.kernel,
+                tree.workcell_run.id,
+            ),
+            self.methods.activate(delivery_snapshot.method_snapshot) as method_context,
+        ):
             assignments = self._assignments(snapshot)
             planning_reference, planning_citations = await self._main_planning(
                 delivery,
@@ -409,12 +477,10 @@ class WorkcellStageDriver:
                 planning_artifact_sha256=planning_reference.sha256,
             )
             try:
-                candidate, writer_id, outputs, producer_citations = (
-                    await self._execute_producers(
-                        delivery,
-                        tree,
-                        method_context,
-                    )
+                candidate, writer_id, outputs, producer_citations = await self._execute_producers(
+                    delivery,
+                    tree,
+                    method_context,
                 )
             except ProductError as error:
                 if error.code != "EMPTY_WORKSPACE_CANDIDATE":
@@ -431,6 +497,9 @@ class WorkcellStageDriver:
                     workcell_key=snapshot.workcell_key,
                     workspace=candidate[0].worktree,
                     candidate=candidate[1],
+                    profile=cast(
+                        VerificationProfileSnapshot, snapshot.workspace.verification_profile
+                    ),
                 )
                 recorded = self.kernel.record_candidate_verification(
                     tree.workcell_run.id,
@@ -691,9 +760,7 @@ class WorkcellStageDriver:
             for child, result in zip(batch, results, strict=True):
                 if isinstance(result, BaseException):
                     failure_artifacts = (
-                        result.artifacts
-                        if isinstance(result, _ProducerExecutionError)
-                        else ()
+                        result.artifacts if isinstance(result, _ProducerExecutionError) else ()
                     )
                     self.kernel.finish_child(
                         child.id,
@@ -1322,8 +1389,7 @@ def _delegate_invocation(
         frozen_acceptance = []
         if delivery.requirements is not None:
             frozen_acceptance = [
-                item.model_dump(mode="json")
-                for item in delivery.requirements.acceptance_criteria
+                item.model_dump(mode="json") for item in delivery.requirements.acceptance_criteria
             ]
         review_contract = (
             "\nCandidate Review Evidence："
@@ -1416,14 +1482,19 @@ def _validated_blocking_findings(content: dict[str, object]) -> tuple[BlockingFi
             "Reviewer 输出的 Blocking Finding 不符合冻结 Schema。",
         ) from error
     verdict = content.get("verdict", content.get("decision"))
-    if isinstance(verdict, str) and verdict.lower() in {
-        "blocked",
-        "changes_required",
-        "fail",
-        "failed",
-        "reject",
-        "rejected",
-    } and not findings:
+    if (
+        isinstance(verdict, str)
+        and verdict.lower()
+        in {
+            "blocked",
+            "changes_required",
+            "fail",
+            "failed",
+            "reject",
+            "rejected",
+        }
+        and not findings
+    ):
         raise _error(
             "WORKCELL_REVIEW_ARTIFACT_INVALID",
             "Reviewer 给出阻断结论但没有结构化 Blocking Finding。",
@@ -1493,9 +1564,7 @@ def _terminalize_workcell_failure(
     except Exception as error:
         kernel.fail(
             run_id,
-            error_code=str(
-                getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")
-            ),
+            error_code=str(getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")),
         )
         raise
 

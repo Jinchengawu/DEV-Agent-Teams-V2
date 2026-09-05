@@ -109,3 +109,27 @@ Codex Attempt 的 Credential Transport，不改变 Provider Binding、Runtime Id
 - AgentScope 拥有单次 Attempt 内的 Session、消息与 Runtime Transport；ACWM 仍然拥有跨 Stage
   工作流；产品拥有可观察 Workcell Composition，但不复制两者的 Runtime Contract。
 - 旧 Delivery、`RepositoryCandidate`、`ReleaseBundleV1` 和历史 Snapshot 保持可读。
+
+## 2026-09-05 修订：按仓冻结产品机器验证方案
+
+Workcell Workspace Governance 拥有机器验证方案选择及工具链资格。产品发布不可变 Profile，
+操作者通过具备权限的 Workspace API 选择 ID、执行只读工具资格探针；Agent 不能提供或改写验证命令。
+现有 Workspace Git Verification 仍只证明 Git 能力，机器验证资格有独立字段。
+
+Migration 0045 增加可空 Profile ID、资格 Snapshot 和失败原因。修改配置采用 Workspace CAS，
+同库事务内通过 Project Port 检查活动 Delivery；正在交付时拒绝修改。资格失败不伪造 ready，
+已激活 Team 可在无活动交付时补配。
+
+Delivery/Workcell Snapshot 冻结完整 Profile、Profile Hash、工具路径/版本/二进制 Hash、
+qualification Hash。新 Delivery 和 Writer 执行先复核产品 Catalog 与实际工具身份。历史空字段
+读取时省略该字段，保持原 Snapshot Hash；不得回填 Python 方案使旧执行获得新资格。
+
+首批只承诺 Python unittest 和 Node native test；不承诺任意 React/pnpm、Design 文档合同或
+QA E2E 适配。Python Runner 需先在隔离模块解析环境载入产品选定的标准库，再载入仓库测试；
+仓库同名模块不能替换 Runner。固定命令必须发现并成功运行测试，零测试、全跳过、
+超时、工具或方案漂移均失败。验证子进程继承受限系统环境；取消/超时必须终止进程组并等待退出，
+不得仅取消等待线程后释放项目 Lease。
+
+验证报告记录实际 argv、工具身份、超时、退出码、测试结果合同与日志 Hash，并与原 Candidate/Diff
+绑定。Readiness 只证明启动资格，仍为 not_run。具体本地验证结果见本轮执行清单；
+此工作区尚未冻结最终 Product Revision，正式 Live Gate 另行验收。

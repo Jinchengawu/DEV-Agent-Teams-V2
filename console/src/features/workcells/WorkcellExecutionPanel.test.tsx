@@ -30,6 +30,7 @@ describe("Workcell 运行可观测性", () => {
     expect(await screen.findByText("Main · planning + synthesis")).toBeTruthy();
     expect(screen.getByText("Child · workspace_write")).toBeTruthy();
     expect(screen.getByText(/\$bmad-build/)).toBeTruthy();
+    expect(screen.getByText("历史快照未冻结验证方案")).toBeTruthy();
     expect(await screen.findByText("#7 · open")).toBeTruthy();
     expect(screen.getByText("已推进 main")).toBeTruthy();
   });
