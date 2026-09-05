@@ -52,6 +52,8 @@ class BoardProjector:
         "verifying": "executing",
         "awaiting_candidate_decision": "candidate-approval",
         "applying": "executing",
+        "cancelling": "executing",
+        "needs_attention": "executing",
         "completed": "completed",
         "failed": "failed-cancelled",
         "cancelled": "failed-cancelled",

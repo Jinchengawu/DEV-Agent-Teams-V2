@@ -3592,6 +3592,244 @@
         }
       }
     },
+    "/v1/verification-profiles": {
+      "get": {
+        "summary": "List Verification Profiles",
+        "operationId": "list_verification_profiles_v1_verification_profiles_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/VerificationProfile"
+                      },
+                      {
+                        "$ref": "#/components/schemas/VerificationProfileV2"
+                      }
+                    ]
+                  },
+                  "title": "Response List Verification Profiles V1 Verification Profiles Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspace-bindings/{workspace_id}/verification-profile": {
+      "put": {
+        "summary": "Set Verification Profile",
+        "operationId": "set_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_put",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceVerificationProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/workspace-bindings/{workspace_id}/verification-profile/qualify": {
+      "post": {
+        "summary": "Qualify Verification Profile",
+        "operationId": "qualify_verification_profile_v1_workspace_bindings__workspace_id__verification_profile_qualify_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceBindingVerificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceBinding"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{project_id}/workcells": {
       "get": {
         "summary": "Get Project Workcells",
@@ -3851,6 +4089,93 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectWorkcellTopology"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/deliveries/{delivery_id}/workcell-runs/{run_id}/artifacts/{sha256}": {
+      "get": {
+        "summary": "Get Workcell Artifact",
+        "operationId": "get_workcell_artifact_v1_deliveries__delivery_id__workcell_runs__run_id__artifacts__sha256__get",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sha256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkcellArtifactPreview"
                 }
               }
             }
@@ -13812,6 +14137,32 @@
           "evidence_sha256": {
             "type": "string",
             "title": "Evidence Sha256"
+          },
+          "acceptance_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acceptance Id"
+          },
+          "system_policy_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Policy Id"
           }
         },
         "additionalProperties": false,
@@ -14494,6 +14845,16 @@
               }
             ]
           },
+          "review_policies": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewPolicySnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "knowledge_contexts": {
             "additionalProperties": {
               "$ref": "#/components/schemas/DeliveryKnowledgeContextSnapshot"
@@ -14845,6 +15206,7 @@
               "awaiting_candidate_decision",
               "applying",
               "needs_attention",
+              "cancelling",
               "completed",
               "rejected",
               "failed",
@@ -15154,6 +15516,20 @@
           "verification_sha256": {
             "type": "string",
             "title": "Verification Sha256"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/VerificationQualificationV2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile"
           }
         },
         "additionalProperties": false,
@@ -15877,6 +16253,35 @@
         "type": "object",
         "title": "FeatureFlags",
         "description": "Explicit v0.5.1 rollout boundaries; disabled means no implicit runtime use."
+      },
+      "FrozenAcceptanceResponsibility": {
+        "properties": {
+          "acceptance_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Acceptance Id"
+          },
+          "responsibility": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Responsibility"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Statement"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "acceptance_id",
+          "responsibility",
+          "statement"
+        ],
+        "title": "FrozenAcceptanceResponsibility"
       },
       "FrozenSlotBinding": {
         "properties": {
@@ -21549,6 +21954,64 @@
         ],
         "title": "ReviewArtifact"
       },
+      "ReviewPolicySnapshot": {
+        "properties": {
+          "workcells": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/ReviewSystemPolicy"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Workcells"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcells",
+          "sha256"
+        ],
+        "title": "ReviewPolicySnapshot"
+      },
+      "ReviewSystemPolicy": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "allowed_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Paths",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "statement"
+        ],
+        "title": "ReviewSystemPolicy"
+      },
       "Revision": {
         "properties": {
           "document_id": {
@@ -22000,6 +22463,20 @@
             "type": "array",
             "title": "Knowledge Citation Ids",
             "default": []
+          },
+          "workcell_acceptance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/WorkcellAcceptanceAssignment"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workcell Acceptance"
           }
         },
         "additionalProperties": false,
@@ -22975,6 +23452,334 @@
         ],
         "title": "UserPatch"
       },
+      "VerificationDependencyIdentity": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "root": {
+            "type": "string",
+            "title": "Root"
+          },
+          "content_sha256": {
+            "type": "string",
+            "title": "Content Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "root",
+          "content_sha256"
+        ],
+        "title": "VerificationDependencyIdentity"
+      },
+      "VerificationFileIdentity": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "title": "VerificationFileIdentity"
+      },
+      "VerificationProfile": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "commands": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Commands"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Environment"
+          },
+          "result_contract": {
+            "type": "string",
+            "enum": [
+              "python-unittest-count-v1",
+              "node-tap-count-v1"
+            ],
+            "title": "Result Contract"
+          },
+          "tool_names": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "python",
+                "node"
+              ]
+            },
+            "type": "array",
+            "title": "Tool Names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "name",
+          "commands",
+          "timeout_seconds",
+          "environment",
+          "result_contract",
+          "tool_names"
+        ],
+        "title": "VerificationProfile"
+      },
+      "VerificationProfileSnapshot": {
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/VerificationProfile"
+          },
+          "profile_sha256": {
+            "type": "string",
+            "title": "Profile Sha256"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationToolIdentity"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tools"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "profile_sha256",
+          "tools",
+          "qualification_sha256"
+        ],
+        "title": "VerificationProfileSnapshot"
+      },
+      "VerificationProfileV2": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "const": "verification-profile-v2",
+            "title": "Contract Version",
+            "default": "verification-profile-v2"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "workcell_key": {
+            "type": "string",
+            "enum": [
+              "design",
+              "frontend",
+              "backend",
+              "qa"
+            ],
+            "title": "Workcell Key"
+          },
+          "commands": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Commands"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Environment"
+          },
+          "result_contract": {
+            "type": "string",
+            "const": "fullstack-verification-v2",
+            "title": "Result Contract",
+            "default": "fullstack-verification-v2"
+          },
+          "tool_names": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "python",
+                "node"
+              ]
+            },
+            "type": "array",
+            "title": "Tool Names"
+          },
+          "config_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Config Paths"
+          },
+          "dependency_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dependency Names"
+          },
+          "input_contracts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Contracts",
+            "default": []
+          },
+          "output_contract": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Contract"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "name",
+          "workcell_key",
+          "commands",
+          "timeout_seconds",
+          "environment",
+          "tool_names",
+          "config_paths",
+          "dependency_names"
+        ],
+        "title": "VerificationProfileV2"
+      },
+      "VerificationQualificationV2": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "const": "verification-qualification-v2",
+            "title": "Contract Version",
+            "default": "verification-qualification-v2"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/VerificationProfileV2"
+          },
+          "profile_sha256": {
+            "type": "string",
+            "title": "Profile Sha256"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationToolIdentity"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "dependencies": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationDependencyIdentity"
+            },
+            "type": "array",
+            "title": "Dependencies"
+          },
+          "workspace_files": {
+            "items": {
+              "$ref": "#/components/schemas/VerificationFileIdentity"
+            },
+            "type": "array",
+            "title": "Workspace Files"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "profile_sha256",
+          "tools",
+          "dependencies",
+          "workspace_files",
+          "qualification_sha256"
+        ],
+        "title": "VerificationQualificationV2"
+      },
       "VerificationRun": {
         "properties": {
           "status": {
@@ -23024,6 +23829,39 @@
           "log_sha256"
         ],
         "title": "VerificationRun"
+      },
+      "VerificationToolIdentity": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "python",
+              "node"
+            ],
+            "title": "Name"
+          },
+          "executable": {
+            "type": "string",
+            "title": "Executable"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "executable_sha256": {
+            "type": "string",
+            "title": "Executable Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "executable",
+          "version",
+          "executable_sha256"
+        ],
+        "title": "VerificationToolIdentity"
       },
       "WikiAccess": {
         "type": "string",
@@ -23139,6 +23977,72 @@
           "expected_version"
         ],
         "title": "WorkItemCommand"
+      },
+      "WorkcellAcceptanceAssignment": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Workcell Key"
+          },
+          "acceptance": {
+            "items": {
+              "$ref": "#/components/schemas/WorkcellAcceptanceResponsibility"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Acceptance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "acceptance"
+        ],
+        "title": "WorkcellAcceptanceAssignment"
+      },
+      "WorkcellAcceptanceResponsibility": {
+        "properties": {
+          "acceptance_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Acceptance Id"
+          },
+          "responsibility": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Responsibility"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "acceptance_id",
+          "responsibility"
+        ],
+        "title": "WorkcellAcceptanceResponsibility"
+      },
+      "WorkcellArtifactPreview": {
+        "properties": {
+          "reference": {
+            "$ref": "#/components/schemas/ArtifactReference"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reference",
+          "content"
+        ],
+        "title": "WorkcellArtifactPreview"
       },
       "WorkcellCandidateProjection": {
         "properties": {
@@ -23336,6 +24240,16 @@
             "type": "array",
             "title": "Input Artifacts",
             "default": []
+          },
+          "review_scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkcellReviewScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -23485,6 +24399,58 @@
           "sha256"
         ],
         "title": "WorkcellResultValidation"
+      },
+      "WorkcellReviewScope": {
+        "properties": {
+          "workcell_key": {
+            "type": "string",
+            "title": "Workcell Key"
+          },
+          "source_plan_sha256": {
+            "type": "string",
+            "title": "Source Plan Sha256"
+          },
+          "requirements_sha256": {
+            "type": "string",
+            "title": "Requirements Sha256"
+          },
+          "task_sha256": {
+            "type": "string",
+            "title": "Task Sha256"
+          },
+          "acceptance": {
+            "items": {
+              "$ref": "#/components/schemas/FrozenAcceptanceResponsibility"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Acceptance"
+          },
+          "system_policies": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewSystemPolicy"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "System Policies"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workcell_key",
+          "source_plan_sha256",
+          "requirements_sha256",
+          "task_sha256",
+          "acceptance",
+          "system_policies",
+          "sha256"
+        ],
+        "title": "WorkcellReviewScope"
       },
       "WorkcellRun": {
         "properties": {
@@ -23790,6 +24756,20 @@
           "verification_sha256": {
             "type": "string",
             "title": "Verification Sha256"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/VerificationQualificationV2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile"
           }
         },
         "additionalProperties": false,
@@ -23869,6 +24849,42 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Verification"
+          },
+          "verification_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Id"
+          },
+          "verification_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationProfileSnapshot"
+              },
+              {
+                "$ref": "#/components/schemas/VerificationQualificationV2"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile"
+          },
+          "verification_profile_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Error Code"
           },
           "error_code": {
             "anyOf": [
@@ -23965,6 +24981,17 @@
               }
             ],
             "title": "Credential Reference"
+          },
+          "verification_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Profile Id"
           }
         },
         "additionalProperties": false,
@@ -24108,6 +25135,26 @@
           "kind"
         ],
         "title": "WorkspaceRequirement"
+      },
+      "WorkspaceVerificationProfileRequest": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "verification_profile_id": {
+            "type": "string",
+            "title": "Verification Profile Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "verification_profile_id"
+        ],
+        "title": "WorkspaceVerificationProfileRequest"
       }
     }
   }

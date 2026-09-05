@@ -21,6 +21,7 @@ from .infrastructure.feishu import SystemSecretReferenceResolver
 from .infrastructure.git import resolve_git_credential
 from .infrastructure.knowledge import SQLiteVectorIndexAdapter
 from .infrastructure.ollama import OllamaEmbeddingAdapter
+from .infrastructure.verification.command_toolchain import LocalVerificationToolchain
 from .modules.delivery.runtime_adapters import PRODUCT_RUNTIME_ADAPTER_CONTRACTS
 from .modules.knowledge import (
     KNOWLEDGE_SYNC_RUNTIME_CONTRACT,
@@ -33,6 +34,7 @@ from .modules.knowledge.provider_ports import ProviderFailure
 from .modules.orchestration import SQLitePipelineRepository
 from .modules.projects import SQLiteProjectRepository
 from .modules.workcells import SQLiteProjectWorkcellRepository
+from .modules.workcells.verification_application import VerificationProfileCatalog
 from .readiness import (
     DependencyCheck,
     ReadinessReport,
@@ -81,6 +83,7 @@ class KnowledgeLiveFacts(_ImmutableModel):
     workspace_count: int = Field(default=0, ge=0)
     external_workspace_count: int = Field(default=0, ge=0)
     ready_workspace_count: int = Field(default=0, ge=0)
+    qualified_verification_workspace_count: int = Field(default=0, ge=0)
     unique_repository_count: int = Field(default=0, ge=0)
     direct_fast_forward_main_count: int = Field(default=0, ge=0)
     resolvable_git_credential_count: int = Field(default=0, ge=0)
@@ -187,6 +190,20 @@ class KnowledgeLiveFactsCollector:
         ready_workspaces = tuple(
             workspace for workspace in workspace_bindings if workspace.status == "ready"
         )
+        qualified_verification_count = 0
+        for workspace in workspace_bindings:
+            if (
+                workspace.verification_profile is None
+                or workspace.verification_profile_id != workspace.verification_profile.profile.id
+            ):
+                continue
+            try:
+                VerificationProfileCatalog().validate(
+                    workspace.verification_profile, LocalVerificationToolchain()
+                )
+            except ProductError:
+                continue
+            qualified_verification_count += 1
         direct_fast_forward = tuple(
             workspace
             for workspace in external
@@ -390,6 +407,7 @@ class KnowledgeLiveFactsCollector:
             workspace_count=len(workspace_bindings),
             external_workspace_count=len(external),
             ready_workspace_count=len(ready_workspaces),
+            qualified_verification_workspace_count=qualified_verification_count,
             unique_repository_count=len(
                 {workspace.repository_uri for workspace in workspace_bindings}
             ),
@@ -650,6 +668,13 @@ def evaluate_knowledge_live_readiness(
                 "四个独立 external-git Workspace、凭据解析或直接 Fast-forward main 权限"
                 "尚未全部验证。"
             ),
+        ),
+        _check(
+            "workspace-verification-profiles",
+            facts.workspace_count == 4 and facts.qualified_verification_workspace_count == 4,
+            "四仓均选择产品验证方案，工具链身份资格有效；机器测试仍为 not_run。",
+            "逐仓选择验证方案并重新验证工具链。",
+            blocked_detail="至少一个仓库缺少验证方案，或冻结工具资格与当前环境不一致。",
         ),
         _check(
             "published-knowledge-pipeline",

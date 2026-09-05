@@ -19,6 +19,7 @@ from ...delivery import (
     TaskContract,
 )
 from ...shared.hashes import sha256_json
+from ...shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
 from ..agents import (
     RuntimeAdapterInvocation,
     RuntimeDispatchError,
@@ -42,6 +43,7 @@ class _TaskSemantics(BaseModel):
     instructions: str
     acceptance_ids: tuple[str, ...]
     knowledge_citation_ids: tuple[str, ...] = ()
+    workcell_acceptance: tuple[WorkcellAcceptanceAssignment, ...] | None = None
 
 
 class PlanningRoleTurnRuntimeAdapter:
@@ -66,7 +68,13 @@ class PlanningRoleTurnRuntimeAdapter:
             contextualized = requirements.model_copy(
                 update={"summary": (f"{instruction}\n\n已批准需求摘要：\n{requirements.summary}")}
             )
-            artifact = await self._planning.plan(contextualized)
+            workcells = _planning_workcells(invocation)
+            artifact = await self._planning.plan(contextualized, required_workcells=workcells)
+            if workcells:
+                validate_workcell_acceptance(
+                    requirements.model_dump(mode="json"),
+                    artifact.model_dump(mode="json"), workcells,
+                )
         else:
             raise RuntimeDispatchError(
                 "ROLE_TURN_ARTIFACT_UNSUPPORTED",
@@ -175,7 +183,14 @@ class HermesPlanningRoleTurnRuntimeAdapter:
                 instructions=parsed.instructions,
                 acceptance_ids=parsed.acceptance_ids,
                 knowledge_citation_ids=parsed.knowledge_citation_ids,
+                workcell_acceptance=parsed.workcell_acceptance,
             )
+            workcells = _planning_workcells(invocation)
+            if workcells:
+                validate_workcell_acceptance(
+                    requirements.model_dump(mode="json"),
+                    artifact.model_dump(mode="json"), workcells,
+                )
         citations = tuple(sorted(set(artifact.knowledge_citation_ids)))
         allowed_citations = set(_knowledge_citation_ids(invocation))
         if not set(citations) <= allowed_citations:
@@ -310,6 +325,8 @@ class HermesPlanningRoleTurnRuntimeAdapter:
                 "只返回一个原始 JSON object，字段必须为 title、instructions、acceptance_ids、"
                 "knowledge_citation_ids。只生成一个有边界且可机器验收的任务，不得输出"
                 "system_policy，不得调用任何工具。acceptance_ids 只能来自已批准需求；"
+                + _workcell_planning_instruction(invocation)
+                +
                 f"knowledge_citation_ids 只能从以下列表选择：{citation_ids}。",
                 _TaskSemantics,
             )
@@ -421,6 +438,38 @@ def _result(
                 knowledge_citation_ids=knowledge_citation_ids,
             ),
         ),
+    )
+
+
+def _planning_workcells(invocation: RuntimeAdapterInvocation) -> tuple[str, ...]:
+    contexts = [
+        item for item in invocation.inputs if item.contract_id == "planning-workcell-context-v1"
+    ]
+    if not contexts:
+        return ()
+    keys = contexts[0].content.get("required_workcells")
+    if (
+        len(contexts) != 1
+        or not isinstance(keys, list | tuple)
+        or not keys
+        or any(not isinstance(key, str) or not key for key in keys)
+        or len(set(keys)) != len(keys)
+    ):
+        raise RuntimeDispatchError(
+            "PLANNING_WORKCELL_CONTEXT_INVALID", "冻结 Workcell 规划输入无效"
+        )
+    return tuple(keys)
+
+
+def _workcell_planning_instruction(invocation: RuntimeAdapterInvocation) -> str:
+    keys = _planning_workcells(invocation)
+    if not keys:
+        return ""
+    return (
+        f"本次 Workcell 为 {json.dumps(keys)}。输出必须包含 workcell_acceptance 数组，"
+        "每项为 workcell_key 和 acceptance 数组；"
+        "后者每项含 acceptance_id 和本仓具体 responsibility。"
+        "只覆盖以上仓，完整分配任务验收项；共享验收项各自说明责任。该映射将等待 Plan Gate 批准。"
     )
 
 

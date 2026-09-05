@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
 from .shared.hashes import sha256_json
+from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
 
 
 class CodexRoleRunner(Protocol):
@@ -45,6 +46,7 @@ class _TaskSemantics(BaseModel):
     title: str
     instructions: str
     acceptance_ids: tuple[str, ...]
+    workcell_acceptance: tuple[WorkcellAcceptanceAssignment, ...] | None = None
 
 
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
@@ -68,7 +70,9 @@ User request:
 """
         return await self._structured("hermes-pm-simulator", prompt, RequirementArtifact)
 
-    async def plan(self, requirements: RequirementArtifact) -> TaskContract:
+    async def plan(
+        self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
+    ) -> TaskContract:
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
 Return raw JSON only with: title, instructions, acceptance_ids.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
@@ -82,15 +86,19 @@ Do not include permissions, commands, paths, system_policy, markdown or commenta
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
+        prompt += _workcell_planning_instruction(required_workcells)
         semantics = await self._structured("hermes-admin-simulator", prompt, _TaskSemantics)
         allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
         if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
             raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        return TaskContract(
+        task = TaskContract(
             title=semantics.title,
             instructions=semantics.instructions,
             acceptance_ids=semantics.acceptance_ids,
+            workcell_acceptance=semantics.workcell_acceptance,
         )
+        _validate_task_workcells(requirements, task, required_workcells)
+        return task
 
     async def _structured(
         self, role: str, prompt: str, model: type[StructuredModel]
@@ -171,7 +179,9 @@ User request:
 """
         return await self._structured("product-analysis", prompt, RequirementArtifact)
 
-    async def plan(self, requirements: RequirementArtifact) -> TaskContract:
+    async def plan(
+        self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
+    ) -> TaskContract:
         prompt = f"""You are the task planning role in Agent-Team-OS.
 Return raw JSON only with: title, instructions, acceptance_ids.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
@@ -185,14 +195,39 @@ Do not include permissions, commands, paths, system_policy, markdown or commenta
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
+        prompt += _workcell_planning_instruction(required_workcells)
         semantics = await self._structured("task-planning", prompt, _TaskSemantics)
         allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
         if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
             raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        return TaskContract(
+        task = TaskContract(
             title=semantics.title,
             instructions=semantics.instructions,
             acceptance_ids=semantics.acceptance_ids,
+            workcell_acceptance=semantics.workcell_acceptance,
+        )
+        _validate_task_workcells(requirements, task, required_workcells)
+        return task
+
+
+def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
+    if not required_workcells:
+        return ""
+    return (
+        "\n\n产品冻结的 Workcell 列表：" + json.dumps(required_workcells) + "。"
+        "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
+        "数组元素包含 acceptance_id 与本仓具体 responsibility。只覆盖以上 Workcell，"
+        "所有任务验收 ID 均须有人负责。共享验收项必须分别说明各仓责任，不能复制全局要求。"
+        "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
+    )
+
+
+def _validate_task_workcells(
+    requirements: RequirementArtifact, task: TaskContract, required_workcells: tuple[str, ...]
+) -> None:
+    if required_workcells:
+        validate_workcell_acceptance(
+            requirements.model_dump(mode="json"), task.model_dump(mode="json"), required_workcells
         )
 
 

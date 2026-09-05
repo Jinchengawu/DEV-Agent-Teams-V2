@@ -47,3 +47,32 @@ test("交付运行室展示冻结知识、不可用回执和 Workcell 引用投�
   expect(await screen.findByText("KNOWLEDGE_SOURCE_REVOKED")).toBeTruthy();
   expect(await screen.findByText("workcell-1")).toBeTruthy();
 });
+
+test("同页运行时刷新新生成的 Context 和引用，终态后停止轮询", async () => {
+  let requests = 0;
+  vi.stubGlobal("fetch", async () => {
+    requests += 1;
+    return new Response(JSON.stringify({
+      delivery_id: "delivery-progress",
+      delivery_status: requests >= 3 ? "completed" : "executing",
+      preparation_run: null,
+      contexts: requests >= 2 ? [{
+        stage_path: "backend-repair/backend",
+        artifact_reference: { uri: `artifact://sha256/${hash}`, sha256: hash, media_type: "application/json", size_bytes: 42 },
+        citation_ids: ["CIT-PROGRESS"], authorization_epoch_hash: hash,
+        trust_class: "external-collaborative",
+      }] : [],
+      unavailable: [],
+      citations: requests >= 3 ? [{ citation_id: "CIT-PROGRESS", stage_paths: ["backend-repair/backend"], workcell_run_ids: ["workcell-progress"] }] : [],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(<QueryClientProvider client={client}><KnowledgeContextPanel projectId="project-progress" deliveryId="delivery-progress"/></QueryClientProvider>);
+  expect(await screen.findByText("该 Delivery 未要求外部知识上下文")).toBeTruthy();
+  expect(await screen.findByText("workcell-progress", {}, { timeout: 3500 })).toBeTruthy();
+  const completedRequests = requests;
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  expect(requests).toBe(completedRequests);
+  view.unmount();
+  client.clear();
+});

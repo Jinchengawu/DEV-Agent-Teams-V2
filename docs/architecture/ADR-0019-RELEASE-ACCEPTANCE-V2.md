@@ -95,5 +95,44 @@ Receipt、Manifest。
 - QA Preparation Validation Hash、重新计算 Hash 的伪造 Workcell Snapshot、Hermes Planning/
   Workcell Main Attempt Phase、Knowledge Stage Result 与 Report Hash 篡改均会 Fail Closed；报告中
   不存在 Secret、Credential Reference、Repository URI 或正文；
-- 真实 Live 验收仍必须使用真实 Tenant/Ollama/Hermes/Codex 和四个 GitHub 私仓，并满足
-  `FAIL=0`、`WARN=0`、`skipped=0`。
+- 真实 Live 验收必须使用真实 Tenant/Ollama、冻结 Binding 指定的 Planning Provider、Codex
+  Workcell 与四个 GitHub 私仓，并满足 `FAIL=0`、`WARN=0`、`skipped=0`。Codex Planning
+  通过不代表 Hermes 通过；AgentScope Attempt Runtime 的资格与 Live 证据单独验收。
+
+## 2026-09-05 修订：验证方案与结果证据绑定
+
+Release Acceptance 逐字段比较 Delivery 与 Workcell Workspace 中冻结的 Verification Profile。
+Writer 的 CandidateVerification 必须包含同一 Profile/qualification Hash、工具身份、结果合同，
+实际命令及超时必须等于冻结方案；退出码和零测试/跳过规则均通过，日志内容与 Hash 一致。
+只重新计算自洽的 Report/Snapshot Hash，不能替换产品发布的验证方案或改变验证命令。
+
+历史验收校验冻结 Profile 与其资格 Hash，不执行今天的工具探针，不因今天工具升级推翻旧结果；
+新的执行资格另由 Stage Driver 检查。未冻结 Profile 的历史结果可以读取，但不能满足本版本新增的
+正式机器验证要求。旧 Snapshot 的空字段序列化不得改变原 Hash 输入。
+
+Knowledge Live Readiness 新增独立的按仓机器验证资格检查，四仓均通过才具备启动资格；
+检查通过仍为 execution_status=not_run，不是机器测试、Agent 执行或完整 Live 成功证据。
+
+## 2026-09-05 已接受修订：Review Scope 与接纳绑定
+
+Release Acceptance 从 Delivery 的 Requirements、Task、已批准 Plan Gate 和冻结产品 Policy
+重新编译每个 Workcell Scope，再与实际 Workcell Snapshot 比较。仅重签一个自洽 Scope Hash
+不能替换批准责任。历史缺 Scope 的结果仍可读取，但不满足新增正式 Review 要求。
+
+每份候选 Review 必须重读 Artifact Store 原始 JSON，验证 Scope/Candidate/Diff SHA，校验
+Finding 的 Acceptance/System Policy 引用，并与持久 Review 记录逐项相等。不能只检查
+`blocking_findings=[]`、Artifact 存在或 Hash 自洽。无效历史 Review 与失败 Repair Run 保留，
+最终成功 Run 必须满足完整验证；Verifier 仍只读，不获得修复或 Apply 权限。
+
+状态以 ARCH-20260905-03 为准；原始 Review 正反回归与同 Revision Live 验收分别记录。
+
+## 2026-09-05 修订：V2 验证步骤与上游来源
+
+V2 Profile 保留显式版本，V1 序列化与历史 Hash 不变。Release 按冻结 Profile 核对真实步骤、
+命令、工具/配置资格、非零发现数量、规定测试 ID、失败/跳过计数、日志和结果 Artifact；
+不会为历史验收重新探测当前机器上的工具版本。
+
+每个输出合同必须恰有一个已登记的 Publication，并绑定该 Workcell 的实际
+CandidateVerification Hash。消费者 Report 输入必须属于其冻结输入，且来自同一 Delivery
+另一个最终成功 Workcell 的已登记输出；合同集合必须完整匹配。包成员内容重新读回校验，
+缺少发布、跨交付引用、替换验证或仅自洽的孤立包均不能通过接纳。

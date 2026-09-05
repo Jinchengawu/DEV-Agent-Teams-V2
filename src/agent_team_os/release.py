@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -371,8 +372,7 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 browser_candidate_matches_main = (
                     browser_evidence.candidate_matches_main
                 )
-            if _git_status(project_root) != initial_status:
-                raise RuntimeError("release gate changed the DEV worktree")
+            _require_unchanged_gate_build(project_root, dev_revision, acwm_revision)
             verification = accepted_candidate.verification
             report = _report(
                 kind=kind,
@@ -636,6 +636,17 @@ def _report_evidence_sha256(report: GateReport) -> str:
     ).hexdigest()
 
 
+def _require_unchanged_gate_build(
+    project_root: Path, dev_revision: str, acwm_revision: str
+) -> None:
+    if (
+        _git_status(project_root)
+        or _git_revision(project_root) != dev_revision
+        or imported_acwm_revision() != acwm_revision
+    ):
+        raise RuntimeError("release gate Product/ACWM revision changed or worktree became dirty")
+
+
 def _git_revision(project_root: Path) -> str:
     return subprocess.run(
         ("git", "rev-parse", "HEAD"),
@@ -663,7 +674,7 @@ def _run_browser_gate(project_root: Path, runtime: Path) -> BrowserGateEvidence:
     environment = {
         **os.environ,
         "AGENT_TEAM_OS_DATA_DIR": str(runtime / "browser"),
-        "AGENT_TEAM_OS_TEST_PASSWORD": "Pipeline-Gate-2026-Verified",
+        "AGENT_TEAM_OS_TEST_PASSWORD": secrets.token_urlsafe(32),
     }
     state = runtime / "browser-state.json"
     checkpoint = runtime / "browser-checkpoint.json"

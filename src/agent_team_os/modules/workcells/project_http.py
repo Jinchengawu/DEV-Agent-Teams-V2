@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Request, status
 
+from ...shared.verification import VerificationProfileLike
 from .domain import (
     ProjectWorkcellTopology,
     TeamActivationRequest,
@@ -11,6 +12,7 @@ from .domain import (
     WorkspaceBindingAssignment,
     WorkspaceBindingCreate,
     WorkspaceBindingVerificationRequest,
+    WorkspaceVerificationProfileRequest,
 )
 from .project_application import ProjectWorkcellGovernance
 
@@ -23,6 +25,42 @@ def create_project_workcell_router(
     authorize_workspace_manage: Callable[[Request, str], None] | None = None,
 ) -> APIRouter:
     router = APIRouter()
+
+    @router.get("/v1/verification-profiles", response_model=tuple[VerificationProfileLike, ...])
+    def list_verification_profiles(
+        project_id: str, request: Request
+    ) -> tuple[VerificationProfileLike, ...]:
+        if authorize_read is not None:
+            authorize_read(request, project_id)
+        return governance.verification_profiles.list()
+
+    @router.put(
+        "/v1/workspace-bindings/{workspace_id}/verification-profile",
+        response_model=WorkspaceBinding,
+    )
+    def set_verification_profile(
+        workspace_id: str, body: WorkspaceVerificationProfileRequest, request: Request
+    ) -> WorkspaceBinding:
+        if authorize_workspace_manage is not None:
+            authorize_workspace_manage(request, workspace_id)
+        return governance.set_verification_profile(
+            workspace_id,
+            expected_version=body.expected_version,
+            profile_id=body.verification_profile_id,
+        )
+
+    @router.post(
+        "/v1/workspace-bindings/{workspace_id}/verification-profile/qualify",
+        response_model=WorkspaceBinding,
+    )
+    def qualify_verification_profile(
+        workspace_id: str, body: WorkspaceBindingVerificationRequest, request: Request
+    ) -> WorkspaceBinding:
+        if authorize_workspace_manage is not None:
+            authorize_workspace_manage(request, workspace_id)
+        return governance.qualify_verification_profile(
+            workspace_id, expected_version=body.expected_version
+        )
 
     @router.get(
         "/v1/projects/{project_id}/workcells",

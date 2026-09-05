@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from agent_team_os.delivery import DeliveryBuildIdentitySnapshot, DeliveryMethodSnapshot
 from agent_team_os.infrastructure.database import MigrationRunner
 from agent_team_os.infrastructure.git import ProjectGitWorkspaces
@@ -18,6 +20,7 @@ from agent_team_os.modules.workcells import (
     SQLiteTeamTemplateRepository,
     TeamTemplateCatalog,
 )
+from agent_team_os.shared.errors import ProductError
 
 
 class Compiler:
@@ -142,12 +145,14 @@ def test_delivery_snapshot_compiles_team_pipeline_provider_workspace_and_method_
                 "kind": "git_repository_v1",
                 "adapter_type": "managed-bare-git",
                 "repository_uri": f"projects/snapshot-project/{role}",
+                "verification_profile_id": "python-unittest-v1",
             },
         )
-        governance.verify_workspace(
+        verified = governance.verify_workspace(
             assignment.workspace_binding.id,
             expected_version=assignment.workspace_binding.version,
         )
+        governance.qualify_verification_profile(verified.id, expected_version=verified.version)
     governance.activate("snapshot-project", expected_version=1)
     methods = DeliveryMethodSnapshot(
         snapshot_id="method-pack-set-v1:test",
@@ -192,7 +197,25 @@ def test_delivery_snapshot_compiles_team_pipeline_provider_workspace_and_method_
     assert len({item.repository_uri for item in snapshot.workspaces}) == 4
     assert snapshot.method_snapshot == methods
     assert snapshot.build_identity == build_identity
-    assert compiler.compile(
-        "snapshot-project", "four-workcell-delivery:1"
-    ).snapshot_sha256 == snapshot.snapshot_sha256
+    assert snapshot.review_policies is not None
+    assert set(snapshot.review_policies.workcells) == set(roles)
+    assert (
+        compiler.compile("snapshot-project", "four-workcell-delivery:1").snapshot_sha256
+        == snapshot.snapshot_sha256
+    )
     assert "credential_reference" not in snapshot.model_dump_json()
+    old_hash = snapshot.snapshot_sha256
+    first = governance.topology("snapshot-project").workspace_bindings[0]
+    changed = governance.set_verification_profile(
+        first.id,
+        expected_version=first.version,
+        profile_id="node-native-test-v1",
+    )
+    with pytest.raises(ProductError) as unqualified:
+        compiler.compile("snapshot-project", "four-workcell-delivery:1")
+    assert unqualified.value.code == "WORKCELL_VERIFICATION_PROFILE_REQUIRED"
+    governance.qualify_verification_profile(changed.id, expected_version=changed.version)
+    fresh = compiler.compile("snapshot-project", "four-workcell-delivery:1")
+    assert fresh.snapshot_sha256 != old_hash
+    assert snapshot.workspaces[0].verification_profile.profile.id == "python-unittest-v1"
+    assert fresh.workspaces[0].verification_profile.profile.id == "node-native-test-v1"

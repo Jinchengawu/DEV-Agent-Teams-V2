@@ -10,9 +10,12 @@ from typing import Protocol, cast
 from ...delivery import DeliveryRun, SQLiteDeliveryRepository
 from ...knowledge_context_contract import KNOWLEDGE_CONTEXT_STAGE_PATHS
 from ...readiness import snapshot_delivery_build_identity
+from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_bytes, sha256_json
+from ...shared.review_scope import compile_review_scope, validate_review_output
+from ...shared.verification import VerificationQualificationV2, VerificationSnapshot
 from ..agents import AgentRun, AgentRunLedger
-from ..artifacts import ContentAddressedArtifactStorage
+from ..artifacts import ArtifactReference, ArtifactStorageError, ContentAddressedArtifactStorage
 from ..knowledge import KnowledgeAuthorizationStampV1, SQLiteKnowledgeContextRepository
 from ..orchestration import (
     SQLitePipelineRepository,
@@ -30,6 +33,10 @@ from ..workcells import (
     WorkcellResultValidation,
     WorkcellRunTree,
 )
+from ..workcells.verification_application import VerificationProfileCatalog, validate_test_result
+from ..workcells.verification_domain import VerificationReportV2
+from ..workcells.verification_evidence import validate_report_v2
+from ..workcells.verification_packages import resolve_publication
 from .acceptance_domain import (
     ReleaseAcceptanceCheckV2,
     ReleaseAcceptanceReportV2,
@@ -576,6 +583,29 @@ class ReleaseAcceptanceVerifierV2:
         )
         if len(workspaces) != 1:
             return False
+        if delivery.requirements is None or delivery.task is None or delivery.plan_gate is None:
+            return False
+        try:
+            expected_scope = compile_review_scope(
+                requirements=delivery.requirements.model_dump(mode="json"),
+                task=delivery.task.model_dump(mode="json"),
+                plan_subject_sha256=delivery.plan_gate.subject_sha256,
+                plan_approved=delivery.plan_gate.decision == "approve",
+                workcell_key=run.workcell_key,
+                required_workcells=tuple(
+                    sorted(
+                        {
+                            str(item["workcell_key"])
+                            for item in delivery_snapshot.workcell_stage_map.values()
+                        }
+                    )
+                ),
+                policies=delivery_snapshot.review_policies,
+            )
+        except (ProductError, KeyError, ValueError):
+            return False
+        if workcell.review_scope != expected_scope:
+            return False
         delivery_workspace = workspaces[0]
         if (
             run.delivery_id != delivery.id
@@ -593,6 +623,7 @@ class ReleaseAcceptanceVerifierV2:
             or workcell.workspace.repository_uri != delivery_workspace.repository_uri
             or workcell.workspace.base_revision != delivery_workspace.base_revision
             or workcell.workspace.verification_sha256 != delivery_workspace.verification_sha256
+            or workcell.workspace.verification_profile != delivery_workspace.verification_profile
             or workcell.delegation_policy != definition.delegation_policy
             or workcell.slot_method_bindings != stage.delegate_methods
             or workcell.slot_purpose_bindings != stage.delegate_purposes
@@ -832,6 +863,11 @@ class ReleaseAcceptanceVerifierV2:
                         tree.result_validation is not None
                         or verification.status != "passed"
                         or not _verification_hash_is_valid(verification)
+                        or not _verification_profile_report_is_valid(
+                            tree.workcell_run.workcell_snapshot.workspace.verification_profile,
+                            verification,
+                            artifact_store=self.artifacts,
+                        )
                         or result.candidate_sha != verification.candidate_sha
                         or result.diff_sha256 != verification.diff_sha256
                         or result.verification_sha256 != verification.sha256
@@ -854,6 +890,91 @@ class ReleaseAcceptanceVerifierV2:
                 if set(result.review_artifact_ids) != {review.id for review in tree.reviews}:
                     return False
         except Exception:
+            return False
+        return self._verify_workcell_package_sources(final_trees)
+
+    def _verify_workcell_package_sources(self, final_trees: tuple[WorkcellRunTree, ...]) -> bool:
+        """把验证输入接回本次最终成功 Workcell，Store 中存在对象本身不证明其来源。"""
+        sources: dict[Sha256, tuple[WorkcellRunTree, ArtifactReference, str]] = {}
+        consumers: list[tuple[WorkcellRunTree, VerificationReportV2]] = []
+        try:
+            for tree in final_trees:
+                run = tree.workcell_run
+                profile = run.workcell_snapshot.workspace.verification_profile
+                if not isinstance(profile, VerificationQualificationV2):
+                    continue
+                verification, result = tree.verification, tree.result
+                # QA Preparation 共用 QA Workspace Snapshot，但只产 Artifact。
+                # 调用方已完整验证 ResultValidation，它不运行仓库 Profile 或发布验证包。
+                if verification is None and tree.result_validation is not None:
+                    continue
+                if verification is None or result is None or run.status != "succeeded":
+                    return False
+                report = VerificationReportV2.model_validate(verification.report)
+                if (
+                    report.delivery_id != run.delivery_id
+                    or report.workcell_key != run.workcell_key
+                    or verification.workcell_run_id != run.id
+                    or result.workcell_run_id != run.id
+                ):
+                    return False
+                publications = []
+                for reference in result.output_artifact_references:
+                    if reference.media_type != "application/json":
+                        continue
+                    payload = json.loads(self.artifacts.get_bytes(reference, max_bytes=1_048_576))
+                    if isinstance(payload, dict) and payload.get("contract_version") == (
+                        "verification-publication-v1"
+                    ):
+                        publications.append(reference)
+                if len(publications) != int(profile.profile.output_contract is not None):
+                    return False
+                for reference in publications:
+                    manifest = resolve_publication(
+                        self.artifacts,
+                        reference,
+                        delivery_id=run.delivery_id,
+                        source_report=report,
+                        verification_sha256=verification.sha256,
+                    )
+                    if (
+                        manifest.package_contract != profile.profile.output_contract
+                        or reference.sha256 in sources
+                    ):
+                        return False
+                    sources[reference.sha256] = (tree, reference, manifest.package_contract)
+                consumers.append((tree, report))
+            for tree, report in consumers:
+                profile = tree.workcell_run.workcell_snapshot.workspace.verification_profile
+                assert isinstance(profile, VerificationQualificationV2)
+                frozen_publications = []
+                for reference in tree.workcell_run.workcell_snapshot.input_artifacts:
+                    if reference.media_type != "application/json":
+                        continue
+                    payload = json.loads(self.artifacts.get_bytes(reference, max_bytes=1_048_576))
+                    if isinstance(payload, dict) and payload.get("contract_version") == (
+                        "verification-publication-v1"
+                    ):
+                        frozen_publications.append(reference)
+                if len(frozen_publications) != len(report.inputs) or {
+                    item.sha256 for item in frozen_publications
+                } != {item.sha256 for item in report.inputs}:
+                    return False
+                contracts = []
+                for reference in report.inputs:
+                    source = sources.get(reference.sha256)
+                    if (
+                        source is None
+                        or source[1] != reference
+                        or source[0].workcell_run.id == tree.workcell_run.id
+                        or source[0].workcell_run.delivery_id != tree.workcell_run.delivery_id
+                        or reference not in tree.workcell_run.workcell_snapshot.input_artifacts
+                    ):
+                        return False
+                    contracts.append(source[2])
+                if sorted(contracts) != sorted(profile.profile.input_contracts):
+                    return False
+        except (ProductError, ArtifactStorageError, ValueError, OSError, KeyError):
             return False
         return True
 
@@ -1044,9 +1165,24 @@ class ReleaseAcceptanceVerifierV2:
                         or review.reviewer_binding_hash != reviewer.resolved_binding_hash
                         or not _review_matches_candidate(review, candidate)
                         or not _review_hash_is_valid(review)
+                        or not any(
+                            envelope.contract_id == "review-artifact-v1"
+                            and envelope.reference == review.artifact_reference
+                            for envelope in reviewer.artifact_envelopes
+                        )
                     ):
                         return False, candidates
-                    self.artifacts.get_bytes(review.artifact_reference)
+                    content = json.loads(self.artifacts.get_bytes(review.artifact_reference))
+                    if not isinstance(content, dict):
+                        return False, candidates
+                    findings = validate_review_output(
+                        content,
+                        scope=candidate_tree.workcell_run.workcell_snapshot.review_scope,
+                        candidate_sha=candidate.candidate_revision,
+                        diff_sha256=candidate.diff_sha256,
+                    )
+                    if findings != review.blocking_findings:
+                        return False, candidates
                 pr = self.releases.get_pr(candidate.id)
                 if pr is None or not _pr_matches_candidate(pr, candidate):
                     return False, candidates
@@ -1470,3 +1606,58 @@ def _receipt_matches_candidate(
         and receipt.after_revision == candidate.candidate_revision
         and receipt.receipt_sha256 == sha256_json(payload)
     )
+
+
+def _verification_profile_report_is_valid(
+    profile: VerificationSnapshot | None,
+    verification: CandidateVerification,
+    *,
+    artifact_store: ContentAddressedArtifactStorage | None = None,
+) -> bool:
+    if isinstance(profile, VerificationQualificationV2):
+        if artifact_store is None:
+            return False
+        try:
+            report_v2 = VerificationReportV2.model_validate(verification.report)
+            validate_report_v2(report_v2, profile, artifact_store)
+            return (
+                report_v2.candidate_sha == verification.candidate_sha
+                and report_v2.diff_sha256 == verification.diff_sha256
+            )
+        except (ProductError, ArtifactStorageError, ValueError, OSError, KeyError):
+            return False
+    try:
+        VerificationProfileCatalog().validate_frozen(profile)
+    except ProductError:
+        return False
+    assert profile is not None
+    report = verification.report
+    tools: dict[str, str] = {tool.name: tool.executable for tool in profile.tools}
+    expected_commands = [[tools[command[0]], *command[1:]] for command in profile.profile.commands]
+    commands = report.get("commands")
+    if (
+        report.get("profile_sha256") != profile.profile_sha256
+        or report.get("qualification_sha256") != profile.qualification_sha256
+        or report.get("tools") != [tool.model_dump(mode="json") for tool in profile.tools]
+        or report.get("result_contract") != profile.profile.result_contract
+        or report.get("candidate_sha") != verification.candidate_sha
+        or report.get("diff_sha256") != verification.diff_sha256
+        or not isinstance(commands, list)
+        or len(commands) != len(expected_commands)
+    ):
+        return False
+    for command, expected in zip(commands, expected_commands, strict=True):
+        if not isinstance(command, dict):
+            return False
+        log = command.get("redacted_log")
+        if (
+            command.get("command") != expected
+            or command.get("timeout_seconds") != profile.profile.timeout_seconds
+            or command.get("exit_code") != 0
+            or command.get("result_contract_passed") is not True
+            or not isinstance(log, str)
+            or command.get("log_sha256") != hashlib.sha256(log.encode()).hexdigest()
+            or not validate_test_result(profile.profile.id, log)
+        ):
+            return False
+    return True

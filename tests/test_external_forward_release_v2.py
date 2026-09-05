@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,9 @@ from agent_team_os.modules.releases import (
     ExternalReleaseCatalog,
     ExternalReleaseError,
     GitHubPRReceiptCreate,
+    ReleaseApplyAttemptV2,
     ReleaseBundleV2,
+    ReleaseManifestV2,
     RemoteApplyReceipt,
     SQLiteExternalReleaseRepository,
     WorkspaceCandidateV2,
@@ -236,8 +239,7 @@ def test_partial_apply_never_rolls_back_and_same_bundle_resume_forward_recovers(
         for candidate in bundle.candidates[:2]
     )
     assert all(
-        remote.revision(candidate) == candidate.base_revision
-        for candidate in bundle.candidates[2:]
+        remote.revision(candidate) == candidate.base_revision for candidate in bundle.candidates[2:]
     )
     assert coordinator.health(bundle.project_id).status == "release_drifted"
     assert projects.active_delivery_id(bundle.project_id) == bundle.delivery_id
@@ -286,3 +288,186 @@ def test_resume_forward_refuses_drift_without_rewriting_bundle(tmp_path: Path) -
 
     assert drift.value.code == "RELEASE_UNAPPLIED_REPOSITORY_BASE_DRIFT"
     assert repository.get_manifest(bundle.project_id) is None
+
+
+def test_finalization_failure_keeps_recovery_lease_and_resumes_without_reapplying(
+    tmp_path: Path,
+) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+    remote = FakeForwardRemote(dict(bases), fail_once_at=-1)
+    coordinator = ExternalForwardReleaseCoordinator(repository, remote)
+    # 在最后的完成事件写入处注入真实数据库失败，覆盖整个最终提交的原子性。
+    with sqlite3.connect(repository.database) as connection:
+        connection.execute(
+            """CREATE TRIGGER fail_release_completion BEFORE INSERT ON product_events
+            WHEN NEW.event_type='delivery.completed'
+            BEGIN SELECT RAISE(ABORT, 'finalization persistence failed'); END"""
+        )
+
+    with pytest.raises(ExternalReleaseError):
+        coordinator.apply(bundle)
+
+    assert all(
+        remote.revision(candidate) == candidate.candidate_revision
+        for candidate in bundle.candidates
+    )
+    assert len(repository.list_remote_receipts(bundle.delivery_id)) == 4
+    attempt = repository.get_attempt(bundle.delivery_id)
+    assert attempt is not None and attempt.status == "needs_attention"
+    assert repository.get_manifest(bundle.project_id) is None
+    assert coordinator.health(bundle.project_id).status == "release_drifted"
+    assert projects.active_delivery_id(bundle.project_id) == bundle.delivery_id
+    deliveries = SQLiteDeliveryRepository(repository.database)
+    delivery = deliveries.get(bundle.delivery_id)
+    assert delivery is not None and delivery.status == "needs_attention"
+    assert not any(
+        event.event_type == "delivery.completed"
+        for event in deliveries.list_events(bundle.delivery_id)
+    )
+
+    with sqlite3.connect(repository.database) as connection:
+        connection.execute("DROP TRIGGER fail_release_completion")
+    manifest = coordinator.resume_forward(bundle.delivery_id)
+
+    assert repository.get_manifest(bundle.project_id) == manifest
+    completed = repository.get_attempt(bundle.delivery_id)
+    assert completed is not None and completed.status == "completed"
+    assert coordinator.health(bundle.project_id).status == "healthy"
+    assert projects.active_delivery_id(bundle.project_id) is None
+    delivery = deliveries.get(bundle.delivery_id)
+    assert delivery is not None and delivery.status == "completed"
+    assert delivery.release_manifest_v2_sha256 == manifest.manifest_sha256
+    assert (
+        sum(
+            event.event_type == "delivery.completed"
+            for event in deliveries.list_events(bundle.delivery_id)
+        )
+        == 1
+    )
+
+
+def test_committed_finalization_with_lost_acknowledgement_stays_completed(
+    tmp_path: Path,
+) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+
+    class LostAcknowledgementRepository(SQLiteExternalReleaseRepository):
+        def finalize_release(
+            self,
+            bundle: ReleaseBundleV2,
+            attempt: ReleaseApplyAttemptV2,
+            manifest: ReleaseManifestV2,
+        ) -> None:
+            super().finalize_release(bundle, attempt, manifest)
+            raise OSError("completion acknowledgement lost after commit")
+
+    coordinator = ExternalForwardReleaseCoordinator(
+        LostAcknowledgementRepository(repository.database),
+        FakeForwardRemote(dict(bases), fail_once_at=-1),
+    )
+
+    manifest = coordinator.apply(bundle)
+
+    assert coordinator.apply(bundle) == manifest
+    assert coordinator.resume_forward(bundle.delivery_id) == manifest
+    assert repository.get_manifest(bundle.project_id) == manifest
+    assert coordinator.health(bundle.project_id).status == "healthy"
+    assert projects.active_delivery_id(bundle.project_id) is None
+    attempt = repository.get_attempt(bundle.delivery_id)
+    assert attempt is not None and attempt.status == "completed"
+    deliveries = SQLiteDeliveryRepository(repository.database)
+    delivery = deliveries.get(bundle.delivery_id)
+    assert delivery is not None and delivery.status == "completed"
+    assert not any(
+        event.event_type == "delivery.needs_attention"
+        for event in deliveries.list_events(bundle.delivery_id)
+    )
+
+
+def test_recovery_owners_survive_legacy_terminal_delivery_and_missing_lease(
+    tmp_path: Path,
+) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == ()
+    coordinator = ExternalForwardReleaseCoordinator(
+        repository, FakeForwardRemote(dict(bases), fail_once_at=0)
+    )
+    with pytest.raises(ExternalReleaseError):
+        coordinator.apply(bundle)
+    deliveries = SQLiteDeliveryRepository(repository.database)
+    delivery = deliveries.get(bundle.delivery_id)
+    assert delivery is not None
+    deliveries.save(delivery.model_copy(update={"status": "cancelled"}))
+    projects.release_lease(bundle.project_id, bundle.delivery_id)
+
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == (bundle.delivery_id,)
+    assert repository.project_recovery_delivery_ids("another-project") == ()
+    # 历史不一致时，即使 Attempt 被误记为完成，drifted Health 仍保留恢复所有者。
+    attempt = repository.get_attempt(bundle.delivery_id)
+    assert attempt is not None
+    repository.put_attempt(
+        attempt.model_copy(update={"status": "completed", "version": attempt.version + 1}),
+        expected_version=attempt.version,
+    )
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == (bundle.delivery_id,)
+    health = coordinator.health(bundle.project_id)
+    repository.put_health(health.model_copy(update={"status": "healthy"}))
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == ()
+
+
+def test_resume_repairs_a_legacy_completed_delivery_projection(tmp_path: Path) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+    coordinator = ExternalForwardReleaseCoordinator(
+        repository, FakeForwardRemote(dict(bases), fail_once_at=2)
+    )
+    with pytest.raises(ExternalReleaseError):
+        coordinator.apply(bundle)
+    deliveries = SQLiteDeliveryRepository(repository.database)
+    delivery = deliveries.get(bundle.delivery_id)
+    assert delivery is not None
+    deliveries.save(delivery.model_copy(update={"status": "completed", "error_code": None}))
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == (bundle.delivery_id,)
+
+    manifest = coordinator.resume_forward(bundle.delivery_id)
+
+    repaired = deliveries.get(bundle.delivery_id)
+    assert repaired is not None and repaired.release_manifest_v2_sha256 == manifest.manifest_sha256
+    assert projects.active_delivery_id(bundle.project_id) is None
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == ()
+
+
+def test_finalization_failure_uses_latest_attempt_version_for_recovery(tmp_path: Path) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+
+    class AdvancedAttemptRepository(SQLiteExternalReleaseRepository):
+        fail_once = True
+
+        def finalize_release(
+            self,
+            bundle: ReleaseBundleV2,
+            attempt: ReleaseApplyAttemptV2,
+            manifest: ReleaseManifestV2,
+        ) -> None:
+            if self.fail_once:
+                self.fail_once = False
+                self.put_attempt(
+                    attempt.model_copy(update={"version": attempt.version + 1}),
+                    expected_version=attempt.version,
+                )
+                raise OSError("finalization interrupted after attempt version advanced")
+            super().finalize_release(bundle, attempt, manifest)
+
+    coordinator = ExternalForwardReleaseCoordinator(
+        AdvancedAttemptRepository(repository.database),
+        FakeForwardRemote(dict(bases), fail_once_at=-1),
+    )
+    with pytest.raises(ExternalReleaseError):
+        coordinator.apply(bundle)
+    attempt = repository.get_attempt(bundle.delivery_id)
+    assert attempt is not None and attempt.status == "needs_attention" and attempt.version == 3
+    assert projects.active_delivery_id(bundle.project_id) == bundle.delivery_id
+
+    manifest = coordinator.resume_forward(bundle.delivery_id)
+
+    assert repository.get_finalized_manifest(bundle) == manifest
+    assert repository.project_recovery_delivery_ids(bundle.project_id) == ()

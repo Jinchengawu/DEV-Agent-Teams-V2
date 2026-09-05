@@ -34,6 +34,7 @@ from ...delivery import (
 )
 from ...shared.hashes import Sha256, sha256_json
 from ...shared.repositories import RepositoryRole, RepositorySnapshot
+from ...shared.review_scope import validate_workcell_acceptance
 from ..agents import (
     AgentRun,
     AgentRunLedger,
@@ -352,21 +353,22 @@ class PipelineExecutionModule:
         )
         run = self._runs.get_for_delivery(delivery.id)
         if decision == "reject":
-            self._runs.transition(
-                run.id,
-                command="cancel",
-                node_id=delivery.candidate_gate.gate_id,
-                expected_version=run.version,
-            )
-            updated = delivery.model_copy(
+            cancelling = delivery.model_copy(
                 update={
-                    "status": "rejected",
+                    "status": "cancelling",
                     "version": delivery.version + 1,
                     "candidate_gate": decided,
                     "updated_at": datetime.now(UTC),
                 }
             )
-            self._repository.save(updated)
+            self._repository.save_if_current(
+                cancelling, expected_version=delivery.version, expected_status=delivery.status
+            )
+            self.cancel(cancelling)
+            updated = cancelling.model_copy(update={"status": "rejected"})
+            self._repository.save_if_current(
+                updated, expected_version=cancelling.version, expected_status="cancelling"
+            )
             return updated
         if delivery.release_bundle_v2_sha256 is not None:
             if self._external_release is None:
@@ -388,7 +390,9 @@ class PipelineExecutionModule:
                 "updated_at": datetime.now(UTC),
             }
         )
-        self._repository.save(applying)
+        self._repository.save_if_current(
+            applying, expected_version=delivery.version, expected_status=delivery.status
+        )
         if delivery.release_bundle_v2_sha256 is not None:
             external_release = self._external_release
             assert external_release is not None
@@ -742,7 +746,9 @@ class PipelineExecutionModule:
         if projection == "task-contract-v1" or projection is None:
             if delivery.requirements is None:
                 raise DeliveryStateConflictError("task projection requires RequirementArtifact")
-            task = await self._planning.plan(delivery.requirements)
+            task = await self._planning.plan(
+                delivery.requirements, required_workcells=_required_workcells(delivery)
+            )
             updated = delivery.model_copy(
                 update={
                     "status": "planning",
@@ -799,6 +805,12 @@ class PipelineExecutionModule:
         if subject_kind == "delivery-plan":
             if delivery.requirements is None or delivery.task is None:
                 raise DeliveryStateConflictError("plan gate subject is incomplete")
+            if delivery.delivery_execution_snapshot is not None:
+                validate_workcell_acceptance(
+                    delivery.requirements.model_dump(mode="json"),
+                    delivery.task.model_dump(mode="json"),
+                    _required_workcells(delivery),
+                )
             artifact_id = "delivery-plan"
             subject_hash = _sha256({"requirements": delivery.requirements, "task": delivery.task})
             field = "plan_gate"
@@ -1163,6 +1175,14 @@ class PipelineExecutionModule:
             return ("requirements-ready",), requirements
         if contract_id == "task-contract-v1":
             task = TaskContract.model_validate(output.content)
+            if delivery.delivery_execution_snapshot is not None:
+                if delivery.requirements is None:
+                    raise DeliveryStateConflictError("task projection requires RequirementArtifact")
+                validate_workcell_acceptance(
+                    delivery.requirements.model_dump(mode="json"),
+                    task.model_dump(mode="json"),
+                    _required_workcells(delivery),
+                )
             self._repository.save(
                 self._get(delivery.id).model_copy(
                     update={
@@ -1292,6 +1312,14 @@ class PipelineExecutionModule:
                         content=artifact.model_dump(mode="json"),
                     )
                 )
+        if delivery.delivery_execution_snapshot is not None:
+            inputs.append(
+                RuntimeOutputArtifact(
+                    contract_id="planning-workcell-context-v1",
+                    media_type="application/json",
+                    content={"required_workcells": _required_workcells(delivery)},
+                )
+            )
         return tuple(inputs)
 
     def _admit_knowledge(self, delivery: DeliveryRun, stage_path: str) -> None:
@@ -1790,3 +1818,12 @@ def _is_workcell_loop(node: dict[str, object]) -> bool:
         child.get("kind") == "stage" and child.get("workflow_mode") == "agentscope.workcell-team"
         for child in children
     )
+
+
+def _required_workcells(delivery: DeliveryRun) -> tuple[str, ...]:
+    snapshot = delivery.delivery_execution_snapshot
+    if snapshot is None:
+        return ()
+    return tuple(sorted({
+        str(stage["workcell_key"]) for stage in snapshot.workcell_stage_map.values()
+    }))

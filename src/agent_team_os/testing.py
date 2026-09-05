@@ -14,6 +14,7 @@ from .delivery import (
 )
 from .modules.releases import GitHubPRReceiptCreate, WorkspaceCandidateV2
 from .modules.workcells import WorkcellAgentInvocation, WorkcellAgentOutput
+from .shared.review_scope import WorkcellAcceptanceAssignment, WorkcellAcceptanceResponsibility
 
 
 class DeterministicPlanningService:
@@ -32,7 +33,9 @@ class DeterministicPlanningService:
             ),
         )
 
-    async def plan(self, requirements: RequirementArtifact) -> TaskContract:
+    async def plan(
+        self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
+    ) -> TaskContract:
         approved_marker = "已批准需求摘要："
         instructions = (
             requirements.summary.rsplit(approved_marker, 1)[1].strip()
@@ -43,6 +46,27 @@ class DeterministicPlanningService:
             title="Implement the approved Backend request",
             instructions=instructions,
             acceptance_ids=tuple(item.id for item in requirements.acceptance_criteria),
+            workcell_acceptance=(
+                tuple(
+                    WorkcellAcceptanceAssignment(
+                        workcell_key=key,
+                        acceptance=tuple(
+                            WorkcellAcceptanceResponsibility(
+                                acceptance_id=item.id,
+                                responsibility={
+                                    "design": "定义验收项的接口合同和状态展示规范。",
+                                    "frontend": "实现验收项的前端交互与页面测试。",
+                                    "backend": "实现验收项的服务端接口与单元测试。",
+                                    "qa": "验证验收项的跨仓端到端闭环。",
+                                }[key],
+                            )
+                            for item in requirements.acceptance_criteria
+                        ),
+                    )
+                    for key in required_workcells
+                )
+                if required_workcells else None
+            ),
         )
 
 
@@ -97,7 +121,9 @@ class DeterministicWorkcellAgent:
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         if invocation.phase == "planning":
             content: dict[str, object] = {
-                "assignments": json.loads(invocation.instruction.split("：", 1)[1])
+                "assignments": json.loads(
+                    invocation.instruction.rsplit("冻结 assignments 数组：", 1)[1]
+                )
             }
         elif invocation.phase == "synthesis":
             content = {"status": "passed", "workcell": invocation.workcell_key}
@@ -125,7 +151,18 @@ class DeterministicWorkcellAgent:
             )
             content = {"changed_files": [source, test]}
         elif invocation.workspace_access == "candidate_read":
-            content = {"blocking_findings": [], "method_id": invocation.method_id}
+            try:
+                evidence_text = invocation.instruction.split("Candidate Review Evidence：", 1)[1]
+                review_evidence = json.loads(evidence_text.splitlines()[0])
+                content = {
+                    "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                    "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                    "review_scope_sha256": review_evidence["review_scope_sha256"],
+                    "blocking_findings": [],
+                    "method_id": invocation.method_id,
+                }
+            except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
+                raise ValueError("DETERMINISTIC_REVIEW_EVIDENCE_MISSING") from error
         else:
             content = {
                 "artifact": invocation.method_id,

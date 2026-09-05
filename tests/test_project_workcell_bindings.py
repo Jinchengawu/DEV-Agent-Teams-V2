@@ -67,6 +67,18 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
         assert topology.status_code == 200
         assert topology.json()["team_binding"]["status"] == "provisioning"
         assert topology.json()["workspace_bindings"] == []
+        profiles = client.get(
+            "/v1/verification-profiles", params={"project_id": "workcell-onboarding"}
+        )
+        assert profiles.status_code == 200
+        assert {profile["id"] for profile in profiles.json()} == {
+            "python-unittest-v1",
+            "node-native-test-v1",
+            "design-contract-v1",
+            "frontend-ts-vite-vitest-v1",
+            "backend-python-http-v1",
+            "qa-playwright-artifacts-v1",
+        }
 
         workspace_ids: list[str] = []
         for workcell_key in ("design", "frontend", "backend", "qa"):
@@ -91,6 +103,20 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
             assert verified.status_code == 200
             assert verified.json()["status"] == "ready"
             assert len(verified.json()["verification_sha256"]) == 64
+            selected = client.put(
+                f"/v1/workspace-bindings/{workspace['id']}/verification-profile",
+                json={
+                    "expected_version": verified.json()["version"],
+                    "verification_profile_id": "python-unittest-v1",
+                },
+            )
+            assert selected.status_code == 200
+            qualified = client.post(
+                f"/v1/workspace-bindings/{workspace['id']}/verification-profile/qualify",
+                json={"expected_version": selected.json()["version"]},
+            )
+            assert qualified.status_code == 200
+            assert qualified.json()["verification_profile"]["profile"]["id"] == "python-unittest-v1"
 
         activated = client.post(
             "/v1/projects/workcell-onboarding/team-activate",
@@ -103,9 +129,35 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
             item["workcell_key"]: item["workspace_binding_id"]
             for item in activated.json()["workcell_bindings"]
         } == dict(zip(("design", "frontend", "backend", "qa"), workspace_ids, strict=True))
-        assert len(
-            {item["repository_uri"] for item in activated.json()["workspace_bindings"]}
-        ) == 4
+        assert len({item["repository_uri"] for item in activated.json()["workspace_bindings"]}) == 4
+        first = activated.json()["workspace_bindings"][0]
+        changed = client.put(
+            f"/v1/workspace-bindings/{first['id']}/verification-profile",
+            json={
+                "expected_version": first["version"],
+                "verification_profile_id": "node-native-test-v1",
+            },
+        )
+        assert changed.status_code == 200
+        assert changed.json()["verification_profile"] is None
+        stale = client.put(
+            f"/v1/workspace-bindings/{first['id']}/verification-profile",
+            json={
+                "expected_version": first["version"],
+                "verification_profile_id": "python-unittest-v1",
+            },
+        )
+        assert stale.status_code == 409
+        project_repository.acquire_lease("workcell-onboarding", "delivery-active")
+        blocked = client.put(
+            f"/v1/workspace-bindings/{first['id']}/verification-profile",
+            json={
+                "expected_version": changed.json()["version"],
+                "verification_profile_id": "python-unittest-v1",
+            },
+        )
+        assert blocked.status_code == 409
+        assert blocked.json()["code"] == "WORKCELL_VERIFICATION_PROFILE_DELIVERY_ACTIVE"
 
 
 def test_team_activation_fails_closed_when_a_required_workspace_is_unverified(

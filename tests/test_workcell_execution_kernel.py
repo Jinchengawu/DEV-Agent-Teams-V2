@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from review_scope_helpers import review_scope
 
 from agent_team_os.delivery import DeliveryRun, SQLiteDeliveryRepository
 from agent_team_os.infrastructure.database import MigrationRunner
@@ -22,6 +23,7 @@ from agent_team_os.modules.workcells import (
     WorkcellResultCreate,
     WorkcellResultValidationCreate,
     WorkcellRunCreate,
+    WorkcellRunTree,
     WorkcellWorkspaceSnapshot,
     create_workcell_execution_router,
 )
@@ -95,7 +97,24 @@ def _snapshot() -> WorkcellExecutionSnapshot:
             )
         ),
         method_snapshot_sha256="a" * 64,
+        review_scope=review_scope(),
     )
+
+
+def test_new_workcell_without_frozen_review_scope_fails_closed(tmp_path: Path) -> None:
+    kernel, _ = _kernel(tmp_path)
+    snapshot = _snapshot().model_copy(update={"review_scope": None})
+    with pytest.raises(ProductError) as missing:
+        kernel.create(
+            WorkcellRunCreate(
+                delivery_id="delivery-workcell",
+                pipeline_run_id="pipeline-no-scope",
+                stage_attempt_id="attempt-no-scope",
+                snapshot=snapshot,
+            )
+        )
+    assert missing.value.code == "WORKCELL_REVIEW_SCOPE_REQUIRED"
+    assert kernel.list_delivery("delivery-workcell") == ()
 
 
 def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
@@ -142,9 +161,7 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
         kernel.start_child(reviewers[0].id)
     assert review_too_early.value.code == "REVIEW_CANDIDATE_NOT_VERIFIED"
 
-    candidate_reference = artifacts.put_json(
-        {"candidate_sha": "b" * 40, "diff_sha256": "c" * 64}
-    )
+    candidate_reference = artifacts.put_json({"candidate_sha": "b" * 40, "diff_sha256": "c" * 64})
     kernel.finish_child(
         writer.id,
         status="succeeded",
@@ -169,16 +186,31 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
 
     for reviewer in reviewers:
         kernel.start_child(reviewer.id)
-    assert sum(
-        item.status == "running" for item in kernel.tree(run.workcell_run.id).agent_runs
-    ) == 2
+    assert (
+        sum(item.status == "running" for item in kernel.tree(run.workcell_run.id).agent_runs) == 2
+    )
 
     review_ids: list[str] = []
     for reviewer in reviewers:
         review_reference = artifacts.put_json(
-            {"reviewer": reviewer.id, "candidate_sha": "b" * 40, "blocking": []}
+            {
+                "reviewed_candidate_sha": "b" * 40,
+                "reviewed_diff_sha256": "c" * 64,
+                "review_scope_sha256": review_scope().sha256,
+                "blocking_findings": [],
+            }
         )
-        kernel.finish_child(reviewer.id, status="succeeded")
+        kernel.finish_child(
+            reviewer.id,
+            status="succeeded",
+            artifacts=(
+                ArtifactEnvelope(
+                    contract_id="review-artifact-v1",
+                    reference=review_reference,
+                    sha256=review_reference.sha256,
+                ),
+            ),
+        )
         reviewed = kernel.record_review(
             run.workcell_run.id,
             ReviewArtifactCreate(
@@ -213,9 +245,7 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
     assert completed.result is not None
     assert len(completed.agent_runs) == 4
     delivery_attempts = kernel.list_delivery_attempts("delivery-workcell")
-    assert {item.id for item in delivery_attempts} == {
-        item.id for item in completed.attempts
-    }
+    assert {item.id for item in delivery_attempts} == {item.id for item in completed.attempts}
 
 
 def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Path) -> None:
@@ -309,9 +339,7 @@ def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Pa
         ),
     )
     children = {
-        item.delegate_purpose: item
-        for item in planned.agent_runs
-        if item.run_role == "child"
+        item.delegate_purpose: item for item in planned.agent_runs if item.run_role == "child"
     }
     kernel.start_child(children["workspace_write"].id)
     kernel.finish_child(children["workspace_write"].id, status="succeeded")
@@ -327,21 +355,38 @@ def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Pa
     )
     reviewer = children["review"]
     kernel.start_child(reviewer.id)
-    kernel.finish_child(reviewer.id, status="succeeded")
-    review_reference = artifacts.put_json({"blocking": ["UX_EDGE"]})
+    finding = BlockingFinding(
+        code="UX_EDGE",
+        summary="键盘用户无法完成关键路径",
+        evidence_sha256=sha256_json({"case": "keyboard"}),
+        acceptance_id="AC-LOGIN",
+    )
+    review_reference = artifacts.put_json(
+        {
+            "reviewed_candidate_sha": "d" * 40,
+            "reviewed_diff_sha256": "e" * 64,
+            "review_scope_sha256": review_scope().sha256,
+            "blocking_findings": [finding.model_dump(mode="json")],
+        }
+    )
+    kernel.finish_child(
+        reviewer.id,
+        status="succeeded",
+        artifacts=(
+            ArtifactEnvelope(
+                contract_id="review-artifact-v1",
+                reference=review_reference,
+                sha256=review_reference.sha256,
+            ),
+        ),
+    )
     blocked = kernel.record_review(
         blocking_run.workcell_run.id,
         ReviewArtifactCreate(
             reviewer_agent_run_id=reviewer.id,
             candidate_sha="d" * 40,
             diff_sha256="e" * 64,
-            blocking_findings=(
-                BlockingFinding(
-                    code="UX_EDGE",
-                    summary="键盘用户无法完成关键路径",
-                    evidence_sha256=sha256_json({"case": "keyboard"}),
-                ),
-            ),
+            blocking_findings=(finding,),
             artifact_reference=review_reference,
         ),
     )
@@ -388,15 +433,12 @@ def test_workcell_cancel_endpoint_notifies_the_runtime_parent(tmp_path: Path) ->
         )
     )
     cancelled_deliveries: list[str] = []
+
+    async def before_cancel(tree: WorkcellRunTree) -> None:
+        cancelled_deliveries.append(tree.workcell_run.delivery_id)
+
     app = FastAPI()
-    app.include_router(
-        create_workcell_execution_router(
-            kernel,
-            after_cancel=lambda tree: cancelled_deliveries.append(
-                tree.workcell_run.delivery_id
-            ),
-        )
-    )
+    app.include_router(create_workcell_execution_router(kernel, before_cancel=before_cancel))
 
     with TestClient(app) as client:
         response = client.post(
@@ -415,6 +457,7 @@ def test_artifact_only_workcell_requires_product_result_validation(tmp_path: Pat
         update={
             "stage_path": "qa-preparation-repair/qa-preparation",
             "workcell_key": "qa",
+            "review_scope": review_scope("qa"),
             "slot_method_bindings": {
                 "delegate_1": "bmad-testarch-test-design",
                 "delegate_2": "bmad-testarch-atdd",

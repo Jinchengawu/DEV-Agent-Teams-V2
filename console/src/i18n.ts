@@ -11,6 +11,7 @@ const statuses: Record<string, string> = {
   rejected: "已拒绝",
   failed: "失败",
   cancelled: "已取消",
+  cancelling: "取消中",
   unknown: "未知",
   ready: "就绪",
   valid: "校验通过",

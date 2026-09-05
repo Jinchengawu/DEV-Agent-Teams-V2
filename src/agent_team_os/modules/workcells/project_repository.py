@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -81,8 +82,9 @@ class SQLiteProjectWorkcellRepository:
             connection.execute(
                 """INSERT INTO workspace_bindings(
                 id,project_id,kind,adapter_type,repository_uri,credential_reference,status,
-                verification_sha256,verification_json,error_code,version,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                verification_sha256,verification_json,error_code,version,created_at,updated_at,
+                verification_profile_id,verification_profile_json,verification_profile_error_code)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     workspace.id,
                     workspace.project_id,
@@ -97,6 +99,11 @@ class SQLiteProjectWorkcellRepository:
                     workspace.version,
                     workspace.created_at.isoformat(),
                     workspace.updated_at.isoformat(),
+                    workspace.verification_profile_id,
+                    None
+                    if workspace.verification_profile is None
+                    else workspace.verification_profile.model_dump_json(),
+                    workspace.verification_profile_error_code,
                 ),
             )
             connection.execute(
@@ -160,13 +167,18 @@ class SQLiteProjectWorkcellRepository:
         self,
         expected_version: int,
         workspace: WorkspaceBinding,
+        *,
+        admission_check: Callable[[], None] | None = None,
     ) -> bool:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if admission_check is not None:
+                admission_check()
             cursor = connection.execute(
                 """UPDATE workspace_bindings SET
                 status=?,verification_sha256=?,verification_json=?,error_code=?,version=?,
-                updated_at=? WHERE id=? AND version=?""",
+                updated_at=?,verification_profile_id=?,verification_profile_json=?,
+                verification_profile_error_code=? WHERE id=? AND version=?""",
                 (
                     workspace.status,
                     workspace.verification_sha256,
@@ -174,6 +186,11 @@ class SQLiteProjectWorkcellRepository:
                     workspace.error_code,
                     workspace.version,
                     workspace.updated_at.isoformat(),
+                    workspace.verification_profile_id,
+                    None
+                    if workspace.verification_profile is None
+                    else workspace.verification_profile.model_dump_json(),
+                    workspace.verification_profile_error_code,
                     workspace.id,
                     expected_version,
                 ),
@@ -193,6 +210,10 @@ class SQLiteProjectWorkcellRepository:
                         "status": workspace.status,
                         "verification_sha256": workspace.verification_sha256,
                         "error_code": workspace.error_code,
+                        "verification_profile_id": workspace.verification_profile_id,
+                        "verification_profile_error_code": (
+                            workspace.verification_profile_error_code
+                        ),
                     },
                 ),
             )
@@ -268,16 +289,13 @@ class SQLiteProjectWorkcellRepository:
         return connection
 
 
-_TEAM_COLUMNS = (
-    "project_id,template_id,template_revision,template_sha256,status,version,updated_at"
-)
+_TEAM_COLUMNS = "project_id,template_id,template_revision,template_sha256,status,version,updated_at"
 _WORKSPACE_COLUMNS = (
     "id,project_id,kind,adapter_type,repository_uri,credential_reference,status,"
-    "verification_sha256,verification_json,error_code,version,created_at,updated_at"
+    "verification_sha256,verification_json,error_code,version,created_at,updated_at,"
+    "verification_profile_id,verification_profile_json,verification_profile_error_code"
 )
-_WORKCELL_COLUMNS = (
-    "project_id,workcell_key,workspace_binding_id,version,updated_at"
-)
+_WORKCELL_COLUMNS = "project_id,workcell_key,workspace_binding_id,version,updated_at"
 
 
 def _team(row: tuple[object, ...]) -> ProjectTeamBinding:
@@ -287,6 +305,8 @@ def _team(row: tuple[object, ...]) -> ProjectTeamBinding:
 def _workspace(row: tuple[object, ...]) -> WorkspaceBinding:
     values = dict(zip(_WORKSPACE_COLUMNS.split(","), row, strict=True))
     values["verification"] = json.loads(str(values.pop("verification_json")))
+    profile = values.pop("verification_profile_json")
+    values["verification_profile"] = None if profile is None else json.loads(str(profile))
     return WorkspaceBinding.model_validate(values)
 
 

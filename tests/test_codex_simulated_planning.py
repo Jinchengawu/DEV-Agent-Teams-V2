@@ -5,8 +5,10 @@ import time
 from collections import deque
 from pathlib import Path
 
+import pytest
 from acwm.config import CodexCLIConfig
 from fastapi.testclient import TestClient
+from review_scope_helpers import WORKCELL_KEYS, planning_payloads
 
 from agent_team_os.api import create_app
 from agent_team_os.codex_simulation import (
@@ -28,6 +30,39 @@ class ScriptedCodexRoleRunner:
         self.roles.append(role)
         self.prompts.append(prompt)
         return self.responses.popleft()
+
+
+def test_codex_task_preserves_explicit_four_workcell_acceptance_for_plan_gate() -> None:
+    from agent_team_os.delivery import RequirementArtifact, TaskContract
+
+    requirements, task = planning_payloads()
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+    result = asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements), required_workcells=WORKCELL_KEYS
+        )
+    )
+    assert result.workcell_acceptance is not None
+    assert [item.model_dump(mode="json") for item in result.workcell_acceptance] == (
+        task["workcell_acceptance"]
+    )
+    assert all(key in runner.prompts[0] for key in WORKCELL_KEYS)
+    legacy = TaskContract(title="old", instructions="old", acceptance_ids=("AC-1",))
+    assert "workcell_acceptance" not in legacy.model_dump(mode="json")
+
+
+def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+    from agent_team_os.shared.errors import ProductError
+
+    requirements, task = planning_payloads()
+    task.pop("workcell_acceptance")
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+    with pytest.raises(ProductError) as rejected:
+        asyncio.run(CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements), required_workcells=WORKCELL_KEYS
+        ))
+    assert rejected.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
 
 
 def test_codex_planning_uses_the_last_complete_json_message() -> None:

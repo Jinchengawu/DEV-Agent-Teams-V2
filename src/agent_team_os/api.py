@@ -227,6 +227,11 @@ def create_app(
 ) -> FastAPI:
     resolved_feature_flags = feature_flags or FeatureFlags()
     resolved_feature_flags.require_valid_dependencies()
+    if projects is not None and external_release is not None:
+        projects.configure_release_recovery(
+            external_release.repository.project_recovery_delivery_ids,
+            database=external_release.repository.database,
+        )
     if identity is not None and projects is not None:
 
         def validate_project_member_principal(user_id: str, project_role: str) -> None:
@@ -582,17 +587,20 @@ def create_app(
                 reason="cancel delivery workcell run",
             )
 
-        def cancel_workcell_delivery(tree: WorkcellRunTree) -> None:
+        async def cancel_workcell_delivery(tree: WorkcellRunTree) -> None:
             delivery = coordinator.get(tree.workcell_run.delivery_id)
             if delivery.status not in {"completed", "rejected", "failed", "cancelled"}:
-                coordinator.cancel(delivery.id, expected_version=delivery.version)
+                try:
+                    await coordinator.cancel(delivery.id, expected_version=delivery.version)
+                except (DeliveryStateConflictError, DeliveryVersionConflictError) as error:
+                    raise HTTPException(status_code=409, detail="delivery conflict") from error
 
         app.include_router(
             create_workcell_execution_router(
                 workcell_execution,
                 authorize_read=authorize_workcell_read,
                 authorize_cancel=authorize_workcell_cancel,
-                after_cancel=(
+                before_cancel=(
                     cancel_workcell_delivery if workcell_stage_driver is not None else None
                 ),
             )
@@ -1272,7 +1280,7 @@ def create_app(
                         expected_version=request_body.expected_version,
                         expected_subject_sha256=delivery.candidate_gate.subject_sha256,
                     )
-                return coordinator.cancel(
+                return await coordinator.cancel(
                     work_item_id, expected_version=request_body.expected_version
                 )
             except DeliveryNotFoundError as error:
@@ -1942,7 +1950,7 @@ def create_app(
             raise HTTPException(status_code=409, detail="delivery state conflict") from error
 
     @app.post("/v1/deliveries/{delivery_id}/cancel", response_model=DeliveryRun)
-    def cancel_delivery(
+    async def cancel_delivery(
         delivery_id: str,
         request_body: CancelRequest,
         request: Request,
@@ -1957,7 +1965,7 @@ def create_app(
             reason="cancel delivery",
         )
         try:
-            return service.cancel(delivery_id, expected_version=request_body.expected_version)
+            return await service.cancel(delivery_id, expected_version=request_body.expected_version)
         except DeliveryNotFoundError as error:
             raise HTTPException(status_code=404, detail="delivery not found") from error
         except (DeliveryVersionConflictError, DeliveryStateConflictError) as error:

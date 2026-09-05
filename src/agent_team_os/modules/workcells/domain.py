@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ...shared.hashes import Sha256
+from ...shared.verification import VerificationSnapshot
 
 
 def utc_now() -> datetime:
@@ -199,6 +200,9 @@ class WorkspaceBinding(BaseModel):
     status: WorkspaceBindingStatus
     verification_sha256: Sha256 | None = None
     verification: dict[str, object] = Field(default_factory=dict)
+    verification_profile_id: str | None = None
+    verification_profile: VerificationSnapshot | None = None
+    verification_profile_error_code: str | None = None
     error_code: str | None = None
     version: int = Field(ge=1)
     created_at: datetime = Field(default_factory=utc_now)
@@ -223,6 +227,7 @@ class WorkspaceBindingCreate(BaseModel):
     adapter_type: WorkspaceAdapterType
     repository_uri: str = Field(min_length=1, max_length=500)
     credential_reference: str | None = Field(default=None, max_length=500)
+    verification_profile_id: str | None = None
 
     @model_validator(mode="after")
     def credential_matches_adapter(self) -> WorkspaceBindingCreate:
@@ -235,6 +240,13 @@ class WorkspaceBindingVerificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
+
+
+class WorkspaceVerificationProfileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    verification_profile_id: str
 
 
 class TeamActivationRequest(BaseModel):

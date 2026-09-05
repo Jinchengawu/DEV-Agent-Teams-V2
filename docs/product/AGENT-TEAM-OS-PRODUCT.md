@@ -1346,7 +1346,7 @@ Git、Workcell 不变量等大量代码通过 `_method_pack_error(code, ...)`、
 | **Live** | 使用真实 Provider、凭据、外部远端和目标权限执行的闭环。缺条件时只能 blocked/not_run。 |
 | **ACWM** | 跨 Stage 的 Workflow、Capability、Artifact、Gate、DAG 与 Loop 权威。 |
 | **AgentScope** | 产品已创建 AgentAttempt 内的 Stage-local Session、消息与 Runtime Transport；不拥有 Workcell Composition，不能隐藏派生 Child。 |
-| **Hermes** | PM/Project Admin 角色智能的目标 Runtime；默认模拟身份不能冒充真实 Hermes。 |
+| **Hermes** | PM/Project Admin 角色智能的目标 Runtime；当前显式 Codex Planning 与历史模拟身份均不能冒充真实 Hermes。 |
 | **BMAD/TEA Overlay** | 从锁定内容寻址 Store 构建的临时只读 Method Entry 运行环境。 |
 
 ## 附录 E：进一步阅读

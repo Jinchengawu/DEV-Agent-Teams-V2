@@ -87,14 +87,19 @@ class ContentAddressedArtifactStorage:
                 "ARTIFACT_JSON_INVALID", "Artifact bytes are not valid UTF-8 JSON"
             ) from error
 
-    def get_bytes(self, reference: ArtifactReference) -> bytes:
+    def get_bytes(self, reference: ArtifactReference, *, max_bytes: int | None = None) -> bytes:
+        if max_bytes is not None and (max_bytes < 0 or reference.size_bytes > max_bytes):
+            raise ArtifactStorageError("ARTIFACT_SIZE_LIMIT", "Artifact 超过读取大小限制")
         target = self.path_for(reference)
         try:
-            payload = target.read_bytes()
+            with target.open("rb") as stream:
+                payload = stream.read() if max_bytes is None else stream.read(max_bytes + 1)
         except FileNotFoundError as error:
             raise ArtifactStorageError(
                 "ARTIFACT_OBJECT_MISSING", f"object {reference.sha256} is unavailable"
             ) from error
+        if max_bytes is not None and len(payload) > max_bytes:
+            raise ArtifactStorageError("ARTIFACT_SIZE_LIMIT", "Artifact 实际内容超过读取限制")
         self._verify_bytes(reference, payload)
         return payload
 

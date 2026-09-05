@@ -3,18 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-from browser_e2e import _authenticate, _capture_console_errors
+from browser_e2e import _capture_console_errors
+from browser_live_delivery_checkpoint import safe_screenshot
+from browser_receipt_support import (
+    begin_browser_receipt,
+    complete_browser_receipt,
+    discard_browser_receipt,
+)
 from browser_workcell_e2e import (
     _assert_product_evidence,
+    _authenticate,
     _execute_workcell_journey,
     _select_option,
 )
-from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import BrowserContext, Page, expect, sync_playwright
 
 from agent_team_os.journey import load_agent_workcell_knowledge_delivery_definition
+from agent_team_os.knowledge_context_contract import KNOWLEDGE_CONTEXT_STAGE_PATHS
 from agent_team_os.knowledge_live_readiness import KnowledgeLiveFactsCollector
 from agent_team_os.modules.workcells import builtin_knowledge_context_bindings
 from agent_team_os.shared.hashes import sha256_json
@@ -51,16 +61,19 @@ def _create_tenant_binding(page: Page, base_url: str) -> dict[str, Any]:
     page.get_by_text("飞书知识接入", exact=True).wait_for()
     page.get_by_label("连接名称").fill("Gate 研发飞书")
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/knowledge/connections")
+        lambda response: (
+            response.request.method == "POST" and response.url.endswith("/v1/knowledge/connections")
+        )
     ) as created_connection:
         page.get_by_role("button", name="创建连接", exact=True).click()
     assert created_connection.value.status == 201, created_connection.value.text()
 
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/diagnose")
-        and "/v1/knowledge/connections/" in response.url
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith("/diagnose")
+            and "/v1/knowledge/connections/" in response.url
+        )
     ) as diagnosed_connection:
         page.get_by_role("button", name="诊断连接", exact=True).click()
     assert diagnosed_connection.value.status == 200, diagnosed_connection.value.text()
@@ -68,15 +81,19 @@ def _create_tenant_binding(page: Page, base_url: str) -> dict[str, Any]:
     page.get_by_role("button", name="Gate 研发知识库", exact=False).click()
     page.get_by_label("Binding 名称").fill("Gate 研发 Wiki")
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/v1/knowledge/provider-bindings-v2")
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith("/v1/knowledge/provider-bindings-v2")
+        )
     ) as created_binding:
         page.get_by_role("button", name="冻结 Binding", exact=True).click()
     assert created_binding.value.status == 201, created_binding.value.text()
     binding: dict[str, Any] = created_binding.value.json()
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith(f"/provider-bindings-v2/{binding['id']}/diagnose")
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith(f"/provider-bindings-v2/{binding['id']}/diagnose")
+        )
     ) as diagnosed_binding:
         page.get_by_role("button", name="刷新权限", exact=True).click()
     assert diagnosed_binding.value.status == 200, diagnosed_binding.value.text()
@@ -91,9 +108,9 @@ def _approve_and_sync(
     page.goto(f"{base_url}/projects/legacy-default/overview", wait_until="networkidle")
     page.get_by_text("成员与知识来源授权", exact=True).wait_for()
     with page.expect_response(
-        lambda response: response.request.method == "PUT"
-        and response.url.endswith(
-            f"/knowledge-source-approvals/{binding['id']}"
+        lambda response: (
+            response.request.method == "PUT"
+            and response.url.endswith(f"/knowledge-source-approvals/{binding['id']}")
         )
     ) as approval:
         page.get_by_role("button", name="批准来源", exact=True).click()
@@ -103,8 +120,9 @@ def _approve_and_sync(
     page.get_by_text("外部知识快照与 RAG", exact=True).wait_for()
     page.get_by_label("飞书文档").wait_for()
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/knowledge-sync-jobs")
+        lambda response: (
+            response.request.method == "POST" and response.url.endswith("/knowledge-sync-jobs")
+        )
     ) as sync:
         page.get_by_role("button", name="同步当前来源", exact=True).click()
     assert sync.value.status == 202, sync.value.text()
@@ -211,8 +229,10 @@ def _verify_rag_ui(page: Page, base_url: str, screenshot: Path | None) -> None:
     page.get_by_label("Retrieval Policy").wait_for()
     page.get_by_label("检索查询").fill("四仓为什么必须隔离 workspace？")
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/knowledge-retrieval-preview")
+        lambda response: (
+            response.request.method == "POST"
+            and response.url.endswith("/knowledge-retrieval-preview")
+        )
     ) as preview:
         page.get_by_role("button", name="运行 RAG 预览", exact=True).click()
     assert preview.value.status == 200, preview.value.text()
@@ -223,8 +243,12 @@ def _verify_rag_ui(page: Page, base_url: str, screenshot: Path | None) -> None:
     results.wait_for()
     results.get_by_text("四仓隔离架构规范", exact=True).first.wait_for()
     if screenshot is not None:
-        screenshot.parent.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(screenshot), full_page=True)
+        safe_screenshot(
+            page,
+            screenshot,
+            password=os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD", ""),
+            authenticated=True,
+        )
 
 
 def _publish_gate_c_pipeline(
@@ -254,9 +278,7 @@ def _publish_gate_c_pipeline(
         f"/v1/pipeline-drafts/{draft['id']}",
         {
             "expected_version": draft["version"],
-            "definition": load_agent_workcell_knowledge_delivery_definition(
-                root / "config"
-            ),
+            "definition": load_agent_workcell_knowledge_delivery_definition(root / "config"),
             "knowledge_context_bindings": {
                 stage_path: binding.model_dump(mode="json")
                 for stage_path, binding in bindings.items()
@@ -298,7 +320,9 @@ def _verify_gate_c_evidence(
     context: BrowserContext,
     base_url: str,
     delivery_id: str,
-) -> None:
+    *,
+    page: Page | None = None,
+) -> dict[str, Any]:
     delivery = _request_json(
         context,
         base_url,
@@ -315,11 +339,40 @@ def _verify_gate_c_evidence(
     assert overview["preparation_run"]["status"] == "succeeded", overview
     assert overview["unavailable"] == [], overview
     contexts = {item["stage_path"]: item for item in overview["contexts"]}
-    expected_paths = set(
-        builtin_knowledge_context_bindings("gate-retrieval-v1")
-    )
+    snapshot = delivery["delivery_execution_snapshot"]
+    expected_paths = set(KNOWLEDGE_CONTEXT_STAGE_PATHS)
+    assert {
+        path
+        for path, binding in snapshot["knowledge_context_bindings"].items()
+        if binding["required"]
+    } == expected_paths
+    assert len(contexts) == 7
     assert set(contexts) == expected_paths, contexts
+    assert contexts == snapshot["knowledge_contexts"]
     assert all(item["citation_ids"] for item in contexts.values()), contexts
+    epoch = snapshot["knowledge_authorization_stamp"]["authorization_epoch_hash"]
+    assert overview["preparation_run"]["authorization_epoch_hash"] == epoch
+    assert (
+        overview["preparation_run"]["final_snapshot"]["snapshot_sha256"]
+        == snapshot["snapshot_sha256"]
+    )
+    for stage_path, item in contexts.items():
+        assert item["authorization_epoch_hash"] == epoch
+        assert item["trust_class"] == "external-collaborative"
+        content = _request_json(
+            context,
+            base_url,
+            "GET",
+            f"/v1/deliveries/{delivery_id}/knowledge-context/artifact?stage_path="
+            + quote(stage_path, safe=""),
+        )
+        assert sha256_json(content) == item["artifact_reference"]["sha256"]
+        if page is not None:
+            panel = page.locator(".knowledge-context-panel")
+            expect(panel.get_by_text(stage_path, exact=True).first).to_be_visible()
+            expect(
+                panel.get_by_text(item["artifact_reference"]["sha256"], exact=True)
+            ).to_be_visible()
 
     assert set(delivery["requirements"]["knowledge_citation_ids"]) <= set(
         contexts["requirements"]["citation_ids"]
@@ -337,6 +390,9 @@ def _verify_gate_c_evidence(
         f"/v1/deliveries/{delivery_id}/workcell-runs",
     )
     assert len(trees) == 5, trees
+    run_ids = {tree["workcell_run"]["stage_path"]: tree["workcell_run"]["id"] for tree in trees}
+    assert set(run_ids) == expected_paths - {"requirements", "tasking"}
+    assert len(set(run_ids.values())) == 5
     for tree in trees:
         stage_path = tree["workcell_run"]["stage_path"]
         result = tree["result"]
@@ -344,14 +400,37 @@ def _verify_gate_c_evidence(
         citations = set(result["knowledge_citation_ids"])
         assert citations, tree
         assert citations <= set(contexts[stage_path]["citation_ids"]), tree
+    qa = next(
+        tree
+        for tree in trees
+        if tree["workcell_run"]["stage_path"] == "qa-preparation-repair/qa-preparation"
+    )
+    assert qa["workcell_run"]["status"] == "succeeded"
+    assert qa["verification"] is None
+    assert qa["result"]["candidate_sha"] is None
+    assert qa["result_validation"]["status"] == "passed"
+    assert qa["result"]["output_artifact_references"]
+    return {
+        "required_stage_paths": sorted(expected_paths),
+        "context_count": len(contexts),
+        "contexts": [
+            {
+                "stage_path": path,
+                "artifact_sha256": item["artifact_reference"]["sha256"],
+                "citation_ids": item["citation_ids"],
+                "authorization_epoch_hash": item["authorization_epoch_hash"],
+            }
+            for path, item in sorted(contexts.items())
+        ],
+        "workcell_run_ids": run_ids,
+        "qa_preparation_run_id": qa["workcell_run"]["id"],
+    }
 
 
 def _verify_live_readiness_projection(data_dir: Path, project_id: str) -> None:
     """Prove Gate C facts are readable without upgrading them to Live evidence."""
 
-    facts = KnowledgeLiveFactsCollector(
-        data_dir / "agent-team-os.sqlite"
-    ).collect(project_id)
+    facts = KnowledgeLiveFactsCollector(data_dir / "agent-team-os.sqlite").collect(project_id)
     assert facts.database_ready is True, facts
     assert facts.project_status == "active", facts
     assert facts.team_status == "active", facts
@@ -368,9 +447,7 @@ def _verify_live_readiness_projection(data_dir: Path, project_id: str) -> None:
 
 def _verify_orchestration_knowledge_contract(page: Page, base_url: str) -> None:
     page.goto(f"{base_url}/orchestration", wait_until="networkidle")
-    pipeline = page.locator(".pipeline-list button").filter(
-        has_text="agent-workcell-delivery"
-    )
+    pipeline = page.locator(".pipeline-list button").filter(has_text="agent-workcell-delivery")
     pipeline.wait_for()
     pipeline.click()
     page.get_by_label("选择主图节点").wait_for()
@@ -378,15 +455,12 @@ def _verify_orchestration_knowledge_contract(page: Page, base_url: str) -> None:
     _select_option(page, "选择主图节点", "frontend-repair")
     page.get_by_role("button", name="打开 LOOP 全屏工作区").click()
     _select_option(page, "选择循环体节点", "frontend")
-    assert page.get_by_label(
-        "Retrieval Policy frontend-repair/frontend"
-    ).input_value() == "gate-retrieval-v1"
-    assert page.get_by_label(
-        "最大 Context Bytes frontend-repair/frontend"
-    ).input_value() == "65536"
-    page.get_by_role(
-        "button", name="关闭 LOOP 工作区并保留草稿修改"
-    ).click()
+    assert (
+        page.get_by_label("Retrieval Policy frontend-repair/frontend").input_value()
+        == "gate-retrieval-v1"
+    )
+    assert page.get_by_label("最大 Context Bytes frontend-repair/frontend").input_value() == "65536"
+    page.get_by_role("button", name="关闭 LOOP 工作区并保留草稿修改").click()
 
     _select_option(page, "选择主图节点", "requirements")
     policy = page.get_by_label("Retrieval Policy requirements")
@@ -395,25 +469,22 @@ def _verify_orchestration_knowledge_contract(page: Page, base_url: str) -> None:
     assert maximum.input_value() == "65536"
     maximum.fill("65535")
     with page.expect_response(
-        lambda response: response.request.method == "PATCH"
-        and "/v1/pipeline-drafts/" in response.url
+        lambda response: (
+            response.request.method == "PATCH" and "/v1/pipeline-drafts/" in response.url
+        )
     ) as saved:
         page.get_by_role("button", name="保存图与布局").click()
     assert saved.value.status == 200, saved.value.text()
     payload = saved.value.json()
     assert payload["definition"]["version"] == "2.0.0", payload
-    assert (
-        payload["knowledge_context_bindings"]["requirements"][
-            "max_context_bytes"
-        ]
-        == 65535
-    ), payload
+    assert payload["knowledge_context_bindings"]["requirements"]["max_context_bytes"] == 65535, (
+        payload
+    )
     contract = payload["definition"]["nodes"][0]["input_artifact_contracts"][0]
     assert contract["id"] == "knowledge-context-v1", contract
     page.wait_for_timeout(300)
     with page.expect_response(
-        lambda response: response.request.method == "POST"
-        and response.url.endswith("/validate")
+        lambda response: response.request.method == "POST" and response.url.endswith("/validate")
     ) as validated:
         page.get_by_role("button", name="ACWM 图校验").click()
     assert validated.value.status == 200, validated.value.text()
@@ -427,15 +498,38 @@ def main() -> None:
     parser.add_argument("--state", type=Path)
     parser.add_argument("--gate-c", action="store_true")
     parser.add_argument("--data-dir", type=Path)
+    parser.add_argument("--receipt", type=Path)
     arguments = parser.parse_args()
+    discard_browser_receipt(arguments.receipt)
+    try:
+        if arguments.receipt is not None:
+            assert arguments.gate_c and arguments.data_dir is not None, (
+                "R2_BROWSER_RECEIPT_REQUIRES_GATE_C_AND_DATA_DIR"
+            )
+            assert arguments.state is None, "R2_BROWSER_RECEIPT_FORBIDS_AUTH_STATE_EXPORT"
+        receipt_run = begin_browser_receipt(
+            Path(__file__).parents[1], arguments.url, arguments.receipt
+        )
+        delivery, knowledge_scope = _run_browser(arguments)
+        complete_browser_receipt(receipt_run, delivery, knowledge_scope=knowledge_scope)
+    except BaseException:
+        discard_browser_receipt(arguments.receipt)
+        raise
 
+
+def _run_browser(arguments: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any] | None]:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1920, "height": 1200})
         page = context.new_page()
         console_errors = _capture_console_errors(page)
+        authenticated = False
+        delivery: dict[str, Any] = {}
+        knowledge_scope = None
         try:
             _authenticate(page, arguments.url)
+            authenticated = True
+            console_errors.clear()
             binding = _create_tenant_binding(page, arguments.url)
             _approve_and_sync(page, arguments.url, binding)
             policy_id = _qualify_and_activate_index(context, arguments.url, binding)
@@ -455,10 +549,11 @@ def main() -> None:
                     arguments.url,
                     knowledge_binding_id=str(binding["id"]),
                 )
-                _verify_gate_c_evidence(
+                knowledge_scope = _verify_gate_c_evidence(
                     context,
                     arguments.url,
                     delivery_id,
+                    page=page,
                 )
                 _assert_product_evidence(
                     context.request,
@@ -468,18 +563,31 @@ def main() -> None:
                     delivery_id,
                 )
                 _verify_live_readiness_projection(arguments.data_dir, project_id)
-                if arguments.screenshot is not None:
-                    arguments.screenshot.parent.mkdir(parents=True, exist_ok=True)
-                    page.screenshot(path=str(arguments.screenshot), full_page=True)
+                delivery = _request_json(
+                    context, arguments.url, "GET", f"/v1/deliveries/{delivery_id}"
+                )
             if arguments.state is not None:
                 arguments.state.parent.mkdir(parents=True, exist_ok=True)
                 context.storage_state(path=str(arguments.state))
         except Exception:
+            if not authenticated:
+                raise AssertionError("浏览器认证失败；未截图且未记录输入值。") from None
             if console_errors:
                 print("Browser console errors:", *console_errors, sep="\n")
             raise
+        finally:
+            try:
+                if arguments.screenshot is not None:
+                    safe_screenshot(
+                        page,
+                        arguments.screenshot,
+                        password=os.environ.get("AGENT_TEAM_OS_TEST_PASSWORD", ""),
+                        authenticated=authenticated,
+                    )
+            finally:
+                browser.close()
         assert not console_errors, console_errors
-        browser.close()
+        return delivery, knowledge_scope
 
 
 if __name__ == "__main__":

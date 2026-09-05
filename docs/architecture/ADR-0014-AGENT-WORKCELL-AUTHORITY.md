@@ -2,7 +2,7 @@
 
 状态：已接受
 日期：2026-08-31
-修订：2026-09-03
+修订：2026-09-04
 
 ## 背景
 
@@ -41,14 +41,23 @@ Agent-Team-OS 引入 `Agent Workcell` 作为 Stage 内的产品级执行单元�
    `workspace_write` Child。
 5. Writer 使用本 Workcell 的隔离可写 Worktree；Reviewer 只读同仓已冻结 Candidate。
 6. 不挂载其他 Workcell Repository，也不用 Codex `--add-dir` 伪装只读跨仓输入。
-7. 跨 Workcell 仅传递已校验的内容寻址 `ArtifactEnvelope`；不传 Session、Memory 或原始聊天历史。
-8. Writer 的机器验证通过后 Reviewer 才能启动；Main 不能覆盖机器失败或
+7. 跨 Workcell 仅传递已校验的内容寻址 `ArtifactEnvelope`；Git Candidate Workcell 必须同时输出
+   `workspace-candidate-v2` 元数据和 `workspace-candidate-diff-v1` Diff 正文。Diff 正文必须绑定冻结
+   `diff_sha256`、通过凭据扫描并受总 Attachment 大小限制；下游从 Artifact Store 读取，不挂载上游仓库。
+   不传 Session、Memory 或原始聊天历史。
+8. Writer 的机器验证通过后 Reviewer 才能启动；Main synthesis 必须获得本 Workcell 的 Child Artifact、
+   Machine Verification 和 Review Artifact 冻结证据，不能从缺失的局部事实推断成功；Main 不能覆盖机器失败或
    Blocking Review。
 9. Repair 由 ACWM bounded Loop 创建新 `WorkcellRun`，不在 Child 中递归派生。
 10. 取消 Workcell 会取消其 Delivery 执行任务，传播到未完成 Child，并终止正在运行的
     Codex 子进程。重启时未完成 Codex Attempt 标记为 `interrupted`，不伪装续跑成功。
 11. 每个 Main/Child 必须先由产品创建 `AgentRun` 与 `AgentAttempt`，Runtime Adapter 才能执行；
     AgentScope 不得产生 `Hidden Child`（隐藏派生），即在产品不可见的位置派生 Child 或新的运行身份。
+12. Candidate 冻结前必须拒绝 `_bmad`、`.agents/skills`、`__pycache__`、`*.pyc`、`*.pyo` 等方法安装产物
+    或运行时生成物；凭据检查必须覆盖完整 Diff，包括删除行，防止敏感内容进入 Artifact Bus。
+13. Product Machine Verification 子进程只能继承运行测试所需的系统环境白名单，不得继承 Feishu、
+    GitHub 或其他 Token/Secret/Password；Python 验证固定设置 `PYTHONDONTWRITEBYTECODE=1`，避免验证器
+    自身在已冻结 Candidate Worktree 中生成缓存文件并改变观察环境。
 
 ## AgentScope Attempt Runtime 边界
 
@@ -100,3 +109,59 @@ Codex Attempt 的 Credential Transport，不改变 Provider Binding、Runtime Id
 - AgentScope 拥有单次 Attempt 内的 Session、消息与 Runtime Transport；ACWM 仍然拥有跨 Stage
   工作流；产品拥有可观察 Workcell Composition，但不复制两者的 Runtime Contract。
 - 旧 Delivery、`RepositoryCandidate`、`ReleaseBundleV1` 和历史 Snapshot 保持可读。
+
+## 2026-09-05 修订：按仓冻结产品机器验证方案
+
+Workcell Workspace Governance 拥有机器验证方案选择及工具链资格。产品发布不可变 Profile，
+操作者通过具备权限的 Workspace API 选择 ID、执行只读工具资格探针；Agent 不能提供或改写验证命令。
+现有 Workspace Git Verification 仍只证明 Git 能力，机器验证资格有独立字段。
+
+Migration 0045 增加可空 Profile ID、资格 Snapshot 和失败原因。修改配置采用 Workspace CAS，
+同库事务内通过 Project Port 检查活动 Delivery；正在交付时拒绝修改。资格失败不伪造 ready，
+已激活 Team 可在无活动交付时补配。
+
+Delivery/Workcell Snapshot 冻结完整 Profile、Profile Hash、工具路径/版本/二进制 Hash、
+qualification Hash。新 Delivery 和 Writer 执行先复核产品 Catalog 与实际工具身份。历史空字段
+读取时省略该字段，保持原 Snapshot Hash；不得回填 Python 方案使旧执行获得新资格。
+
+首批只承诺 Python unittest 和 Node native test；不承诺任意 React/pnpm、Design 文档合同或
+QA E2E 适配。Python Runner 需先在隔离模块解析环境载入产品选定的标准库，再载入仓库测试；
+仓库同名模块不能替换 Runner。固定命令必须发现并成功运行测试，零测试、全跳过、
+超时、工具或方案漂移均失败。验证子进程继承受限系统环境；取消/超时必须终止进程组并等待退出，
+不得仅取消等待线程后释放项目 Lease。
+
+验证报告记录实际 argv、工具身份、超时、退出码、测试结果合同与日志 Hash，并与原 Candidate/Diff
+绑定。Readiness 只证明启动资格，仍为 not_run。具体本地验证结果见本轮执行清单；
+此工作区尚未冻结最终 Product Revision，正式 Live Gate 另行验收。
+
+## 2026-09-05 已接受修订：Review 责任与原始证据
+
+Tasking 只提议 `workcell_acceptance`：每个 Workcell 明确引用原始 Acceptance ID 并说明本仓责任。
+产品在 Plan Gate 前检查引用、唯一性、冻结 Workcell 集和任务验收覆盖；用户批准的 Gate Subject
+包含完整 Requirements 与 Task。不得用产品关键词匹配或把全部验收项默认指派给所有仓来替代该规划。
+
+产品预置 `ReviewPolicySnapshot` 仅冻结既有的允许路径、非空 Candidate 和生成物限制。
+Workcell `review_scope` 从批准的 Plan 与该 Policy 快照派生，冻结原始验收正文、责任、Policy
+及其哈希；批准后来源改变即失败。Agent 无权改写 Policy，QA Preparation 仍为 Artifact-only。
+
+Reviewer 输出必须绑定 Scope/Candidate/Diff SHA。`code` 是问题分类，不能冒充归属；
+每个 Finding 必须且只能引用本 Scope 的 `acceptance_id` 或 `system_policy_id`。
+产品先保存每个 Reviewer 的原始 Artifact，再验证合同并登记 Review；一份无效输出不能丢弃
+同批其他 Reviewer 的有效 blocker。无效输出走既有 ACWM bounded Loop，不能变成空 Review
+或通过 Main synthesis 复活失败 Run。
+
+历史可空字段在序列化中省略，保持旧 Hash；历史可读，新 Workcell 缺 Scope 失败关闭。
+状态以 ARCH-20260905-03 为准；专项实现通过不等于最终 Revision 或 Live 验收。
+
+## 2026-09-05 修订：按仓产品验证与 Artifact-only 阶段
+
+Workcell Governance 的 V2 Profile 明确适用 Workcell、固定命令、工具与配置身份、输入/输出包合同。
+Agent 只能提交 Candidate，不能重写产品命令、冻结配置或结果计数。执行 Adapter 在临时 Candidate
+副本中运行真实工具，发布日志、测试结果及内容寻址产物；产品 Stage 在实际 CandidateVerification
+持久化后才登记 Publication，下游只物化这些已验证来源。
+
+QA Preparation 虽共用 QA Workspace Snapshot，但保持 Artifact-only 职责：不写 Candidate、
+不运行 QA Delivery 的完整浏览器 Profile、不生产其机器验证包。产品仍校验其 ResultValidation、
+原始 Artifact 和 Citation，再允许后续阶段运行。该区分不由模型自行选择。
+
+状态见 `ARCH-20260905-04`；本机真实工具全链回归与真实 Agent/外部 Git Live 验收分开记录。

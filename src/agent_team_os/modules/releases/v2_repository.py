@@ -187,6 +187,19 @@ class SQLiteExternalReleaseRepository:
             ).fetchone()
         return None if row is None else _attempt(row)
 
+    def project_recovery_delivery_ids(self, project_id: str) -> tuple[str, ...]:
+        """恢复所有者来自发布权威，不依赖可能被历史取消错误释放的 Delivery/Lease。"""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT delivery_id FROM release_apply_attempts_v2
+                WHERE project_id=? AND status!='completed'
+                UNION SELECT delivery_id FROM project_release_health_v2
+                WHERE project_id=? AND status='release_drifted' AND delivery_id IS NOT NULL
+                ORDER BY delivery_id""",
+                (project_id, project_id),
+            ).fetchall()
+        return tuple(str(row[0]) for row in rows)
+
     def put_attempt(
         self,
         attempt: ReleaseApplyAttemptV2,
@@ -266,35 +279,39 @@ class SQLiteExternalReleaseRepository:
     def activate_manifest(self, manifest: ReleaseManifestV2) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            existing = connection.execute(
-                "SELECT delivery_id,manifest_sha256 FROM release_manifests_v2 WHERE project_id=?",
-                (manifest.project_id,),
-            ).fetchone()
-            if existing is not None and existing[0] == manifest.delivery_id:
-                if existing[1] != manifest.manifest_sha256:
-                    raise RuntimeError("RELEASE_MANIFEST_INTEGRITY_CONFLICT")
-                return
-            connection.execute(
-                """INSERT INTO release_manifests_v2(
-                project_id,delivery_id,pipeline_revision_id,bundle_sha256,repositories_json,
-                manifest_sha256,status,activated_at) VALUES(?,?,?,?,?,?,?,?)
-                ON CONFLICT(project_id) DO UPDATE SET delivery_id=excluded.delivery_id,
-                pipeline_revision_id=excluded.pipeline_revision_id,
-                bundle_sha256=excluded.bundle_sha256,
-                repositories_json=excluded.repositories_json,
-                manifest_sha256=excluded.manifest_sha256,status=excluded.status,
-                activated_at=excluded.activated_at""",
-                (
-                    manifest.project_id,
-                    manifest.delivery_id,
-                    manifest.pipeline_revision_id,
-                    manifest.bundle_sha256,
-                    _json([item.model_dump(mode="json") for item in manifest.repositories]),
-                    manifest.manifest_sha256,
-                    manifest.status,
-                    manifest.activated_at.isoformat(),
-                ),
-            )
+            self._activate_manifest_on(connection, manifest)
+
+    @staticmethod
+    def _activate_manifest_on(connection: sqlite3.Connection, manifest: ReleaseManifestV2) -> None:
+        existing = connection.execute(
+            "SELECT delivery_id,manifest_sha256 FROM release_manifests_v2 WHERE project_id=?",
+            (manifest.project_id,),
+        ).fetchone()
+        if existing is not None and existing[0] == manifest.delivery_id:
+            if existing[1] != manifest.manifest_sha256:
+                raise RuntimeError("RELEASE_MANIFEST_INTEGRITY_CONFLICT")
+            return
+        connection.execute(
+            """INSERT INTO release_manifests_v2(
+            project_id,delivery_id,pipeline_revision_id,bundle_sha256,repositories_json,
+            manifest_sha256,status,activated_at) VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET delivery_id=excluded.delivery_id,
+            pipeline_revision_id=excluded.pipeline_revision_id,
+            bundle_sha256=excluded.bundle_sha256,
+            repositories_json=excluded.repositories_json,
+            manifest_sha256=excluded.manifest_sha256,status=excluded.status,
+            activated_at=excluded.activated_at""",
+            (
+                manifest.project_id,
+                manifest.delivery_id,
+                manifest.pipeline_revision_id,
+                manifest.bundle_sha256,
+                _json([item.model_dump(mode="json") for item in manifest.repositories]),
+                manifest.manifest_sha256,
+                manifest.status,
+                manifest.activated_at.isoformat(),
+            ),
+        )
 
     def get_manifest(self, project_id: str) -> ReleaseManifestV2 | None:
         with self._connect() as connection:
@@ -319,25 +336,78 @@ class SQLiteExternalReleaseRepository:
             }
         )
 
+    def get_finalized_manifest(self, bundle: ReleaseBundleV2) -> ReleaseManifestV2 | None:
+        """回读完整提交，避免提交成功但调用方失去确认时降级为恢复状态。"""
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT m.repositories_json,m.manifest_sha256,m.status,m.activated_at,
+                d.snapshot_json FROM release_manifests_v2 m
+                JOIN release_apply_attempts_v2 a ON a.delivery_id=m.delivery_id
+                JOIN project_release_health_v2 h ON h.project_id=m.project_id
+                JOIN deliveries d ON d.id=m.delivery_id
+                WHERE m.project_id=? AND m.delivery_id=? AND m.bundle_sha256=?
+                AND m.pipeline_revision_id=? AND m.status='active'
+                AND a.project_id=m.project_id AND a.bundle_sha256=m.bundle_sha256
+                AND a.status='completed' AND a.error_code IS NULL
+                AND h.delivery_id=m.delivery_id AND h.bundle_sha256=m.bundle_sha256
+                AND h.status='healthy' AND h.error_code IS NULL
+                AND NOT EXISTS(SELECT 1 FROM project_delivery_leases l
+                    WHERE l.delivery_id=m.delivery_id)
+                AND EXISTS(SELECT 1 FROM product_events e
+                    WHERE e.aggregate_id=m.delivery_id AND e.aggregate_type='delivery'
+                    AND e.event_type='delivery.completed')""",
+                (
+                    bundle.project_id,
+                    bundle.delivery_id,
+                    bundle.bundle_sha256,
+                    bundle.pipeline_revision_id,
+                ),
+            ).fetchone()
+        if row is None:
+            return None
+        delivery = DeliveryRun.model_validate_json(str(row[4]))
+        if (
+            delivery.project_id != bundle.project_id
+            or delivery.status != "completed"
+            or delivery.release_manifest_v2_sha256 != row[1]
+        ):
+            return None
+        return ReleaseManifestV2.model_validate(
+            {
+                "project_id": bundle.project_id,
+                "delivery_id": bundle.delivery_id,
+                "pipeline_revision_id": bundle.pipeline_revision_id,
+                "bundle_sha256": bundle.bundle_sha256,
+                "repositories": json.loads(str(row[0])),
+                "manifest_sha256": row[1],
+                "status": row[2],
+                "activated_at": row[3],
+            }
+        )
+
     def put_health(self, health: ReleaseHealthV2) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """INSERT INTO project_release_health_v2(
-                project_id,status,delivery_id,bundle_sha256,error_code,version,updated_at)
-                VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET
-                status=excluded.status,delivery_id=excluded.delivery_id,
-                bundle_sha256=excluded.bundle_sha256,error_code=excluded.error_code,
-                version=excluded.version,updated_at=excluded.updated_at""",
-                (
-                    health.project_id,
-                    health.status,
-                    health.delivery_id,
-                    health.bundle_sha256,
-                    health.error_code,
-                    health.version,
-                    health.updated_at.isoformat(),
-                ),
-            )
+            self._put_health_on(connection, health)
+
+    @staticmethod
+    def _put_health_on(connection: sqlite3.Connection, health: ReleaseHealthV2) -> None:
+        connection.execute(
+            """INSERT INTO project_release_health_v2(
+            project_id,status,delivery_id,bundle_sha256,error_code,version,updated_at)
+            VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET
+            status=excluded.status,delivery_id=excluded.delivery_id,
+            bundle_sha256=excluded.bundle_sha256,error_code=excluded.error_code,
+            version=excluded.version,updated_at=excluded.updated_at""",
+            (
+                health.project_id,
+                health.status,
+                health.delivery_id,
+                health.bundle_sha256,
+                health.error_code,
+                health.version,
+                health.updated_at.isoformat(),
+            ),
+        )
 
     def get_health(self, project_id: str) -> ReleaseHealthV2:
         with self._connect() as connection:
@@ -356,6 +426,66 @@ class SQLiteExternalReleaseRepository:
             error_code=error_code,
             release_lease=False,
         )
+
+    def finalize_release(
+        self,
+        bundle: ReleaseBundleV2,
+        attempt: ReleaseApplyAttemptV2,
+        manifest: ReleaseManifestV2,
+    ) -> None:
+        """将发布完成事实与租约释放原子提交；远端 Receipt 在此前已持久化。"""
+        if (
+            attempt.delivery_id != bundle.delivery_id
+            or attempt.project_id != bundle.project_id
+            or attempt.bundle_sha256 != bundle.bundle_sha256
+            or manifest.delivery_id != bundle.delivery_id
+            or manifest.project_id != bundle.project_id
+            or manifest.bundle_sha256 != bundle.bundle_sha256
+            or manifest.pipeline_revision_id != bundle.pipeline_revision_id
+        ):
+            raise RuntimeError("RELEASE_FINALIZATION_IDENTITY_CONFLICT")
+        now = datetime.now(UTC)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._activate_manifest_on(connection, manifest)
+            cursor = connection.execute(
+                """UPDATE release_apply_attempts_v2
+                SET status='completed',error_code=NULL,version=version+1,updated_at=?
+                WHERE delivery_id=? AND project_id=? AND bundle_sha256=? AND version=?
+                AND status='applying'""",
+                (
+                    now.isoformat(),
+                    bundle.delivery_id,
+                    bundle.project_id,
+                    bundle.bundle_sha256,
+                    attempt.version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("RELEASE_ATTEMPT_VERSION_CONFLICT")
+            row = connection.execute(
+                "SELECT version FROM project_release_health_v2 WHERE project_id=?",
+                (bundle.project_id,),
+            ).fetchone()
+            self._put_health_on(
+                connection,
+                ReleaseHealthV2(
+                    project_id=bundle.project_id,
+                    status="healthy",
+                    delivery_id=bundle.delivery_id,
+                    bundle_sha256=bundle.bundle_sha256,
+                    version=2 if row is None else int(row[0]) + 1,
+                    updated_at=now,
+                ),
+            )
+            self._mark_delivery_on(
+                connection,
+                bundle.delivery_id,
+                status="completed",
+                error_code=None,
+                release_lease=True,
+                release_manifest_v2_sha256=manifest.manifest_sha256,
+            )
 
     def mark_delivery_release_completed(
         self,
@@ -379,41 +509,60 @@ class SQLiteExternalReleaseRepository:
         release_lease: bool,
         release_manifest_v2_sha256: str | None = None,
     ) -> None:
-        now = datetime.now(UTC)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute(
-                "SELECT snapshot_json FROM deliveries WHERE id=?",
-                (delivery_id,),
-            ).fetchone()
-            if row is None:
-                raise KeyError(delivery_id)
-            delivery = DeliveryRun.model_validate_json(str(row[0]))
-            if delivery.status == status and delivery.error_code == error_code:
-                return
-            updated = delivery.model_copy(
-                update={
-                    "status": status,
-                    "error_code": error_code,
-                    "release_manifest_v2_sha256": (
-                        delivery.release_manifest_v2_sha256
-                        if release_manifest_v2_sha256 is None
-                        else release_manifest_v2_sha256
-                    ),
-                    "version": delivery.version + 1,
-                    "updated_at": now,
-                }
+            self._mark_delivery_on(
+                connection,
+                delivery_id,
+                status=status,
+                error_code=error_code,
+                release_lease=release_lease,
+                release_manifest_v2_sha256=release_manifest_v2_sha256,
             )
+
+    @staticmethod
+    def _mark_delivery_on(
+        connection: sqlite3.Connection,
+        delivery_id: str,
+        *,
+        status: str,
+        error_code: str | None,
+        release_lease: bool,
+        release_manifest_v2_sha256: str | None = None,
+    ) -> None:
+        now = datetime.now(UTC)
+        row = connection.execute(
+            "SELECT snapshot_json FROM deliveries WHERE id=?",
+            (delivery_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(delivery_id)
+        delivery = DeliveryRun.model_validate_json(str(row[0]))
+        if delivery.status == status and delivery.error_code == error_code and not release_lease:
+            return
+        updated = delivery.model_copy(
+            update={
+                "status": status,
+                "error_code": error_code,
+                "release_manifest_v2_sha256": (
+                    delivery.release_manifest_v2_sha256
+                    if release_manifest_v2_sha256 is None
+                    else release_manifest_v2_sha256
+                ),
+                "version": delivery.version + 1,
+                "updated_at": now,
+            }
+        )
+        connection.execute(
+            "UPDATE deliveries SET snapshot_json=? WHERE id=?",
+            (updated.model_dump_json(), delivery_id),
+        )
+        if release_lease:
             connection.execute(
-                "UPDATE deliveries SET snapshot_json=? WHERE id=?",
-                (updated.model_dump_json(), delivery_id),
+                "DELETE FROM project_delivery_leases WHERE delivery_id=?",
+                (delivery_id,),
             )
-            if release_lease:
-                connection.execute(
-                    "DELETE FROM project_delivery_leases WHERE delivery_id=?",
-                    (delivery_id,),
-                )
-            _append_event(connection, updated)
+        _append_event(connection, updated)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database, timeout=5)
@@ -438,9 +587,7 @@ _REMOTE_RECEIPT_COLUMNS = (
     "delivery_id,ordinal,candidate_id,workcell_key,repository_uri,before_revision,"
     "candidate_revision,after_revision,recovered,receipt_sha256,applied_at"
 )
-_HEALTH_COLUMNS = (
-    "project_id,status,delivery_id,bundle_sha256,error_code,version,updated_at"
-)
+_HEALTH_COLUMNS = "project_id,status,delivery_id,bundle_sha256,error_code,version,updated_at"
 
 
 def _candidate(row: tuple[object, ...]) -> WorkspaceCandidateV2:

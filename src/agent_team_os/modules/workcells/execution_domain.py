@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from ...shared.hashes import Sha256
 from ...shared.ids import new_id
+from ...shared.review_scope import BlockingFinding as BlockingFinding
+from ...shared.review_scope import WorkcellReviewScope
+from ...shared.verification import VerificationSnapshot
 from ..agents import AgentRun
 from ..artifacts import ArtifactReference
 from .domain import DelegationPolicy
@@ -64,6 +74,17 @@ class WorkcellWorkspaceSnapshot(BaseModel):
     repository_uri: str
     base_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
     verification_sha256: Sha256
+    verification_profile: VerificationSnapshot | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_legacy_profile(  # type: ignore[no-untyped-def]
+        self, handler: SerializerFunctionWrapHandler
+    ):
+        # 返回注解会让 Pydantic 用任意字典替换模型的输出 Schema，因此保留模型字段推导。
+        payload: dict[str, Any] = handler(self)
+        if self.verification_profile is None:
+            payload.pop("verification_profile", None)
+        return payload
 
 
 class WorkcellExecutionSnapshot(BaseModel):
@@ -87,6 +108,16 @@ class WorkcellExecutionSnapshot(BaseModel):
     ] = Field(default_factory=dict)
     method_snapshot_sha256: Sha256
     input_artifacts: tuple[ArtifactReference, ...] = ()
+    review_scope: WorkcellReviewScope | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_legacy_review_scope(  # type: ignore[no-untyped-def]
+        self, handler: SerializerFunctionWrapHandler
+    ):
+        payload: dict[str, Any] = handler(self)
+        if self.review_scope is None:
+            payload.pop("review_scope", None)
+        return payload
 
     @model_validator(mode="after")
     def slots_are_unique_and_main_is_present(self) -> WorkcellExecutionSnapshot:
@@ -191,14 +222,6 @@ class CandidateVerificationCreate(BaseModel):
     diff_sha256: Sha256
     status: Literal["passed", "failed"]
     report: dict[str, object]
-
-
-class BlockingFinding(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    code: str = Field(min_length=1, max_length=120)
-    summary: str = Field(min_length=1, max_length=1_000)
-    evidence_sha256: Sha256
 
 
 class ReviewArtifact(BaseModel):

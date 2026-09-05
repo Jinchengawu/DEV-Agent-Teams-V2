@@ -1,0 +1,17 @@
+{
+  "name": "health-contract-v1-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@10.13.1",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:ci": "vitest run",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  }
+}

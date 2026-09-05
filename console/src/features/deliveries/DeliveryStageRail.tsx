@@ -48,7 +48,7 @@ export function DeliveryStageRail({ delivery }: { delivery: Delivery }) {
 function workcellDeliveryStageIndex(delivery: Delivery): number {
   if (["failed", "rejected", "cancelled"].includes(delivery.status)) return -1;
   if (delivery.status === "completed") return workcellStages.length;
-  if (delivery.status === "needs_attention" || delivery.status === "applying") return 8;
+  if (delivery.status === "needs_attention" || delivery.status === "applying" || delivery.status === "cancelling") return 8;
   if (delivery.status === "awaiting_candidate_decision") return 7;
   if (delivery.status === "awaiting_design_decision") return 3;
   if (delivery.status === "awaiting_plan_decision") return 1;

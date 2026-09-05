@@ -324,6 +324,32 @@ body {
   border-color: var(--role-border-subtle);
 }
 
+/* Workcell 配置与证据沿用当前主题，避免旧深底与浅色主题文字冲突。 */
+.workspace-cassette,
+.workcell-activation-bar,
+.workcell-run-card,
+.release-candidate-ledger article,
+.workcell-candidate-proof,
+.attempt-list > div {
+  color: var(--role-text-primary);
+  background: var(--role-surface-subtle);
+}
+
+.method-freeze-strip,
+.agent-node {
+  color: var(--role-text-primary);
+  background: var(--role-surface);
+}
+
+.method-freeze-strip,
+.attempt-list > div {
+  border-color: var(--role-border);
+}
+
+.workspace-verification-profile .ant-select-input {
+  min-height: 0;
+}
+
 .surface-card,
 .panel,
 .project-card,

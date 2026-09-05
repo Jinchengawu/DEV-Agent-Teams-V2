@@ -9,7 +9,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import import_module
@@ -529,9 +528,7 @@ def build_preview_app() -> FastAPI:
         agent=workcell_agent,
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
-        verifier=CommandWorkcellMachineVerifier(
-            lambda _workcell: ((sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),)
-        ),
+        verifier=CommandWorkcellMachineVerifier(artifact_storage),
         releases=ExternalReleaseCatalog(release_v2_repository),
         pull_requests=GitHubPullRequestProvider(),
         knowledge_guard=knowledge_runtime_guard,

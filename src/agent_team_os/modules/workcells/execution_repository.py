@@ -472,13 +472,18 @@ class SQLiteWorkcellExecutionRepository:
         run: WorkcellRun,
         review: ReviewArtifact,
     ) -> WorkcellRun:
-        blocked = bool(review.blocking_findings) or (
-            run.status == "failed" and run.error_code == "WORKCELL_BLOCKING_REVIEW"
-        )
+        already_failed = run.status == "failed"
+        blocked = bool(review.blocking_findings) or already_failed
         updated = run.model_copy(
             update={
                 "status": "failed" if blocked else "reviewing",
-                "error_code": "WORKCELL_BLOCKING_REVIEW" if blocked else None,
+                "error_code": (
+                    run.error_code
+                    if already_failed
+                    else "WORKCELL_BLOCKING_REVIEW"
+                    if blocked
+                    else None
+                ),
                 "version": run.version + 1,
                 "updated_at": review.created_at,
             }

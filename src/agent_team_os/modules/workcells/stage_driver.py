@@ -5,13 +5,14 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, suppress
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...delivery import DeliveryExecutionSnapshot, DeliveryMethodSnapshot, DeliveryRun
 from ...infrastructure.git import (
@@ -20,6 +21,10 @@ from ...infrastructure.git import (
     ExternalGitWorkspaceManager,
     ExternalWriterPolicy,
     ExternalWriterWorkspace,
+)
+from ...infrastructure.verification.command_toolchain import (
+    LocalVerificationToolchain,
+    verification_environment,
 )
 from ...modules.agents import AgentRun, ArtifactEnvelope
 from ...modules.artifacts import ArtifactReference, ContentAddressedArtifactStorage
@@ -33,6 +38,15 @@ from ...modules.releases import (
 )
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
+from ...shared.review_scope import (
+    INVALID_REVIEW_CODES,
+    WorkcellReviewScope,
+    compile_review_scope,
+    parse_review_findings,
+    product_workcell_allowed_paths,
+    validate_review_output,
+)
+from ...shared.verification import VerificationQualificationV2, VerificationSnapshot
 from .execution_application import WorkcellExecutionModule
 from .execution_domain import (
     BlockingFinding,
@@ -45,6 +59,12 @@ from .execution_domain import (
     WorkcellRunTree,
 )
 from .snapshot_compiler import compile_workcell_execution_snapshot
+from .verification_application import VerificationProfileCatalog, validate_test_result
+from .verification_domain import (
+    VerificationPackagePublicationV1,
+    VerificationReportV2,
+    VerificationSourceV2,
+)
 
 
 class WorkcellMethodContext(BaseModel):
@@ -201,20 +221,17 @@ class WorkcellMachineVerifier(Protocol):
         workcell_key: str,
         workspace: Path,
         candidate: ExternalCandidateEvidence,
+        profile: VerificationSnapshot,
+        delivery_id: str = "",
+        sources: tuple[VerificationSourceV2, ...] = (),
     ) -> MachineVerificationOutcome: ...
 
 
 class CommandWorkcellMachineVerifier:
     """Run product-configured commands against the immutable Candidate worktree."""
 
-    def __init__(
-        self,
-        command_resolver: Callable[[str], tuple[tuple[str, ...], ...]],
-        *,
-        timeout_seconds: int = 300,
-    ) -> None:
-        self.command_resolver = command_resolver
-        self.timeout_seconds = timeout_seconds
+    def __init__(self, artifacts: ContentAddressedArtifactStorage | None = None) -> None:
+        self.artifacts = artifacts
 
     async def verify(
         self,
@@ -222,8 +239,34 @@ class CommandWorkcellMachineVerifier:
         workcell_key: str,
         workspace: Path,
         candidate: ExternalCandidateEvidence,
+        profile: VerificationSnapshot,
+        delivery_id: str = "",
+        sources: tuple[VerificationSourceV2, ...] = (),
     ) -> MachineVerificationOutcome:
-        commands = self.command_resolver(workcell_key)
+        if isinstance(profile, VerificationQualificationV2):
+            from ...infrastructure.verification.fullstack import verify_fullstack
+
+            if self.artifacts is None or not delivery_id:
+                raise _error(
+                    "WORKCELL_VERIFICATION_CONTEXT_REQUIRED", "V2 验证缺少产品 Store 或交付身份。"
+                )
+            status, report = await verify_fullstack(
+                workspace=workspace,
+                candidate=candidate,
+                qualification=profile,
+                workcell_key=workcell_key,
+                delivery_id=delivery_id,
+                sources=sources,
+                store=self.artifacts,
+                run_command=_run_verification_command,
+                redact=_redact,
+            )
+            return MachineVerificationOutcome(status=status, report=report)
+        VerificationProfileCatalog().validate(profile, LocalVerificationToolchain())
+        executables: dict[str, str] = {tool.name: tool.executable for tool in profile.tools}
+        commands = tuple(
+            (executables[command[0]], *command[1:]) for command in profile.profile.commands
+        )
         if not commands or any(not command for command in commands):
             raise _error(
                 "WORKCELL_MACHINE_VERIFICATION_COMMAND_MISSING",
@@ -232,25 +275,37 @@ class CommandWorkcellMachineVerifier:
         reports: list[dict[str, object]] = []
         passed = True
         for command in commands:
-            completed = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                cwd=workspace,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=self.timeout_seconds,
-            )
+            try:
+                completed = await _run_verification_command(
+                    command,
+                    workspace=workspace,
+                    timeout_seconds=profile.profile.timeout_seconds,
+                    environment=verification_environment(profile.profile.environment),
+                )
+            except subprocess.TimeoutExpired:
+                reports.append(
+                    {
+                        "command": list(command),
+                        "exit_code": None,
+                        "timeout_seconds": profile.profile.timeout_seconds,
+                        "error_code": "WORKCELL_MACHINE_VERIFICATION_TIMEOUT",
+                    }
+                )
+                passed = False
+                break
             log = _redact(completed.stdout + completed.stderr)
+            result_contract_passed = validate_test_result(profile.profile.id, log)
             reports.append(
                 {
                     "command": list(command),
                     "exit_code": completed.returncode,
                     "log_sha256": hashlib.sha256(log.encode()).hexdigest(),
                     "redacted_log": log,
+                    "result_contract_passed": result_contract_passed,
+                    "timeout_seconds": profile.profile.timeout_seconds,
                 }
             )
-            if completed.returncode != 0:
+            if completed.returncode != 0 or not result_contract_passed:
                 passed = False
                 break
         return MachineVerificationOutcome(
@@ -259,8 +314,91 @@ class CommandWorkcellMachineVerifier:
                 "candidate_sha": candidate.candidate_revision,
                 "diff_sha256": candidate.diff_sha256,
                 "commands": reports,
+                "profile_sha256": profile.profile_sha256,
+                "qualification_sha256": profile.qualification_sha256,
+                "result_contract": profile.profile.result_contract,
+                "tools": [tool.model_dump(mode="json") for tool in profile.tools],
             },
         )
+
+
+async def _run_verification_command(
+    command: tuple[str, ...],
+    *,
+    workspace: Path,
+    timeout_seconds: int,
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    spawning = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *command,
+            cwd=workspace,
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
+        )
+    )
+    try:
+        process = await asyncio.shield(spawning)
+    except asyncio.CancelledError:
+
+        async def stop_after_spawn() -> None:
+            process = await spawning
+            await _terminate_verification_process(process)
+            await process.communicate()
+
+        await _await_verification_cleanup(asyncio.create_task(stop_after_spawn()))
+        raise
+    communication = asyncio.create_task(process.communicate())
+    try:
+        stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout_seconds)
+    except (asyncio.CancelledError, TimeoutError) as error:
+
+        async def stop_and_drain() -> None:
+            await _terminate_verification_process(process)
+            await communication
+
+        await _await_verification_cleanup(asyncio.create_task(stop_and_drain()))
+        if isinstance(error, TimeoutError):
+            raise subprocess.TimeoutExpired(command, timeout_seconds) from error
+        raise
+    cleanup = asyncio.create_task(_terminate_verification_process(process))
+    try:
+        await asyncio.shield(cleanup)
+    except asyncio.CancelledError:
+        await _await_verification_cleanup(cleanup)
+        raise
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode or 0,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+    )
+
+
+async def _await_verification_cleanup(cleanup: asyncio.Task[None]) -> None:
+    # 重复取消不得中断进程回收，否则上层可能过早释放 Workspace Lease。
+    while not cleanup.done():
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            continue
+    await cleanup
+
+
+async def _terminate_verification_process(process: asyncio.subprocess.Process) -> None:
+    """先停止整个验证进程组并回收主进程，再允许取消交付释放执行权。"""
+    with suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        await asyncio.wait_for(process.wait(), 1)
+    except TimeoutError:
+        pass
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        await process.wait()
 
 
 class PullRequestSurface(Protocol):
@@ -334,6 +472,26 @@ class WorkcellStageDriver:
             stage_path,
             input_artifacts=input_artifacts,
         )
+        if delivery.requirements is None or delivery.task is None or delivery.plan_gate is None:
+            raise _error("WORKCELL_REVIEW_SCOPE_REQUIRED", "Workcell 缺少已批准的需求与责任映射。")
+        required_workcells = tuple(
+            sorted(
+                {
+                    str(item["workcell_key"])
+                    for item in delivery_snapshot.workcell_stage_map.values()
+                }
+            )
+        )
+        scope = compile_review_scope(
+            requirements=delivery.requirements.model_dump(mode="json"),
+            task=delivery.task.model_dump(mode="json"),
+            plan_subject_sha256=delivery.plan_gate.subject_sha256,
+            plan_approved=delivery.plan_gate.decision == "approve",
+            workcell_key=snapshot.workcell_key,
+            required_workcells=required_workcells,
+            policies=delivery_snapshot.review_policies,
+        )
+        snapshot = snapshot.model_copy(update={"review_scope": scope})
         existing = next(
             (
                 item
@@ -350,6 +508,18 @@ class WorkcellStageDriver:
                     "已有 WorkcellRun 未成功且不能伪装为恢复。",
                 )
             return self._completed_outcome(delivery_snapshot, existing)
+        VerificationProfileCatalog().validate(
+            snapshot.workspace.verification_profile,
+            LocalVerificationToolchain(),
+        )
+        if (
+            isinstance(snapshot.workspace.verification_profile, VerificationQualificationV2)
+            and snapshot.workspace.verification_profile.profile.workcell_key
+            != snapshot.workcell_key
+        ):
+            raise _error(
+                "WORKCELL_VERIFICATION_PROFILE_INVALID", "冻结验证方案不适用于当前 Workcell。"
+            )
         self._admit_knowledge(delivery, stage_path)
         tree = self.kernel.create(
             WorkcellRunCreate(
@@ -360,10 +530,13 @@ class WorkcellStageDriver:
                 snapshot=snapshot,
             )
         )
-        with _terminalize_workcell_failure(
-            self.kernel,
-            tree.workcell_run.id,
-        ), self.methods.activate(delivery_snapshot.method_snapshot) as method_context:
+        with (
+            _terminalize_workcell_failure(
+                self.kernel,
+                tree.workcell_run.id,
+            ),
+            self.methods.activate(delivery_snapshot.method_snapshot) as method_context,
+        ):
             assignments = self._assignments(snapshot)
             planning_reference, planning_citations = await self._main_planning(
                 delivery,
@@ -377,12 +550,10 @@ class WorkcellStageDriver:
                 planning_artifact_sha256=planning_reference.sha256,
             )
             try:
-                candidate, writer_id, outputs, producer_citations = (
-                    await self._execute_producers(
-                        delivery,
-                        tree,
-                        method_context,
-                    )
+                candidate, writer_id, outputs, producer_citations = await self._execute_producers(
+                    delivery,
+                    tree,
+                    method_context,
                 )
             except ProductError as error:
                 if error.code != "EMPTY_WORKSPACE_CANDIDATE":
@@ -399,6 +570,9 @@ class WorkcellStageDriver:
                     workcell_key=snapshot.workcell_key,
                     workspace=candidate[0].worktree,
                     candidate=candidate[1],
+                    profile=cast(VerificationSnapshot, snapshot.workspace.verification_profile),
+                    delivery_id=delivery.id,
+                    sources=self._verification_sources(delivery.id, snapshot.input_artifacts),
                 )
                 recorded = self.kernel.record_candidate_verification(
                     tree.workcell_run.id,
@@ -412,6 +586,20 @@ class WorkcellStageDriver:
                 )
                 if recorded.status == "failed":
                     return self._repair_outcome(tree, snapshot.workcell_key)
+                if isinstance(snapshot.workspace.verification_profile, VerificationQualificationV2):
+                    report_v2 = VerificationReportV2.model_validate(recorded.report)
+                    if report_v2.output_manifest is not None:
+                        publication = VerificationPackagePublicationV1(
+                            delivery_id=delivery.id,
+                            workcell_key=snapshot.workcell_key,
+                            candidate_sha=candidate[1].candidate_revision,
+                            verification_sha256=recorded.sha256,
+                            manifest=report_v2.output_manifest,
+                        )
+                        outputs = (
+                            *outputs,
+                            self.artifacts.put_json(publication.model_dump(mode="json")),
+                        )
                 tree, review_ids, review_citations = await self._execute_reviews(
                     delivery,
                     self.kernel.tree(tree.workcell_run.id),
@@ -497,6 +685,49 @@ class WorkcellStageDriver:
                 candidate=workspace_candidate,
                 release_bundle=release_bundle,
             )
+
+    def _verification_sources(
+        self,
+        delivery_id: str,
+        references: tuple[ArtifactReference, ...],
+    ) -> tuple[VerificationSourceV2, ...]:
+        sources = []
+        trees = self.kernel.list_delivery(delivery_id)
+        for reference in references:
+            if not reference.media_type.endswith("json"):
+                continue
+            payload = self.artifacts.get_json(reference)
+            if (
+                not isinstance(payload, dict)
+                or payload.get("contract_version") != "verification-publication-v1"
+            ):
+                continue
+            owner = next(
+                (
+                    tree
+                    for tree in trees
+                    if tree.result is not None
+                    and tree.workcell_run.status == "succeeded"
+                    and reference in tree.result.output_artifact_references
+                ),
+                None,
+            )
+            if owner is None or owner.verification is None or owner.verification.status != "passed":
+                raise _error(
+                    "WORKCELL_VERIFICATION_PACKAGE_INVALID", "输入包没有本次交付的成功来源。"
+                )
+            qualification = owner.workcell_run.workcell_snapshot.workspace.verification_profile
+            if not isinstance(qualification, VerificationQualificationV2):
+                raise _error("WORKCELL_VERIFICATION_PACKAGE_INVALID", "输入包来源缺少 V2 资格。")
+            sources.append(
+                VerificationSourceV2(
+                    publication=reference,
+                    qualification=qualification,
+                    report=VerificationReportV2.model_validate(owner.verification.report),
+                    verification_sha256=owner.verification.sha256,
+                )
+            )
+        return tuple(sources)
 
     def upstream_artifacts(
         self,
@@ -587,6 +818,8 @@ class WorkcellStageDriver:
                     _knowledge_trust_boundary()
                     + "\n冻结 ArtifactAttachment:"
                     + self._attachment_payload(tree)
+                    + "\nFrozen Review Scope："
+                    + _review_scope_json(tree)
                     + "\n生成 DelegationPlan JSON。最终 JSON object 必须且只能包含 "
                     "assignments 与 knowledge_citation_ids 两个键；"
                     "assignments 必须逐项等于下列冻结数组。"
@@ -659,9 +892,7 @@ class WorkcellStageDriver:
             for child, result in zip(batch, results, strict=True):
                 if isinstance(result, BaseException):
                     failure_artifacts = (
-                        result.artifacts
-                        if isinstance(result, _ProducerExecutionError)
-                        else ()
+                        result.artifacts if isinstance(result, _ProducerExecutionError) else ()
                     )
                     self.kernel.finish_child(
                         child.id,
@@ -670,14 +901,15 @@ class WorkcellStageDriver:
                         error_code=getattr(result, "code", "WORKCELL_DELEGATE_FAILED"),
                     )
                     raise result
-                envelope, writer, child_citations = result
-                self.kernel.finish_child(child.id, status="succeeded", artifacts=(envelope,))
-                if envelope.reference is None:
-                    raise _error(
-                        "WORKCELL_ARTIFACT_REFERENCE_MISSING",
-                        "Delegate 结果没有内容寻址 Artifact Reference。",
-                    )
-                outputs.append(envelope.reference)
+                envelopes, writer, child_citations = result
+                self.kernel.finish_child(child.id, status="succeeded", artifacts=envelopes)
+                for envelope in envelopes:
+                    if envelope.reference is None:
+                        raise _error(
+                            "WORKCELL_ARTIFACT_REFERENCE_MISSING",
+                            "Delegate 结果没有内容寻址 Artifact Reference。",
+                        )
+                    outputs.append(envelope.reference)
                 citations.update(child_citations)
                 if writer is not None:
                     candidate = writer
@@ -691,7 +923,7 @@ class WorkcellStageDriver:
         child: AgentRun,
         methods: WorkcellMethodContext,
     ) -> tuple[
-        ArtifactEnvelope,
+        tuple[ArtifactEnvelope, ...],
         tuple[ExternalWriterWorkspace, ExternalCandidateEvidence] | None,
         tuple[str, ...],
     ]:
@@ -731,6 +963,7 @@ class WorkcellStageDriver:
                     {
                         "content": output.content,
                         "failure_code": error.code,
+                        "failure_detail": _redact(error.detail),
                         "knowledge_citation_ids": list(output.knowledge_citation_ids),
                         "loop_iteration": tree.workcell_run.loop_iteration,
                         "method_id": method_id,
@@ -756,11 +989,36 @@ class WorkcellStageDriver:
                     **evidence.model_dump(mode="json"),
                 }
             )
+            candidate_diff = self.workspaces.candidate_diff(writer, evidence).decode("utf-8")
+            diff_reference = self.artifacts.put_json(
+                {
+                    "contract_id": "workspace-candidate-diff-v1",
+                    "base_revision": evidence.base_revision,
+                    "candidate_revision": evidence.candidate_revision,
+                    "diff_sha256": evidence.diff_sha256,
+                    "diff_media_type": "text/x-diff",
+                    "diff_content": candidate_diff,
+                },
+                media_type="application/vnd.agent-team-os.candidate-diff+json",
+            )
+            if hashlib.sha256(candidate_diff.encode()).hexdigest() != evidence.diff_sha256:
+                raise _error(
+                    "WORKCELL_CANDIDATE_DIFF_ARTIFACT_MISMATCH",
+                    "Candidate Diff Artifact 没有绑定冻结的 Diff SHA-256。",
+                )
             return (
-                ArtifactEnvelope(
-                    contract_id="workspace-candidate-v2",
-                    reference=reference,
-                    sha256=reference.sha256,
+                (
+                    ArtifactEnvelope(
+                        contract_id="workspace-candidate-v2",
+                        reference=reference,
+                        sha256=reference.sha256,
+                    ),
+                    ArtifactEnvelope(
+                        contract_id="workspace-candidate-diff-v1",
+                        artifact_key="diff",
+                        reference=diff_reference,
+                        sha256=diff_reference.sha256,
+                    ),
                 ),
                 (writer, evidence),
                 output.knowledge_citation_ids,
@@ -786,10 +1044,12 @@ class WorkcellStageDriver:
             }
         )
         return (
-            ArtifactEnvelope(
-                contract_id="workcell-method-artifact-v1",
-                reference=reference,
-                sha256=reference.sha256,
+            (
+                ArtifactEnvelope(
+                    contract_id="workcell-method-artifact-v1",
+                    reference=reference,
+                    sha256=reference.sha256,
+                ),
             ),
             None,
             output.knowledge_citation_ids,
@@ -822,6 +1082,9 @@ class WorkcellStageDriver:
                 "REVIEW_CANDIDATE_NOT_VERIFIED",
                 "Reviewer 缺少已通过的 Product Machine Verification。",
             )
+        scope = tree.workcell_run.workcell_snapshot.review_scope
+        if scope is None:
+            raise _error("WORKCELL_REVIEW_SCOPE_REQUIRED", "Reviewer 缺少冻结 Review Scope。")
         review_evidence: dict[str, object] = {
             "base_revision": tree.workcell_run.workcell_snapshot.workspace.base_revision,
             "candidate_revision": candidate[1].candidate_revision,
@@ -830,6 +1093,7 @@ class WorkcellStageDriver:
             "machine_verification_sha256": verification.sha256,
             "machine_verification_status": verification.status,
             "machine_verification_report": verification.report,
+            "review_scope_sha256": scope.sha256,
         }
         for child in reviewers:
             self.kernel.start_child(child.id)
@@ -865,37 +1129,46 @@ class WorkcellStageDriver:
                 )
                 failures.append(result)
                 continue
+            reference = self.artifacts.put_json(result.content)
+            envelope = ArtifactEnvelope(
+                contract_id="review-artifact-v1",
+                reference=reference,
+                sha256=reference.sha256,
+            )
             try:
                 _require_runtime_identity(child, result)
                 findings = _validated_review_output(
                     result.content,
                     candidate_sha=candidate[1].candidate_revision,
                     diff_sha256=candidate[1].diff_sha256,
+                    scope=tree.workcell_run.workcell_snapshot.review_scope,
                 )
-                reference = self.artifacts.put_json(result.content)
             except BaseException as error:
                 self.kernel.finish_child(
                     child.id,
                     status="failed",
                     error_code=getattr(error, "code", "WORKCELL_REVIEW_FAILED"),
+                    artifacts=(envelope,),
                 )
                 failures.append(error)
                 continue
             self.kernel.finish_child(
                 child.id,
                 status="succeeded",
-                artifacts=(
-                    ArtifactEnvelope(
-                        contract_id="review-artifact-v1",
-                        reference=reference,
-                        sha256=reference.sha256,
-                    ),
-                ),
+                artifacts=(envelope,),
             )
             citations.update(result.knowledge_citation_ids)
             prepared.append((child, reference, findings))
-        if failures:
-            raise failures[0]
+        fatal = next(
+            (
+                error
+                for error in failures
+                if getattr(error, "code", None) not in INVALID_REVIEW_CODES
+            ),
+            None,
+        )
+        if fatal is not None:
+            raise fatal
         for child, reference, findings in prepared:
             tree = self.kernel.record_review(
                 tree.workcell_run.id,
@@ -908,7 +1181,7 @@ class WorkcellStageDriver:
                 ),
             )
             review_ids.append(tree.reviews[-1].id)
-        return tree, tuple(review_ids), tuple(sorted(citations))
+        return self.kernel.tree(tree.workcell_run.id), tuple(review_ids), tuple(sorted(citations))
 
     async def _main_synthesis(
         self,
@@ -932,6 +1205,10 @@ class WorkcellStageDriver:
                     + _knowledge_trust_boundary()
                     + "\n冻结 ArtifactAttachment："
                     + self._attachment_payload(tree)
+                    + "\nFrozen Review Scope："
+                    + _review_scope_json(tree)
+                    + "\n本 Workcell 冻结执行证据："
+                    + self._synthesis_evidence_payload(tree)
                 ),
                 workspace=methods.control_workspace,
                 workspace_access="none",
@@ -1058,9 +1335,19 @@ class WorkcellStageDriver:
         return output.model_copy(update={"knowledge_citation_ids": citations})
 
     def _attachment_payload(self, tree: WorkcellRunTree) -> str:
+        return json.dumps(
+            self._artifact_contents(tree.workcell_run.workcell_snapshot.input_artifacts),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def _artifact_contents(
+        self,
+        references: tuple[ArtifactReference, ...],
+    ) -> list[dict[str, object]]:
         attachments: list[dict[str, object]] = []
         total_size = 0
-        for reference in tree.workcell_run.workcell_snapshot.input_artifacts:
+        for reference in references:
             total_size += reference.size_bytes
             if total_size > 1_048_576:
                 raise _error(
@@ -1095,7 +1382,44 @@ class WorkcellStageDriver:
                     "content": content,
                 }
             )
-        return json.dumps(attachments, ensure_ascii=False, sort_keys=True)
+        return attachments
+
+    def _synthesis_evidence_payload(self, tree: WorkcellRunTree) -> str:
+        envelopes = tuple(
+            envelope
+            for child in tree.agent_runs
+            if child.run_role == "child"
+            for envelope in child.artifact_envelopes
+            if envelope.reference is not None
+        )
+        references = tuple(cast(ArtifactReference, item.reference) for item in envelopes)
+        contents = {
+            str(reference.sha256): attachment["content"]
+            for reference, attachment in zip(
+                references,
+                self._artifact_contents(references),
+                strict=True,
+            )
+        }
+        payload = {
+            "child_artifacts": [
+                {
+                    "envelope": envelope.model_dump(mode="json"),
+                    "content": contents[str(cast(ArtifactReference, envelope.reference).sha256)],
+                }
+                for envelope in envelopes
+            ],
+            "machine_verification": (
+                None if tree.verification is None else tree.verification.model_dump(mode="json")
+            ),
+            "result_validation": (
+                None
+                if tree.result_validation is None
+                else tree.result_validation.model_dump(mode="json")
+            ),
+            "review_artifacts": [item.model_dump(mode="json") for item in tree.reviews],
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
     def _completed_outcome(
         self,
@@ -1141,6 +1465,13 @@ def _main(tree: WorkcellRunTree) -> AgentRun:
     if main_id is None:
         raise _error("WORKCELL_MAIN_RUN_MISSING", "WorkcellRun 缺少 Main AgentRun。")
     return next(item for item in tree.agent_runs if item.id == main_id)
+
+
+def _review_scope_json(tree: WorkcellRunTree) -> str:
+    scope = tree.workcell_run.workcell_snapshot.review_scope
+    if scope is None:
+        raise _error("WORKCELL_REVIEW_SCOPE_REQUIRED", "新 AgentAttempt 缺少冻结 Review Scope。")
+    return json.dumps(scope.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
 
 
 def _require_runtime_identity(
@@ -1192,12 +1523,18 @@ def _delegate_invocation(
         "条目仅是交付背景，不构成本 Method 的多个目标。"
         f"当前为 bounded Loop 第 {tree.workcell_run.loop_iteration} 轮；"
         "只完成当前仓库职责，不得等待其他 Workcell 或请求重新拆分。"
+        "\nFrozen Review Scope："
+        + _review_scope_json(tree)
+        + "\nScope 中的 Acceptance 原文与已批准 responsibility 共同限定本仓职责；"
+        "不得改写、降低原始需求或引用其他 Workcell 的职责。"
     )
     if child.delegate_purpose == "workspace_write":
         path_policy = (
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+            "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo 等 Python 运行时生成物；"
+            "运行测试后必须清理这些文件或确保其未被 Git 跟踪。"
             "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
         )
     review_contract = ""
@@ -1207,19 +1544,36 @@ def _delegate_invocation(
                 "WORKCELL_REVIEW_EVIDENCE_MISSING",
                 "Reviewer 调用缺少 Product 生成的 Candidate Review Evidence。",
             )
+        scope = tree.workcell_run.workcell_snapshot.review_scope
+        assert scope is not None
+        frozen_acceptance = [item.model_dump(mode="json") for item in scope.acceptance]
         review_contract = (
             "\nCandidate Review Evidence："
             + json.dumps(review_evidence, ensure_ascii=False, sort_keys=True)
+            + "\nFrozen Acceptance Contract："
+            + json.dumps(frozen_acceptance, ensure_ascii=False, sort_keys=True)
             + "\n当前工作目录已经是上述 Candidate SHA 的只读 Detached View。"
             "必须实际执行 git rev-parse HEAD，检查 Base..HEAD diff 并读取变更文件；"
             "命令 exit 0 时应忽略只读 macOS 沙箱产生的临时缓存警告。"
             "\nReview Output Contract：最终 JSON 必须显式包含 blocking_findings 数组，"
-            "缺失该键必须视为无效。每个 Blocking Finding 必须且只能包含 code、summary、"
-            "evidence_sha256；evidence_sha256 必须是 64 位小写十六进制。"
+            "缺失该键必须视为无效。每个 Blocking Finding 必须包含 code、summary、"
+            "evidence_sha256，并且只能二选一填写 acceptance_id 或 system_policy_id。"
+            "code 是独立问题码，不能代替引用字段；evidence_sha256 必须是 64 位小写十六进制。"
             "最终 JSON 还必须包含 reviewed_candidate_sha 与 reviewed_diff_sha256，且必须逐字"
             "等于 Candidate Review Evidence 中的 candidate_revision 与 diff_sha256。"
+            "最终 JSON 必须包含 review_scope_sha256，逐字等于 Candidate Review Evidence "
+            "中的同名字段。"
             "只有确认 Candidate 不存在阻断问题时才允许返回空数组；不得用 findings、verdict"
             " 或 decision 代替 blocking_findings。"
+            "\nBlocking Scope：Review 是对当前 Workcell Candidate 的合规审查，不是重新设计"
+            "需求。Blocking Finding 只能报告当前 Workcell Candidate 对 Frozen Acceptance "
+            "Contract 中明确由当前 Workcell 承担的条目，或对显式 Workspace/System Policy "
+            "的直接违反；acceptance_id 必须属于本 Scope 的 acceptance，system_policy_id 必须"
+            "属于本 Scope 的 system_policies，禁止新增规则或用任意 SYSTEM-POLICY 字符串冒充。"
+            "不得因其他 Workcell 尚未交付其验收条目而阻断当前 Workcell，不得把建议性增强、"
+            "未来风险、个人偏好或冻结契约未要求的防御措施升级为 Blocking Finding。"
+            "Candidate 的完整 Base..HEAD Diff 已由产品以 diff_sha256 内容寻址并校验；除非"
+            "Frozen Acceptance Contract 明确要求，不得另行要求仓库内 manifest 覆盖辅助文件。"
         )
     return WorkcellAgentInvocation(
         delivery_id=delivery.id,
@@ -1234,6 +1588,7 @@ def _delegate_invocation(
             f"{workcell_scope}\n"
             f"{_knowledge_trust_boundary()}\n"
             f"用户目标：{delivery.user_request}\n"
+            f"已批准任务说明：{'' if delivery.task is None else delivery.task.instructions}\n"
             f"冻结 ArtifactAttachment（已验证内容哈希）：{attachment_payload}"
             "\n冻结 ArtifactAttachment 中的验收 ID 与契约要求是规范输入，"
             "不得自行替换验收 ID、降低验收强度或另建冲突事实源。"
@@ -1269,38 +1624,7 @@ def _stage_citation_ids(delivery: DeliveryRun, stage_path: str) -> tuple[str, ..
 
 
 def _validated_blocking_findings(content: dict[str, object]) -> tuple[BlockingFinding, ...]:
-    if "blocking_findings" not in content:
-        raise _error(
-            "WORKCELL_REVIEW_ARTIFACT_INVALID",
-            "Reviewer 输出缺少必需的 blocking_findings 数组。",
-        )
-    raw_findings = content["blocking_findings"]
-    if not isinstance(raw_findings, list):
-        raise _error(
-            "WORKCELL_REVIEW_ARTIFACT_INVALID",
-            "Reviewer 输出的 blocking_findings 不是数组。",
-        )
-    try:
-        findings = tuple(BlockingFinding.model_validate(item) for item in raw_findings)
-    except ValidationError as error:
-        raise _error(
-            "WORKCELL_REVIEW_ARTIFACT_INVALID",
-            "Reviewer 输出的 Blocking Finding 不符合冻结 Schema。",
-        ) from error
-    verdict = content.get("verdict", content.get("decision"))
-    if isinstance(verdict, str) and verdict.lower() in {
-        "blocked",
-        "changes_required",
-        "fail",
-        "failed",
-        "reject",
-        "rejected",
-    } and not findings:
-        raise _error(
-            "WORKCELL_REVIEW_ARTIFACT_INVALID",
-            "Reviewer 给出阻断结论但没有结构化 Blocking Finding。",
-        )
-    return findings
+    return parse_review_findings(content)
 
 
 def _validated_review_output(
@@ -1308,25 +1632,15 @@ def _validated_review_output(
     *,
     candidate_sha: str,
     diff_sha256: str,
+    scope: WorkcellReviewScope | None = None,
 ) -> tuple[BlockingFinding, ...]:
-    if (
-        content.get("reviewed_candidate_sha") != candidate_sha
-        or content.get("reviewed_diff_sha256") != diff_sha256
-    ):
-        raise _error(
-            "WORKCELL_REVIEW_EVIDENCE_MISMATCH",
-            "Reviewer 输出没有绑定 Product 已验证的 Candidate SHA 与 Diff SHA。",
-        )
-    return _validated_blocking_findings(content)
+    return validate_review_output(
+        content, scope=scope, candidate_sha=candidate_sha, diff_sha256=diff_sha256
+    )
 
 
 def _allowed_paths(workcell_key: str) -> tuple[str, ...]:
-    return {
-        "design": ("design/**", "tests/**"),
-        "frontend": ("src/**", "tests/**"),
-        "backend": ("src/**", "tests/**"),
-        "qa": ("tests/**", "reports/**"),
-    }.get(workcell_key, ("src/**", "tests/**"))
+    return product_workcell_allowed_paths(workcell_key)
 
 
 def _success_condition(stage_path: str) -> str:
@@ -1365,9 +1679,7 @@ def _terminalize_workcell_failure(
     except Exception as error:
         kernel.fail(
             run_id,
-            error_code=str(
-                getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")
-            ),
+            error_code=str(getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")),
         )
         raise
 

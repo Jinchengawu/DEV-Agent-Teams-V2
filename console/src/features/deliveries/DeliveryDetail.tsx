@@ -107,6 +107,7 @@ export function DeliveryDetail({
         <div className="panel-head"><div><span>产品规划与任务授权</span><small>{identityLabel(delivery.planning_identity)}</small></div>{delivery.plan_gate && <Button className={delivery.status === "awaiting_plan_decision" ? "primary screen-primary" : "secondary"} onClick={() => setInspectorSelection({ kind: "plan" })}>{delivery.status === "awaiting_plan_decision" ? "审查计划" : "检查计划"}</Button>}</div>
         {delivery.requirements ? <><h3>{delivery.requirements.summary}</h3><ul>{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code>{item.statement}</li>)}</ul></> : <p className="muted">需求产物尚未生成。</p>}
         {delivery.task && <div className="task-contract"><span>单一任务合同</span><b>{delivery.task.title}</b><small>{delivery.task.acceptance_ids.join(" · ")}</small></div>}
+        <WorkcellAcceptance delivery={delivery}/>
         {delivery.plan_gate && <GateSubject label="计划审批主题" sha={delivery.plan_gate.subject_sha256} revision={delivery.plan_gate.revision}/>} 
         {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始设计</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</Button></div>}
       </section>
@@ -169,8 +170,8 @@ function inspectorModel(selection: InspectorSelection | undefined, delivery: Del
       title: "审查计划与执行边界",
       tabs: [
         { id: "summary", label: "摘要", content: <><h3>{delivery.requirements?.summary ?? "需求仍在规划中"}</h3><p>决定只绑定当前 Gate Subject 与聚合版本，后续修订不能复用。</p>{delivery.requirements && <ul className="inspector-list">{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code><span>{item.statement}</span></li>)}</ul>}</> },
-        { id: "boundary", label: "边界", content: <><h3>{delivery.task?.title ?? "任务合同尚未生成"}</h3><p>{delivery.task?.instructions}</p><dl className="definition-list"><dt>允许修改</dt><dd>{delivery.task?.system_policy.allowed_paths.join(" · ") ?? "尚未确定"}</dd><dt>验收 ID</dt><dd>{delivery.task?.acceptance_ids.join(" · ") ?? "尚未确定"}</dd></dl></> },
-        { id: "verification", label: "验证", content: <><h3>固定机器命令</h3><pre className="code-block">{delivery.task?.system_policy.verification_commands.join("\n") ?? "任务合同尚未提供验证命令"}</pre><dl className="definition-list"><dt>Gate Subject</dt><dd><code>{delivery.plan_gate?.subject_sha256 ?? "尚未生成"}</code></dd><dt>Revision</dt><dd>{delivery.plan_gate?.revision ?? "—"}</dd></dl></> },
+        { id: "boundary", label: "边界", content: <><h3>{delivery.task?.title ?? "任务合同尚未生成"}</h3><p>{delivery.task?.instructions}</p><WorkcellAcceptance delivery={delivery}/>{!delivery.delivery_execution_snapshot && <dl className="definition-list"><dt>允许修改</dt><dd>{delivery.task?.system_policy.allowed_paths.join(" · ") ?? "尚未确定"}</dd><dt>验收 ID</dt><dd>{delivery.task?.acceptance_ids.join(" · ") ?? "尚未确定"}</dd></dl>}</> },
+        { id: "verification", label: "验证", content: <><h3>固定机器验证</h3>{delivery.delivery_execution_snapshot ? delivery.delivery_execution_snapshot.workspaces.map((workspace) => <section key={workspace.workcell_key}><b>{repositoryRoleLabel(workspace.workcell_key)} · {workspace.verification_profile?.profile.name ?? "历史未冻结方案"}</b><pre className="code-block">{workspace.verification_profile?.profile.commands.map((command) => command.join(" ")).join("\n")}</pre></section>) : <pre className="code-block">{delivery.task?.system_policy.verification_commands.join("\n") ?? "任务合同尚未提供验证命令"}</pre>}<dl className="definition-list"><dt>Gate Subject</dt><dd><code>{delivery.plan_gate?.subject_sha256 ?? "尚未生成"}</code></dd><dt>Revision</dt><dd>{delivery.plan_gate?.revision ?? "—"}</dd></dl></> },
       ],
     };
   }
@@ -184,6 +185,21 @@ function inspectorModel(selection: InspectorSelection | undefined, delivery: Del
       { id: "verification", label: "验证", content: <><h3>完整性：{statusLabel(record.status)}</h3><dl className="definition-list"><dt>验证时间</dt><dd>{formatDateTime(record.verified_at ?? undefined)}</dd><dt>失败原因</dt><dd>{record.verification_error ?? "无"}</dd></dl></> },
     ],
   };
+}
+
+function WorkcellAcceptance({ delivery }: { delivery: Delivery }) {
+  const assignments = delivery.task?.workcell_acceptance;
+  if (!assignments?.length) return delivery.delivery_execution_snapshot ? <p className="muted">该历史计划没有冻结每仓验收责任；新的交付必须重新规划。</p> : null;
+  return <section aria-label="每仓验收责任">
+    <h4>每仓验收责任</h4>
+    {assignments.map((assignment) => <article key={assignment.workcell_key}>
+      <b>{repositoryRoleLabel(assignment.workcell_key)}</b>
+      {delivery.delivery_execution_snapshot?.review_policies?.workcells[assignment.workcell_key]?.filter((policy) => policy.allowed_paths.length > 0).map((policy) => <p key={policy.id}>允许修改：<code>{policy.allowed_paths.join(" · ")}</code></p>)}
+      <ul className="inspector-list">{assignment.acceptance.map((item) => <li key={item.acceptance_id}>
+        <code>{item.acceptance_id}</code><span>{item.responsibility}<small>{delivery.requirements?.acceptance_criteria.find((criterion) => criterion.id === item.acceptance_id)?.statement}</small></span>
+      </li>)}</ul>
+    </article>)}
+  </section>;
 }
 
 function CandidateArtifact({ item }: { item: RepositoryCandidate }) {

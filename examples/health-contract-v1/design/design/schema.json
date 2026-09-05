@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "version"],
+  "properties": {
+    "status": {"type": "string", "enum": ["ok", "degraded", "unavailable"]},
+    "version": {"type": "string", "const": "health-contract-v1"}
+  }
+}

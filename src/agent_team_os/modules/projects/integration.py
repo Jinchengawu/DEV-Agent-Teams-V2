@@ -15,6 +15,10 @@ class ProjectLeaseDeliveryRepository:
     """Release project execution leases only after terminal state is durable."""
 
     def __init__(self, inner: DeliveryRepository, projects: ProjectCatalog) -> None:
+        if isinstance(inner, SQLiteDeliveryRepository):
+            database = getattr(projects.repository, "database", None)
+            if database is None or inner.path.resolve() != database.resolve():
+                raise ValueError("Delivery and Project repositories must share one SQLite database")
         self.inner = inner
         self.projects = projects
 
@@ -27,6 +31,15 @@ class ProjectLeaseDeliveryRepository:
             self._save_initial_in_unit_of_work(delivery)
             return
         self.inner.save(delivery)
+        if delivery.status in TERMINAL_DELIVERY_STATES:
+            self.projects.release_delivery(delivery.project_id, delivery.id)
+
+    def save_if_current(
+        self, delivery: DeliveryRun, *, expected_version: int, expected_status: str
+    ) -> None:
+        self.inner.save_if_current(
+            delivery, expected_version=expected_version, expected_status=expected_status
+        )
         if delivery.status in TERMINAL_DELIVERY_STATES:
             self.projects.release_delivery(delivery.project_id, delivery.id)
 
@@ -43,7 +56,25 @@ class ProjectLeaseDeliveryRepository:
         """Repair lease state after a crash without releasing an applying delivery early."""
         deliveries = self.inner.list()
         delivery_by_id = {delivery.id: delivery for delivery in deliveries}
+        recovery_projects: set[str] = set()
         for project in self.projects.list():
+            owners = self.projects.release_recovery_delivery_ids(project.id)
+            if len(owners) > 1:
+                raise ProductError(
+                    code="PROJECT_RELEASE_RECOVERY_OWNER_CONFLICT",
+                    title="存在多个发布恢复所有者",
+                    detail="、".join(owners),
+                    repair="协调原发布记录；不得把任一未完成发布标记为普通失败。",
+                    status_code=409,
+                )
+            if owners:
+                recovery_projects.add(project.id)
+                current = self.projects.repository.active_delivery_id(project.id)
+                if current is not None and current != owners[0]:
+                    self.projects.release_delivery(project.id, current)
+                if self.projects.repository.active_delivery_id(project.id) is None:
+                    self.projects.repository.acquire_lease(project.id, owners[0])
+                continue
             lease_id = self.projects.repository.active_delivery_id(project.id)
             leased_delivery = None if lease_id is None else delivery_by_id.get(lease_id)
             if lease_id is not None and (
@@ -52,6 +83,8 @@ class ProjectLeaseDeliveryRepository:
                 self.projects.release_delivery(project.id, lease_id)
         by_project: dict[str, list[DeliveryRun]] = {}
         for delivery in deliveries:
+            if delivery.project_id in recovery_projects:
+                continue
             if delivery.status in TERMINAL_DELIVERY_STATES:
                 self.projects.release_delivery(delivery.project_id, delivery.id)
                 continue
@@ -83,6 +116,7 @@ class ProjectLeaseDeliveryRepository:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
+            self.projects.assert_release_ready(delivery.project_id)
             project = connection.execute(
                 "SELECT lifecycle_status FROM projects WHERE id=?", (delivery.project_id,)
             ).fetchone()
