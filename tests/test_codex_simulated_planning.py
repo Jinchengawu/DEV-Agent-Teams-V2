@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from acwm.config import CodexCLIConfig
 from fastapi.testclient import TestClient
+from review_scope_helpers import WORKCELL_KEYS, planning_payloads
 
 from agent_team_os.api import create_app
 from agent_team_os.codex_simulation import (
@@ -17,7 +18,6 @@ from agent_team_os.codex_simulation import (
 )
 from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.testing import DeterministicCodeExecutor
-from tests.review_scope_helpers import WORKCELL_KEYS, planning_payloads
 
 
 class ScriptedCodexRoleRunner:

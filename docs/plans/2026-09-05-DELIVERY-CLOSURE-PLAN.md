@@ -572,3 +572,18 @@ Deterministic Adapter。QA Preparation 错误已按真实失败后重验闭合�
 全项目 Ruff、Mypy 188 个源文件、TypeScript 与 OpenAPI 再生成通过；架构/文档/Release 专项 21 项通过。
 108 个待提交文件已逐路径核对并通过强凭据模式扫描。下一步正常提交推送产品分支，然后在干净提交上
 生成 Deterministic Gate 与原生 R2 浏览器收据；新的外部四仓创建仍等待用户明确授权。
+
+### P0-05：CI 测试导入兼容修复
+
+`a1c501c` 已正常推送，其正式 Deterministic Gate 与 R2 浏览器均为 FAIL/WARN/skipped=0/0/0。
+GitHub CI `33955281014` 在收集 `test_codex_simulated_planning.py` 时报告
+`ModuleNotFoundError: No module named 'tests'`；本地切换为与 CI 相同的 `pytest` 入口后复现。
+已把该辅助模块导入改为仓库既有的同目录导入，不修改生产代码或测试断言。
+
+- Architecture Impact: None
+- Findings: `python -m pytest` 与脚本入口的 sys.path 不同，原测试依赖未声明的 tests 包。
+- Required Revisions: 同目录导入辅助模块；用 pytest 入口重验该文件及完整测试收集，修复提交后重跑 CI
+  与要求同 SHA 的两类正式本地门禁，保留 a1c501c 的历史通过报告。
+- ADR Required: No
+- Architecture Document Delta: None
+- Outcome: Approved；7 项定向回归通过，pytest 脚本入口完整收集 537 项通过。
