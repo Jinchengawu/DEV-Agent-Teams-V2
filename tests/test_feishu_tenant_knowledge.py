@@ -187,6 +187,24 @@ class ConcurrentTenantProvider(DeterministicTenantProvider):
                 self.active -= 1
 
 
+class ConcurrentCredentialFailureProvider(ConcurrentTenantProvider):
+    def fetch_snapshot(self, source_id: str) -> ProviderSnapshot:
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.04)
+            self.fetch_count += 1
+            raise ProviderFailure(
+                "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED",
+                f"credential unavailable for {source_id}",
+                unavailable=True,
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 class DeterministicTenantResolver:
     def __init__(self, provider: DeterministicTenantProvider) -> None:
         self.provider = provider
@@ -1059,6 +1077,40 @@ async def test_worker_never_exceeds_configured_two_fetches(tmp_path: Path) -> No
     assert len(completed) == 3
     assert {job.status for job in completed} == {"succeeded"}
     assert provider.max_active == 2
+
+
+@pytest.mark.anyio
+async def test_worker_concurrent_credential_failures_idempotently_degrade_connection(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "scheduled-credential-failure.sqlite"
+    clock = MutableClock()
+    provider = ConcurrentCredentialFailureProvider()
+    app = _app(
+        database,
+        resolver=DeterministicTenantResolver(provider),
+        clock=clock,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await _create_approved_source(client, "scheduled-credential-failure")
+
+    manager, policy = _sync_runtime(database, provider, clock)
+    scheduler = KnowledgeSyncScheduler(
+        manager,
+        SQLiteProjectRepository(database),
+        policy=policy,
+        clock=clock,
+    )
+    worker = KnowledgeSyncWorker(manager, policy=policy, clock=clock)
+
+    assert len(scheduler.enqueue_due()) == 3
+    completed = await worker.run_once()
+
+    assert len(completed) == 3
+    assert {job.status for job in completed} == {"failed"}
+    connection = manager.repository.list_connections()[0]
+    assert connection.status == "degraded"
+    assert connection.last_error_code == "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED"
 
 
 @pytest.mark.anyio

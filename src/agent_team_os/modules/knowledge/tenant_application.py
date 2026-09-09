@@ -460,19 +460,7 @@ class TenantKnowledgeManager:
                 "FEISHU_TENANT_AUTH_FAILED",
                 "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED",
             }:
-                degraded_at = self.clock.now()
-                degraded = connection.model_copy(
-                    update={
-                        "status": "degraded",
-                        "authorization_version": connection.authorization_version
-                        + int(connection.status != "degraded"),
-                        "version": connection.version + 1,
-                        "updated_at": degraded_at,
-                        "last_diagnosed_at": degraded_at,
-                        "last_error_code": error.code,
-                    }
-                )
-                self.repository.update_connection(degraded, connection.version)
+                self._degrade_connection(connection.id, error.code)
                 return self.repository.fail_sync_job(
                     running,
                     error_code=error.code,
@@ -526,6 +514,35 @@ class TenantKnowledgeManager:
 
     def recover_expired_sync_jobs(self) -> tuple[KnowledgeSyncJob, ...]:
         return self.repository.recover_expired_sync_jobs(self.clock.now())
+
+    def _degrade_connection(self, connection_id: str, error_code: str) -> None:
+        """Idempotently converge concurrent provider failures on one connection state."""
+        for _attempt in range(3):
+            current = self.repository.get_connection(connection_id)
+            if current is None:
+                return
+            if current.status == "degraded" and current.last_error_code == error_code:
+                return
+            degraded_at = self.clock.now()
+            degraded = current.model_copy(
+                update={
+                    "status": "degraded",
+                    "authorization_version": current.authorization_version
+                    + int(current.status != "degraded"),
+                    "version": current.version + 1,
+                    "updated_at": degraded_at,
+                    "last_diagnosed_at": degraded_at,
+                    "last_error_code": error_code,
+                }
+            )
+            try:
+                self.repository.update_connection(degraded, current.version)
+            except RuntimeError as conflict:
+                if str(conflict) == "KNOWLEDGE_CONNECTION_VERSION_CONFLICT":
+                    continue
+                raise
+            return
+        raise RuntimeError("KNOWLEDGE_CONNECTION_VERSION_CONFLICT")
 
     def _ready_connection(self, connection_id: str) -> TenantConnection:
         connection = self.repository.get_connection(connection_id)
