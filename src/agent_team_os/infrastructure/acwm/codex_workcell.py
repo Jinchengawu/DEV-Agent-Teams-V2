@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from ...codex_runtime import approved_codex_command
 from ...modules.workcells.stage_driver import (
     WorkcellAgentInvocation,
     WorkcellAgentOutput,
@@ -28,13 +29,14 @@ class CodexWorkcellAgent:
     def __init__(
         self,
         *,
-        command: tuple[str, ...] = ("codex",),
+        command: tuple[str, ...] | None = None,
         timeout_seconds: int = 900,
         runtime_identity: str = "codex-cli",
     ) -> None:
-        if not command:
+        resolved_command = approved_codex_command() if command is None else command
+        if not resolved_command:
             raise ValueError("Codex command cannot be empty")
-        self.command = command
+        self.command = resolved_command
         self.timeout_seconds = timeout_seconds
         self.runtime_identity = runtime_identity
         self._active: dict[str, asyncio.subprocess.Process] = {}

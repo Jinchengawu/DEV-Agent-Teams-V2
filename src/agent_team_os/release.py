@@ -21,6 +21,7 @@ from typing import Literal
 from acwm.config import CodexCLIConfig
 from pydantic import BaseModel, ConfigDict, Field
 
+from .codex_runtime import approved_codex_command
 from .codex_simulation import ACWMCodexRoleRunner, CodexSimulatedHermesPlanning
 from .delivery import (
     DeliveryCoordinator,
@@ -226,7 +227,11 @@ async def run_gate(*, project_root: Path, report_dir: Path, live: bool) -> GateR
                 runner = ACWMCodexRoleRunner(workspace=project_root)
                 planning: PlanningService = CodexSimulatedHermesPlanning(runner)
                 code_agent = ACWMCodexWorkspaceAgent(
-                    CodexCLIConfig(sandbox="workspace-write", timeout_seconds=300)
+                    CodexCLIConfig(
+                        command=approved_codex_command(),
+                        sandbox="workspace-write",
+                        timeout_seconds=300,
+                    )
                 )
                 agent: WorkspaceAgent = code_agent
             else:

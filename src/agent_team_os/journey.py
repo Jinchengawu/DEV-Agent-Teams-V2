@@ -15,6 +15,7 @@ from acwm.application.workflow_runtime import DefaultWorkflowRuntime
 from acwm.config import CodexCLIConfig, load_capabilities, load_journeys
 from acwm.domain import JourneyDefinition
 
+from .codex_runtime import approved_codex_command
 from .knowledge_context_contract import (
     KNOWLEDGE_CONTEXT_STAGE_PATHS,
     knowledge_context_artifact_contract,
@@ -74,22 +75,42 @@ def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition
     catalog = load_capabilities(config_root / "capabilities.yaml")
     adapters = {
         "hermes-pm": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+            CodexCLIConfig(
+                command=approved_codex_command(), sandbox="read-only", timeout_seconds=120
+            )
         ),
         "hermes-project-admin": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+            CodexCLIConfig(
+                command=approved_codex_command(), sandbox="read-only", timeout_seconds=120
+            )
         ),
         "codex-backend": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+            CodexCLIConfig(
+                command=approved_codex_command(),
+                sandbox="workspace-write",
+                timeout_seconds=180,
+            )
         ),
         "design.system": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+            CodexCLIConfig(
+                command=approved_codex_command(),
+                sandbox="workspace-write",
+                timeout_seconds=180,
+            )
         ),
         "frontend.implementation": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+            CodexCLIConfig(
+                command=approved_codex_command(),
+                sandbox="workspace-write",
+                timeout_seconds=180,
+            )
         ),
         "testing.review": CodexCLICapabilityAdapter(
-            CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+            CodexCLIConfig(
+                command=approved_codex_command(),
+                sandbox="workspace-write",
+                timeout_seconds=180,
+            )
         ),
     }
     capabilities = DefaultCapabilityRuntime(catalog=catalog, adapters=adapters, event_sink=None)

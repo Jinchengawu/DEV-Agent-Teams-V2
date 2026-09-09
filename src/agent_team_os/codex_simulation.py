@@ -27,6 +27,7 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .codex_runtime import approved_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
 from .shared.hashes import sha256_json
 from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
@@ -244,7 +245,11 @@ class ACWMCodexRoleRunner:
         if config is not None and config_provider is not None:
             raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
-        self._config = config or CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+        self._config = config or CodexCLIConfig(
+            command=approved_codex_command(),
+            sandbox="read-only",
+            timeout_seconds=120,
+        )
         self._config_provider = config_provider
         self._role_turn = AgentScopeRoleTurnAdapter()
         self._active_adapters: set[CodexCLICapabilityAdapter] = set()

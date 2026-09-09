@@ -19,6 +19,7 @@ from acwm.config import CodexCLIConfig
 from fastapi import FastAPI
 
 from .api import create_app
+from .codex_runtime import approved_codex_command
 from .codex_simulation import ACWMCodexRoleRunner, CodexPlanningService
 from .control_plane import ControlPlaneService
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
@@ -262,6 +263,7 @@ def build_preview_app() -> FastAPI:
     runner = ACWMCodexRoleRunner(
         workspace=project_root,
         config_provider=lambda: CodexCLIConfig(
+            command=approved_codex_command(),
             sandbox="read-only",
             timeout_seconds=settings.get().planning_timeout_seconds,
         ),

@@ -23,6 +23,7 @@ from acwm.domain import (
     StopRequested,
 )
 
+from .codex_runtime import approved_codex_command
 from .delivery import (
     ApplyReceipt,
     CandidateChange,
@@ -130,7 +131,11 @@ class ACWMCodexWorkspaceAgent:
     evidence_identity = "codex-cli"
 
     def __init__(self, config: CodexCLIConfig | None = None) -> None:
-        self._config = config or CodexCLIConfig(sandbox="workspace-write", timeout_seconds=180)
+        self._config = config or CodexCLIConfig(
+            command=approved_codex_command(),
+            sandbox="workspace-write",
+            timeout_seconds=180,
+        )
         self._adapter = CodexCLICapabilityAdapter(self._config)
         self._workflow = CodeDeliveryWorkflowAdapter()
 
