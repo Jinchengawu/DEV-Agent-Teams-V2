@@ -161,6 +161,9 @@ class KnowledgeDirectoryReconciler:
                 and binding.last_permission_probe_at > threshold
             ):
                 continue
+            connection = self.manager.repository.get_connection(binding.connection_id)
+            if connection is None or connection.status != "ready":
+                continue
             try:
                 reconciled.append(
                     self.manager.refresh_binding(

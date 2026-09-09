@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { KnowledgeIntegrationPanel } from "./KnowledgeIntegrationPanel";
 
 const calls: Array<{ url: string; method: string }> = [];
+const bodies: unknown[] = [];
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const connection = {
   id: "connection-1", provider_kind: "feishu", display_name: "研发飞书", access_model: "tenant-service-principal-v1",
@@ -23,10 +24,12 @@ const flags = { feishu_tenant_sync_v1: true, knowledge_hybrid_index_v1: true, de
 
 beforeEach(() => {
   calls.length = 0;
+  bodies.length = 0;
   vi.stubGlobal("fetch", async (input: RequestInfo, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
     calls.push({ url, method });
+    if (init?.body) bodies.push(JSON.parse(String(init.body)));
     if (url === "/v1/knowledge/connections" && method === "GET") return response([connection]);
     if (url === "/v1/knowledge/provider-bindings-v2" && method === "GET") return response([binding]);
     if (url === `/v1/knowledge/connections/${connection.id}/spaces`) return response([{ external_id: "space-1", title: "研发知识库" }]);
@@ -40,6 +43,15 @@ beforeEach(() => {
       }], evaluation_reports: [],
     });
     if (url === `/v1/knowledge/connections/${connection.id}/diagnose` && method === "POST") return response(connection);
+    if (url === `/v1/knowledge/connections/${connection.id}/credential-references` && method === "PUT") return response({
+      ...connection,
+      app_id_ref: "keychain:agent-team-os.feishu.app-id",
+      app_secret_ref: "keychain:agent-team-os.feishu.app-secret",
+      status: "unverified",
+      authorization_version: 2,
+      version: 3,
+      last_diagnosed_at: null,
+    });
     return response({ code: "NOT_FOUND" }, 404);
   });
 });
@@ -80,5 +92,26 @@ describe("飞书知识接入设置", () => {
       url: `/v1/knowledge/connections/${connection.id}/diagnose`,
       method: "POST",
     }));
+  });
+
+  test("管理员可轮换已有连接的 Keychain Reference", async () => {
+    renderPanel();
+    const appId = await screen.findByLabelText("轮换 App ID Reference");
+    const appSecret = screen.getByLabelText("轮换 App Secret Reference");
+    await userEvent.clear(appId);
+    await userEvent.type(appId, "keychain:agent-team-os.feishu.app-id");
+    await userEvent.clear(appSecret);
+    await userEvent.type(appSecret, "keychain:agent-team-os.feishu.app-secret");
+    await userEvent.click(screen.getByRole("button", { name: "更新凭据引用" }));
+
+    await waitFor(() => expect(calls).toContainEqual({
+      url: `/v1/knowledge/connections/${connection.id}/credential-references`,
+      method: "PUT",
+    }));
+    expect(bodies).toContainEqual({
+      app_id_ref: "keychain:agent-team-os.feishu.app-id",
+      app_secret_ref: "keychain:agent-team-os.feishu.app-secret",
+      expected_version: 2,
+    });
   });
 });

@@ -10,6 +10,7 @@ import {
   tenantKnowledgeKeys,
   type TenantConnection,
   type TenantConnectionCreate,
+  type TenantConnectionCredentialReferenceUpdate,
   type TenantProviderBinding,
   type TenantProviderBindingCreate,
   useConnectionSpaces,
@@ -25,6 +26,11 @@ const initialConnection: TenantConnectionCreate = {
   app_secret_ref: "env:FEISHU_APP_SECRET",
 };
 
+const initialCredentialReferences = {
+  app_id_ref: "keychain:agent-team-os.feishu.app-id",
+  app_secret_ref: "keychain:agent-team-os.feishu.app-secret",
+};
+
 export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
   const queryClient = useQueryClient();
   const gateAEnabled = Boolean(flags?.feishu_tenant_sync_v1);
@@ -35,6 +41,7 @@ export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [connectionDraft, setConnectionDraft] = useState<TenantConnectionCreate>(initialConnection);
+  const [credentialReferenceDraft, setCredentialReferenceDraft] = useState(initialCredentialReferences);
   const [bindingName, setBindingName] = useState("");
   const [rootNodeToken, setRootNodeToken] = useState("");
   const selectedConnection = connections.data?.find((item) => item.id === selectedConnectionId);
@@ -51,6 +58,15 @@ export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
       setSelectedSpaceId(spaces.data[0].external_id);
     }
   }, [selectedSpaceId, spaces.data]);
+
+  useEffect(() => {
+    if (selectedConnection) {
+      setCredentialReferenceDraft({
+        app_id_ref: selectedConnection.app_id_ref,
+        app_secret_ref: selectedConnection.app_secret_ref,
+      });
+    }
+  }, [selectedConnection]);
 
   const refreshTenantData = async () => {
     await Promise.all([
@@ -74,6 +90,20 @@ export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
       await queryClient.invalidateQueries({ queryKey: tenantKnowledgeKeys.spaces(updated.id) });
     },
   });
+  const updateCredentialReferences = useMutation({
+    mutationFn: (body: TenantConnectionCredentialReferenceUpdate) => request<TenantConnection>(
+      `/v1/knowledge/connections/${encodeURIComponent(selectedConnectionId)}/credential-references`,
+      { method: "PUT", body: JSON.stringify(body) },
+    ),
+    onSuccess: async (updated) => {
+      setCredentialReferenceDraft({
+        app_id_ref: updated.app_id_ref,
+        app_secret_ref: updated.app_secret_ref,
+      });
+      await queryClient.invalidateQueries({ queryKey: tenantKnowledgeKeys.connections });
+      await queryClient.removeQueries({ queryKey: tenantKnowledgeKeys.spaces(updated.id) });
+    },
+  });
   const createBinding = useMutation({
     mutationFn: (body: TenantProviderBindingCreate) => request<TenantProviderBinding>("/v1/knowledge/provider-bindings-v2", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: async () => {
@@ -88,7 +118,7 @@ export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
       await queryClient.invalidateQueries({ queryKey: tenantKnowledgeKeys.bindings });
     },
   });
-  const operationError = createConnection.error ?? diagnose.error ?? createBinding.error ?? refreshBinding.error;
+  const operationError = createConnection.error ?? diagnose.error ?? updateCredentialReferences.error ?? createBinding.error ?? refreshBinding.error;
   const activeIndexes = useMemo(
     () => catalog.data?.index_revisions.filter((revision) => revision.status === "active").length ?? 0,
     [catalog.data],
@@ -115,6 +145,20 @@ export function KnowledgeIntegrationPanel({ flags }: { flags?: FeatureFlags }) {
             <Button size="small" loading={diagnose.isPending && diagnose.variables === connection.id} onClick={(event) => { event.stopPropagation(); diagnose.mutate(connection.id); }}>诊断连接</Button>
           </article>)}
         </div>
+        {selectedConnection && <div className="compact-form">
+          <label>轮换 App ID Reference<Input value={credentialReferenceDraft.app_id_ref} onChange={(event) => setCredentialReferenceDraft((current) => ({ ...current, app_id_ref: event.target.value }))}/></label>
+          <label>轮换 App Secret Reference<Input value={credentialReferenceDraft.app_secret_ref} onChange={(event) => setCredentialReferenceDraft((current) => ({ ...current, app_secret_ref: event.target.value }))}/></label>
+          <Button
+            disabled={!credentialReferenceDraft.app_id_ref.trim() || !credentialReferenceDraft.app_secret_ref.trim()}
+            loading={updateCredentialReferences.isPending}
+            onClick={() => updateCredentialReferences.mutate({
+              app_id_ref: credentialReferenceDraft.app_id_ref.trim(),
+              app_secret_ref: credentialReferenceDraft.app_secret_ref.trim(),
+              expected_version: selectedConnection.version,
+            })}
+          >更新凭据引用</Button>
+          <p className="field-help">仅更新凭据引用，不接收明文 Secret。更新后连接会回到 unverified，必须重新诊断。</p>
+        </div>}
         <div className="compact-form">
           <label>连接名称<Input value={connectionDraft.display_name} onChange={(event) => setConnectionDraft((current) => ({ ...current, display_name: event.target.value }))} placeholder="例如：研发飞书"/></label>
           <label>App ID Reference<Input value={connectionDraft.app_id_ref} onChange={(event) => setConnectionDraft((current) => ({ ...current, app_id_ref: event.target.value }))}/></label>

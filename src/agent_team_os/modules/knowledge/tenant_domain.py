@@ -34,6 +34,17 @@ class TenantConnectionCreate(BaseModel):
     _app_secret_is_reference = field_validator("app_secret_ref")(_secret_reference)
 
 
+class TenantConnectionCredentialReferenceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app_id_ref: str = Field(min_length=1, max_length=240)
+    app_secret_ref: str = Field(min_length=1, max_length=240)
+    expected_version: int = Field(ge=1)
+
+    _app_id_is_reference = field_validator("app_id_ref")(_secret_reference)
+    _app_secret_is_reference = field_validator("app_secret_ref")(_secret_reference)
+
+
 class TenantConnection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

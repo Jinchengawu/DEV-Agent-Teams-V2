@@ -16,6 +16,7 @@ from .tenant_domain import (
     KnowledgeSyncJobRequest,
     TenantConnection,
     TenantConnectionCreate,
+    TenantConnectionCredentialReferenceUpdate,
     TenantProviderBinding,
     TenantProviderBindingCreate,
     TenantProviderSnapshotRecord,
@@ -69,6 +70,64 @@ class TenantKnowledgeManager:
     def list_connections(self, actor: KnowledgeActor) -> tuple[TenantConnection, ...]:
         self._require_administrator(actor)
         return self.repository.list_connections()
+
+    def update_connection_credential_references(
+        self,
+        actor: KnowledgeActor,
+        connection_id: str,
+        request: TenantConnectionCredentialReferenceUpdate,
+    ) -> TenantConnection:
+        self._require_administrator(actor)
+        current = self.repository.get_connection(connection_id)
+        if current is None:
+            raise ProductError(
+                code="KNOWLEDGE_CONNECTION_NOT_FOUND",
+                title="Tenant Connection 不存在",
+                detail="指定的 Tenant Connection 已不存在。",
+                repair="刷新连接列表后重试。",
+                status_code=404,
+            )
+        if current.version != request.expected_version:
+            raise ProductError(
+                code="KNOWLEDGE_CONNECTION_VERSION_CONFLICT",
+                title="Tenant Connection 版本冲突",
+                detail="连接在凭据引用轮换期间已被更新。",
+                repair="刷新连接后重新提交。",
+            )
+        now = self.clock.now()
+        updated = current.model_copy(
+            update={
+                "app_id_ref": request.app_id_ref,
+                "app_secret_ref": request.app_secret_ref,
+                "status": "unverified",
+                "authorization_version": current.authorization_version + 1,
+                "version": current.version + 1,
+                "updated_at": now,
+                "last_diagnosed_at": None,
+                "last_error_code": None,
+            }
+        )
+        try:
+            self.repository.update_connection(
+                updated,
+                current.version,
+                event_type="knowledge.connection-credential-references-updated",
+            )
+        except RuntimeError as error:
+            if str(error) == "KNOWLEDGE_CONNECTION_CONFLICT":
+                raise ProductError(
+                    code="KNOWLEDGE_CONNECTION_CONFLICT",
+                    title="Tenant Connection 已存在",
+                    detail="同一 Provider 与 App ID Reference 已存在连接。",
+                    repair="刷新连接列表并复用现有连接。",
+                ) from error
+            raise ProductError(
+                code="KNOWLEDGE_CONNECTION_VERSION_CONFLICT",
+                title="Tenant Connection 版本冲突",
+                detail="连接在凭据引用轮换期间已被更新。",
+                repair="刷新连接后重新提交。",
+            ) from error
+        return updated
 
     def list_connection_spaces(
         self, actor: KnowledgeActor, connection_id: str

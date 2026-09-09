@@ -1436,6 +1436,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/knowledge/connections/{connection_id}/credential-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Connection Credential References */
+        put: operations["update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/knowledge/connections/{connection_id}/diagnose": {
         parameters: {
             query?: never;
@@ -6652,6 +6669,15 @@ export interface components {
             app_id_ref: string;
             /** App Secret Ref */
             app_secret_ref: string;
+        };
+        /** TenantConnectionCredentialReferenceUpdate */
+        TenantConnectionCredentialReferenceUpdate: {
+            /** App Id Ref */
+            app_id_ref: string;
+            /** App Secret Ref */
+            app_secret_ref: string;
+            /** Expected Version */
+            expected_version: number;
         };
         /** TenantProviderBinding */
         TenantProviderBinding: {
@@ -13602,6 +13628,68 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantConnection"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantConnectionCredentialReferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
