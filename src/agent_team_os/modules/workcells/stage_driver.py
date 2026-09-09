@@ -389,6 +389,7 @@ async def _await_verification_cleanup(cleanup: asyncio.Task[None]) -> None:
 
 async def _terminate_verification_process(process: asyncio.subprocess.Process) -> None:
     """先停止整个验证进程组并回收主进程，再允许取消交付释放执行权。"""
+    main_already_exited = process.returncode is not None
     with suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
     try:
@@ -396,8 +397,16 @@ async def _terminate_verification_process(process: asyncio.subprocess.Process) -
     except TimeoutError:
         pass
     finally:
-        with suppress(ProcessLookupError):
+        try:
             os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            # macOS may reject a final signal after the session leader has exited and
+            # SIGTERM has already reaped its ordinary detached children. Running,
+            # cancelled and timed-out leaders remain fail-closed on the same error.
+            if not main_already_exited:
+                raise
         await process.wait()
 
 

@@ -114,7 +114,7 @@ function WorkcellDefinitionCard({ workcell, workcellKeys, topology, onlyWorkcell
 }
 
 function TopologyCanvas({ workcells, topology }: { workcells: WorkcellDefinition[]; topology: TeamTopology }) {
-  const nodes = topology.nodes.map((node, index) => ({ ...node, x: Math.max(4, Math.min(84, node.x / 9)), y: Math.max(8, Math.min(76, node.y / 5 + index % 2 * 3)) }));
+  const nodes = topology.nodes.map((node, index) => ({ ...node, x: Math.max(4, Math.min(76, node.x / 9)), y: Math.max(8, Math.min(76, node.y / 5 + index % 2 * 3)) }));
   const byKey = new Map(nodes.map((node) => [node.workcell_key, node]));
   const names = new Map(workcells.map((item) => [item.workcell_key, item.name]));
   return <div className="team-topology-canvas" aria-label="Workcell Artifact 拓扑">

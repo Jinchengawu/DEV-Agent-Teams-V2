@@ -86,6 +86,29 @@ describe("交付工作台", () => {
     });
   });
 
+  it("使用项目明确设置的默认 Pipeline，而不是目录排序后的第一条", async () => {
+    projectDetail = {
+      ...projectDetail,
+      pipeline_bindings: [
+        { pipeline_id: "agent-workcell-delivery", pipeline_revision: 2, enabled: true, is_default: false },
+        { pipeline_id: "fullstack-product-delivery", pipeline_revision: 3, enabled: true, is_default: true },
+      ],
+    };
+    pipelineCatalog = [
+      { id: "agent-workcell-delivery", name: "Agent Workcell Delivery", active_revision: 2 },
+      { id: "fullstack-product-delivery", name: "全栈产品交付", active_revision: 3 },
+    ];
+
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "生成交付计划" }));
+    expect(screen.getAllByText("全栈产品交付 · R3")).toHaveLength(2);
+    await userEvent.click(screen.getByRole("button", { name: "确认并启动" }));
+
+    await waitFor(() => expect(calls.some((call) => call.url === "/v1/deliveries" && call.method === "POST")).toBe(true));
+    const created = calls.find((call) => call.url === "/v1/deliveries" && call.method === "POST");
+    expect(JSON.parse(created?.body ?? "{}").pipeline_revision_id).toBe("fullstack-product-delivery:3");
+  });
+
   it("空目标会在本地阻断，并把焦点返回目标输入框", async () => {
     renderPage();
     const goal = await screen.findByLabelText("交付目标");
