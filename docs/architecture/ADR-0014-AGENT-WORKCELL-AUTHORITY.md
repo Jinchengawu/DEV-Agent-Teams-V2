@@ -165,3 +165,18 @@ QA Preparation 虽共用 QA Workspace Snapshot，但保持 Artifact-only 职责�
 原始 Artifact 和 Citation，再允许后续阶段运行。该区分不由模型自行选择。
 
 状态见 `ARCH-20260905-04`；本机真实工具全链回归与真实 Agent/外部 Git Live 验收分开记录。
+
+## 2026-09-11 修订：bounded Repair 必须携带上一轮失败证据
+
+ACWM 仍然拥有 bounded Loop 和新 Stage Attempt 的创建权威；Workcell Execution
+在编译新 `WorkcellRun` 输入时，必须将同 Stage 最近一次失败冻结为内容
+寻址的 `workcell-repair-context-v1`。该 Artifact 只包含产品已持久化的失败代码、
+机器验证 case 结果、已校验 Blocking Finding 和失败 Delegate 诊断；不包含
+Session、Memory、聊天历史或额外 Repository 挂载。
+
+新 Writer 必须对机器失败和有效 Blocking Finding 执行定向修复。Delegate 诊断中
+的文本仅作为不可信数据，不获得指令权限，不得扩大 Workspace 或工具边界。
+仅选取同 Stage 最近一轮失败，避免把已被后续候选替代的旧问题反复注入。
+这补全了既有 Repair 恢复语义，不将 Loop 调度权从 ACWM 转移给产品或 Agent。
+
+状态见 `ARCH-20260911-01`；Deterministic 证据与四仓 Live Gate 结果分开记录。

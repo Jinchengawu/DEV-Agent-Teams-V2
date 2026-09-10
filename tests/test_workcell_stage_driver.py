@@ -7,6 +7,7 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from review_scope_helpers import planning_payloads
@@ -46,7 +47,7 @@ from agent_team_os.modules.workcells import (
 from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
-from agent_team_os.shared.review_scope import product_review_policies
+from agent_team_os.shared.review_scope import BlockingFinding, product_review_policies
 
 
 class StaticMethodRuntime:
@@ -255,6 +256,124 @@ class PassedVerifier:
             status="passed",
             report={"commands": [{"command": ["fixture"], "exit_code": 0}]},
         )
+
+
+def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Path) -> None:
+    artifacts = ContentAddressedArtifactStorage(tmp_path / "artifacts")
+    result = artifacts.put_json(
+        {
+            "cases": [
+                {"id": "test_health_head_matches_get", "status": "failed"},
+                {"id": "test_health_get", "status": "passed"},
+            ]
+        }
+    )
+    diagnostic = artifacts.put_json(
+        {
+            "failure_code": "EMPTY_WORKSPACE_CANDIDATE",
+            "failure_detail": "Writer did not commit a candidate.",
+        }
+    )
+    failed_tree = SimpleNamespace(
+        workcell_run=SimpleNamespace(
+            stage_path="backend-repair/backend",
+            status="failed",
+            loop_iteration=2,
+            workcell_key="backend",
+            error_code="MACHINE_VERIFICATION_FAILED",
+        ),
+        result=None,
+        verification=SimpleNamespace(
+            candidate_sha="a" * 40,
+            diff_sha256="b" * 64,
+            status="failed",
+            sha256="c" * 64,
+            report={
+                "steps": [
+                    {
+                        "step": "unittest",
+                        "status": "failed",
+                        "exit_code": 1,
+                        "passed": 1,
+                        "failed": 1,
+                        "skipped": 0,
+                        "result": result.model_dump(mode="json"),
+                    }
+                ]
+            },
+        ),
+        reviews=(
+            SimpleNamespace(
+                candidate_sha="a" * 40,
+                diff_sha256="b" * 64,
+                reviewer_binding_hash="d" * 64,
+                sha256="e" * 64,
+                blocking_findings=(
+                    BlockingFinding(
+                        code="BACKEND-001",
+                        summary="HEAD must preserve GET status.",
+                        evidence_sha256="f" * 64,
+                        acceptance_id="AC-HEALTH",
+                    ),
+                ),
+            ),
+        ),
+        agent_runs=(
+            SimpleNamespace(
+                run_role="child",
+                status="failed",
+                artifact_envelopes=(
+                    SimpleNamespace(
+                        contract_id="workcell-delegate-diagnostic-v1",
+                        reference=diagnostic,
+                    ),
+                ),
+            ),
+        ),
+    )
+    older_tree = SimpleNamespace(
+        workcell_run=SimpleNamespace(
+            stage_path="backend-repair/backend",
+            status="failed",
+            loop_iteration=1,
+            workcell_key="backend",
+            error_code="EMPTY_WORKSPACE_CANDIDATE",
+        ),
+        result=None,
+        verification=None,
+        reviews=(),
+        agent_runs=(),
+    )
+    driver = WorkcellStageDriver(
+        kernel=SimpleNamespace(list_delivery=lambda _delivery_id: (older_tree, failed_tree)),
+        artifacts=artifacts,
+        methods=object(),  # type: ignore[arg-type]
+        agent=object(),  # type: ignore[arg-type]
+        workspaces=object(),  # type: ignore[arg-type]
+        binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri="unused"),
+        verifier=object(),  # type: ignore[arg-type]
+        releases=object(),  # type: ignore[arg-type]
+        pull_requests=object(),  # type: ignore[arg-type]
+    )
+
+    references = driver.upstream_artifacts(
+        "delivery-repair",
+        "backend-repair/backend",
+    )
+
+    assert len(references) == 1
+    payload = artifacts.get_json(references[0])
+    assert payload["contract_version"] == "workcell-repair-context-v1"
+    assert payload["previous_loop_iteration"] == 2
+    assert payload["failure_code"] == "MACHINE_VERIFICATION_FAILED"
+    assert payload["candidate_verification"]["steps"][0]["result"]["cases"][0] == {
+        "id": "test_health_head_matches_get",
+        "status": "failed",
+    }
+    assert payload["blocking_reviews"][0]["blocking_findings"][0]["code"] == "BACKEND-001"
+    assert payload["delegate_diagnostics"][0]["content"]["failure_code"] == (
+        "EMPTY_WORKSPACE_CANDIDATE"
+    )
 
 
 def test_review_output_requires_explicit_blocking_findings() -> None:

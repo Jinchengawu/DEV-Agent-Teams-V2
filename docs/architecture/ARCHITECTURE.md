@@ -314,6 +314,9 @@ Main planning
 固定不变量：
 
 - 一个 ACWM Stage Attempt 对应一个 `WorkcellRun`；Repair 由 ACWM bounded Loop 创建新 Run。
+  Workcell Execution 将同 Stage 最近一轮的失败代码、机器 case、已校验 Blocking
+  Finding 与 Delegate 诊断冻结为 `workcell-repair-context-v1` 传入新 Run，避免
+  无失败证据的盲目重试；不传 Session、Memory 或其他仓库挂载。
 - Child 深度固定为 1；Main 最多三个 Child、并发最多两个、Writer 最多一个。
 - Main planning 与 synthesis 是同一 Main Run 下的不同 AgentAttempt。
 - 每个 Main/Child 都必须先有产品创建的 AgentRun/AgentAttempt；Runtime Adapter 不得隐藏派生。
@@ -753,6 +756,7 @@ Acceptance evidence required:
 | `ARCH-20260905-03` | 2026-09-05 | `Implemented/Verified` | 已批准 Plan 派生 Review Scope；原始 Review 留存、归属校验与有界修复 | ADR-0014/0019 | 43 项 Scope/Kernel/Stage/R2 专项；最新 Console 浏览器责任、Diff/Review 与来源关联通过；正式同 Revision Live 待验 |
 
 | `ARCH-20260905-04` | 2026-09-05 | `Implemented/Verified` | V2 按仓真实工具验证、固定配置/依赖资格及 Hash-bound 产物包消费 | ADR-0012/0014/0019 | 真实四仓工具/HTTP配置、篡改与清理回归；同 Delivery Stage→QA→Apply→Release 全链通过；Live 待验 |
+| `ARCH-20260911-01` | 2026-09-11 | `Implemented/Verified` | bounded Repair 以内容寻址 Artifact 将同 Stage 最近一轮失败证据传入新 WorkcellRun | ADR-0014 修订 | Repair Context 结构、最新失败选择、机器 case、Blocking Review 与 Delegate 诊断专项测试通过；四仓 Live Gate 需重跑 |
 
 ## 14. Plan Architecture Review 与文档对账
 
