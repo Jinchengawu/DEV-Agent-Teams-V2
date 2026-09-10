@@ -120,10 +120,11 @@ class DeterministicWorkcellAgent:
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         if invocation.phase == "planning":
+            assignments = json.loads(
+                invocation.instruction.rsplit("冻结 assignments 数组：", 1)[1]
+            )
             content: dict[str, object] = {
-                "assignments": json.loads(
-                    invocation.instruction.rsplit("冻结 assignments 数组：", 1)[1]
-                )
+                "assignment_slots": [item["slot_key"] for item in assignments]
             }
         elif invocation.phase == "synthesis":
             content = {"status": "passed", "workcell": invocation.workcell_key}

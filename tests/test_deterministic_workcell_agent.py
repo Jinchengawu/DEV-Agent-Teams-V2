@@ -60,7 +60,7 @@ def test_public_deterministic_main_reads_assignment_marker_after_review_scope(tm
         "instruction": 'Frozen Review Scope：{"sha256":"scope"}\n冻结 assignments 数组：[]',
     })
     result = asyncio.run(DeterministicWorkcellAgent().run(invocation))
-    assert result.content == {"assignments": []}
+    assert result.content == {"assignment_slots": []}
 
 
 @pytest.mark.parametrize(

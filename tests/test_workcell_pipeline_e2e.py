@@ -153,10 +153,11 @@ class FourRepositoryAgent:
         if invocation.phase == "planning":
             if invocation.workcell_key == "design":
                 self.design_run_ids.append(invocation.workcell_run_id)
+            assignments = json.loads(
+                invocation.instruction.split("冻结 assignments 数组：", 1)[1]
+            )
             content = {
-                "assignments": json.loads(
-                    invocation.instruction.split("冻结 assignments 数组：", 1)[1]
-                )
+                "assignment_slots": [item["slot_key"] for item in assignments]
             }
         elif invocation.phase == "synthesis":
             content = {"status": "passed", "workcell": invocation.workcell_key}

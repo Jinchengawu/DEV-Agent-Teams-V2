@@ -829,11 +829,11 @@ class WorkcellStageDriver:
                     + self._attachment_payload(tree)
                     + "\nFrozen Review Scope："
                     + _review_scope_json(tree)
-                    + "\n生成 DelegationPlan JSON。最终 JSON object 必须且只能包含 "
-                    "assignments 与 knowledge_citation_ids 两个键；"
-                    "assignments 必须逐项等于下列冻结数组。"
-                    "禁止改名为 delegations，禁止添加 depends_on 或其他字段，"
-                    "禁止改变 Slot/Method/Purpose/权限。"
+                    + "\n确认产品冻结的 DelegationPlan。最终 JSON object 必须且只能包含 "
+                    "assignment_slots 与 knowledge_citation_ids 两个键；"
+                    "assignment_slots 必须按顺序逐项等于下列冻结数组中的 slot_key。"
+                    "完整 Assignment 由产品 Snapshot 持有，禁止复述或改写 "
+                    "ArtifactReference、Method、Purpose 或权限。"
                     "冻结 assignments 数组："
                     + json.dumps(
                         [item.model_dump(mode="json") for item in assignments],
@@ -850,12 +850,12 @@ class WorkcellStageDriver:
             ),
         )
         _require_runtime_identity(main, output)
-        proposed = output.content.get("assignments")
-        expected = [item.model_dump(mode="json") for item in assignments]
+        proposed = output.content.get("assignment_slots")
+        expected = [item.slot_key for item in assignments]
         if proposed != expected:
             raise _error(
                 "WORKCELL_MAIN_DELEGATION_PLAN_INVALID",
-                "Main 规划结果改变了冻结的 Slot、Method、Purpose 或权限。",
+                "Main 规划结果没有确认产品冻结的 Delegate Slot 顺序。",
             )
         return (
             self.artifacts.put_json(

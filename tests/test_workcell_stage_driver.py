@@ -151,7 +151,7 @@ class DeterministicWorkcellAgent:
             payload = json.loads(invocation.instruction.split("冻结 assignments 数组：", 1)[1])
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
-                content={"assignments": payload},
+                content={"assignment_slots": [item["slot_key"] for item in payload]},
                 knowledge_citation_ids=self.citation_ids,
             )
         if invocation.phase == "synthesis":
@@ -847,9 +847,9 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     planning_instruction = next(
         item.instruction for item in agent.invocations if item.phase == "planning"
     )
-    assert "assignments 必须逐项等于" in planning_instruction
-    assert "禁止改名为 delegations" in planning_instruction
-    assert "禁止添加 depends_on" in planning_instruction
+    assert "assignment_slots 必须按顺序逐项等于" in planning_instruction
+    assert "完整 Assignment 由产品 Snapshot 持有" in planning_instruction
+    assert "禁止复述或改写 ArtifactReference" in planning_instruction
     assert delegate_instructions
     assert all("AC-LOGIN" in item for item in delegate_instructions)
     assert all("external-collaborative" in item for item in delegate_instructions)
