@@ -134,6 +134,7 @@ class DeterministicWorkcellAgent:
         invalid_review_calls: frozenset[int] = frozenset(),
         fatal_review_calls: frozenset[int] = frozenset(),
         writes_candidate: bool = True,
+        writer_error_detail: str | None = None,
     ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
         self.citation_ids = citation_ids
@@ -141,6 +142,7 @@ class DeterministicWorkcellAgent:
         self.invalid_review_calls = invalid_review_calls
         self.fatal_review_calls = fatal_review_calls
         self.writes_candidate = writes_candidate
+        self.writer_error_detail = writer_error_detail
         self.review_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
@@ -159,6 +161,13 @@ class DeterministicWorkcellAgent:
                 knowledge_citation_ids=self.citation_ids,
             )
         if invocation.workspace_access == "workspace_write":
+            if self.writer_error_detail is not None:
+                raise ProductError(
+                    code="CODEX_WORKCELL_ATTEMPT_FAILED",
+                    title="Codex Workcell AgentAttempt 失败",
+                    detail=self.writer_error_detail,
+                    repair="检查冻结 Provider Binding 后新建 Attempt。",
+                )
             if self.writes_candidate:
                 target = invocation.workspace / "design" / "candidate.md"
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -452,6 +461,102 @@ def test_cancelling_workcell_execution_stops_the_active_agent() -> None:
         await asyncio.wait_for(agent.stopped.wait(), timeout=1)
 
     asyncio.run(scenario())
+
+
+def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(tmp_path: Path) -> None:
+    database = tmp_path / "agent-team-os.sqlite"
+    MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
+    remote, base = _remote(tmp_path)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """INSERT INTO projects(
+            id,slug,name,description,lifecycle_status,version,created_by,created_at,updated_at)
+            VALUES('project-driver','project-driver','Driver','', 'active',1,'test',
+            CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"""
+        )
+        connection.execute(
+            """INSERT INTO workspace_bindings(
+            id,project_id,kind,adapter_type,repository_uri,credential_reference,status,
+            verification_sha256,verification_json,error_code,version,created_at,updated_at)
+            VALUES('workspace-design','project-driver','git_repository_v1','external-git',?,
+            NULL,'ready',?,'{}',NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)""",
+            (str(remote), "b" * 64),
+        )
+    artifacts = ContentAddressedArtifactStorage(tmp_path / "artifacts")
+    requirement_payload, task_payload = planning_payloads()
+    task_payload["workcell_acceptance"] = task_payload["workcell_acceptance"][:1]
+    requirements = RequirementArtifact.model_validate(requirement_payload)
+    task = TaskContract.model_validate(task_payload)
+    delivery = DeliveryRun(
+        id="delivery-driver",
+        project_id="project-driver",
+        workspace_id="project:project-driver",
+        user_request="设计一个登录页",
+        status="executing",
+        version=1,
+        pipeline_run_id="pipeline-run-driver",
+        pipeline_revision_id="agent-workcell-delivery:1",
+        resolved_pipeline_sha256="1" * 64,
+        resolved_journey_sha256="2" * 64,
+        evidence_identity="deterministic-workcell",
+        planning_identity="deterministic-workcell",
+        requirements=requirements,
+        task=task,
+        plan_gate=GateRecord(
+            gate_id="plan-gate",
+            subject_kind="delivery-plan",
+            artifact_id="plan",
+            revision=1,
+            decision="approve",
+            subject_sha256=sha256_json(
+                {
+                    "requirements": requirements.model_dump(mode="json"),
+                    "task": task.model_dump(mode="json"),
+                }
+            ),
+        ),
+        delivery_execution_snapshot=_delivery_snapshot(str(remote), base),
+    )
+    SQLiteDeliveryRepository(database).save(delivery)
+    kernel = WorkcellExecutionModule(
+        SQLiteWorkcellExecutionRepository(database), artifact_storage=artifacts
+    )
+    driver = WorkcellStageDriver(
+        kernel=kernel,
+        artifacts=artifacts,
+        methods=StaticMethodRuntime(tmp_path / "method-runtime"),
+        agent=DeterministicWorkcellAgent(
+            writer_error_detail="usage limit reached; api_key=super-secret-value"
+        ),
+        workspaces=ExternalGitWorkspaceManager(tmp_path / "runtime-workspaces"),
+        binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri=str(remote)),
+        verifier=PassedVerifier(),
+        releases=ExternalReleaseCatalog(SQLiteExternalReleaseRepository(database)),
+        pull_requests=DeterministicPRSurface(),
+    )
+
+    with pytest.raises(ProductError) as failed:
+        asyncio.run(
+            driver.execute(
+                delivery,
+                stage_path="design-repair/design",
+                stage_attempt_id="design-attempt-1",
+                loop_iteration=1,
+            )
+        )
+
+    assert failed.value.code == "CODEX_WORKCELL_ATTEMPT_FAILED"
+    tree = kernel.list_delivery(delivery.id)[0]
+    writer = next(item for item in tree.agent_runs if item.delegate_purpose == "workspace_write")
+    diagnostic = writer.artifact_envelopes[0]
+    assert diagnostic.contract_id == "workcell-agent-attempt-diagnostic-v1"
+    assert diagnostic.reference is not None
+    payload = artifacts.get_json(diagnostic.reference)
+    assert payload["failure_code"] == "CODEX_WORKCELL_ATTEMPT_FAILED"
+    assert payload["failure_detail"] == "usage limit reached; api_key=[REDACTED]"
+    assert payload["phase"] == "delegate"
+    attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
+    assert attempt.result_artifact_sha256 == diagnostic.sha256
 
 
 def test_cancelled_stage_terminalizes_the_workcell_run() -> None:

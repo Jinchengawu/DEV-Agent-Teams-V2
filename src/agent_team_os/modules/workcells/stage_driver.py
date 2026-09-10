@@ -947,18 +947,42 @@ class WorkcellStageDriver:
                 binding=binding,
                 expected_base_revision=workspace_snapshot.base_revision,
             )
-            output = await self._run_agent(
+            invocation = _delegate_invocation(
                 delivery,
-                _delegate_invocation(
-                    delivery,
-                    tree,
-                    child,
-                    methods,
-                    method_id,
-                    writer.worktree,
-                    self._attachment_payload(tree),
-                ),
+                tree,
+                child,
+                methods,
+                method_id,
+                writer.worktree,
+                self._attachment_payload(tree),
             )
+            try:
+                output = await self._run_agent(delivery, invocation)
+            except ProductError as error:
+                diagnostic_reference = self.artifacts.put_json(
+                    {
+                        "contract_version": "workcell-agent-attempt-diagnostic-v1",
+                        "agent_run_id": child.id,
+                        "failure_code": error.code,
+                        "failure_detail": _redact(error.detail),
+                        "loop_iteration": tree.workcell_run.loop_iteration,
+                        "method_id": method_id,
+                        "phase": invocation.phase,
+                        "runtime_identity": child.runtime_identity,
+                        "stage_path": tree.workcell_run.stage_path,
+                        "workcell_key": tree.workcell_run.workcell_key,
+                    }
+                )
+                raise _ProducerExecutionError(
+                    error,
+                    (
+                        ArtifactEnvelope(
+                            contract_id="workcell-agent-attempt-diagnostic-v1",
+                            reference=diagnostic_reference,
+                            sha256=diagnostic_reference.sha256,
+                        ),
+                    ),
+                ) from error
             _require_runtime_identity(child, output)
             try:
                 evidence = self.workspaces.freeze_candidate(
