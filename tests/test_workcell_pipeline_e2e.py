@@ -276,7 +276,7 @@ def test_four_repository_workcell_pipeline_and_forward_only_release(
     asyncio.run(_run_four_repository_pipeline(tmp_path))
 
 
-@pytest.mark.parametrize("invalid_design_runs", [1, 3])
+@pytest.mark.parametrize("invalid_design_runs", [1, 4])
 def test_invalid_review_repairs_are_bounded_and_preserve_failed_evidence(
     tmp_path: Path,
     invalid_design_runs: int,
@@ -472,10 +472,10 @@ async def _run_four_repository_pipeline(
             assert reviewer.status == "failed"
             raw = artifacts.get_json(reviewer.artifact_envelopes[0].reference)
             assert raw["blocking_findings"][0]["acceptance_id"] == "AC-UNKNOWN"
-    if invalid_design_runs == 3:
+    if invalid_design_runs == 4:
         assert designed.status == "failed"
-        assert len(workcell_agent.design_run_ids) == 3
-        assert len(kernel.list_delivery(delivery.id)) == 3
+        assert len(workcell_agent.design_run_ids) == 4
+        assert len(kernel.list_delivery(delivery.id)) == 4
         assert release_repository.list_candidates(delivery.id) == ()
         for remote, base in remotes.values():
             assert _git(remote, "rev-parse", "refs/heads/main") == base
