@@ -41,6 +41,23 @@ from agent_team_os.modules.workcells import (
 )
 
 
+def test_workcell_git_repair_loops_allow_one_post_review_machine_correction() -> None:
+    definition = load_agent_workcell_delivery_definition(Path(__file__).parents[1] / "config")
+    loops = {
+        node["id"]: node["policy"]["max_iterations"]
+        for node in definition["nodes"]
+        if node["kind"] == "loop"
+    }
+
+    assert loops == {
+        "design-repair": 4,
+        "qa-preparation-repair": 2,
+        "frontend-repair": 4,
+        "backend-repair": 4,
+        "qa-delivery-repair": 4,
+    }
+
+
 class KnowledgePolicies:
     def validate(self, retrieval_policy_revision_id: str, max_context_bytes: int) -> None:
         assert retrieval_policy_revision_id == "gate-retrieval-v1"

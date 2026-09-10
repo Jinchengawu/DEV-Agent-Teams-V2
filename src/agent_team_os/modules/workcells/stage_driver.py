@@ -1709,6 +1709,12 @@ def _delegate_invocation(
         "不得改写、降低原始需求或引用其他 Workcell 的职责。"
     )
     if child.delegate_purpose == "workspace_write":
+        verification_profile = tree.workcell_run.workcell_snapshot.workspace.verification_profile
+        frozen_commands = (
+            []
+            if verification_profile is None
+            else [list(command) for command in verification_profile.profile.commands]
+        )
         path_policy = (
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
@@ -1719,6 +1725,10 @@ def _delegate_invocation(
             "删除或移动所有允许范围之外的文件。最终 JSON 的 files 必须与真实 Git 变更一致，"
             "不得用允许路径名称掩盖实际越界文件。"
             "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
+            "\nProduct Frozen Verification Commands（argv）："
+            + json.dumps(frozen_commands, ensure_ascii=False)
+            + "。最终返回前必须在当前 Workspace 实际运行这些冻结命令，"
+            "确认 exit code 为 0；不得用自定义的更弱命令代替。"
         )
     review_contract = ""
     repair_contract = ""
