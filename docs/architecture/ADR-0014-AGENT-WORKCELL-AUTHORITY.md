@@ -198,12 +198,15 @@ Runtime 身份错误、调用失败、超时、取消与 Blocking Finding 不属
 
 状态见 `ARCH-20260911-02`；本地 Deterministic 与真实 Live 验收分开记录。
 
-## 2026-09-11 修订：BMAD Project Root 兼容别名
+## 2026-09-11 修订：BMAD Project Root 显式绑定与兼容别名
 
 BMAD Method Entry 在 Codex 技能语义中可将 `{project-root}` 解析为 Attempt 专用
 `CODEX_HOME`，而产品的 Project Support Overlay 安装在业务 Workspace。为避免让
-Agent 猜测路径，产品在已登记 Attempt 存活期内创建
-`CODEX_HOME/_bmad -> <current-workspace>/_bmad` 的临时符号链接。
+Agent 猜测路径，产品在每个已登记 Attempt 的指令中显式冻结当前业务
+Workspace 绝对路径为 `Method Project Root`，并要求 Method Skill 中的 `{project-root}`
+逐字替换为该路径；不得使用控制仓、进程启动目录或 `CODEX_HOME` 代替。
+同时保留 `CODEX_HOME/_bmad -> <current-workspace>/_bmad` 临时符号链接作为
+运行时兼容别名。
 
 该别名只指向当前 Attempt 已授权的 Workspace Overlay，不增加可写目录；
 Writer 与 Reviewer 切换 Workspace 时先移除旧别名，再绑定新的隔离视图。

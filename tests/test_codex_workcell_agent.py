@@ -98,6 +98,53 @@ def test_codex_workcell_agent_parses_only_the_last_agent_message(
     assert output.content == {"changed_files": ["design/health-contract-v1.json"]}
 
 
+def test_codex_workcell_agent_freezes_method_project_root_in_instruction(
+    tmp_path: Path,
+) -> None:
+    code = """
+import json
+import sys
+
+instruction = sys.stdin.read()
+event = {
+    "type": "item.completed",
+    "item": {
+        "type": "agent_message",
+        "text": json.dumps({"instruction": instruction}),
+    },
+}
+print(json.dumps(event))
+"""
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-project-root",
+                workcell_run_id="workcell-project-root",
+                agent_run_id="agent-project-root",
+                phase="delegate",
+                workcell_key="frontend",
+                stage_path="frontend-repair/frontend",
+                instruction="write",
+                workspace=tmp_path,
+                workspace_access="workspace_write",
+                method_id="bmad-build",
+            )
+        )
+    )
+
+    instruction = str(output.content["instruction"])
+    assert f"Method Project Root\uff1a{tmp_path.resolve()}" in instruction
+    assert (
+        "{project-root} \u5fc5\u987b\u9010\u5b57\u66ff\u6362\u4e3a Method Project Root"
+        in instruction
+    )
+
+
 def test_codex_workcell_agent_mounts_bmad_support_without_git_pollution(
     tmp_path: Path,
 ) -> None:

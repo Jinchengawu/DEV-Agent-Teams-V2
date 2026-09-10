@@ -56,6 +56,9 @@ class CodexWorkcellAgent:
         )
         instruction = (
             f"{invocation.instruction}\n\n"
+            f"Method Project Root：{invocation.workspace.resolve()}。"
+            "Method Skill 中的 {project-root} 必须逐字替换为 Method Project Root；"
+            "不得使用 Agent-Team-OS 控制仓、进程启动目录或 CODEX_HOME 代替。"
             "本次调用就是一个已经登记的 AgentAttempt。不得派生子 Agent，不得使用 Party Mode，"
             "不得读取其他 Workcell Repository。最终只返回一个 JSON object，不要 Markdown。"
             "允许返回的 knowledge_citation_ids 为："

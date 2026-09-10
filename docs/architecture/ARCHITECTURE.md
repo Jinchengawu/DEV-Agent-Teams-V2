@@ -230,9 +230,11 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   租约装配；运行期间 Detached View 根目录、Overlay 和 Candidate 文件保持只读，
   Codex 同时使用 `read-only` Sandbox。最后一个并发 Reviewer 结束后由产品移除
   Overlay 并恢复原权限；该租约不暴露给 Agent。
-- BMAD 技能将 `{project-root}` 解析到 Attempt `CODEX_HOME` 时，产品临时装配
-  `CODEX_HOME/_bmad` 别名指向当前已授权 Workspace Overlay。别名跟随同一租约
-  安装、校验与清理，不增加 Workspace 权限，不进入 Candidate Diff。
+- 产品将当前 Attempt 的业务 Workspace 绝对路径冻结为 `Method Project Root`，
+  明确要求 Method Skill 中的 `{project-root}` 逐字替换为该路径；不得用控制仓、
+  进程启动目录或 `CODEX_HOME` 自行推断。`CODEX_HOME/_bmad` 同时作为受控兼容
+  别名指向同一 Workspace Overlay；别名跟随同一租约安装、校验与清理，
+  不增加 Workspace 权限，不进入 Candidate Diff。
 - Codex 子进程只继承最小系统环境白名单与 Adapter 授权 Override；产品进程中的
   Feishu/GitHub Token、Secret 和 Password 不会被隐式传入 AgentAttempt。
 - 该机制只证明本地 Codex CLI 能执行已登记 Attempt，不会把 Codex 模拟规划提升为真实 Hermes
@@ -745,6 +747,16 @@ Affected authorities/modules/data/states: Codex Workcell Adapter、Method Runtim
 Compatibility and migration: 不需要 Migration；无 BMAD Runtime Source 的 Attempt 不变；别名冲突、篡改与业务 Workspace 内 CODEX_HOME 均失败关闭。
 Plan/ADR reference: ADR-0014 修订。
 Implemented evidence: Codex Adapter 与 Runtime Overlay 16 项专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑。
+
+ARCH-20260911-04
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Local
+Decision: 每个 Codex AgentAttempt 显式冻结当前业务 Workspace 为 Method Project Root，禁止模型从控制仓、进程目录或 CODEX_HOME 推断 `{project-root}`。
+Affected authorities/modules/data/states: Codex Workcell Adapter 的 Method 指令边界；不改 Workspace Access、Method Pack Hash 或 Overlay Lease。
+Compatibility and migration: 不需要 Migration；无 Method 的 Attempt 也获得相同工作目录声明，不增加文件系统权限。
+Plan/ADR reference: ADR-0014 现有 Method Pack Overlay 边界内的实现加固，不新增 ADR。
+Implemented evidence: Codex Adapter 指令绑定与 Overlay 专项测试通过；四仓 Live Gate 待在加载该 Revision 的进程中验证。
 ```
 
 新条目必须使用以下结构：
@@ -784,6 +796,7 @@ Acceptance evidence required:
 | `ARCH-20260911-01` | 2026-09-11 | `Implemented/Verified` | bounded Repair 以内容寻址 Artifact 将同 Stage 最近一轮失败证据传入新 WorkcellRun | ADR-0014 修订 | Repair Context 结构、最新失败选择、机器 case、Blocking Review 与 Delegate 诊断专项测试通过；四仓 Live Gate 需重跑 |
 | `ARCH-20260911-02` | 2026-09-11 | `Implemented/Verified` | 同一 Reviewer Child Run 对结构化 Review 契约错误进行一次可观测 Attempt 重试 | ADR-0014 修订 | 28 项 Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 | `ARCH-20260911-03` | 2026-09-11 | `Implemented/Verified` | Attempt `CODEX_HOME/_bmad` 受控别名指向当前 Workspace Project Support Overlay | ADR-0014 修订 | 16 项 Adapter/Overlay 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待重跑 |
+| `ARCH-20260911-04` | 2026-09-11 | `Implemented/Verified` | Codex AgentAttempt 显式冻结 Method Project Root，禁止 `{project-root}` 误解析到控券 | ADR-0014 边界内加固 | Adapter 指令绑定与 Overlay 专项通过；四仓 Live Gate 待加载本 Revision 重跑 |
 
 ## 14. Plan Architecture Review 与文档对账
 
