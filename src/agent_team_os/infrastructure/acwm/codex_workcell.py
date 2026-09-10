@@ -160,6 +160,7 @@ class CodexWorkcellAgent:
         runtime_source = _validated_bmad_runtime_source(Path(runtime_source_raw))
         workspace = invocation.workspace.resolve()
         exclude_file = workspace / "_bmad" / ".git-exclude"
+        codex_home_alias = _codex_home_project_root_alias(environment, workspace)
         async with self._overlay_lock:
             lease = self._overlay_leases.get(workspace)
             if lease is None:
@@ -172,6 +173,15 @@ class CodexWorkcellAgent:
                     original_mode=original_mode,
                     read_only_candidate=read_only_candidate,
                 )
+                try:
+                    _install_project_root_alias(codex_home_alias, workspace / "_bmad")
+                except BaseException:
+                    _remove_bmad_project_overlay_with_access(
+                        workspace,
+                        original_mode=original_mode,
+                        read_only_candidate=read_only_candidate,
+                    )
+                    raise
                 self._overlay_leases[workspace] = (
                     runtime_source,
                     1,
@@ -207,6 +217,7 @@ class CodexWorkcellAgent:
                     )
                 else:
                     self._overlay_leases.pop(workspace)
+                    _remove_project_root_alias(codex_home_alias, workspace / "_bmad")
                     _remove_bmad_project_overlay_with_access(
                         workspace,
                         original_mode=original_mode,
@@ -232,6 +243,49 @@ class CodexWorkcellAgent:
 
 _BMAD_OVERLAY_MARKER = ".agent-team-os-project-support-v1"
 _BMAD_OVERLAY_MARKER_CONTENT = "agent-team-os-project-support-v1\n"
+
+
+def _codex_home_project_root_alias(environment: dict[str, str], workspace: Path) -> Path | None:
+    raw = environment.get("CODEX_HOME", "").strip()
+    if not raw:
+        return None
+    try:
+        codex_home = Path(raw).resolve(strict=True)
+    except OSError as error:
+        raise _error(
+            "METHOD_CODEX_HOME_INVALID",
+            "Method Runtime CODEX_HOME 不存在或不可读。",
+        ) from error
+    if codex_home == workspace or workspace in codex_home.parents:
+        raise _error(
+            "METHOD_CODEX_HOME_WORKSPACE_CONFLICT",
+            "Method Runtime CODEX_HOME 不得位于业务 Workspace 内。",
+        )
+    return codex_home / "_bmad"
+
+
+def _install_project_root_alias(alias: Path | None, overlay: Path) -> None:
+    if alias is None:
+        return
+    if alias.exists() or alias.is_symlink():
+        if alias.is_symlink() and alias.resolve() == overlay.resolve():
+            return
+        raise _error(
+            "METHOD_CODEX_HOME_OVERLAY_CONFLICT",
+            "Method Runtime CODEX_HOME 已存在非本 Attempt 的 _bmad 内容。",
+        )
+    alias.symlink_to(overlay, target_is_directory=True)
+
+
+def _remove_project_root_alias(alias: Path | None, overlay: Path) -> None:
+    if alias is None:
+        return
+    if not alias.is_symlink() or alias.resolve() != overlay.resolve():
+        raise _error(
+            "METHOD_CODEX_HOME_OVERLAY_TAMPERED",
+            "AgentAttempt 结束时 CODEX_HOME _bmad 别名丢失或被替换。",
+        )
+    alias.unlink()
 
 
 def _validated_bmad_runtime_source(value: Path) -> Path:

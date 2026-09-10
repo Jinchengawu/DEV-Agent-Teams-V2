@@ -197,3 +197,18 @@ Runtime 身份错误、调用失败、超时、取消与 Blocking Finding 不属
 不将 Loop 调度权从 ACWM 转移给 Workcell Execution。
 
 状态见 `ARCH-20260911-02`；本地 Deterministic 与真实 Live 验收分开记录。
+
+## 2026-09-11 修订：BMAD Project Root 兼容别名
+
+BMAD Method Entry 在 Codex 技能语义中可将 `{project-root}` 解析为 Attempt 专用
+`CODEX_HOME`，而产品的 Project Support Overlay 安装在业务 Workspace。为避免让
+Agent 猜测路径，产品在已登记 Attempt 存活期内创建
+`CODEX_HOME/_bmad -> <current-workspace>/_bmad` 的临时符号链接。
+
+该别名只指向当前 Attempt 已授权的 Workspace Overlay，不增加可写目录；
+Writer 与 Reviewer 切换 Workspace 时先移除旧别名，再绑定新的隔离视图。
+别名缺失、被替换、指向其他 Overlay，或 `CODEX_HOME` 位于业务 Workspace 内时
+均 Fail Closed。最后一个并发租约释放后，别名与 Workspace Overlay 必须一起清理，
+不得进入 Candidate Diff。
+
+状态见 `ARCH-20260911-03`；当前只有 Adapter 专项证据，四仓 Live 闭环需重跑。

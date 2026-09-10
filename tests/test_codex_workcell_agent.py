@@ -109,6 +109,8 @@ def test_codex_workcell_agent_mounts_bmad_support_without_git_pollution(
     scripts.mkdir(parents=True)
     (scripts / "render_skill.py").write_text("# verified renderer\n", encoding="utf-8")
     (scripts / "config_utils.py").write_text("# verified config\n", encoding="utf-8")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
     code = """
 import json
 import os
@@ -119,6 +121,7 @@ from pathlib import Path
 sys.stdin.read()
 root = Path.cwd()
 overlay = root / "_bmad"
+codex_home_overlay = Path(os.environ["CODEX_HOME"]) / "_bmad"
 renderer = (overlay / "scripts" / "render_skill.py").read_text(encoding="utf-8")
 status = subprocess.check_output(["git", "status", "--short"], text=True)
 (root / "src").mkdir(exist_ok=True)
@@ -130,6 +133,10 @@ payload = {
     "runtime_source_leaked": "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE" in os.environ,
     "config_present": (overlay / "config.toml").is_file(),
     "bmm_config_present": (overlay / "bmm" / "config.yaml").is_file(),
+    "codex_home_project_root_alias": (
+        codex_home_overlay.resolve() == overlay.resolve()
+        and (codex_home_overlay / "scripts" / "render_skill.py").is_file()
+    ),
 }
 event = {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(payload)}}
 print(json.dumps(event))
@@ -152,7 +159,10 @@ print(json.dumps(event))
                 workspace=workspace,
                 workspace_access="workspace_write",
                 method_id="bmad-build",
-                environment={"AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(source)},
+                environment={
+                    "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(source),
+                    "CODEX_HOME": str(codex_home),
+                },
             )
         )
     )
@@ -164,8 +174,10 @@ print(json.dumps(event))
         "runtime_source_leaked": False,
         "config_present": True,
         "bmm_config_present": True,
+        "codex_home_project_root_alias": True,
     }
     assert not (workspace / "_bmad").exists()
+    assert not (codex_home / "_bmad").exists()
     assert subprocess.check_output(
         ["git", "status", "--short"], cwd=workspace, text=True
     ).splitlines() == ["?? src/"]
