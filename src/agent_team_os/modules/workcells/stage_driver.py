@@ -1268,7 +1268,7 @@ class WorkcellStageDriver:
             self.kernel.start_child(child.id)
         results = await asyncio.gather(
             *(
-                self._run_agent(
+                self._run_reviewer_with_retry(
                     delivery,
                     _delegate_invocation(
                         delivery,
@@ -1351,6 +1351,53 @@ class WorkcellStageDriver:
             )
             review_ids.append(tree.reviews[-1].id)
         return self.kernel.tree(tree.workcell_run.id), tuple(review_ids), tuple(sorted(citations))
+
+    async def _run_reviewer_with_retry(
+        self,
+        delivery: DeliveryRun,
+        invocation: WorkcellAgentInvocation,
+    ) -> WorkcellAgentOutput:
+        """Retry one invalid review contract as a second Attempt on the same Child Run."""
+        current = invocation
+        for attempt_index in range(2):
+            result = await self._run_agent(delivery, current)
+            try:
+                tree = self.kernel.tree(invocation.workcell_run_id)
+                verification = tree.verification
+                scope = tree.workcell_run.workcell_snapshot.review_scope
+                if verification is None or scope is None:
+                    raise _error(
+                        "REVIEW_CANDIDATE_NOT_VERIFIED",
+                        "Reviewer 缺少已冻结的候选验证证据。",
+                    )
+                _validated_review_output(
+                    result.content,
+                    candidate_sha=verification.candidate_sha,
+                    diff_sha256=verification.diff_sha256,
+                    scope=scope,
+                )
+                return result
+            except ProductError as error:
+                if error.code not in INVALID_REVIEW_CODES or attempt_index == 1:
+                    return result
+                invalid_reference = self.artifacts.put_json(result.content)
+                self.kernel.retry_invalid_review_attempt(
+                    invocation.agent_run_id,
+                    error_code=error.code,
+                    result_artifact_sha256=invalid_reference.sha256,
+                )
+                current = invocation.model_copy(
+                    update={
+                        "instruction": invocation.instruction
+                        + "\n上一次 Review 输出被产品契约校验拒绝："
+                        + error.code
+                        + "。这是同一 Reviewer Child Run 的最后一次有界 Attempt。"
+                        + "必须从 Candidate Review Evidence 原样复制 "
+                        + "reviewed_candidate_sha、reviewed_diff_sha256 和 review_scope_sha256；"
+                        + "不得手写、缩短或推导任何哈希。"
+                    }
+                )
+        raise AssertionError("bounded review retry exhausted without a result")
 
     async def _main_synthesis(
         self,

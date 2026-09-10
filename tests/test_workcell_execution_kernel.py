@@ -248,6 +248,71 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
     assert {item.id for item in delivery_attempts} == {item.id for item in completed.attempts}
 
 
+def test_invalid_review_can_retry_as_a_second_attempt_on_the_same_child(
+    tmp_path: Path,
+) -> None:
+    kernel, artifacts = _kernel(tmp_path)
+    created = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-review-retry",
+            stage_attempt_id="frontend-review-retry",
+            snapshot=_snapshot(),
+        )
+    )
+    planned = kernel.submit_delegation_plan(
+        created.workcell_run.id,
+        (
+            DelegationAssignment(
+                slot_key="delegate_1",
+                delegate_purpose="workspace_write",
+                workspace_access="workspace_write",
+            ),
+            DelegationAssignment(
+                slot_key="delegate_2",
+                delegate_purpose="review",
+                workspace_access="candidate_read",
+            ),
+        ),
+    )
+    children = {
+        item.delegate_purpose: item
+        for item in planned.agent_runs
+        if item.run_role == "child"
+    }
+    writer = children["workspace_write"]
+    reviewer = children["review"]
+    kernel.start_child(writer.id)
+    kernel.finish_child(writer.id, status="succeeded")
+    kernel.record_candidate_verification(
+        created.workcell_run.id,
+        CandidateVerificationCreate(
+            writer_agent_run_id=writer.id,
+            candidate_sha="b" * 40,
+            diff_sha256="c" * 64,
+            status="passed",
+            report={"exit_code": 0},
+        ),
+    )
+    kernel.start_child(reviewer.id)
+    invalid = artifacts.put_json({"reviewed_diff_sha256": "d" * 64})
+
+    retried = kernel.retry_invalid_review_attempt(
+        reviewer.id,
+        error_code="WORKCELL_REVIEW_EVIDENCE_MISMATCH",
+        result_artifact_sha256=invalid.sha256,
+    )
+
+    same_child = next(item for item in retried.agent_runs if item.id == reviewer.id)
+    attempts = [item for item in retried.attempts if item.agent_run_id == reviewer.id]
+    assert same_child.status == "running"
+    assert len(attempts) == 2
+    assert [item.ordinal for item in attempts] == [1, 2]
+    assert [item.status for item in attempts] == ["failed", "running"]
+    assert attempts[0].result_artifact_sha256 == invalid.sha256
+    assert retried.workcell_run.status == "reviewing"
+
+
 def test_constraints_cancellation_and_blocking_evidence_fail_closed(tmp_path: Path) -> None:
     kernel, artifacts = _kernel(tmp_path)
     created = kernel.create(

@@ -241,6 +241,51 @@ class WorkcellExecutionModule:
             raise _repository_error(error) from error
         return self.tree(child.workcell_run_id)
 
+    def retry_invalid_review_attempt(
+        self,
+        agent_run_id: str,
+        *,
+        error_code: str,
+        result_artifact_sha256: Sha256,
+        max_attempts: int = 2,
+    ) -> WorkcellRunTree:
+        """Retry a schema-invalid review without creating another Child or Candidate."""
+        try:
+            child = self.repository.get_agent(agent_run_id)
+        except KeyError as error:
+            raise _error(
+                "AGENT_RUN_NOT_FOUND",
+                "AgentRun 不存在",
+                "刷新 WorkcellRun Tree 后重试。",
+                404,
+            ) from error
+        if (
+            child.run_role != "child"
+            or child.delegate_purpose != "review"
+            or child.workcell_run_id is None
+        ):
+            raise _error(
+                "AGENT_RUN_NOT_REVIEW_CHILD",
+                "只能重试可观测的 Reviewer Child Attempt",
+                "使用已通过机器验证的同一 Candidate 重试 Review。",
+            )
+        if error_code not in INVALID_REVIEW_CODES:
+            raise _error(
+                "AGENT_ATTEMPT_RETRY_REASON_INVALID",
+                "只允许对 Review 输出契约错误进行原位重试",
+                "其他失败应由 ACWM bounded Loop 创建新 WorkcellRun。",
+            )
+        try:
+            self.repository.retry_child_attempt(
+                child,
+                error_code=error_code,
+                result_artifact_sha256=result_artifact_sha256,
+                max_attempts=max_attempts,
+            )
+        except RuntimeError as error:
+            raise _repository_error(error) from error
+        return self.tree(child.workcell_run_id)
+
     def record_candidate_verification(
         self,
         run_id: str,

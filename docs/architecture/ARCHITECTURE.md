@@ -327,7 +327,9 @@ Main planning
   Workcell。产品已对完整 Candidate Diff 做内容寻址，仓库内额外 manifest 不是隐式验收前提。
 - Tasking 明确每仓 Acceptance 责任，由 Plan Gate 批准；产品从批准来源编译冻结 Review Scope。
   Finding 必须且只能引用本仓 Acceptance 或冻结 System Policy，原始 JSON 必须与登记记录一致。
-  无效 Review 的原始输出仍保留并进入既有有界 Repair；同批有效阻断不会被无效输出抹除。
+  无效 Review 的原始输出仍保留；产品只允许在同一 Reviewer Child Run 内
+  新建一次可观测 AgentAttempt 来修正输出契约，不改 Candidate 或 Scope。
+  重试仍无效时进入既有 ACWM 有界 Repair；同批有效阻断不会被无效输出抹除。
 - Main synthesis 必须读取本 Workcell 已冻结的 Child Artifact 正文、Machine Verification、
   Result Validation 与 Review Artifact，不得在缺少局部执行事实时合成成功结果。
 - Child 之间只传递内容寻址 ArtifactEnvelope；Git Candidate 以 Metadata + Hash-bound Diff Artifact 表达，
@@ -720,6 +722,16 @@ Affected authorities/modules/data/states: Verification Profile/Qualification/Rep
 Compatibility and migration: 保留 V1 Profile 原序列化与哈希；V2 采用明确版本联合；不复制 ACWM Runtime Contract，不共享仓库挂载。
 Plan/ADR reference: docs/plans/2026-09-05-DELIVERY-CLOSURE-PLAN.md；ADR-0012、ADR-0014、ADR-0019
 Implemented evidence: 真实四仓工具 12 项、公共 API 配置/冻结 1 项、取消/旧 Profile 11 项、来源篡改 9 项通过；同 Delivery V2 Stage/Publication/QA/四仓 Apply/Release 与默认 R2 共 4 项通过。正式同 Revision/Live 另验。
+
+ARCH-20260911-02
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Cross-boundary
+Decision: Review 输出契约错误可在同一 Reviewer Child Run 内以新 AgentAttempt 有界重试一次；不改变 Candidate、Scope 或 Provider Binding。
+Affected authorities/modules/data/states: Workcell Stage Driver、AgentRun/AgentAttempt Ledger、Review Artifact 校验；不改 ACWM Loop 权威。
+Compatibility and migration: 不需要 Migration；现有 AgentAttempt 表已支持同 Run 多 Attempt；非契约错误与第二次无效继续 Fail Closed。
+Plan/ADR reference: ADR-0014 修订。
+Implemented evidence: Kernel/Stage Driver 专项验证同 Child 两次 Attempt、原始失败 Artifact Hash、有界成功与超限失败；四仓 Live Gate 需在本 Revision 重跑。
 ```
 
 新条目必须使用以下结构：
@@ -757,6 +769,7 @@ Acceptance evidence required:
 
 | `ARCH-20260905-04` | 2026-09-05 | `Implemented/Verified` | V2 按仓真实工具验证、固定配置/依赖资格及 Hash-bound 产物包消费 | ADR-0012/0014/0019 | 真实四仓工具/HTTP配置、篡改与清理回归；同 Delivery Stage→QA→Apply→Release 全链通过；Live 待验 |
 | `ARCH-20260911-01` | 2026-09-11 | `Implemented/Verified` | bounded Repair 以内容寻址 Artifact 将同 Stage 最近一轮失败证据传入新 WorkcellRun | ADR-0014 修订 | Repair Context 结构、最新失败选择、机器 case、Blocking Review 与 Delegate 诊断专项测试通过；四仓 Live Gate 需重跑 |
+| `ARCH-20260911-02` | 2026-09-11 | `Implemented/Verified` | 同一 Reviewer Child Run 对结构化 Review 契约错误进行一次可观测 Attempt 重试 | ADR-0014 修订 | 28 项 Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 
 ## 14. Plan Architecture Review 与文档对账
 

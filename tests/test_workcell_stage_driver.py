@@ -918,7 +918,33 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         outputs = [
             artifact_storage.get_json(item.artifact_envelopes[0].reference) for item in reviewers
         ]
-        assert any(item["blocking_findings"] for item in outputs)
+        if invalid_review_calls:
+            failed_contract_attempt = next(
+                item
+                for item in tree.attempts
+                if item.error_code == "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE"
+            )
+            assert failed_contract_attempt.result_artifact_sha256 is not None
+            invalid_path = (
+                artifact_storage.root
+                / "sha256"
+                / failed_contract_attempt.result_artifact_sha256[:2]
+                / failed_contract_attempt.result_artifact_sha256
+            )
+            invalid_output = artifact_storage.get_json(
+                ArtifactReference(
+                    uri=(
+                        "artifact://sha256/"
+                        + failed_contract_attempt.result_artifact_sha256
+                    ),
+                    sha256=failed_contract_attempt.result_artifact_sha256,
+                    media_type="application/json",
+                    size_bytes=invalid_path.stat().st_size,
+                )
+            )
+            assert invalid_output["blocking_findings"][0]["acceptance_id"] == "AC-UNKNOWN"
+        else:
+            assert any(item["blocking_findings"] for item in outputs)
         assert not any(item.phase == "synthesis" for item in agent.invocations)
         assert pull_requests.calls == 0
         return
@@ -985,26 +1011,27 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         assert payload["failure_code"] == "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION"
         assert "design.md" in payload["failure_detail"]
         return
-    assert len(tree.reviews) == 2 - len(invalid_review_calls)
+    assert len(tree.reviews) == 2
     if expected_status == "repair_required":
         assert tree.workcell_run.status == "failed"
-        assert tree.workcell_run.error_code == (
-            "WORKCELL_REVIEW_FINDING_OUT_OF_SCOPE"
-            if invalid_review_calls
-            else "WORKCELL_BLOCKING_REVIEW"
-        )
+        assert tree.workcell_run.error_code == "WORKCELL_BLOCKING_REVIEW"
         assert any(item.blocking_findings for item in tree.reviews)
         reviewers = [item for item in tree.agent_runs if item.delegate_purpose == "review"]
         assert all(item.artifact_envelopes for item in reviewers)
         if invalid_review_calls:
-            invalid = next(item for item in reviewers if item.status == "failed")
-            assert (
-                artifact_storage.get_json(invalid.artifact_envelopes[0].reference)[
-                    "blocking_findings"
-                ][0]["acceptance_id"]
-                == "AC-UNKNOWN"
+            retried = next(
+                item
+                for item in reviewers
+                if len([attempt for attempt in tree.attempts if attempt.agent_run_id == item.id])
+                == 2
             )
-            assert not any(item.phase == "synthesis" for item in agent.invocations)
+            attempts = [item for item in tree.attempts if item.agent_run_id == retried.id]
+            assert [item.status for item in attempts] == ["failed", "succeeded"]
+            assert any(
+                "上一次 Review 输出被产品契约校验拒绝" in item.instruction
+                for item in agent.invocations
+            )
+        assert not any(item.phase == "synthesis" for item in agent.invocations)
         assert outcome.candidate is None
         return
 

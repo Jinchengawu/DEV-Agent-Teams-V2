@@ -147,8 +147,11 @@ Workcell `review_scope` 从批准的 Plan 与该 Policy 快照派生，冻结原
 Reviewer 输出必须绑定 Scope/Candidate/Diff SHA。`code` 是问题分类，不能冒充归属；
 每个 Finding 必须且只能引用本 Scope 的 `acceptance_id` 或 `system_policy_id`。
 产品先保存每个 Reviewer 的原始 Artifact，再验证合同并登记 Review；一份无效输出不能丢弃
-同批其他 Reviewer 的有效 blocker。无效输出走既有 ACWM bounded Loop，不能变成空 Review
-或通过 Main synthesis 复活失败 Run。
+同批其他 Reviewer 的有效 blocker。对 Scope/Candidate/Diff 绑定或 Finding Schema
+错误，产品可在同一 Reviewer Child Run 内执行一次有界 AgentAttempt 重试：
+第一次错误输出作为 Attempt Artifact 保留，不创建新 Child、不改变 Candidate，
+不绕过合同校验。重试仍无效时才走既有 ACWM bounded Loop；任何无效输出都不能
+变成空 Review 或通过 Main synthesis 复活失败 Run。
 
 历史可空字段在序列化中省略，保持旧 Hash；历史可读，新 Workcell 缺 Scope 失败关闭。
 状态以 ARCH-20260905-03 为准；专项实现通过不等于最终 Revision 或 Live 验收。
@@ -180,3 +183,17 @@ Session、Memory、聊天历史或额外 Repository 挂载。
 这补全了既有 Repair 恢复语义，不将 Loop 调度权从 ACWM 转移给产品或 Agent。
 
 状态见 `ARCH-20260911-01`；Deterministic 证据与四仓 Live Gate 结果分开记录。
+
+## 2026-09-11 修订：Reviewer 输出契约错误原位重试
+
+Reviewer 对已验证 Candidate 的内容审查与 Provider 对结构化哈希字段的输出准确性是
+两个不同事实。只有 `INVALID_REVIEW_CODES` 中的输出契约错误可在原 Reviewer
+`AgentRun` 内重试一次。重试必须产生新的可观测 `AgentAttempt`，并将被拒绝的
+原始 JSON Hash 记入前一 Attempt。重试使用同一 Candidate、Diff、Review Scope、
+Provider Binding 和只读 Detached View。
+
+Runtime 身份错误、调用失败、超时、取消与 Blocking Finding 不属于契约重试，
+仍立即 Fail Closed 或由 ACWM bounded Loop 修复。这一机制不扩大 Child 数量或深度，
+不将 Loop 调度权从 ACWM 转移给 Workcell Execution。
+
+状态见 `ARCH-20260911-02`；本地 Deterministic 与真实 Live 验收分开记录。
