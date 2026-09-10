@@ -136,6 +136,7 @@ class DeterministicWorkcellAgent:
         writes_candidate: bool = True,
         writes_forbidden_path: bool = False,
         writer_error_detail: str | None = None,
+        writer_error_code: str = "CODEX_WORKCELL_ATTEMPT_FAILED",
     ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
         self.citation_ids = citation_ids
@@ -145,6 +146,7 @@ class DeterministicWorkcellAgent:
         self.writes_candidate = writes_candidate
         self.writes_forbidden_path = writes_forbidden_path
         self.writer_error_detail = writer_error_detail
+        self.writer_error_code = writer_error_code
         self.review_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
@@ -165,7 +167,7 @@ class DeterministicWorkcellAgent:
         if invocation.workspace_access == "workspace_write":
             if self.writer_error_detail is not None:
                 raise ProductError(
-                    code="CODEX_WORKCELL_ATTEMPT_FAILED",
+                    code=self.writer_error_code,
                     title="Codex Workcell AgentAttempt 失败",
                     detail=self.writer_error_detail,
                     repair="检查冻结 Provider Binding 后新建 Attempt。",
@@ -489,7 +491,17 @@ def test_cancelling_workcell_execution_stops_the_active_agent() -> None:
     asyncio.run(scenario())
 
 
-def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("error_code", "expected_repair"),
+    [
+        ("CODEX_WORKCELL_ATTEMPT_FAILED", False),
+        ("KNOWLEDGE_CITATION_NOT_IN_CONTEXT", True),
+        ("KNOWLEDGE_CITATION_REQUIRED", True),
+    ],
+)
+def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(
+    tmp_path: Path, error_code: str, expected_repair: bool
+) -> None:
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
     remote, base = _remote(tmp_path)
@@ -552,7 +564,8 @@ def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(tmp_path:
         artifacts=artifacts,
         methods=StaticMethodRuntime(tmp_path / "method-runtime"),
         agent=DeterministicWorkcellAgent(
-            writer_error_detail="usage limit reached; api_key=super-secret-value"
+            writer_error_detail="usage limit reached; api_key=super-secret-value",
+            writer_error_code=error_code,
         ),
         workspaces=ExternalGitWorkspaceManager(tmp_path / "runtime-workspaces"),
         binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri=str(remote)),
@@ -561,24 +574,26 @@ def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(tmp_path:
         pull_requests=DeterministicPRSurface(),
     )
 
-    with pytest.raises(ProductError) as failed:
-        asyncio.run(
-            driver.execute(
-                delivery,
-                stage_path="design-repair/design",
-                stage_attempt_id="design-attempt-1",
-                loop_iteration=1,
-            )
-        )
-
-    assert failed.value.code == "CODEX_WORKCELL_ATTEMPT_FAILED"
+    execution = driver.execute(
+        delivery,
+        stage_path="design-repair/design",
+        stage_attempt_id="design-attempt-1",
+        loop_iteration=1,
+    )
+    if expected_repair:
+        outcome = asyncio.run(execution)
+        assert outcome.status == "repair_required"
+    else:
+        with pytest.raises(ProductError) as failed:
+            asyncio.run(execution)
+        assert failed.value.code == error_code
     tree = kernel.list_delivery(delivery.id)[0]
     writer = next(item for item in tree.agent_runs if item.delegate_purpose == "workspace_write")
     diagnostic = writer.artifact_envelopes[0]
     assert diagnostic.contract_id == "workcell-agent-attempt-diagnostic-v1"
     assert diagnostic.reference is not None
     payload = artifacts.get_json(diagnostic.reference)
-    assert payload["failure_code"] == "CODEX_WORKCELL_ATTEMPT_FAILED"
+    assert payload["failure_code"] == error_code
     assert payload["failure_detail"] == "usage limit reached; api_key=[REDACTED]"
     assert payload["phase"] == "delegate"
     attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)

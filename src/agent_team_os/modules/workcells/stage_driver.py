@@ -569,6 +569,8 @@ class WorkcellStageDriver:
                     "EMPTY_WORKSPACE_CANDIDATE",
                     "EXTERNAL_GIT_COMMAND_FAILED",
                     "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
+                    "KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+                    "KNOWLEDGE_CITATION_REQUIRED",
                 }:
                     raise
                 return self._repair_outcome(
