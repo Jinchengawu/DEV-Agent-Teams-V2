@@ -1031,6 +1031,24 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
                 "上一次 Review 输出被产品契约校验拒绝" in item.instruction
                 for item in agent.invocations
             )
+            retry_invocation = next(
+                item
+                for item in agent.invocations
+                if "最终 JSON 中这三个字段必须精确等于" in item.instruction
+            )
+            review_evidence = json.loads(
+                retry_invocation.instruction.split("Candidate Review Evidence：", 1)[1]
+                .splitlines()[0]
+            )
+            assert json.dumps(
+                {
+                    "review_scope_sha256": review_evidence["review_scope_sha256"],
+                    "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                    "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ) in retry_invocation.instruction
         assert not any(item.phase == "synthesis" for item in agent.invocations)
         assert outcome.candidate is None
         return

@@ -1386,6 +1386,18 @@ class WorkcellStageDriver:
                     error_code=error.code,
                     result_artifact_sha256=invalid_reference.sha256,
                 )
+                # INVALID_REVIEW_CODES can only be raised after these frozen inputs exist.
+                assert verification is not None
+                assert scope is not None
+                canonical_review_identifiers = json.dumps(
+                    {
+                        "review_scope_sha256": scope.sha256,
+                        "reviewed_candidate_sha": verification.candidate_sha,
+                        "reviewed_diff_sha256": verification.diff_sha256,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
                 current = invocation.model_copy(
                     update={
                         "instruction": invocation.instruction
@@ -1395,6 +1407,8 @@ class WorkcellStageDriver:
                         + "必须从 Candidate Review Evidence 原样复制 "
                         + "reviewed_candidate_sha、reviewed_diff_sha256 和 review_scope_sha256；"
                         + "不得手写、缩短或推导任何哈希。"
+                        + "最终 JSON 中这三个字段必须精确等于："
+                        + canonical_review_identifiers
                     }
                 )
         raise AssertionError("bounded review retry exhausted without a result")
