@@ -214,6 +214,20 @@ def test_builtin_workcell_pipeline_publishes_all_frozen_provider_and_method_slot
     assert validated.validation_errors == ()
     assert len(revision.resolved_provider_bindings) == 22
     assert revision.release_contract_snapshot == ("design", "frontend", "backend", "qa")
+    qa_preparation = revision.workcell_stage_map[
+        "qa-preparation-repair/qa-preparation"
+    ]
+    assert qa_preparation.delegate_methods == {
+        "delegate_1": "bmad-testarch-test-design",
+        "delegate_2": "bmad-testarch-atdd",
+    }
+    assert qa_preparation.delegate_purposes == {
+        "delegate_1": "artifact",
+        "delegate_2": "artifact",
+    }
+    assert "bmad-testarch-trace" in revision.workcell_stage_map[
+        "qa-delivery-repair/qa-delivery"
+    ].delegate_methods.values()
     assert {
         method
         for stage in revision.workcell_stage_map.values()

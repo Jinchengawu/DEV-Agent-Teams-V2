@@ -118,6 +118,11 @@ class ActualFourStackScenario:
             for item in preparation.agent_runs
             if item.run_role == "child"
         )
+        assert {
+            item.slot_key
+            for item in preparation.agent_runs
+            if item.run_role == "child"
+        } == {"delegate_1", "delegate_2"}
 
         publications = {}
         reports = {}
