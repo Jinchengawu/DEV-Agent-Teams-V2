@@ -134,6 +134,7 @@ class DeterministicWorkcellAgent:
         invalid_review_calls: frozenset[int] = frozenset(),
         fatal_review_calls: frozenset[int] = frozenset(),
         writes_candidate: bool = True,
+        writes_forbidden_path: bool = False,
         writer_error_detail: str | None = None,
     ) -> None:
         self.invocations: list[WorkcellAgentInvocation] = []
@@ -142,6 +143,7 @@ class DeterministicWorkcellAgent:
         self.invalid_review_calls = invalid_review_calls
         self.fatal_review_calls = fatal_review_calls
         self.writes_candidate = writes_candidate
+        self.writes_forbidden_path = writes_forbidden_path
         self.writer_error_detail = writer_error_detail
         self.review_calls = 0
 
@@ -169,7 +171,11 @@ class DeterministicWorkcellAgent:
                     repair="检查冻结 Provider Binding 后新建 Attempt。",
                 )
             if self.writes_candidate:
-                target = invocation.workspace / "design" / "candidate.md"
+                target = (
+                    invocation.workspace / "design.md"
+                    if self.writes_forbidden_path
+                    else invocation.workspace / "design" / "candidate.md"
+                )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("# Candidate\n\nBMAD UX output.\n", encoding="utf-8")
             return WorkcellAgentOutput(
@@ -618,15 +624,17 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
         "invalid_review_calls",
         "fatal_review_calls",
         "writes_candidate",
+        "writes_forbidden_path",
         "expected_status",
     ),
     [
-        (frozenset(), frozenset(), frozenset(), True, "succeeded"),
-        (frozenset({1}), frozenset(), frozenset(), True, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), False, "repair_required"),
-        (frozenset({2}), frozenset({1}), frozenset(), True, "repair_required"),
-        (frozenset(), frozenset({1}), frozenset({2}), True, "fatal"),
-        (frozenset({1}), frozenset(), frozenset({2}), True, "fatal"),
+        (frozenset(), frozenset(), frozenset(), True, False, "succeeded"),
+        (frozenset({1}), frozenset(), frozenset(), True, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), False, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), True, True, "repair_required"),
+        (frozenset({2}), frozenset({1}), frozenset(), True, False, "repair_required"),
+        (frozenset(), frozenset({1}), frozenset({2}), True, False, "fatal"),
+        (frozenset({1}), frozenset(), frozenset({2}), True, False, "fatal"),
     ],
 )
 def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
@@ -635,6 +643,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     invalid_review_calls: frozenset[int],
     fatal_review_calls: frozenset[int],
     writes_candidate: bool,
+    writes_forbidden_path: bool,
     expected_status: str,
 ) -> None:
     database = tmp_path / "agent-team-os.sqlite"
@@ -714,6 +723,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         invalid_review_calls=invalid_review_calls,
         fatal_review_calls=fatal_review_calls,
         writes_candidate=writes_candidate,
+        writes_forbidden_path=writes_forbidden_path,
     )
     knowledge_guard = RecordingKnowledgeGuard()
     pull_requests = DeterministicPRSurface()
@@ -795,6 +805,20 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         failed_attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
         assert failed_attempt.result_artifact_sha256 == diagnostic.sha256
         return
+    if writes_forbidden_path:
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION"
+        assert not tree.reviews
+        assert outcome.candidate is None
+        writer = next(
+            item for item in tree.agent_runs if item.delegate_purpose == "workspace_write"
+        )
+        diagnostic = writer.artifact_envelopes[0]
+        assert diagnostic.reference is not None
+        payload = artifact_storage.get_json(diagnostic.reference)
+        assert payload["failure_code"] == "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION"
+        assert "design.md" in payload["failure_detail"]
+        return
     assert len(tree.reviews) == 2 - len(invalid_review_calls)
     if expected_status == "repair_required":
         assert tree.workcell_run.status == "failed"
@@ -864,6 +888,8 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert "用户目标中的其他 Workcell 条目仅是交付背景" in writer_instruction
     assert "当前为 bounded Loop 第 1 轮" in writer_instruction
     assert "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo" in writer_instruction
+    assert "必须执行 git status --short" in writer_instruction
+    assert "files 必须与真实 Git 变更一致" in writer_instruction
     assert "必须在当前 Workspace 产生非空 Git Candidate" in writer_instruction
     synthesis_instruction = next(
         item.instruction for item in agent.invocations if item.phase == "synthesis"

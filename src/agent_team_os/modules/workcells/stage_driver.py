@@ -565,7 +565,10 @@ class WorkcellStageDriver:
                     method_context,
                 )
             except ProductError as error:
-                if error.code != "EMPTY_WORKSPACE_CANDIDATE":
+                if error.code not in {
+                    "EMPTY_WORKSPACE_CANDIDATE",
+                    "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
+                }:
                     raise
                 return self._repair_outcome(
                     self.kernel.tree(tree.workcell_run.id),
@@ -1586,6 +1589,9 @@ def _delegate_invocation(
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
             "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo 等 Python 运行时生成物；"
             "运行测试后必须清理这些文件或确保其未被 Git 跟踪。"
+            "最终回复前必须执行 git status --short，并逐项核对真实变更路径；"
+            "删除或移动所有允许范围之外的文件。最终 JSON 的 files 必须与真实 Git 变更一致，"
+            "不得用允许路径名称掩盖实际越界文件。"
             "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
         )
     review_contract = ""

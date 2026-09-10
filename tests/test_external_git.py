@@ -180,11 +180,10 @@ def test_external_git_read_retries_one_transient_failure(
 
     monkeypatch.setattr(workspace_v2.subprocess, "run", transient_git)
 
-    output = workspace_v2._git(
+    output = workspace_v2._git_read(
         "fetch",
         "origin",
         environment={**os.environ},
-        max_attempts=2,
     )
 
     assert output == "ready\n"

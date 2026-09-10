@@ -76,7 +76,7 @@ class ExternalGitWorkspaceManager:
         cache_root.parent.mkdir(parents=True, exist_ok=True)
         with external_git_environment(binding.credential_reference) as environment:
             if not (cache_root / ".git").is_dir():
-                _git(
+                _git_read(
                     "clone",
                     "--no-checkout",
                     "--origin",
@@ -84,7 +84,6 @@ class ExternalGitWorkspaceManager:
                     binding.remote_uri,
                     str(cache_root),
                     environment=environment,
-                    max_attempts=2,
                 )
             else:
                 _git(
@@ -95,7 +94,7 @@ class ExternalGitWorkspaceManager:
                     cwd=cache_root,
                     environment=environment,
                 )
-            _git(
+            _git_read(
                 "fetch",
                 "--prune",
                 "--no-tags",
@@ -103,7 +102,6 @@ class ExternalGitWorkspaceManager:
                 "+refs/heads/*:refs/remotes/origin/*",
                 cwd=cache_root,
                 environment=environment,
-                max_attempts=2,
             )
             remote_main = _git(
                 "rev-parse",
@@ -242,9 +240,8 @@ class ExternalGitWorkspaceManager:
                 f"refs/heads/{workspace.candidate_branch}",
                 cwd=workspace.worktree,
                 environment=environment,
-                max_attempts=2,
             )
-            remote_candidate = _git(
+            remote_candidate = _git_read(
                 "ls-remote",
                 "--exit-code",
                 "origin",
@@ -305,13 +302,12 @@ class ExternalGitWorkspaceManager:
             / candidate_revision[:16]
         )
         with external_git_environment(workspace.credential_reference) as environment:
-            remote_candidate = _git(
+            remote_candidate = _git_read(
                 "ls-remote",
                 "--exit-code",
                 workspace.repository_uri,
                 f"refs/heads/{workspace.candidate_branch}",
                 environment=environment,
-                max_attempts=2,
             ).split("\t", 1)[0]
             if remote_candidate != candidate_revision:
                 raise _git_error(
@@ -490,7 +486,7 @@ def _validate_changed_files(
     if invalid:
         raise _git_error(
             "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
-            "Candidate 修改了 Workcell Policy 未授权路径。",
+            "Candidate 修改了 Workcell Policy 未授权路径：" + ", ".join(invalid[:20]),
         )
     for item in changed_files:
         target = worktree / item
@@ -587,6 +583,16 @@ def _git(
             f"Git {operation} 失败（exit {completed.returncode}）{suffix}",
         )
     raise AssertionError("unreachable")
+
+
+def _git_read(
+    *arguments: str,
+    cwd: Path | None = None,
+    environment: dict[str, str],
+) -> str:
+    """Retry one transient failure for idempotent remote-read operations only."""
+
+    return _git(*arguments, cwd=cwd, environment=environment, max_attempts=2)
 
 
 def _git_operation(arguments: tuple[str, ...]) -> str:
