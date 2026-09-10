@@ -469,7 +469,10 @@ def _workcell_planning_instruction(invocation: RuntimeAdapterInvocation) -> str:
         f"本次 Workcell 为 {json.dumps(keys)}。输出必须包含 workcell_acceptance 数组，"
         "每项为 workcell_key 和 acceptance 数组；"
         "后者每项含 acceptance_id 和本仓具体 responsibility。"
-        "只覆盖以上仓，完整分配任务验收项；共享验收项各自说明责任。该映射将等待 Plan Gate 批准。"
+        "只覆盖以上仓，完整分配任务验收项；共享验收项各自说明责任。"
+        "任何 Workcell 都不得执行、挂载、直接读取或修改其他 Workcell "
+        "的 Repository/Candidate；跨仓输入只能表述为消费产品冻结的 ArtifactAttachment。"
+        "该映射将等待 Plan Gate 批准。"
     )
 
 

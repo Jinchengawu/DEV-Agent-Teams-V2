@@ -347,6 +347,28 @@ def test_task_ownership_requires_actual_requirement_membership_and_complete_cove
     assert invalid.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
 
 
+def test_task_ownership_rejects_cross_workcell_candidate_execution() -> None:
+    requirements, task = planning_payloads()
+    task["workcell_acceptance"][3]["acceptance"][0]["responsibility"] = (
+        "执行 Design、Frontend、Backend 的真实 Candidate 测试并汇总结果"
+    )
+
+    with pytest.raises(ProductError) as invalid:
+        validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+    assert invalid.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
+    assert "ArtifactAttachment" in invalid.value.detail
+
+
+def test_task_ownership_allows_cross_workcell_artifact_consumption() -> None:
+    requirements, task = planning_payloads()
+    task["workcell_acceptance"][3]["acceptance"][0]["responsibility"] = (
+        "消费 Frontend Candidate ArtifactAttachment 并验证跨层行为"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
 def test_legacy_scope_and_finding_fields_preserve_original_hash_inputs() -> None:
     legacy_snapshot = _snapshot().model_dump(mode="json")
     legacy_snapshot.pop("review_scope")
