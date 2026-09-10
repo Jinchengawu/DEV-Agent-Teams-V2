@@ -167,6 +167,7 @@ def test_external_git_read_retries_one_transient_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attempts = 0
+    delays: list[float] = []
 
     def transient_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         nonlocal attempts
@@ -179,6 +180,7 @@ def test_external_git_read_retries_one_transient_failure(
         )
 
     monkeypatch.setattr(workspace_v2.subprocess, "run", transient_git)
+    monkeypatch.setattr(workspace_v2.time, "sleep", delays.append)
 
     output = workspace_v2._git_read(
         "fetch",
@@ -188,6 +190,34 @@ def test_external_git_read_retries_one_transient_failure(
 
     assert output == "ready\n"
     assert attempts == 2
+    assert delays == [1.0]
+
+
+def test_external_git_read_exhausts_three_attempts_with_bounded_backoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def failed_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal attempts
+        attempts += 1
+        return subprocess.CompletedProcess(
+            args=["git", "fetch"],
+            returncode=128,
+            stdout="",
+            stderr="fatal: transient transport failure\n",
+        )
+
+    monkeypatch.setattr(workspace_v2.subprocess, "run", failed_git)
+    monkeypatch.setattr(workspace_v2.time, "sleep", delays.append)
+
+    with pytest.raises(ProductError) as raised:
+        workspace_v2._git_read("fetch", "origin", environment={**os.environ})
+
+    assert raised.value.code == "EXTERNAL_GIT_COMMAND_FAILED"
+    assert attempts == 3
+    assert delays == [1.0, 2.0]
 
 
 def _seed_bare_repository(tmp_path: Path) -> Path:

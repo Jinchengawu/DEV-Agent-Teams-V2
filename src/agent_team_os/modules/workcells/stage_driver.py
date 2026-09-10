@@ -567,6 +567,7 @@ class WorkcellStageDriver:
             except ProductError as error:
                 if error.code not in {
                     "EMPTY_WORKSPACE_CANDIDATE",
+                    "EXTERNAL_GIT_COMMAND_FAILED",
                     "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
                 }:
                     raise
@@ -943,13 +944,39 @@ class WorkcellStageDriver:
         if child.delegate_purpose == "workspace_write":
             workspace_snapshot = tree.workcell_run.workcell_snapshot.workspace
             binding = self.binding_resolver(workspace_snapshot.workspace_binding_id)
-            writer = self.workspaces.prepare_writer(
-                workspace_binding_id=workspace_snapshot.workspace_binding_id,
-                delivery_id=delivery.id,
-                workcell_key=tree.workcell_run.workcell_key,
-                binding=binding,
-                expected_base_revision=workspace_snapshot.base_revision,
-            )
+            try:
+                writer = self.workspaces.prepare_writer(
+                    workspace_binding_id=workspace_snapshot.workspace_binding_id,
+                    delivery_id=delivery.id,
+                    workcell_key=tree.workcell_run.workcell_key,
+                    binding=binding,
+                    expected_base_revision=workspace_snapshot.base_revision,
+                )
+            except ProductError as error:
+                diagnostic_reference = self.artifacts.put_json(
+                    {
+                        "contract_version": "workcell-workspace-diagnostic-v1",
+                        "agent_run_id": child.id,
+                        "failure_code": error.code,
+                        "failure_detail": _redact(error.detail),
+                        "loop_iteration": tree.workcell_run.loop_iteration,
+                        "method_id": method_id,
+                        "phase": "workspace_prepare",
+                        "runtime_identity": child.runtime_identity,
+                        "stage_path": tree.workcell_run.stage_path,
+                        "workcell_key": tree.workcell_run.workcell_key,
+                    }
+                )
+                raise _ProducerExecutionError(
+                    error,
+                    (
+                        ArtifactEnvelope(
+                            contract_id="workcell-workspace-diagnostic-v1",
+                            reference=diagnostic_reference,
+                            sha256=diagnostic_reference.sha256,
+                        ),
+                    ),
+                ) from error
             invocation = _delegate_invocation(
                 delivery,
                 tree,

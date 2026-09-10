@@ -625,16 +625,18 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
         "fatal_review_calls",
         "writes_candidate",
         "writes_forbidden_path",
+        "workspace_prepare_error",
         "expected_status",
     ),
     [
-        (frozenset(), frozenset(), frozenset(), True, False, "succeeded"),
-        (frozenset({1}), frozenset(), frozenset(), True, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), False, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), True, True, "repair_required"),
-        (frozenset({2}), frozenset({1}), frozenset(), True, False, "repair_required"),
-        (frozenset(), frozenset({1}), frozenset({2}), True, False, "fatal"),
-        (frozenset({1}), frozenset(), frozenset({2}), True, False, "fatal"),
+        (frozenset(), frozenset(), frozenset(), True, False, False, "succeeded"),
+        (frozenset({1}), frozenset(), frozenset(), True, False, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), False, False, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), True, True, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), True, False, True, "repair_required"),
+        (frozenset({2}), frozenset({1}), frozenset(), True, False, False, "repair_required"),
+        (frozenset(), frozenset({1}), frozenset({2}), True, False, False, "fatal"),
+        (frozenset({1}), frozenset(), frozenset({2}), True, False, False, "fatal"),
     ],
 )
 def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
@@ -644,7 +646,9 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     fatal_review_calls: frozenset[int],
     writes_candidate: bool,
     writes_forbidden_path: bool,
+    workspace_prepare_error: bool,
     expected_status: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
@@ -739,6 +743,17 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         pull_requests=pull_requests,
         knowledge_guard=knowledge_guard,
     )
+    if workspace_prepare_error:
+
+        def fail_prepare_writer(**_kwargs: object) -> object:
+            raise ProductError(
+                code="EXTERNAL_GIT_COMMAND_FAILED",
+                title="Git 读取失败",
+                detail="Git fetch 失败（exit 128）：temporary network failure",
+                repair="由 ACWM bounded Loop 重试。",
+            )
+
+        monkeypatch.setattr(driver.workspaces, "prepare_writer", fail_prepare_writer)
     requirements = artifact_storage.put_json(
         {
             "artifact_kind": "requirements",
@@ -804,6 +819,20 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         }
         failed_attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
         assert failed_attempt.result_artifact_sha256 == diagnostic.sha256
+        return
+    if workspace_prepare_error:
+        assert tree.workcell_run.status == "failed"
+        assert tree.workcell_run.error_code == "EXTERNAL_GIT_COMMAND_FAILED"
+        assert not tree.reviews
+        writer = next(
+            item for item in tree.agent_runs if item.delegate_purpose == "workspace_write"
+        )
+        diagnostic = writer.artifact_envelopes[0]
+        assert diagnostic.contract_id == "workcell-workspace-diagnostic-v1"
+        assert diagnostic.reference is not None
+        payload = artifact_storage.get_json(diagnostic.reference)
+        assert payload["phase"] == "workspace_prepare"
+        assert payload["failure_code"] == "EXTERNAL_GIT_COMMAND_FAILED"
         return
     if writes_forbidden_path:
         assert tree.workcell_run.status == "failed"

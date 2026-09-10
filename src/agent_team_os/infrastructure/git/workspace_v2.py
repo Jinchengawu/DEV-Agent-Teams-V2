@@ -4,6 +4,7 @@ import hashlib
 import re
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -575,6 +576,7 @@ def _git(
         if completed.returncode == 0:
             return completed.stdout
         if attempt < max_attempts:
+            time.sleep(float(attempt))
             continue
         diagnostic = _redact_git_diagnostic(completed.stderr, environment)
         suffix = f"：{diagnostic}" if diagnostic else "；Git 未提供错误详情。"
@@ -592,7 +594,7 @@ def _git_read(
 ) -> str:
     """Retry one transient failure for idempotent remote-read operations only."""
 
-    return _git(*arguments, cwd=cwd, environment=environment, max_attempts=2)
+    return _git(*arguments, cwd=cwd, environment=environment, max_attempts=3)
 
 
 def _git_operation(arguments: tuple[str, ...]) -> str:
