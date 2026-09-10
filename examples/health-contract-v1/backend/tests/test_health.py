@@ -6,6 +6,7 @@ import importlib.util
 import json
 import threading
 import unittest
+from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -62,6 +63,21 @@ class HealthHTTP(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             urlopen(f"{self.url}/unknown", timeout=5)
         self.assertEqual(error.exception.code, 404)
+
+    def test_get_and_head_are_no_store_with_empty_head_body(self) -> None:
+        connection = HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        try:
+            for method in ("GET", "HEAD"):
+                with self.subTest(method=method):
+                    connection.request(method, "/health?status=degraded")
+                    response = connection.getresponse()
+                    body = response.read()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                    if method == "HEAD":
+                        self.assertEqual(body, b"")
+        finally:
+            connection.close()
 
 
 if __name__ == "__main__":
