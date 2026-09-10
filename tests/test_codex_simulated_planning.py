@@ -51,6 +51,46 @@ def test_codex_task_preserves_explicit_four_workcell_acceptance_for_plan_gate() 
     assert "workcell_acceptance" not in legacy.model_dump(mode="json")
 
 
+def test_codex_task_planning_preserves_frozen_literals_and_constraints() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, task = planning_payloads()
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+
+    asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    prompt = runner.prompts[0]
+    assert "exact literal" in prompt
+    assert "const" in prompt
+    assert "Canonical Identifier" in prompt
+    assert "不得弱化为任意非空值" in prompt
+
+
+def test_codex_task_planning_keeps_release_authority_outside_workcell_responsibilities() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, task = planning_payloads()
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+
+    asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    prompt = runner.prompts[0]
+    assert "Repository Candidate/Artifact" in prompt
+    assert "ReleaseBundle" in prompt
+    assert "resume-forward" in prompt
+    assert "不得分配给任何 Workcell" in prompt
+
+
 def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:
     from agent_team_os.delivery import RequirementArtifact
     from agent_team_os.shared.errors import ProductError

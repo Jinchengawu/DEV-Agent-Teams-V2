@@ -79,6 +79,8 @@ Return raw JSON only with: title, instructions, acceptance_ids.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
@@ -188,6 +190,8 @@ Return raw JSON only with: title, instructions, acceptance_ids.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
@@ -219,6 +223,10 @@ def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
         "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
         "数组元素包含 acceptance_id 与本仓具体 responsibility。只覆盖以上 Workcell，"
         "所有任务验收 ID 均须有人负责。共享验收项必须分别说明各仓责任，不能复制全局要求。"
+        "Workcell responsibility 只能描述本仓 Repository Candidate/Artifact 及其机器验证。"
+        "Plan/Design/Release Gate、Review 阻断、ReleaseBundle、PR 状态、Apply、"
+        "resume-forward 和 ReleaseManifest 属于 Agent-Team-OS 产品控制面，"
+        "不得分配给任何 Workcell，也不得写成 QA Repository 的交付责任。"
         "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
     )
 
