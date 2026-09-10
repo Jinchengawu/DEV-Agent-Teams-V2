@@ -314,7 +314,7 @@ Main planning
 固定不变量：
 
 - 一个 ACWM Stage Attempt 对应一个 `WorkcellRun`；Repair 由 ACWM bounded Loop 创建新 Run。
-  Workcell Execution 将同 Stage 最近一轮的失败代码、机器 case、已校验 Blocking
+  Workcell Execution 将同 Stage 最近一轮的失败代码、机器 case 与日志正文、已校验 Blocking
   Finding 与 Delegate 诊断冻结为 `workcell-repair-context-v1` 传入新 Run，避免
   无失败证据的盲目重试；不传 Session、Memory 或其他仓库挂载。
 - Child 深度固定为 1；Main 最多三个 Child、并发最多两个、Writer 最多一个。

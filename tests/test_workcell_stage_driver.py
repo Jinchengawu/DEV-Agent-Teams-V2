@@ -274,6 +274,7 @@ def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Pa
             "failure_detail": "Writer did not commit a candidate.",
         }
     )
+    log = artifacts.put_bytes(b"KeyError: 'payload'\n", media_type="text/plain")
     failed_tree = SimpleNamespace(
         workcell_run=SimpleNamespace(
             stage_path="backend-repair/backend",
@@ -298,6 +299,7 @@ def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Pa
                         "failed": 1,
                         "skipped": 0,
                         "result": result.model_dump(mode="json"),
+                        "log": log.model_dump(mode="json"),
                     }
                 ]
             },
@@ -370,6 +372,7 @@ def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Pa
         "id": "test_health_head_matches_get",
         "status": "failed",
     }
+    assert payload["candidate_verification"]["steps"][0]["log"] == "KeyError: 'payload'\n"
     assert payload["blocking_reviews"][0]["blocking_findings"][0]["code"] == "BACKEND-001"
     assert payload["delegate_diagnostics"][0]["content"]["failure_code"] == (
         "EMPTY_WORKSPACE_CANDIDATE"

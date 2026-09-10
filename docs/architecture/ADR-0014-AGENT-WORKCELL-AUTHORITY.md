@@ -171,7 +171,7 @@ QA Preparation 虽共用 QA Workspace Snapshot，但保持 Artifact-only 职责�
 ACWM 仍然拥有 bounded Loop 和新 Stage Attempt 的创建权威；Workcell Execution
 在编译新 `WorkcellRun` 输入时，必须将同 Stage 最近一次失败冻结为内容
 寻址的 `workcell-repair-context-v1`。该 Artifact 只包含产品已持久化的失败代码、
-机器验证 case 结果、已校验 Blocking Finding 和失败 Delegate 诊断；不包含
+机器验证 case 结果与内容寻址日志正文、已校验 Blocking Finding 和失败 Delegate 诊断；不包含
 Session、Memory、聊天历史或额外 Repository 挂载。
 
 新 Writer 必须对机器失败和有效 Blocking Finding 执行定向修复。Delegate 诊断中

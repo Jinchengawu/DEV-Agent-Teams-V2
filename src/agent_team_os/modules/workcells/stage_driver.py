@@ -823,14 +823,21 @@ class WorkcellStageDriver:
                     if not isinstance(raw_step, dict):
                         continue
                     result_payload: object | None = None
+                    log_payload: object | None = None
                     result = raw_step.get("result")
                     if isinstance(result, dict):
                         try:
-                            result_payload = self.artifacts.get_json(
-                                ArtifactReference.model_validate(result)
-                            )
+                            reference = ArtifactReference.model_validate(result)
+                            result_payload = self._artifact_contents((reference,))[0]["content"]
                         except (KeyError, OSError, ValueError):
                             result_payload = None
+                    log = raw_step.get("log")
+                    if isinstance(log, dict):
+                        try:
+                            reference = ArtifactReference.model_validate(log)
+                            log_payload = self._artifact_contents((reference,))[0]["content"]
+                        except (KeyError, OSError, ValueError):
+                            log_payload = None
                     steps.append(
                         {
                             key: raw_step.get(key)
@@ -843,7 +850,7 @@ class WorkcellStageDriver:
                                 "skipped",
                             )
                         }
-                        | {"result": result_payload}
+                        | {"result": result_payload, "log": log_payload}
                     )
             verification = {
                 "candidate_sha": previous.verification.candidate_sha,
