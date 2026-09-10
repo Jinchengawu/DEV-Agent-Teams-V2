@@ -1360,11 +1360,29 @@ class WorkcellStageDriver:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
             raise
-        citations = self._validate_knowledge_citations(
-            delivery,
-            invocation.stage_path,
-            output.knowledge_citation_ids,
-        )
+        try:
+            citations = self._validate_knowledge_citations(
+                delivery,
+                invocation.stage_path,
+                output.knowledge_citation_ids,
+            )
+        except ProductError as error:
+            if error.code not in {
+                "KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+                "KNOWLEDGE_CITATION_REQUIRED",
+            }:
+                raise
+            raise ProductError(
+                code=error.code,
+                title=error.title,
+                detail=_citation_validation_failure_detail(
+                    error,
+                    returned=output.knowledge_citation_ids,
+                    allowed=invocation.allowed_knowledge_citation_ids,
+                ),
+                repair=error.repair,
+                status_code=error.status_code,
+            ) from error
         return output.model_copy(update={"knowledge_citation_ids": citations})
 
     def _attachment_payload(self, tree: WorkcellRunTree) -> str:
@@ -1674,6 +1692,19 @@ def _validated_review_output(
 
 def _allowed_paths(workcell_key: str) -> tuple[str, ...]:
     return product_workcell_allowed_paths(workcell_key)
+
+
+def _citation_validation_failure_detail(
+    error: ProductError,
+    *,
+    returned: tuple[str, ...],
+    allowed: tuple[str, ...],
+) -> str:
+    return (
+        f"{error.detail}；"
+        f"returned={json.dumps(returned, ensure_ascii=False)}；"
+        f"allowed={json.dumps(allowed, ensure_ascii=False)}"
+    )
 
 
 def _success_condition(stage_path: str) -> str:

@@ -285,6 +285,26 @@ def test_review_output_must_bind_the_verified_candidate(
     assert invalid.value.code == "WORKCELL_REVIEW_EVIDENCE_MISMATCH"
 
 
+def test_citation_validation_failure_detail_records_only_id_sets() -> None:
+    error = ProductError(
+        code="KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+        title="引用不在上下文",
+        detail="Agent 返回了不属于冻结 Context 的 Citation",
+        repair="重新执行。",
+    )
+
+    detail = workcell_stage_driver._citation_validation_failure_detail(
+        error,
+        returned=("citation-returned",),
+        allowed=("citation-allowed",),
+    )
+
+    assert detail == (
+        "Agent 返回了不属于冻结 Context 的 Citation；"
+        'returned=["citation-returned"]；allowed=["citation-allowed"]'
+    )
+
+
 class DeterministicPRSurface:
     def __init__(self) -> None:
         self.calls = 0

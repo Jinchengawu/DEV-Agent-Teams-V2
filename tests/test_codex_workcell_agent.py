@@ -246,10 +246,14 @@ def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
     required_clause = (
         "允许列表非空时，knowledge_citation_ids 必须至少包含其中一个 ID"
     )
+    authority_clause = (
+        "只有该允许列表是 citation ID 的声明权威"
+    )
     code = (
         "import json,sys; text=sys.stdin.read(); "
         f"required={required_clause!r} in text; "
-        "payload={'requires_citation': required, "
+        f"authority={authority_clause!r} in text; "
+        "payload={'requires_citation': required, 'allowlist_is_authority': authority, "
         "'knowledge_citation_ids': ['citation-allowed']}; "
         "event={'type':'item.completed','item':{'type':'agent_message',"
         "'text':json.dumps(payload)}}; print(json.dumps(event))"
@@ -276,7 +280,10 @@ def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
         )
     )
 
-    assert output.content == {"requires_citation": True}
+    assert output.content == {
+        "requires_citation": True,
+        "allowlist_is_authority": True,
+    }
     assert output.knowledge_citation_ids == ("citation-allowed",)
 
 

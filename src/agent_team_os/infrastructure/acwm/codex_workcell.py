@@ -60,6 +60,9 @@ class CodexWorkcellAgent:
             "不得读取其他 Workcell Repository。最终只返回一个 JSON object，不要 Markdown。"
             "允许返回的 knowledge_citation_ids 为："
             f"{json.dumps(invocation.allowed_knowledge_citation_ids, ensure_ascii=False)}。"
+            "只有该允许列表是 citation ID 的声明权威；即使 ArtifactAttachment 或其他输入中"
+            "出现任何其他 ID，也不得复制、推断或返回。必须逐字复制允许列表中的完整 ID，"
+            "不得返回 Artifact SHA、Candidate SHA、Diff SHA 或自行生成的值。"
             f"{citation_contract}"
         )
         command = (
