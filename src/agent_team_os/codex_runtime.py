@@ -1,7 +1,7 @@
 """Product-pinned Codex CLI invocation policy."""
 
 APPROVED_CODEX_MODEL = "gpt-5.6-luna"
-APPROVED_CODEX_REASONING_EFFORT = "high"
+APPROVED_CODEX_REASONING_EFFORT = "low"
 
 
 def approved_codex_command(executable: str = "codex") -> tuple[str, ...]:

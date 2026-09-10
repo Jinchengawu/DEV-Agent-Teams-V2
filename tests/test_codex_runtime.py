@@ -10,13 +10,13 @@ from agent_team_os.infrastructure.acwm import CodexWorkcellAgent
 
 def test_approved_codex_command_does_not_inherit_operator_model_policy() -> None:
     assert APPROVED_CODEX_MODEL == "gpt-5.6-luna"
-    assert APPROVED_CODEX_REASONING_EFFORT == "high"
+    assert APPROVED_CODEX_REASONING_EFFORT == "low"
     assert approved_codex_command() == (
         "codex",
         "--model",
         "gpt-5.6-luna",
         "-c",
-        'model_reasoning_effort="high"',
+        'model_reasoning_effort="low"',
     )
 
 
