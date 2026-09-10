@@ -84,6 +84,7 @@ class ExternalGitWorkspaceManager:
                     binding.remote_uri,
                     str(cache_root),
                     environment=environment,
+                    max_attempts=2,
                 )
             else:
                 _git(
@@ -102,6 +103,7 @@ class ExternalGitWorkspaceManager:
                 "+refs/heads/*:refs/remotes/origin/*",
                 cwd=cache_root,
                 environment=environment,
+                max_attempts=2,
             )
             remote_main = _git(
                 "rev-parse",
@@ -240,6 +242,7 @@ class ExternalGitWorkspaceManager:
                 f"refs/heads/{workspace.candidate_branch}",
                 cwd=workspace.worktree,
                 environment=environment,
+                max_attempts=2,
             )
             remote_candidate = _git(
                 "ls-remote",
@@ -308,6 +311,7 @@ class ExternalGitWorkspaceManager:
                 workspace.repository_uri,
                 f"refs/heads/{workspace.candidate_branch}",
                 environment=environment,
+                max_attempts=2,
             ).split("\t", 1)[0]
             if remote_candidate != candidate_revision:
                 raise _git_error(
@@ -542,36 +546,47 @@ def _git(
     *arguments: str,
     cwd: Path | None = None,
     environment: dict[str, str],
+    max_attempts: int = 1,
 ) -> str:
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be positive")
     operation = _git_operation(arguments)
-    try:
-        completed = subprocess.run(
-            ["git", *arguments],
-            cwd=cwd,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise _git_error(
-            "EXTERNAL_GIT_COMMAND_FAILED",
-            f"Git {operation} 超过 120 秒，命令已终止。",
-        ) from error
-    except OSError as error:
-        raise _git_error(
-            "EXTERNAL_GIT_COMMAND_FAILED",
-            f"Git {operation} 无法启动或完成。",
-        ) from error
-    if completed.returncode != 0:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            completed = subprocess.run(
+                ["git", *arguments],
+                cwd=cwd,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired as error:
+            if attempt < max_attempts:
+                continue
+            raise _git_error(
+                "EXTERNAL_GIT_COMMAND_FAILED",
+                f"Git {operation} 超过 120 秒，命令已终止。",
+            ) from error
+        except OSError as error:
+            if attempt < max_attempts:
+                continue
+            raise _git_error(
+                "EXTERNAL_GIT_COMMAND_FAILED",
+                f"Git {operation} 无法启动或完成。",
+            ) from error
+        if completed.returncode == 0:
+            return completed.stdout
+        if attempt < max_attempts:
+            continue
         diagnostic = _redact_git_diagnostic(completed.stderr, environment)
         suffix = f"：{diagnostic}" if diagnostic else "；Git 未提供错误详情。"
         raise _git_error(
             "EXTERNAL_GIT_COMMAND_FAILED",
             f"Git {operation} 失败（exit {completed.returncode}）{suffix}",
         )
-    return completed.stdout
+    raise AssertionError("unreachable")
 
 
 def _git_operation(arguments: tuple[str, ...]) -> str:

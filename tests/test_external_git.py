@@ -163,6 +163,34 @@ def test_external_git_failure_keeps_bounded_redacted_diagnostic(
     assert "[REDACTED]" in raised.value.detail
 
 
+def test_external_git_read_retries_one_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def transient_git(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal attempts
+        attempts += 1
+        return subprocess.CompletedProcess(
+            args=["git", "fetch"],
+            returncode=128 if attempts == 1 else 0,
+            stdout="ready\n" if attempts == 2 else "",
+            stderr="fatal: transient transport failure\n" if attempts == 1 else "",
+        )
+
+    monkeypatch.setattr(workspace_v2.subprocess, "run", transient_git)
+
+    output = workspace_v2._git(
+        "fetch",
+        "origin",
+        environment={**os.environ},
+        max_attempts=2,
+    )
+
+    assert output == "ready\n"
+    assert attempts == 2
+
+
 def _seed_bare_repository(tmp_path: Path) -> Path:
     remote = tmp_path / "remote.git"
     seed = tmp_path / "seed"
