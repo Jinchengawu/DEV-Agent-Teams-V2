@@ -14,6 +14,7 @@ from agent_team_os.modules.workcells.verification_application import (
     VerificationProfileCatalog,
     validate_test_result,
 )
+from agent_team_os.modules.workcells.verification_evidence import passed_counts
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
 
@@ -34,6 +35,28 @@ def test_product_profiles_refuse_zero_tests_and_do_not_publish_unqualified_pnpm(
         "node-native-test-v1",
         "# tests 2\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n",
     )
+
+
+def test_qa_result_contract_accepts_versioned_acceptance_case_names() -> None:
+    case_ids = (
+        "test_health_e2e.HealthE2E.test_qa_001_all_states_schema_version_and_accessible_labels",
+        "test_health_e2e.HealthE2E.test_qa_002_get_head_cache_control_status_and_empty_body",
+        "test_health_e2e.HealthE2E.test_qa_003_invalid_status_preserves_error_semantics",
+        "test_health_e2e.HealthE2E.test_qa_004_request_and_schema_failure_degrade_accessibly",
+        "test_health_e2e.HealthE2E.test_repository_identity_matches_bundle",
+    )
+    assert passed_counts("qa", (5, 5, 0, 0, case_ids))
+    assert not passed_counts("qa", (4, 4, 0, 0, case_ids[:3] + case_ids[4:]))
+    lookalike = (case_ids[0].replace("test_qa_001_", "test_qa_0010_"), *case_ids[1:])
+    assert not passed_counts("qa", (5, 5, 0, 0, lookalike))
+
+
+def test_qa_result_contract_keeps_legacy_health_case_compatibility() -> None:
+    case_ids = tuple(
+        "test_health_e2e.HealthE2E." + name
+        for name in ("test_ok", "test_degraded", "test_unavailable", "test_invalid_response")
+    )
+    assert passed_counts("qa", (4, 4, 0, 0, case_ids))
 
 
 def test_qualification_binds_product_profile_and_rejects_self_consistent_forgery() -> None:

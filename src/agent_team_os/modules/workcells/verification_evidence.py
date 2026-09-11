@@ -26,6 +26,20 @@ QA_CASES = frozenset(
     "test_health_e2e.HealthE2E." + name
     for name in ("test_ok", "test_degraded", "test_unavailable", "test_invalid_response")
 )
+QA_ACCEPTANCE_CASE_PREFIXES = tuple(f".test_qa_{index:03d}" for index in range(1, 5))
+
+
+def qa_cases_covered(ids: tuple[str, ...]) -> bool:
+    return QA_CASES.issubset(ids) or all(
+        any(
+            prefix in case_id
+            and (
+                (suffix := case_id.split(prefix, 1)[1]) == "" or suffix.startswith("_")
+            )
+            for case_id in ids
+        )
+        for prefix in QA_ACCEPTANCE_CASE_PREFIXES
+    )
 
 
 def command_values(snapshot: VerificationQualificationV2, root: Path, index: int) -> dict[str, str]:
@@ -96,7 +110,7 @@ def passed_counts(step: str, counts: tuple[int, int, int, int, tuple[str, ...]])
         and len(ids) == discovered
         and len(set(ids)) == len(ids)
         and all(ids)
-        and (step != "qa" or QA_CASES.issubset(ids))
+        and (step != "qa" or qa_cases_covered(ids))
         and (
             step != "backend-http"
             or set(ids) == {"http:ok", "http:degraded", "http:unavailable", "http:invalid"}
