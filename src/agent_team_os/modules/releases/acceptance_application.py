@@ -12,7 +12,11 @@ from ...knowledge_context_contract import KNOWLEDGE_CONTEXT_STAGE_PATHS
 from ...readiness import snapshot_delivery_build_identity
 from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_bytes, sha256_json
-from ...shared.review_scope import compile_review_scope, validate_review_output
+from ...shared.review_scope import (
+    INVALID_REVIEW_CODES,
+    compile_review_scope,
+    validate_review_output,
+)
 from ...shared.verification import VerificationQualificationV2, VerificationSnapshot
 from ..agents import AgentRun, AgentRunLedger
 from ..artifacts import ArtifactReference, ArtifactStorageError, ContentAddressedArtifactStorage
@@ -768,12 +772,23 @@ class ReleaseAcceptanceVerifierV2:
 
                 for slot_key, assignment in assignments.items():
                     child = children_by_slot[slot_key]
-                    child_attempts = attempts_by_run.get(child.id, [])
+                    child_attempts = sorted(
+                        attempts_by_run.get(child.id, []), key=lambda item: item.ordinal
+                    )
                     required_access = {
                         "workspace_write": "workspace_write",
                         "artifact": "artifact_only",
                         "review": "candidate_read",
                     }[assignment.delegate_purpose]
+                    attempt_sequence_ok = (
+                        len(child_attempts) == 1
+                        or (assignment.delegate_purpose == "review" and len(child_attempts) == 2)
+                    ) and [
+                        (item.phase, item.ordinal) for item in child_attempts
+                    ] == [
+                        ("delegate", ordinal)
+                        for ordinal in range(1, len(child_attempts) + 1)
+                    ]
                     if (
                         child.delivery_id != run.delivery_id
                         or child.pipeline_revision_id != snapshot.pipeline_revision_id
@@ -786,10 +801,8 @@ class ReleaseAcceptanceVerifierV2:
                         or child.delegate_purpose != assignment.delegate_purpose
                         or child.workspace_access != required_access
                         or child.status != "succeeded"
-                        or len(child_attempts) != 1
-                        or child_attempts[0].phase != "delegate"
-                        or child_attempts[0].ordinal != 1
-                        or child.attempt_id != child_attempts[0].id
+                        or not attempt_sequence_ok
+                        or child.attempt_id != child_attempts[-1].id
                         or not self._agent_and_attempts_match_binding(
                             child,
                             child_attempts,
@@ -814,23 +827,32 @@ class ReleaseAcceptanceVerifierV2:
         if binding is None:
             return False
         frozen = binding.deployment_snapshot
-        return not (
-            run.deployment_snapshot != frozen
-            or run.resolved_binding_hash != binding.resolved_provider_binding_hash
-            or any(
-                not _run_matches_frozen_binding(
+        if run.deployment_snapshot != frozen or run.resolved_binding_hash != (
+            binding.resolved_provider_binding_hash
+        ):
+            return False
+        for index, attempt in enumerate(attempts):
+            retried_failure = (
+                len(attempts) == 2
+                and index == 0
+                and attempt.status == "failed"
+                and attempt.error_code in INVALID_REVIEW_CODES
+            )
+            if (
+                not _run_and_attempt_identity_matches(
                     run,
                     attempt,
                     frozen,
                     expected_adapter="codex.cli",
                 )
-                or attempt.error_code is not None
+                or (attempt.status != "succeeded" and not retried_failure)
+                or (attempt.error_code is not None and not retried_failure)
                 or attempt.finished_at is None
                 or attempt.result_artifact_sha256 is None
                 or not self._artifact_sha_exists(attempt.result_artifact_sha256)
-                for attempt in attempts
-            )
-        )
+            ):
+                return False
+        return True
 
     def _main_and_attempts_match_binding(
         self,

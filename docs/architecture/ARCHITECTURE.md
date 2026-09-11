@@ -824,6 +824,7 @@ Acceptance evidence required:
 | `ARCH-20260911-04` | 2026-09-11 | `Implemented/Verified` | Codex AgentAttempt 显式冻结 Method Project Root，禁止 `{project-root}` 误解析到控券 | ADR-0014 边界内加固 | Adapter 指令绑定与 Overlay 专项通过；四仓 Live Gate 待加载本 Revision 重跑 |
 | `ARCH-20260911-05` | 2026-09-11 | `Implemented/Verified` | 同一 Main Run 对 synthesis 单一 JSON object 输出合同错误进行一次可观察 Attempt 重试 | ADR-0014 修订 | Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 | `ARCH-20260911-06` | 2026-09-11 | `Implemented/Verified` | Push 成功但 SHA 回读/Receipt 丢失时，同 Bundle Candidate 可恢复 Receipt 且不重复 Push | ADR-0015 修订 | 丢失回读回归先红后绿；四仓 Receipt、Manifest、Health 与 Lease 终结通过 |
+| `ARCH-20260911-07` | 2026-09-11 | `Implemented/Verified` | Release Acceptance 接纳 Workcell Kernel 已允许的同 Reviewer Child 有界契约重试，不把合法重试误判为隐藏或失败 Attempt | ADR-0019 修订 | 单次成功与 `failed(INVALID_REVIEW_CODES) → succeeded` 正例、其他错误与越界序列反例；真实 QA Reviewer 重试差异已定位 |
 
 ## 14. Plan Architecture Review 与文档对账
 

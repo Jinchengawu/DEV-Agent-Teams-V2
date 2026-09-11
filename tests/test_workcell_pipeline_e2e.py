@@ -147,13 +147,16 @@ class FourRepositoryAgent:
         *,
         invalid_design_runs: int = 0,
         invalid_synthesis_workcell: str | None = None,
+        invalid_review_attempt_workcell: str | None = None,
     ) -> None:
         self.runtime_identity = runtime_identity
         self.invocations: list[WorkcellAgentInvocation] = []
         self.invalid_design_runs = invalid_design_runs
         self.design_run_ids: list[str] = []
         self.invalid_synthesis_workcell = invalid_synthesis_workcell
+        self.invalid_review_attempt_workcell = invalid_review_attempt_workcell
         self.synthesis_calls: dict[str, int] = {}
+        self.review_calls: dict[str, int] = {}
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -197,6 +200,9 @@ class FourRepositoryAgent:
             )
             content = {"changed_files": [source, test]}
         elif invocation.workspace_access == "candidate_read":
+            review_key = invocation.agent_run_id
+            review_calls = self.review_calls.get(review_key, 0) + 1
+            self.review_calls[review_key] = review_calls
             review_evidence = json.loads(
                 invocation.instruction.split("Candidate Review Evidence：", 1)[1].splitlines()[0]
             )
@@ -207,6 +213,11 @@ class FourRepositoryAgent:
                 "blocking_findings": [],
                 "method_id": invocation.method_id,
             }
+            if (
+                invocation.workcell_key == self.invalid_review_attempt_workcell
+                and review_calls == 1
+            ):
+                content["reviewed_diff_sha256"] = "f" * 64
             if (
                 invocation.workcell_key == "design"
                 and self.design_run_ids.index(invocation.workcell_run_id) < self.invalid_design_runs
@@ -297,6 +308,15 @@ def test_main_synthesis_retry_remains_release_acceptable(tmp_path: Path) -> None
     )
 
 
+def test_review_contract_retry_remains_release_acceptable(tmp_path: Path) -> None:
+    asyncio.run(
+        _run_four_repository_pipeline(
+            tmp_path,
+            invalid_review_attempt_workcell="qa",
+        )
+    )
+
+
 @pytest.mark.parametrize("invalid_design_runs", [1, 4])
 def test_invalid_review_repairs_are_bounded_and_preserve_failed_evidence(
     tmp_path: Path,
@@ -310,6 +330,7 @@ async def _run_four_repository_pipeline(
     *,
     invalid_design_runs: int = 0,
     invalid_synthesis_workcell: str | None = None,
+    invalid_review_attempt_workcell: str | None = None,
     scenario: PipelineScenario | None = None,
 ) -> None:
     root = Path(__file__).parents[1]
@@ -433,6 +454,7 @@ async def _run_four_repository_pipeline(
             "codex-cli:acceptance-test",
             invalid_design_runs=invalid_design_runs,
             invalid_synthesis_workcell=invalid_synthesis_workcell,
+            invalid_review_attempt_workcell=invalid_review_attempt_workcell,
         )
         if scenario is None
         else scenario.agent
@@ -626,6 +648,49 @@ async def _run_four_repository_pipeline(
             ("synthesis", "succeeded"),
         ]
         assert attempts[1].error_code == "CODEX_WORKCELL_OUTPUT_INVALID"
+
+    if invalid_review_attempt_workcell is not None:
+        retried_tree = next(
+            tree
+            for tree in kernel.list_delivery(delivery.id)
+            if tree.workcell_run.workcell_key == invalid_review_attempt_workcell
+            and tree.workcell_run.stage_path == "qa-delivery-repair/qa-delivery"
+            and tree.workcell_run.status == "succeeded"
+        )
+        retried_reviewers = [
+            item
+            for item in retried_tree.agent_runs
+            if item.delegate_purpose == "review"
+            and len(
+                [
+                    attempt
+                    for attempt in retried_tree.attempts
+                    if attempt.agent_run_id == item.id
+                ]
+            )
+            == 2
+        ]
+        assert len(retried_reviewers) == 2
+        attempts = sorted(
+            (
+                item
+                for item in retried_tree.attempts
+                if item.agent_run_id == retried_reviewers[0].id
+            ),
+            key=lambda item: item.ordinal,
+        )
+        assert [(item.ordinal, item.status, item.error_code) for item in attempts] == [
+            (1, "failed", "WORKCELL_REVIEW_EVIDENCE_MISMATCH"),
+            (2, "succeeded", None),
+        ]
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "UPDATE agent_attempts SET error_code='WORKCELL_REVIEW_FAILED' WHERE id=?",
+                (attempts[0].id,),
+            )
+        rejected = verifier.verify(project_id=delivery.project_id, delivery_id=delivery.id)
+        assert _check_status(rejected, "CODEX_WORKCELL_ATTEMPTS_VERIFIED") == "failed"
+        return
 
     if scenario is not None:
         scenario.assert_completed(completed, kernel, artifacts, acceptance)
