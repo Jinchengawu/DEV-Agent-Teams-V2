@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from ...codex_runtime import approved_workcell_codex_command
+from ...codex_runtime import approved_workcell_codex_command, approved_writer_codex_command
 from ...modules.workcells.stage_driver import (
     WorkcellAgentInvocation,
     WorkcellAgentOutput,
@@ -37,6 +37,9 @@ class CodexWorkcellAgent:
         if not resolved_command:
             raise ValueError("Codex command cannot be empty")
         self.command = resolved_command
+        self.writer_command = (
+            approved_writer_codex_command() if command is None else resolved_command
+        )
         self.timeout_seconds = timeout_seconds
         self.runtime_identity = runtime_identity
         self._active: dict[str, asyncio.subprocess.Process] = {}
@@ -68,8 +71,9 @@ class CodexWorkcellAgent:
             "不得返回 Artifact SHA、Candidate SHA、Diff SHA 或自行生成的值。"
             f"{citation_contract}"
         )
+        invocation_command = self._command_for(invocation.workspace_access)
         command = (
-            *self.command,
+            *invocation_command,
             "exec",
             "--json",
             "--ephemeral",
@@ -145,6 +149,11 @@ class CodexWorkcellAgent:
             content=content,
             knowledge_citation_ids=tuple(sorted(set(raw_citations))),
         )
+
+    def _command_for(self, workspace_access: str) -> tuple[str, ...]:
+        if workspace_access == "workspace_write":
+            return self.writer_command
+        return self.command
 
     @asynccontextmanager
     async def _method_project_overlay(
