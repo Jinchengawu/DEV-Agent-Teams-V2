@@ -286,6 +286,50 @@ class WorkcellExecutionModule:
             raise _repository_error(error) from error
         return self.tree(child.workcell_run_id)
 
+    def retry_invalid_synthesis_attempt(
+        self,
+        agent_run_id: str,
+        *,
+        error_code: str,
+        result_artifact_sha256: Sha256,
+        max_attempts: int = 3,
+    ) -> WorkcellRunTree:
+        """Retry one malformed Main synthesis as a new observable AgentAttempt."""
+        try:
+            main = self.repository.get_agent(agent_run_id)
+        except KeyError as error:
+            raise _error(
+                "AGENT_RUN_NOT_FOUND",
+                "AgentRun 不存在",
+                "刷新 WorkcellRun Tree 后重试。",
+                404,
+            ) from error
+        if main.run_role != "main" or main.workcell_run_id is None:
+            raise _error(
+                "AGENT_RUN_NOT_WORKCELL_MAIN",
+                "只能重试可观察的 Workcell Main synthesis Attempt",
+                "选择处于 synthesizing 的 Main Run。",
+            )
+        if error_code != "CODEX_WORKCELL_OUTPUT_INVALID":
+            raise _error(
+                "AGENT_ATTEMPT_RETRY_REASON_INVALID",
+                "只允许对 Main synthesis JSON 输出契约错误进行原位重试",
+                "其他失败应由 ACWM bounded Loop 创建新 WorkcellRun。",
+            )
+        tree = self.tree(main.workcell_run_id)
+        if tree.workcell_run.status != "synthesizing":
+            raise _state_error(tree.workcell_run.status)
+        try:
+            self.repository.retry_main_synthesis_attempt(
+                main,
+                error_code=error_code,
+                result_artifact_sha256=result_artifact_sha256,
+                max_attempts=max_attempts,
+            )
+        except RuntimeError as error:
+            raise _repository_error(error) from error
+        return self.tree(main.workcell_run_id)
+
     def record_candidate_verification(
         self,
         run_id: str,

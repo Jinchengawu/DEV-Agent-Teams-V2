@@ -230,6 +230,27 @@ def test_main_writer_machine_verification_parallel_reviews_and_synthesis(
         attempt.phase for attempt in synthesizing.attempts if attempt.agent_run_id == main_id
     ] == ["planning", "synthesis"]
 
+    invalid_synthesis = artifacts.put_json({"status": "not-json"})
+    retried = kernel.retry_invalid_synthesis_attempt(
+        main_id,
+        error_code="CODEX_WORKCELL_OUTPUT_INVALID",
+        result_artifact_sha256=invalid_synthesis.sha256,
+    )
+    main_attempts = [
+        attempt for attempt in retried.attempts if attempt.agent_run_id == main_id
+    ]
+    assert [attempt.phase for attempt in main_attempts] == [
+        "planning",
+        "synthesis",
+        "synthesis",
+    ]
+    assert [attempt.status for attempt in main_attempts] == [
+        "succeeded",
+        "failed",
+        "running",
+    ]
+    assert main_attempts[1].result_artifact_sha256 == invalid_synthesis.sha256
+
     output = artifacts.put_json({"summary": "frontend candidate accepted"})
     completed = kernel.complete(
         run.workcell_run.id,

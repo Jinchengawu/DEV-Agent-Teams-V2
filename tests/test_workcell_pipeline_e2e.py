@@ -104,6 +104,7 @@ from agent_team_os.modules.workcells import (
     builtin_workcell_stage_map,
 )
 from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
+from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import Sha256, sha256_json
 from agent_team_os.shared.review_scope import product_review_policies
 from agent_team_os.shared.verification import VerificationSnapshot
@@ -141,25 +142,36 @@ class StaticMethodRuntime:
 
 class FourRepositoryAgent:
     def __init__(
-        self, runtime_identity: str = "deterministic-test", *, invalid_design_runs: int = 0
+        self,
+        runtime_identity: str = "deterministic-test",
+        *,
+        invalid_design_runs: int = 0,
+        invalid_synthesis_workcell: str | None = None,
     ) -> None:
         self.runtime_identity = runtime_identity
         self.invocations: list[WorkcellAgentInvocation] = []
         self.invalid_design_runs = invalid_design_runs
         self.design_run_ids: list[str] = []
+        self.invalid_synthesis_workcell = invalid_synthesis_workcell
+        self.synthesis_calls: dict[str, int] = {}
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
         if invocation.phase == "planning":
             if invocation.workcell_key == "design":
                 self.design_run_ids.append(invocation.workcell_run_id)
-            assignments = json.loads(
-                invocation.instruction.split("冻结 assignments 数组：", 1)[1]
-            )
-            content = {
-                "assignment_slots": [item["slot_key"] for item in assignments]
-            }
+            assignments = json.loads(invocation.instruction.split("冻结 assignments 数组：", 1)[1])
+            content = {"assignment_slots": [item["slot_key"] for item in assignments]}
         elif invocation.phase == "synthesis":
+            calls = self.synthesis_calls.get(invocation.workcell_key, 0) + 1
+            self.synthesis_calls[invocation.workcell_key] = calls
+            if invocation.workcell_key == self.invalid_synthesis_workcell and calls == 1:
+                raise ProductError(
+                    code="CODEX_WORKCELL_OUTPUT_INVALID",
+                    title="Codex Workcell 输出无效",
+                    detail="Codex AgentAttempt 最终输出不是单一 JSON object。",
+                    repair="在同一 Main Run 内有界重试。",
+                )
             content = {"status": "passed", "workcell": invocation.workcell_key}
         elif invocation.workspace_access == "workspace_write":
             source, test = {
@@ -276,6 +288,15 @@ def test_four_repository_workcell_pipeline_and_forward_only_release(
     asyncio.run(_run_four_repository_pipeline(tmp_path))
 
 
+def test_main_synthesis_retry_remains_release_acceptable(tmp_path: Path) -> None:
+    asyncio.run(
+        _run_four_repository_pipeline(
+            tmp_path,
+            invalid_synthesis_workcell="backend",
+        )
+    )
+
+
 @pytest.mark.parametrize("invalid_design_runs", [1, 4])
 def test_invalid_review_repairs_are_bounded_and_preserve_failed_evidence(
     tmp_path: Path,
@@ -285,7 +306,11 @@ def test_invalid_review_repairs_are_bounded_and_preserve_failed_evidence(
 
 
 async def _run_four_repository_pipeline(
-    tmp_path: Path, *, invalid_design_runs: int = 0, scenario: PipelineScenario | None = None
+    tmp_path: Path,
+    *,
+    invalid_design_runs: int = 0,
+    invalid_synthesis_workcell: str | None = None,
+    scenario: PipelineScenario | None = None,
 ) -> None:
     root = Path(__file__).parents[1]
     database = tmp_path / "agent-team-os.sqlite"
@@ -404,7 +429,11 @@ async def _run_four_repository_pipeline(
         for role, (remote, _base) in remotes.items()
     }
     workcell_agent = (
-        FourRepositoryAgent("codex-cli:acceptance-test", invalid_design_runs=invalid_design_runs)
+        FourRepositoryAgent(
+            "codex-cli:acceptance-test",
+            invalid_design_runs=invalid_design_runs,
+            invalid_synthesis_workcell=invalid_synthesis_workcell,
+        )
         if scenario is None
         else scenario.agent
     )
@@ -577,6 +606,26 @@ async def _run_four_repository_pipeline(
         "RELEASE_MANIFEST_VERIFIED",
         "RELEASE_HEALTH_VERIFIED",
     } <= {code for code, status in checks.items() if status == "passed"}
+
+    if invalid_synthesis_workcell is not None:
+        retried_tree = next(
+            tree
+            for tree in kernel.list_delivery(delivery.id)
+            if tree.workcell_run.workcell_key == invalid_synthesis_workcell
+            and tree.workcell_run.status == "succeeded"
+        )
+        assert retried_tree.workcell_run.main_agent_run_id is not None
+        attempts = [
+            item
+            for item in retried_tree.attempts
+            if item.agent_run_id == retried_tree.workcell_run.main_agent_run_id
+        ]
+        assert [(item.phase, item.status) for item in attempts] == [
+            ("planning", "succeeded"),
+            ("synthesis", "failed"),
+            ("synthesis", "succeeded"),
+        ]
+        assert attempts[1].error_code == "CODEX_WORKCELL_OUTPUT_INVALID"
 
     if scenario is not None:
         scenario.assert_completed(completed, kernel, artifacts, acceptance)

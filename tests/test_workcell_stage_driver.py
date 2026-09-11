@@ -134,6 +134,7 @@ class DeterministicWorkcellAgent:
         blocking_review_calls: frozenset[int] = frozenset(),
         invalid_review_calls: frozenset[int] = frozenset(),
         fatal_review_calls: frozenset[int] = frozenset(),
+        invalid_synthesis_calls: frozenset[int] = frozenset(),
         writes_candidate: bool = True,
         writes_forbidden_path: bool = False,
         writer_error_detail: str | None = None,
@@ -144,11 +145,13 @@ class DeterministicWorkcellAgent:
         self.blocking_review_calls = blocking_review_calls
         self.invalid_review_calls = invalid_review_calls
         self.fatal_review_calls = fatal_review_calls
+        self.invalid_synthesis_calls = invalid_synthesis_calls
         self.writes_candidate = writes_candidate
         self.writes_forbidden_path = writes_forbidden_path
         self.writer_error_detail = writer_error_detail
         self.writer_error_code = writer_error_code
         self.review_calls = 0
+        self.synthesis_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -160,6 +163,14 @@ class DeterministicWorkcellAgent:
                 knowledge_citation_ids=self.citation_ids,
             )
         if invocation.phase == "synthesis":
+            self.synthesis_calls += 1
+            if self.synthesis_calls in self.invalid_synthesis_calls:
+                raise ProductError(
+                    code="CODEX_WORKCELL_OUTPUT_INVALID",
+                    title="Codex Workcell 输出无效",
+                    detail="最终输出不是单一 JSON object。",
+                    repair="在同一 Main Run 下创建新的 synthesis Attempt。",
+                )
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"status": "synthesized", "workcell": invocation.workcell_key},
@@ -760,20 +771,49 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
         "blocking_review_calls",
         "invalid_review_calls",
         "fatal_review_calls",
+        "invalid_synthesis_calls",
         "writes_candidate",
         "writes_forbidden_path",
         "workspace_prepare_error",
         "expected_status",
     ),
     [
-        (frozenset(), frozenset(), frozenset(), True, False, False, "succeeded"),
-        (frozenset({1}), frozenset(), frozenset(), True, False, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), False, False, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), True, True, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), True, False, True, "repair_required"),
-        (frozenset({2}), frozenset({1}), frozenset(), True, False, False, "repair_required"),
-        (frozenset(), frozenset({1}), frozenset({2}), True, False, False, "fatal"),
-        (frozenset({1}), frozenset(), frozenset({2}), True, False, False, "fatal"),
+        (frozenset(), frozenset(), frozenset(), frozenset(), True, False, False, "succeeded"),
+        (
+            frozenset({1}),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            False,
+            "repair_required",
+        ),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            False,
+            False,
+            False,
+            "repair_required",
+        ),
+        (frozenset(), frozenset(), frozenset(), frozenset(), True, True, False, "repair_required"),
+        (frozenset(), frozenset(), frozenset(), frozenset(), True, False, True, "repair_required"),
+        (
+            frozenset({2}),
+            frozenset({1}),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            False,
+            "repair_required",
+        ),
+        (frozenset(), frozenset({1}), frozenset({2}), frozenset(), True, False, False, "fatal"),
+        (frozenset({1}), frozenset(), frozenset({2}), frozenset(), True, False, False, "fatal"),
+        (frozenset(), frozenset(), frozenset(), frozenset({1}), True, False, False, "succeeded"),
     ],
 )
 def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
@@ -781,6 +821,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     blocking_review_calls: frozenset[int],
     invalid_review_calls: frozenset[int],
     fatal_review_calls: frozenset[int],
+    invalid_synthesis_calls: frozenset[int],
     writes_candidate: bool,
     writes_forbidden_path: bool,
     workspace_prepare_error: bool,
@@ -863,6 +904,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         blocking_review_calls=blocking_review_calls,
         invalid_review_calls=invalid_review_calls,
         fatal_review_calls=fatal_review_calls,
+        invalid_synthesis_calls=invalid_synthesis_calls,
         writes_candidate=writes_candidate,
         writes_forbidden_path=writes_forbidden_path,
     )
@@ -933,10 +975,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
             )
             invalid_output = artifact_storage.get_json(
                 ArtifactReference(
-                    uri=(
-                        "artifact://sha256/"
-                        + failed_contract_attempt.result_artifact_sha256
-                    ),
+                    uri=("artifact://sha256/" + failed_contract_attempt.result_artifact_sha256),
                     sha256=failed_contract_attempt.result_artifact_sha256,
                     media_type="application/json",
                     size_bytes=invalid_path.stat().st_size,
@@ -1037,18 +1076,22 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
                 if "最终 JSON 中这三个字段必须精确等于" in item.instruction
             )
             review_evidence = json.loads(
-                retry_invocation.instruction.split("Candidate Review Evidence：", 1)[1]
-                .splitlines()[0]
+                retry_invocation.instruction.split("Candidate Review Evidence：", 1)[
+                    1
+                ].splitlines()[0]
             )
-            assert json.dumps(
-                {
-                    "review_scope_sha256": review_evidence["review_scope_sha256"],
-                    "reviewed_candidate_sha": review_evidence["candidate_revision"],
-                    "reviewed_diff_sha256": review_evidence["diff_sha256"],
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ) in retry_invocation.instruction
+            assert (
+                json.dumps(
+                    {
+                        "review_scope_sha256": review_evidence["review_scope_sha256"],
+                        "reviewed_candidate_sha": review_evidence["candidate_revision"],
+                        "reviewed_diff_sha256": review_evidence["diff_sha256"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                in retry_invocation.instruction
+            )
         assert not any(item.phase == "synthesis" for item in agent.invocations)
         assert outcome.candidate is None
         return
@@ -1067,6 +1110,24 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert tree.result is not None
     assert tree.result.knowledge_citation_ids == ("citation-allowed",)
     assert all(item.result_artifact_sha256 is not None for item in tree.attempts)
+    if invalid_synthesis_calls:
+        main = next(item for item in tree.agent_runs if item.run_role == "main")
+        main_attempts = [item for item in tree.attempts if item.agent_run_id == main.id]
+        assert [item.phase for item in main_attempts] == [
+            "planning",
+            "synthesis",
+            "synthesis",
+        ]
+        assert [item.status for item in main_attempts] == [
+            "succeeded",
+            "failed",
+            "succeeded",
+        ]
+        assert main_attempts[1].error_code == "CODEX_WORKCELL_OUTPUT_INVALID"
+        assert any(
+            "这是同一 Main Run 的最后一次有界 Attempt" in item.instruction
+            for item in agent.invocations
+        )
     writer = next(item for item in tree.agent_runs if item.delegate_purpose == "workspace_write")
     assert [item.contract_id for item in writer.artifact_envelopes] == [
         "workspace-candidate-v2",

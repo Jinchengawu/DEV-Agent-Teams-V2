@@ -750,11 +750,15 @@ class ReleaseAcceptanceVerifierV2:
                 main_attempts = sorted(
                     attempts_by_run.get(main.id, []), key=lambda item: item.ordinal
                 )
+                main_phases = [(item.phase, item.ordinal) for item in main_attempts]
                 if (
-                    [(item.phase, item.ordinal) for item in main_attempts]
-                    != [("planning", 1), ("synthesis", 2)]
+                    main_phases
+                    not in (
+                        [("planning", 1), ("synthesis", 2)],
+                        [("planning", 1), ("synthesis", 2), ("synthesis", 3)],
+                    )
                     or main.attempt_id != main_attempts[0].id
-                    or not self._agent_and_attempts_match_binding(
+                    or not self._main_and_attempts_match_binding(
                         main,
                         main_attempts,
                         bindings.get("main"),
@@ -827,6 +831,42 @@ class ReleaseAcceptanceVerifierV2:
                 for attempt in attempts
             )
         )
+
+    def _main_and_attempts_match_binding(
+        self,
+        run: AgentRun,
+        attempts: list[AgentAttempt],
+        binding: FrozenSlotBinding | None,
+    ) -> bool:
+        if binding is None:
+            return False
+        frozen = binding.deployment_snapshot
+        if run.deployment_snapshot != frozen or run.resolved_binding_hash != (
+            binding.resolved_provider_binding_hash
+        ):
+            return False
+        for index, attempt in enumerate(attempts):
+            retried_failure = (
+                len(attempts) == 3
+                and index == 1
+                and attempt.status == "failed"
+                and attempt.error_code == "CODEX_WORKCELL_OUTPUT_INVALID"
+            )
+            if (
+                not _run_and_attempt_identity_matches(
+                    run,
+                    attempt,
+                    frozen,
+                    expected_adapter="codex.cli",
+                )
+                or (attempt.status != "succeeded" and not retried_failure)
+                or (attempt.error_code is not None and not retried_failure)
+                or attempt.finished_at is None
+                or attempt.result_artifact_sha256 is None
+                or not self._artifact_sha_exists(attempt.result_artifact_sha256)
+            ):
+                return False
+        return True
 
     def _artifact_sha_exists(self, digest: Sha256) -> bool:
         target = self.artifacts.root / "sha256" / str(digest)[:2] / str(digest)
@@ -1389,6 +1429,26 @@ def _run_matches_frozen_binding(
     *,
     expected_adapter: str,
 ) -> bool:
+    return (
+        run.status == "succeeded"
+        and attempt is not None
+        and attempt.status == "succeeded"
+        and _run_and_attempt_identity_matches(
+            run,
+            attempt,
+            frozen,
+            expected_adapter=expected_adapter,
+        )
+    )
+
+
+def _run_and_attempt_identity_matches(
+    run: AgentRun,
+    attempt: AgentAttempt | None,
+    frozen: object,
+    *,
+    expected_adapter: str,
+) -> bool:
     if attempt is None or not isinstance(frozen, dict):
         return False
     deployment = frozen.get("deployment")
@@ -1402,10 +1462,8 @@ def _run_matches_frozen_binding(
         adapter == expected_adapter
         and isinstance(runtime_identity, str)
         and runtime_identity not in {"deterministic-test", "codex-simulated-hermes"}
-        and run.status == "succeeded"
         and run.resolved_binding_hash == binding_hash
         and run.runtime_identity == runtime_identity
-        and attempt.status == "succeeded"
         and attempt.provider_binding_hash == binding_hash
         and attempt.runtime_identity == runtime_identity
     )

@@ -337,6 +337,9 @@ Main planning
   重试仍无效时进入既有 ACWM 有界 Repair；同批有效阻断不会被无效输出抹除。
 - Main synthesis 必须读取本 Workcell 已冻结的 Child Artifact 正文、Machine Verification、
   Result Validation 与 Review Artifact，不得在缺少局部执行事实时合成成功结果。
+  若 Codex 最终响应仅违反单一 JSON object 输出合同，产品可在同一 Main Run 内新建一次
+  可观察 synthesis AgentAttempt；原失败 Attempt 保留错误码与诊断 Artifact，冻结的 Child、
+  Candidate、Verification、Review 与 Provider Binding 均不得改变。第二次失败继续 Fail Closed。
 - Child 之间只传递内容寻址 ArtifactEnvelope；Git Candidate 以 Metadata + Hash-bound Diff Artifact 表达，
   不传原始 Session、Memory、聊天历史或 Repository 挂载。
 - Cancel 向未完成 Child 传播并终止 Codex 进程；重启时不可恢复 Attempt 标记为 `interrupted`。
@@ -757,6 +760,16 @@ Affected authorities/modules/data/states: Codex Workcell Adapter 的 Method 指�
 Compatibility and migration: 不需要 Migration；无 Method 的 Attempt 也获得相同工作目录声明，不增加文件系统权限。
 Plan/ADR reference: ADR-0014 现有 Method Pack Overlay 边界内的实现加固，不新增 ADR。
 Implemented evidence: Codex Adapter 指令绑定与 Overlay 专项测试通过；四仓 Live Gate 待在加载该 Revision 的进程中验证。
+
+ARCH-20260911-05
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Cross-boundary
+Decision: Main synthesis 的单一 JSON object 输出合同错误可在同一 Main Run 内以新 AgentAttempt 有界重试一次；不改变任何冻结执行证据。
+Affected authorities/modules/data/states: Workcell Stage Driver、AgentRun/AgentAttempt Ledger、Main synthesis；不改 ACWM Loop 权威。
+Compatibility and migration: 不需要 Migration；现有 AgentAttempt 表已支持同 Main Run 多 Attempt；非输出合同错误与第二次无效继续 Fail Closed。
+Plan/ADR reference: ADR-0014 修订。
+Implemented evidence: Kernel 与 Stage Driver 专项验证 planning/synthesis/synthesis Attempt 序列、失败诊断 Artifact、有界成功和状态终结；四仓 Live Gate 需在本 Revision 重跑。
 ```
 
 新条目必须使用以下结构：
@@ -797,6 +810,7 @@ Acceptance evidence required:
 | `ARCH-20260911-02` | 2026-09-11 | `Implemented/Verified` | 同一 Reviewer Child Run 对结构化 Review 契约错误进行一次可观测 Attempt 重试 | ADR-0014 修订 | 28 项 Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 | `ARCH-20260911-03` | 2026-09-11 | `Implemented/Verified` | Attempt `CODEX_HOME/_bmad` 受控别名指向当前 Workspace Project Support Overlay | ADR-0014 修订 | 16 项 Adapter/Overlay 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待重跑 |
 | `ARCH-20260911-04` | 2026-09-11 | `Implemented/Verified` | Codex AgentAttempt 显式冻结 Method Project Root，禁止 `{project-root}` 误解析到控券 | ADR-0014 边界内加固 | Adapter 指令绑定与 Overlay 专项通过；四仓 Live Gate 待加载本 Revision 重跑 |
+| `ARCH-20260911-05` | 2026-09-11 | `Implemented/Verified` | 同一 Main Run 对 synthesis 单一 JSON object 输出合同错误进行一次可观察 Attempt 重试 | ADR-0014 修订 | Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 
 ## 14. Plan Architecture Review 与文档对账
 

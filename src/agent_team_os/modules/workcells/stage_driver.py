@@ -1420,37 +1420,63 @@ class WorkcellStageDriver:
         methods: WorkcellMethodContext,
     ) -> WorkcellAgentOutput:
         main = _main(tree)
-        output = await self._run_agent(
-            delivery,
-            WorkcellAgentInvocation(
-                delivery_id=delivery.id,
-                workcell_run_id=tree.workcell_run.id,
-                agent_run_id=main.id,
-                phase="synthesis",
-                workcell_key=tree.workcell_run.workcell_key,
-                stage_path=tree.workcell_run.stage_path,
-                instruction=(
-                    "综合已经冻结的 Child Artifact、机器验证与 ReviewArtifact；"
-                    "不得覆盖失败或 Blocking Finding。返回 JSON 摘要。\n"
-                    + _knowledge_trust_boundary()
-                    + "\n冻结 ArtifactAttachment："
-                    + self._attachment_payload(tree)
-                    + "\nFrozen Review Scope："
-                    + _review_scope_json(tree)
-                    + "\n本 Workcell 冻结执行证据："
-                    + self._synthesis_evidence_payload(tree)
-                ),
-                workspace=methods.control_workspace,
-                workspace_access="none",
-                allowed_knowledge_citation_ids=_stage_citation_ids(
-                    delivery,
-                    tree.workcell_run.stage_path,
-                ),
-                environment=methods.environment,
+        invocation = WorkcellAgentInvocation(
+            delivery_id=delivery.id,
+            workcell_run_id=tree.workcell_run.id,
+            agent_run_id=main.id,
+            phase="synthesis",
+            workcell_key=tree.workcell_run.workcell_key,
+            stage_path=tree.workcell_run.stage_path,
+            instruction=(
+                "综合已经冻结的 Child Artifact、机器验证与 ReviewArtifact；"
+                "不得覆盖失败或 Blocking Finding。返回 JSON 摘要。\n"
+                + _knowledge_trust_boundary()
+                + "\n冻结 ArtifactAttachment："
+                + self._attachment_payload(tree)
+                + "\nFrozen Review Scope："
+                + _review_scope_json(tree)
+                + "\n本 Workcell 冻结执行证据："
+                + self._synthesis_evidence_payload(tree)
             ),
+            workspace=methods.control_workspace,
+            workspace_access="none",
+            allowed_knowledge_citation_ids=_stage_citation_ids(
+                delivery,
+                tree.workcell_run.stage_path,
+            ),
+            environment=methods.environment,
         )
-        _require_runtime_identity(main, output)
-        return output
+        for attempt_index in range(2):
+            try:
+                output = await self._run_agent(delivery, invocation)
+                _require_runtime_identity(main, output)
+                return output
+            except ProductError as error:
+                if error.code != "CODEX_WORKCELL_OUTPUT_INVALID" or attempt_index == 1:
+                    raise
+                invalid_reference = self.artifacts.put_json(
+                    {
+                        "error_code": error.code,
+                        "error_detail": error.detail,
+                        "phase": "synthesis",
+                    }
+                )
+                self.kernel.retry_invalid_synthesis_attempt(
+                    main.id,
+                    error_code=error.code,
+                    result_artifact_sha256=invalid_reference.sha256,
+                )
+                invocation = invocation.model_copy(
+                    update={
+                        "instruction": invocation.instruction
+                        + "\n上一次 Main synthesis 输出被产品 JSON 合同拒绝："
+                        + error.code
+                        + "。这是同一 Main Run 的最后一次有界 Attempt。"
+                        + "最终响应必须且只能是一个 JSON object；不要 Markdown、代码围栏、"
+                        + "前后说明或多个 JSON object。"
+                    }
+                )
+        raise AssertionError("bounded synthesis retry exhausted without a result")
 
     def _publish_candidate(
         self,

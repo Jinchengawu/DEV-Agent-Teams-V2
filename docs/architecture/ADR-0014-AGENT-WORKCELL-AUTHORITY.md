@@ -198,6 +198,20 @@ Runtime 身份错误、调用失败、超时、取消与 Blocking Finding 不属
 
 状态见 `ARCH-20260911-02`；本地 Deterministic 与真实 Live 验收分开记录。
 
+## 2026-09-11 修订：Main synthesis 输出合同错误原位重试
+
+Main synthesis 已读取冻结的 Child Artifact、Candidate、Machine Verification 与
+ReviewArtifact，其 Provider 最终响应是否为单一 JSON object 是另一项可恢复的输出合同事实。
+只有 `CODEX_WORKCELL_OUTPUT_INVALID` 可在原 Main `AgentRun` 内重试一次；重试必须创建新的
+可观察 `AgentAttempt`，将前一 Attempt 标记为失败，并保存不含原始模型输出的错误诊断 Artifact。
+
+重试沿用同一 WorkcellRun、Provider Binding、知识引用允许列表和全部冻结执行证据，不重新运行
+Writer、机器验证或 Reviewer，也不改变 Candidate/Diff。Runtime 身份错误、Citation 错误、调用失败、
+超时、取消及第二次 JSON 输出错误不属于该恢复范围，继续 Fail Closed。该机制不创建隐藏调用，
+不扩大 Main/Child 数量，也不把 ACWM bounded Loop 权威转移给 Workcell Execution。
+
+状态见 `ARCH-20260911-05`；专项测试通过与四仓 Live 闭环证据分开记录。
+
 ## 2026-09-11 修订：BMAD Project Root 显式绑定与兼容别名
 
 BMAD Method Entry 在 Codex 技能语义中可将 `{project-root}` 解析为 Attempt 专用
