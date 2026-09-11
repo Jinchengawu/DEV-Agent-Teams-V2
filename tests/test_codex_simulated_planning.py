@@ -99,12 +99,33 @@ def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities()
 
     requirements, task = planning_payloads()
     task.pop("workcell_acceptance")
-    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+    runner = ScriptedCodexRoleRunner([json.dumps(task), json.dumps(task)])
     with pytest.raises(ProductError) as rejected:
         asyncio.run(CodexPlanningService(runner).plan(
             RequirementArtifact.model_validate(requirements), required_workcells=WORKCELL_KEYS
         ))
     assert rejected.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
+
+
+def test_codex_task_planning_repairs_product_semantic_validation_once() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, valid_task = planning_payloads()
+    invalid_task = dict(valid_task)
+    invalid_task.pop("workcell_acceptance")
+    runner = ScriptedCodexRoleRunner([json.dumps(invalid_task), json.dumps(valid_task)])
+
+    result = asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    assert result.workcell_acceptance is not None
+    assert len(runner.prompts) == 2
+    assert "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID" in runner.prompts[1]
+    assert 'instruction-authority="none"' in runner.prompts[1]
 
 
 def test_codex_planning_uses_the_last_complete_json_message() -> None:

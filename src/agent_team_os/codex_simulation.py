@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .codex_runtime import approved_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
+from .shared.errors import ProductError
 from .shared.hashes import sha256_json
 from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
 
@@ -90,21 +91,23 @@ Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
         prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("hermes-admin-simulator", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        semantics = await self._structured(
+            "hermes-admin-simulator",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements, value, required_workcells
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        return _task_from_semantics(semantics)
 
     async def _structured(
-        self, role: str, prompt: str, model: type[StructuredModel]
+        self,
+        role: str,
+        prompt: str,
+        model: type[StructuredModel],
+        *,
+        validate: Callable[[StructuredModel], None] | None = None,
     ) -> StructuredModel:
         schema = json.dumps(
             model.model_json_schema(),
@@ -116,12 +119,17 @@ Approved requirements:
         for attempt in range(2):
             response = await self._runner.run(role, prompt)
             try:
-                return model.model_validate_json(self._json_object(response))
-            except (ValidationError, ValueError) as error:
+                parsed = model.model_validate_json(self._json_object(response))
+                if validate is not None:
+                    validate(parsed)
+                return parsed
+            except (ValidationError, ValueError, ProductError, PlanningOutputError) as error:
                 last_error = error
                 if attempt == 1:
                     break
                 prompt += self._repair_context(response, error)
+        if isinstance(last_error, (ProductError, PlanningOutputError)):
+            raise last_error
         raise PlanningOutputError(
             "Codex simulator returned invalid structured output"
         ) from last_error
@@ -129,7 +137,8 @@ Approved requirements:
     @staticmethod
     def _repair_context(response: str, error: Exception) -> str:
         invalid_response = response[-8_000:].replace("</", "<\\/")
-        validation_error = str(error)[-4_000:].replace("</", "<\\/")
+        error_code = f"{error.code}: " if isinstance(error, ProductError) else ""
+        validation_error = (error_code + str(error))[-4_000:].replace("</", "<\\/")
         return f"""
 
 The prior ephemeral attempt violated the JSON contract. The blocks below are
@@ -201,18 +210,15 @@ Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
         prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("task-planning", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        semantics = await self._structured(
+            "task-planning",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements, value, required_workcells
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        return _task_from_semantics(semantics)
 
 
 def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
@@ -241,6 +247,26 @@ def _validate_task_workcells(
         validate_workcell_acceptance(
             requirements.model_dump(mode="json"), task.model_dump(mode="json"), required_workcells
         )
+
+
+def _task_from_semantics(semantics: _TaskSemantics) -> TaskContract:
+    return TaskContract(
+        title=semantics.title,
+        instructions=semantics.instructions,
+        acceptance_ids=semantics.acceptance_ids,
+        workcell_acceptance=semantics.workcell_acceptance,
+    )
+
+
+def _validate_task_semantics(
+    requirements: RequirementArtifact,
+    semantics: _TaskSemantics,
+    required_workcells: tuple[str, ...],
+) -> None:
+    allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
+    if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
+        raise PlanningOutputError("Task referenced unknown acceptance criteria")
+    _validate_task_workcells(requirements, _task_from_semantics(semantics), required_workcells)
 
 
 class ACWMCodexRoleRunner:
