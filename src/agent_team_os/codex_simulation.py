@@ -75,8 +75,19 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
@@ -85,7 +96,7 @@ verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
@@ -194,8 +205,19 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are the task planning role in Agent-Team-OS.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
@@ -204,7 +226,7 @@ verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}

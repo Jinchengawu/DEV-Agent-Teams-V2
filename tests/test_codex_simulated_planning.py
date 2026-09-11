@@ -47,6 +47,12 @@ def test_codex_task_preserves_explicit_four_workcell_acceptance_for_plan_gate() 
         task["workcell_acceptance"]
     )
     assert all(key in runner.prompts[0] for key in WORKCELL_KEYS)
+    assert (
+        "Return raw JSON only with: title, instructions, acceptance_ids, "
+        "workcell_acceptance." in runner.prompts[0]
+    )
+    assert "Do not invent permissions, executable commands or system_policy" in runner.prompts[0]
+    assert "Do not include permissions, commands, paths, system_policy" not in runner.prompts[0]
     legacy = TaskContract(title="old", instructions="old", acceptance_ids=("AC-1",))
     assert "workcell_acceptance" not in legacy.model_dump(mode="json")
 
