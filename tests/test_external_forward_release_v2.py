@@ -274,6 +274,51 @@ def test_partial_apply_never_rolls_back_and_same_bundle_resume_forward_recovers(
     assert completed_view.manifest == manifest
 
 
+def test_resume_recovers_exact_candidate_when_push_succeeded_before_receipt(
+    tmp_path: Path,
+) -> None:
+    projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
+
+    class PushSucceededBeforeFailure(FakeForwardRemote):
+        lost_acknowledgement = True
+
+        def apply(
+            self,
+            candidate: WorkspaceCandidateV2,
+            *,
+            ordinal: int,
+        ) -> RemoteApplyReceipt:
+            receipt = super().apply(candidate, ordinal=ordinal)
+            if self.lost_acknowledgement:
+                self.lost_acknowledgement = False
+                raise ExternalReleaseError(
+                    "EXTERNAL_GIT_COMMAND_FAILED",
+                    "push succeeded but remote SHA readback failed",
+                )
+            return receipt
+
+    remote = PushSucceededBeforeFailure(dict(bases), fail_once_at=-1)
+    coordinator = ExternalForwardReleaseCoordinator(repository, remote)
+
+    with pytest.raises(ExternalReleaseError) as failed:
+        coordinator.apply(bundle)
+
+    assert failed.value.code == "EXTERNAL_GIT_COMMAND_FAILED"
+    assert remote.revision(bundle.candidates[0]) == bundle.candidates[0].candidate_revision
+    assert repository.list_remote_receipts(bundle.delivery_id) == ()
+    assert coordinator.health(bundle.project_id).status == "release_drifted"
+
+    manifest = coordinator.resume_forward(bundle.delivery_id)
+
+    receipts = repository.list_remote_receipts(bundle.delivery_id)
+    assert len(receipts) == 4
+    assert receipts[0].recovered is True
+    assert all(receipt.after_revision == receipt.candidate_revision for receipt in receipts)
+    assert repository.get_manifest(bundle.project_id) == manifest
+    assert coordinator.health(bundle.project_id).status == "healthy"
+    assert projects.active_delivery_id(bundle.project_id) is None
+
+
 def test_resume_forward_refuses_drift_without_rewriting_bundle(tmp_path: Path) -> None:
     _projects, repository, _catalog, bundle, bases = _release_fixture(tmp_path)
     remote = FakeForwardRemote(dict(bases), fail_once_at=1)

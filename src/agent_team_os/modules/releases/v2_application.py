@@ -272,18 +272,21 @@ class ExternalForwardReleaseCoordinator:
         for candidate in bundle.candidates:
             current = self.remote.revision(candidate)
             receipt = receipt_by_candidate.get(candidate.id)
-            required = (
-                candidate.candidate_revision if receipt is not None else candidate.base_revision
-            )
-            if current != required:
-                code = (
-                    "RELEASE_APPLIED_REPOSITORY_DRIFT"
-                    if receipt is not None
-                    else "RELEASE_UNAPPLIED_REPOSITORY_BASE_DRIFT"
-                )
+            if receipt is not None and current != candidate.candidate_revision:
                 raise ExternalReleaseError(
-                    code,
-                    f"{candidate.workcell_key} main is {current}, expected {required}",
+                    "RELEASE_APPLIED_REPOSITORY_DRIFT",
+                    f"{candidate.workcell_key} main is {current}, "
+                    f"expected {candidate.candidate_revision}",
+                )
+            if receipt is None and current not in {
+                candidate.base_revision,
+                candidate.candidate_revision,
+            }:
+                raise ExternalReleaseError(
+                    "RELEASE_UNAPPLIED_REPOSITORY_BASE_DRIFT",
+                    f"{candidate.workcell_key} main is {current}, expected "
+                    f"{candidate.base_revision} or exact Candidate "
+                    f"{candidate.candidate_revision}",
                 )
 
     def _continue(

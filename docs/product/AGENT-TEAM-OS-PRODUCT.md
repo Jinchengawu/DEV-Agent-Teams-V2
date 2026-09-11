@@ -527,7 +527,9 @@ Team Activate 会验证远端存在 `main`，并运行非 Force `git push --dry-
 3. Lease 不释放，Manifest 不激活；
 4. Editor 可观察并上报 Drift；只有拥有 `delivery:candidate-apply` 的 Administrator 能修复凭据/项目治理
    前置条件并调用 `resume-forward`；
-5. `resume-forward` 只复用原 Bundle，并检查：已应用仓仍为 Candidate，未应用仓仍为 Base；
+5. `resume-forward` 只复用原 Bundle，并检查：有 Receipt 的仓仍为 Candidate；无 Receipt 的仓
+   仍为 Base，或在 Push 已成功但回读/Receipt 丢失时精确为同 Bundle Candidate。后一种
+   只补写 `recovered=true` Receipt，不再 Push；
 6. 条件成立则从未完成位置继续；全部回读成功后激活 Manifest；
 7. 任一条件不成立则保持人工协调。v0.5 不自动 Rebase、补偿提交或换 Bundle。
 
