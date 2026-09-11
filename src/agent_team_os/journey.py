@@ -15,7 +15,10 @@ from acwm.application.workflow_runtime import DefaultWorkflowRuntime
 from acwm.config import CodexCLIConfig, load_capabilities, load_journeys
 from acwm.domain import JourneyDefinition
 
-from .codex_runtime import approved_codex_command
+from .codex_runtime import (
+    approved_planning_codex_command,
+    approved_workcell_codex_command,
+)
 from .knowledge_context_contract import (
     KNOWLEDGE_CONTEXT_STAGE_PATHS,
     knowledge_context_artifact_contract,
@@ -76,38 +79,42 @@ def resolve_journey_fingerprint(config_root: Path, definition: JourneyDefinition
     adapters = {
         "hermes-pm": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(), sandbox="read-only", timeout_seconds=120
+                command=approved_planning_codex_command(),
+                sandbox="read-only",
+                timeout_seconds=120,
             )
         ),
         "hermes-project-admin": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(), sandbox="read-only", timeout_seconds=120
+                command=approved_planning_codex_command(),
+                sandbox="read-only",
+                timeout_seconds=120,
             )
         ),
         "codex-backend": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(),
+                command=approved_workcell_codex_command(),
                 sandbox="workspace-write",
                 timeout_seconds=180,
             )
         ),
         "design.system": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(),
+                command=approved_workcell_codex_command(),
                 sandbox="workspace-write",
                 timeout_seconds=180,
             )
         ),
         "frontend.implementation": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(),
+                command=approved_workcell_codex_command(),
                 sandbox="workspace-write",
                 timeout_seconds=180,
             )
         ),
         "testing.review": CodexCLICapabilityAdapter(
             CodexCLIConfig(
-                command=approved_codex_command(),
+                command=approved_workcell_codex_command(),
                 sandbox="workspace-write",
                 timeout_seconds=180,
             )

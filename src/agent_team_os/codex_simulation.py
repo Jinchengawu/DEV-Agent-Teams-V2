@@ -27,7 +27,7 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from .codex_runtime import approved_codex_command
+from .codex_runtime import approved_planning_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
 from .shared.errors import ProductError
 from .shared.hashes import sha256_json
@@ -283,7 +283,7 @@ class ACWMCodexRoleRunner:
             raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
         self._config = config or CodexCLIConfig(
-            command=approved_codex_command(),
+            command=approved_planning_codex_command(),
             sandbox="read-only",
             timeout_seconds=120,
         )

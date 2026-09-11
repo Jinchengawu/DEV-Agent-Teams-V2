@@ -23,7 +23,7 @@ from acwm.domain import (
     StopRequested,
 )
 
-from .codex_runtime import approved_codex_command
+from .codex_runtime import approved_workcell_codex_command
 from .delivery import (
     ApplyReceipt,
     CandidateChange,
@@ -132,7 +132,7 @@ class ACWMCodexWorkspaceAgent:
 
     def __init__(self, config: CodexCLIConfig | None = None) -> None:
         self._config = config or CodexCLIConfig(
-            command=approved_codex_command(),
+            command=approved_workcell_codex_command(),
             sandbox="workspace-write",
             timeout_seconds=180,
         )
