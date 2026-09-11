@@ -261,7 +261,10 @@ TeamTemplateRevision
 
 机器验证采用单独的产品预置 Verification Profile：Workspace Governance 保存选择及工具资格，
 Snapshot 冻结命令、超时、非敏感环境、工具版本/路径/二进制 Hash 和资格 Hash。Writer 运行前复核当前
-工具身份，Release Acceptance 校验冻结方案与实际报告；Git Verification 的既有语义不变。
+工具身份，Release Acceptance 校验冻结方案与实际报告；Git Verification 的既有语义不变。Writer 只产出
+受控代码与测试变更，不拥有包含产品占位符、冻结依赖或受限端口权限的验证环境，不得自行
+安装依赖或宣称冻结验证通过；完整命令执行、结果合同判定与 Candidate 接纳仍唯一归属 Product
+Machine Verification。
 保留 V1 Python unittest/Node native test；V2 health-contract-v1 切片按仓固定 Design 合同、
 Frontend TypeScript/Vitest/Vite、Backend unittest/HTTP 和 QA Chromium。配置、工具依赖闭包及结果
 合同都被资格 Hash 冻结，零测试、全跳过、配置/工具漂移与超时失败。资格化只读检查，不安装依赖；

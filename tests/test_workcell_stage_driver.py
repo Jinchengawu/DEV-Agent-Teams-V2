@@ -1164,7 +1164,10 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert "files 必须与真实 Git 变更一致" in writer_instruction
     assert "必须在当前 Workspace 产生非空 Git Candidate" in writer_instruction
     assert "Product Frozen Verification Commands（argv）" in writer_instruction
-    assert "确认 exit code 为 0" in writer_instruction
+    assert "不得在 Writer AgentAttempt 中执行这些产品冻结命令" in writer_instruction
+    assert "不得自行安装或更新依赖" in writer_instruction
+    assert "Product Machine Verification" in writer_instruction
+    assert "确认 exit code 为 0" not in writer_instruction
     assert "unittest" in writer_instruction
     synthesis_instruction = next(
         item.instruction for item in agent.invocations if item.phase == "synthesis"

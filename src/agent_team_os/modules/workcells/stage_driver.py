@@ -1818,11 +1818,15 @@ def _delegate_invocation(
             "最终回复前必须执行 git status --short，并逐项核对真实变更路径；"
             "删除或移动所有允许范围之外的文件。最终 JSON 的 files 必须与真实 Git 变更一致，"
             "不得用允许路径名称掩盖实际越界文件。"
-            "必须在当前 Workspace 产生非空 Git Candidate，并实际运行必要的机器测试。"
+            "必须在当前 Workspace 产生非空 Git Candidate，并产出覆盖当前验收责任的真实测试变更。"
             "\nProduct Frozen Verification Commands（argv）："
             + json.dumps(frozen_commands, ensure_ascii=False)
-            + "。最终返回前必须在当前 Workspace 实际运行这些冻结命令，"
-            "确认 exit code 为 0；不得用自定义的更弱命令代替。"
+            + "。这些 argv 仅用于让你了解后续验收约束；其中的 {runner}、"
+            "{node_modules}、{config}、{result}、{inputs} 与 {build} 由产品在 Candidate "
+            "冻结后的独立验证环境注入。不得在 Writer AgentAttempt 中执行这些产品冻结命令，"
+            "不得自行安装或更新依赖，也不得为运行受限服务或端口测试而反复重试。"
+            "可以运行不需要环境变更、不需要网络或端口权限的轻量检查；"
+            "冻结命令的完整执行、exit code 和结果接纳唯一归属后续 Product Machine Verification。"
         )
     review_contract = ""
     repair_contract = ""
