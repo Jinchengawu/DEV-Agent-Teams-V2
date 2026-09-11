@@ -472,6 +472,9 @@ def _workcell_planning_instruction(invocation: RuntimeAdapterInvocation) -> str:
         "只覆盖以上仓，完整分配任务验收项；共享验收项各自说明责任。"
         "任何 Workcell 都不得执行、挂载、直接读取或修改其他 Workcell "
         "的 Repository/Candidate；跨仓输入只能表述为消费产品冻结的 ArtifactAttachment。"
+        "Design Workcell 的机器验证只验证本仓规格、Schema 和测试向量；"
+        "不得分配导入、启动或读取其他仓实现的责任。"
+        "跨仓实际行为由对应实现 Workcell 与 QA E2E 验证。"
         "该映射将等待 Plan Gate 批准。"
     )
 

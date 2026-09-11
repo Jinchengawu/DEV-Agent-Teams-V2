@@ -89,6 +89,8 @@ def test_codex_task_planning_keeps_release_authority_outside_workcell_responsibi
     assert "ReleaseBundle" in prompt
     assert "resume-forward" in prompt
     assert "不得分配给任何 Workcell" in prompt
+    assert "Design Workcell 负责规格、Schema 或测试向量" in prompt
+    assert "实际运行时行为由对应实现 Workcell 和 QA E2E 验证" in prompt
 
 
 def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:

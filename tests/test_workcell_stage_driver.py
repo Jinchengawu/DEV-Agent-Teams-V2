@@ -1124,6 +1124,8 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert all("Frozen Acceptance Contract" in item for item in review_instructions)
     assert all("当前 Workcell Candidate 的合规审查" in item for item in review_instructions)
     assert all("不得因其他 Workcell 尚未交付" in item for item in review_instructions)
+    assert all("证据充分性必须以当前仓" in item for item in review_instructions)
+    assert all("不得以未导入、未启动或未读取其他 Workcell" in item for item in review_instructions)
     assert all("建议性增强" in item for item in review_instructions)
     assert all("diff_sha256 内容寻址并校验" in item for item in review_instructions)
     assert all("必须审查当前只读 Candidate Workspace" in item for item in review_instructions)

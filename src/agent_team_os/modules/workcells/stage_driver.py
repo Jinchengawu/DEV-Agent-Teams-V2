@@ -1842,6 +1842,10 @@ def _delegate_invocation(
             "属于本 Scope 的 system_policies，禁止新增规则或用任意 SYSTEM-POLICY 字符串冒充。"
             "不得因其他 Workcell 尚未交付其验收条目而阻断当前 Workcell，不得把建议性增强、"
             "未来风险、个人偏好或冻结契约未要求的防御措施升级为 Blocking Finding。"
+            "证据充分性必须以当前仓在 Workspace 隔离约束下可合法产生的证据为边界。"
+            "Design Candidate 中的规格、Schema 和测试向量只需在本仓验证一致性、"
+            "可解析性和可执行性；不得以未导入、未启动或未读取其他 Workcell 的 HTTP "
+            "handler、UI 或测试为由阻断 Design。实际跨仓行为由对应实现 Workcell 和 QA E2E 承担。"
             "Candidate 的完整 Base..HEAD Diff 已由产品以 diff_sha256 内容寻址并校验；除非"
             "Frozen Acceptance Contract 明确要求，不得另行要求仓库内 manifest 覆盖辅助文件。"
         )
