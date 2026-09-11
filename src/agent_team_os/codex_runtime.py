@@ -1,6 +1,6 @@
 """Product-pinned Codex CLI invocation policy."""
 
-APPROVED_CODEX_MODEL = "gpt-5.6-sol"
+APPROVED_CODEX_MODEL = "gpt-6-astra"
 APPROVED_CODEX_REASONING_EFFORT = "low"
 
 
