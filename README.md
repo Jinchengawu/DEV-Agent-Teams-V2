@@ -338,11 +338,20 @@ Remote，但 Agent 边界是 Deterministic，不是 Live 模型证据。
 v0.5.1 Feishu Knowledge 与四仓 Live 启动前检查：
 
 ```bash
+# macOS 本地可信 Alpha：为独立评测账号创建或修复稳定 Keychain 凭据。
+# 命令不打印密码，也不再把评测身份绑定到会轮换的 GitHub Token。
+.venv/bin/python -m agent_team_os.live_evaluator_credentials \
+  --database .agent-team-os/live-v051/agent-team-os.sqlite \
+  --username v051-evaluator
+
 AGENT_TEAM_OS_FEATURE_FEISHU_TENANT_SYNC_V1=1 \
 AGENT_TEAM_OS_FEATURE_KNOWLEDGE_HYBRID_INDEX_V1=1 \
 AGENT_TEAM_OS_FEATURE_DELIVERY_KNOWLEDGE_CONTEXT_V1=1 \
 uv run --extra live agent-team-os knowledge-live-readiness --project-id <project-id>
 ```
+
+该凭据仅用于本地评测账号。密码保存在 macOS Keychain，账号轮换通过 Identity Service 的
+CAS 更新和审计事件完成；它不会写入 Git、日志、Gate Report 或截图。
 
 该命令只读取 Project/Team/Workspace、Published Pipeline、Approved Source、Index Qualification、
 Resolved Provider Binding、产品已接线 Runtime Adapter、持久化 Knowledge Sync Runtime、ACWM Lock
