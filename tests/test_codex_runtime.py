@@ -6,6 +6,7 @@ from agent_team_os.codex_runtime import (
     approved_planning_codex_command,
     approved_workcell_codex_command,
     approved_writer_codex_command,
+    resolve_codex_executable,
 )
 from agent_team_os.codex_simulation import ACWMCodexRoleRunner
 from agent_team_os.git_delivery import ACWMCodexWorkspaceAgent
@@ -38,6 +39,21 @@ def test_approved_codex_commands_do_not_inherit_operator_model_policy() -> None:
         "-c",
         'model_reasoning_effort="low"',
     )
+
+
+def test_approved_codex_commands_share_the_explicit_product_executable(
+    monkeypatch,
+) -> None:
+    executable = "/Applications/ChatGPT.app/Contents/Resources/codex"
+    monkeypatch.setenv("AGENT_TEAM_OS_CODEX_EXECUTABLE", executable)
+
+    assert resolve_codex_executable() == executable
+    assert approved_planning_codex_command()[0] == executable
+    assert approved_workcell_codex_command()[0] == executable
+    assert approved_writer_codex_command()[0] == executable
+
+    monkeypatch.setenv("AGENT_TEAM_OS_CODEX_EXECUTABLE", "   ")
+    assert resolve_codex_executable() == "codex"
 
 
 def test_product_owned_codex_adapters_use_the_role_specific_command(tmp_path) -> None:

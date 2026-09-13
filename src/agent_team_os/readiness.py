@@ -15,6 +15,11 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .codex_runtime import (
+    MINIMUM_CODEX_CLI_VERSION,
+    codex_cli_supports_frozen_models,
+    resolve_codex_executable,
+)
 from .delivery import DeliveryBuildIdentitySnapshot
 from .shared.hashes import sha256_file, sha256_json
 
@@ -280,6 +285,7 @@ class RuntimeReadiness:
         common = (
             self._package("acwm", "Install the locked ACWM dependency."),
             self._package("agentscope", "Run `uv sync --extra live`."),
+            self._codex_cli_version(),
             self._codex_login(),
         )
         planning = (
@@ -355,8 +361,43 @@ class RuntimeReadiness:
         )
 
     @staticmethod
+    def _codex_cli_version() -> DependencyCheck:
+        executable = resolve_codex_executable()
+        minimum = ".".join(str(part) for part in MINIMUM_CODEX_CLI_VERSION)
+        if shutil.which(executable) is None:
+            return DependencyCheck(
+                name="codex-cli-version",
+                status="missing",
+                repair=f"Install Codex CLI >= {minimum} and configure {executable!r}.",
+            )
+        try:
+            result = subprocess.run(
+                [executable, "--version"],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return DependencyCheck(
+                name="codex-cli-version",
+                status="failed",
+                repair=f"Install Codex CLI >= {minimum} and retry readiness.",
+            )
+        compatible = result.returncode == 0 and codex_cli_supports_frozen_models(result.stdout)
+        return DependencyCheck(
+            name="codex-cli-version",
+            status="ready" if compatible else "failed",
+            repair=(
+                None
+                if compatible
+                else f"Install Codex CLI >= {minimum} for the product-pinned model set."
+            ),
+        )
+
+    @staticmethod
     def _codex_login() -> DependencyCheck:
-        if shutil.which("codex") is None:
+        executable = resolve_codex_executable()
+        if shutil.which(executable) is None:
             return DependencyCheck(
                 name="codex-login",
                 status="missing",
@@ -364,7 +405,7 @@ class RuntimeReadiness:
             )
         try:
             result = subprocess.run(
-                ["codex", "login", "status"],
+                [executable, "login", "status"],
                 capture_output=True,
                 check=False,
                 timeout=5,

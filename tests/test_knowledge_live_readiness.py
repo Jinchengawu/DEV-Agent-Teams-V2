@@ -270,7 +270,10 @@ def test_runtime_readiness_probes_hermes_acp_protocol(
 
     def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
         commands.append(tuple(command))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b"codex-cli 0.153.4\n" if command[-1] == "--version" else b"",
+        )
 
     monkeypatch.setattr("agent_team_os.readiness.subprocess.run", run)
 
@@ -296,7 +299,10 @@ def test_codex_planning_readiness_does_not_require_hermes(
 
     def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
         commands.append(tuple(command))
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b"codex-cli 0.153.4\n" if command[-1] == "--version" else b"",
+        )
 
     monkeypatch.setattr("agent_team_os.readiness.subprocess.run", run)
 
@@ -316,10 +322,32 @@ def test_codex_planning_readiness_does_not_require_hermes(
     assert runtime.status == "ready"
     assert all("hermes" not in check.name for check in runtime.checks)
     assert ("codex", "login", "status") in commands
+    assert ("codex", "--version") in commands
     assert report.status == "ready"
     checks = {check.name: check for check in report.checks}
     assert "Codex" in checks["live-provider-bindings"].detail
     assert "Codex" in checks["product-runtime-adapters"].detail
+
+
+def test_runtime_readiness_rejects_codex_cli_too_old_for_frozen_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("agent_team_os.readiness.shutil.which", lambda _name: "/bin/codex")
+
+    def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b"codex-cli 0.149.1\n" if command[-1] == "--version" else b"",
+        )
+
+    monkeypatch.setattr("agent_team_os.readiness.subprocess.run", run)
+
+    report = RuntimeReadiness(planning_runtime_kind="codex").inspect()
+
+    assert report.status == "not_ready"
+    check = next(item for item in report.checks if item.name == "codex-cli-version")
+    assert check.status == "failed"
+    assert "0.153.4" in (check.repair or "")
 
 
 def test_missing_persistent_sync_runtime_cannot_satisfy_live_readiness() -> None:

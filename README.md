@@ -138,7 +138,8 @@ Agent-Team-OS 建立了独立 Evaluation 评测域，用于可重复验证能力
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
 - Node.js 与 pnpm（`console/package.json` 固定 `pnpm@10.13.1`）
-- 已安装并登录 Codex CLI，用于真实代码执行
+- 已安装并登录 Codex CLI `>=0.153.4`，用于真实代码执行；如需固定二进制，
+  设置 `AGENT_TEAM_OS_CODEX_EXECUTABLE=/absolute/path/to/codex`
 
 仓库当前没有发布安装包或 GitHub Release。从源码启动：
 
