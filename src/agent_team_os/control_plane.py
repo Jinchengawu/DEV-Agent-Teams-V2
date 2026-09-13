@@ -583,30 +583,17 @@ class ControlPlaneService:
         self, *, planning_identity: str, execution_identity: str
     ) -> JourneyRevision:
         """Import the checked-in ACWM Journey once as immutable revision 1."""
-        try:
-            return self.get_revision("backend-delivery", 1)
-        except KeyError:
-            pass
-        if self._config_root is None:
-            raise ValueError("ACWM config root is not configured")
-        definition = load_journeys(self._config_root / "journeys.yaml")["backend-delivery"]
         identities = {
             "hermes-pm": planning_identity,
             "hermes-project-admin": planning_identity,
             "codex-backend": execution_identity,
         }
-        snapshot = {
-            capability_id: {
-                "instance_id": f"builtin:{identity}",
-                "instance_version": 1,
-                "runtime_type": "codex-cli",
-                "identity": identity,
-            }
-            for capability_id, identity in identities.items()
-        }
         for identity in sorted(set(identities.values())):
+            instance_id = f"builtin:{identity}"
+            if self._get("agent-instance", instance_id) is not None:
+                continue
             instance = AgentInstance(
-                id=f"builtin:{identity}",
+                id=instance_id,
                 name=(
                     "Codex simulated Hermes planner"
                     if identity == planning_identity
@@ -617,6 +604,22 @@ class ControlPlaneService:
                 health=HealthResult(status="ready", identity=identity, latency_ms=0),
             )
             self._save("agent-instance", instance.id, instance.model_dump_json())
+        try:
+            return self.get_revision("backend-delivery", 1)
+        except KeyError:
+            pass
+        if self._config_root is None:
+            raise ValueError("ACWM config root is not configured")
+        definition = load_journeys(self._config_root / "journeys.yaml")["backend-delivery"]
+        snapshot = {
+            capability_id: {
+                "instance_id": f"builtin:{identity}",
+                "instance_version": 1,
+                "runtime_type": "codex-cli",
+                "identity": identity,
+            }
+            for capability_id, identity in identities.items()
+        }
         for capability_id, identity in identities.items():
             binding = CapabilityBinding(
                 capability_id=capability_id,

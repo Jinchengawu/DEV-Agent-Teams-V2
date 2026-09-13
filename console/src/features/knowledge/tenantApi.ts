@@ -4,6 +4,7 @@ import { request } from "../../shared/api/client";
 
 export type TenantConnection = components["schemas"]["TenantConnection"];
 export type TenantConnectionCreate = components["schemas"]["TenantConnectionCreate"];
+export type TenantConnectionCredentialReferenceUpdate = components["schemas"]["TenantConnectionCredentialReferenceUpdate"];
 export type TenantProviderBinding = components["schemas"]["TenantProviderBinding"];
 export type TenantProviderBindingCreate = components["schemas"]["TenantProviderBindingCreate"];
 export type ProviderSpace = components["schemas"]["ProviderSpace"];

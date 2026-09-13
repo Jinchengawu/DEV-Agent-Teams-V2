@@ -162,7 +162,7 @@ def test_real_four_repository_design_typescript_http_and_browser(verified_four_r
     ]
     assert results["frontend"]["report"].steps[1].passed >= 1
     assert results["backend"]["report"].steps[1].passed == 4
-    assert results["qa"]["report"].steps[0].passed == 4
+    assert results["qa"]["report"].steps[0].passed == 5
     assert len(results["qa"]["report"].inputs) == 3
 
 

@@ -27,7 +27,9 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .codex_runtime import approved_planning_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
+from .shared.errors import ProductError
 from .shared.hashes import sha256_json
 from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
 
@@ -73,35 +75,50 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
         prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("hermes-admin-simulator", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        semantics = await self._structured(
+            "hermes-admin-simulator",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements, value, required_workcells
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        return _task_from_semantics(semantics)
 
     async def _structured(
-        self, role: str, prompt: str, model: type[StructuredModel]
+        self,
+        role: str,
+        prompt: str,
+        model: type[StructuredModel],
+        *,
+        validate: Callable[[StructuredModel], None] | None = None,
     ) -> StructuredModel:
         schema = json.dumps(
             model.model_json_schema(),
@@ -113,12 +130,17 @@ Approved requirements:
         for attempt in range(2):
             response = await self._runner.run(role, prompt)
             try:
-                return model.model_validate_json(self._json_object(response))
-            except (ValidationError, ValueError) as error:
+                parsed = model.model_validate_json(self._json_object(response))
+                if validate is not None:
+                    validate(parsed)
+                return parsed
+            except (ValidationError, ValueError, ProductError, PlanningOutputError) as error:
                 last_error = error
                 if attempt == 1:
                     break
                 prompt += self._repair_context(response, error)
+        if isinstance(last_error, (ProductError, PlanningOutputError)):
+            raise last_error
         raise PlanningOutputError(
             "Codex simulator returned invalid structured output"
         ) from last_error
@@ -126,7 +148,8 @@ Approved requirements:
     @staticmethod
     def _repair_context(response: str, error: Exception) -> str:
         invalid_response = response[-8_000:].replace("</", "<\\/")
-        validation_error = str(error)[-4_000:].replace("</", "<\\/")
+        error_code = f"{error.code}: " if isinstance(error, ProductError) else ""
+        validation_error = (error_code + str(error))[-4_000:].replace("</", "<\\/")
         return f"""
 
 The prior ephemeral attempt violated the JSON contract. The blocks below are
@@ -182,32 +205,42 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are the task planning role in Agent-Team-OS.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
         prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("task-planning", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        semantics = await self._structured(
+            "task-planning",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements, value, required_workcells
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        return _task_from_semantics(semantics)
 
 
 def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
@@ -218,6 +251,13 @@ def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
         "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
         "数组元素包含 acceptance_id 与本仓具体 responsibility。只覆盖以上 Workcell，"
         "所有任务验收 ID 均须有人负责。共享验收项必须分别说明各仓责任，不能复制全局要求。"
+        "Workcell responsibility 只能描述本仓 Repository Candidate/Artifact 及其机器验证。"
+        "Design Workcell 负责规格、Schema 或测试向量时，其机器验证只能验证"
+        "本仓产物的一致性、可解析性和可执行性；不得要求 Design 导入、启动或读取"
+        "Backend、Frontend 或 QA 的实现。实际运行时行为由对应实现 Workcell 和 QA E2E 验证。"
+        "Plan/Design/Release Gate、Review 阻断、ReleaseBundle、PR 状态、Apply、"
+        "resume-forward 和 ReleaseManifest 属于 Agent-Team-OS 产品控制面，"
+        "不得分配给任何 Workcell，也不得写成 QA Repository 的交付责任。"
         "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
     )
 
@@ -229,6 +269,26 @@ def _validate_task_workcells(
         validate_workcell_acceptance(
             requirements.model_dump(mode="json"), task.model_dump(mode="json"), required_workcells
         )
+
+
+def _task_from_semantics(semantics: _TaskSemantics) -> TaskContract:
+    return TaskContract(
+        title=semantics.title,
+        instructions=semantics.instructions,
+        acceptance_ids=semantics.acceptance_ids,
+        workcell_acceptance=semantics.workcell_acceptance,
+    )
+
+
+def _validate_task_semantics(
+    requirements: RequirementArtifact,
+    semantics: _TaskSemantics,
+    required_workcells: tuple[str, ...],
+) -> None:
+    allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
+    if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
+        raise PlanningOutputError("Task referenced unknown acceptance criteria")
+    _validate_task_workcells(requirements, _task_from_semantics(semantics), required_workcells)
 
 
 class ACWMCodexRoleRunner:
@@ -244,7 +304,11 @@ class ACWMCodexRoleRunner:
         if config is not None and config_provider is not None:
             raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
-        self._config = config or CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+        self._config = config or CodexCLIConfig(
+            command=approved_planning_codex_command(),
+            sandbox="read-only",
+            timeout_seconds=120,
+        )
         self._config_provider = config_provider
         self._role_turn = AgentScopeRoleTurnAdapter()
         self._active_adapters: set[CodexCLICapabilityAdapter] = set()

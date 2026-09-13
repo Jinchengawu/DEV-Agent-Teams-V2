@@ -136,4 +136,22 @@ describe("交付黄金纵切", () => {
     await userEvent.click(screen.getByRole("button", { name: "确认 Forward-only 发布" }));
     expect(onDecision).toHaveBeenCalledWith("accept-candidate");
   });
+
+  it("Partial Apply 只引导 Resume forward，不误导用户创建新交付", () => {
+    const partialApply: Delivery = {
+      ...delivery(),
+      status: "needs_attention",
+      version: 12,
+      error_code: "REMOTE_MAIN_DRIFTED",
+      release_bundle_v2_sha256: hash,
+      plan_gate: undefined,
+    };
+
+    render(<MemoryRouter><DeliveryDetail delivery={partialApply} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
+
+    expect(screen.getByText(/使用下方四仓发布面板的 Resume forward/)).toBeTruthy();
+    expect(screen.getByText(/已成功推进的仓库不会回滚/)).toBeTruthy();
+    expect(screen.queryByText(/再创建新的交付/)).toBeNull();
+    expect(screen.queryByText(/不会污染任何项目仓库的 Main/)).toBeNull();
+  });
 });

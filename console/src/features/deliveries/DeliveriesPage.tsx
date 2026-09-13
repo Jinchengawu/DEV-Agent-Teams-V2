@@ -23,6 +23,7 @@ export function DeliveriesPage() {
         id: binding.pipeline_id,
         name: pipelines.data?.find((pipeline) => pipeline.id === binding.pipeline_id)?.name ?? binding.pipeline_id,
         active_revision: binding.pipeline_revision,
+        is_default: binding.is_default,
       })) ?? [],
     [pipelines.data, project.data?.pipeline_bindings],
   );
@@ -39,8 +40,9 @@ export function DeliveriesPage() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!pipelineRevisionId && activePipelines[0]?.active_revision) {
-      setPipelineRevisionId(`${activePipelines[0].id}:${activePipelines[0].active_revision}`);
+    const defaultPipeline = activePipelines.find((pipeline) => pipeline.is_default) ?? activePipelines[0];
+    if (!pipelineRevisionId && defaultPipeline?.active_revision) {
+      setPipelineRevisionId(`${defaultPipeline.id}:${defaultPipeline.active_revision}`);
     }
   }, [activePipelines, pipelineRevisionId]);
 

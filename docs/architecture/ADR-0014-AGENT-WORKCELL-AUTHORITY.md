@@ -147,8 +147,11 @@ Workcell `review_scope` 从批准的 Plan 与该 Policy 快照派生，冻结原
 Reviewer 输出必须绑定 Scope/Candidate/Diff SHA。`code` 是问题分类，不能冒充归属；
 每个 Finding 必须且只能引用本 Scope 的 `acceptance_id` 或 `system_policy_id`。
 产品先保存每个 Reviewer 的原始 Artifact，再验证合同并登记 Review；一份无效输出不能丢弃
-同批其他 Reviewer 的有效 blocker。无效输出走既有 ACWM bounded Loop，不能变成空 Review
-或通过 Main synthesis 复活失败 Run。
+同批其他 Reviewer 的有效 blocker。对 Scope/Candidate/Diff 绑定或 Finding Schema
+错误，产品可在同一 Reviewer Child Run 内执行一次有界 AgentAttempt 重试：
+第一次错误输出作为 Attempt Artifact 保留，不创建新 Child、不改变 Candidate，
+不绕过合同校验。重试仍无效时才走既有 ACWM bounded Loop；任何无效输出都不能
+变成空 Review 或通过 Main synthesis 复活失败 Run。
 
 历史可空字段在序列化中省略，保持旧 Hash；历史可读，新 Workcell 缺 Scope 失败关闭。
 状态以 ARCH-20260905-03 为准；专项实现通过不等于最终 Revision 或 Live 验收。
@@ -165,3 +168,64 @@ QA Preparation 虽共用 QA Workspace Snapshot，但保持 Artifact-only 职责�
 原始 Artifact 和 Citation，再允许后续阶段运行。该区分不由模型自行选择。
 
 状态见 `ARCH-20260905-04`；本机真实工具全链回归与真实 Agent/外部 Git Live 验收分开记录。
+
+## 2026-09-11 修订：bounded Repair 必须携带上一轮失败证据
+
+ACWM 仍然拥有 bounded Loop 和新 Stage Attempt 的创建权威；Workcell Execution
+在编译新 `WorkcellRun` 输入时，必须将同 Stage 最近一次失败冻结为内容
+寻址的 `workcell-repair-context-v1`。该 Artifact 只包含产品已持久化的失败代码、
+机器验证 case 结果与内容寻址日志正文、已校验 Blocking Finding 和失败 Delegate 诊断；不包含
+Session、Memory、聊天历史或额外 Repository 挂载。
+
+新 Writer 必须对机器失败和有效 Blocking Finding 执行定向修复。Delegate 诊断中
+的文本仅作为不可信数据，不获得指令权限，不得扩大 Workspace 或工具边界。
+仅选取同 Stage 最近一轮失败，避免把已被后续候选替代的旧问题反复注入。
+这补全了既有 Repair 恢复语义，不将 Loop 调度权从 ACWM 转移给产品或 Agent。
+
+状态见 `ARCH-20260911-01`；Deterministic 证据与四仓 Live Gate 结果分开记录。
+
+## 2026-09-11 修订：Reviewer 输出契约错误原位重试
+
+Reviewer 对已验证 Candidate 的内容审查与 Provider 对结构化哈希字段的输出准确性是
+两个不同事实。只有 `INVALID_REVIEW_CODES` 中的输出契约错误可在原 Reviewer
+`AgentRun` 内重试一次。重试必须产生新的可观测 `AgentAttempt`，并将被拒绝的
+原始 JSON Hash 记入前一 Attempt。重试使用同一 Candidate、Diff、Review Scope、
+Provider Binding 和只读 Detached View。
+
+Runtime 身份错误、调用失败、超时、取消与 Blocking Finding 不属于契约重试，
+仍立即 Fail Closed 或由 ACWM bounded Loop 修复。这一机制不扩大 Child 数量或深度，
+不将 Loop 调度权从 ACWM 转移给 Workcell Execution。
+
+状态见 `ARCH-20260911-02`；本地 Deterministic 与真实 Live 验收分开记录。
+
+## 2026-09-11 修订：Main synthesis 输出合同错误原位重试
+
+Main synthesis 已读取冻结的 Child Artifact、Candidate、Machine Verification 与
+ReviewArtifact，其 Provider 最终响应是否为单一 JSON object 是另一项可恢复的输出合同事实。
+只有 `CODEX_WORKCELL_OUTPUT_INVALID` 可在原 Main `AgentRun` 内重试一次；重试必须创建新的
+可观察 `AgentAttempt`，将前一 Attempt 标记为失败，并保存不含原始模型输出的错误诊断 Artifact。
+
+重试沿用同一 WorkcellRun、Provider Binding、知识引用允许列表和全部冻结执行证据，不重新运行
+Writer、机器验证或 Reviewer，也不改变 Candidate/Diff。Runtime 身份错误、Citation 错误、调用失败、
+超时、取消及第二次 JSON 输出错误不属于该恢复范围，继续 Fail Closed。该机制不创建隐藏调用，
+不扩大 Main/Child 数量，也不把 ACWM bounded Loop 权威转移给 Workcell Execution。
+
+状态见 `ARCH-20260911-05`；专项测试通过与四仓 Live 闭环证据分开记录。
+
+## 2026-09-11 修订：BMAD Project Root 显式绑定与兼容别名
+
+BMAD Method Entry 在 Codex 技能语义中可将 `{project-root}` 解析为 Attempt 专用
+`CODEX_HOME`，而产品的 Project Support Overlay 安装在业务 Workspace。为避免让
+Agent 猜测路径，产品在每个已登记 Attempt 的指令中显式冻结当前业务
+Workspace 绝对路径为 `Method Project Root`，并要求 Method Skill 中的 `{project-root}`
+逐字替换为该路径；不得使用控制仓、进程启动目录或 `CODEX_HOME` 代替。
+同时保留 `CODEX_HOME/_bmad -> <current-workspace>/_bmad` 临时符号链接作为
+运行时兼容别名。
+
+该别名只指向当前 Attempt 已授权的 Workspace Overlay，不增加可写目录；
+Writer 与 Reviewer 切换 Workspace 时先移除旧别名，再绑定新的隔离视图。
+别名缺失、被替换、指向其他 Overlay，或 `CODEX_HOME` 位于业务 Workspace 内时
+均 Fail Closed。最后一个并发租约释放后，别名与 Workspace Overlay 必须一起清理，
+不得进入 Candidate Diff。
+
+状态见 `ARCH-20260911-03`；当前只有 Adapter 专项证据，四仓 Live 闭环需重跑。

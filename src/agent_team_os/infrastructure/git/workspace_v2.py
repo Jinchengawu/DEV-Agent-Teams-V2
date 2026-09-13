@@ -4,6 +4,7 @@ import hashlib
 import re
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -76,7 +77,7 @@ class ExternalGitWorkspaceManager:
         cache_root.parent.mkdir(parents=True, exist_ok=True)
         with external_git_environment(binding.credential_reference) as environment:
             if not (cache_root / ".git").is_dir():
-                _git(
+                _git_read(
                     "clone",
                     "--no-checkout",
                     "--origin",
@@ -94,7 +95,7 @@ class ExternalGitWorkspaceManager:
                     cwd=cache_root,
                     environment=environment,
                 )
-            _git(
+            _git_read(
                 "fetch",
                 "--prune",
                 "--no-tags",
@@ -241,7 +242,7 @@ class ExternalGitWorkspaceManager:
                 cwd=workspace.worktree,
                 environment=environment,
             )
-            remote_candidate = _git(
+            remote_candidate = _git_read(
                 "ls-remote",
                 "--exit-code",
                 "origin",
@@ -302,7 +303,7 @@ class ExternalGitWorkspaceManager:
             / candidate_revision[:16]
         )
         with external_git_environment(workspace.credential_reference) as environment:
-            remote_candidate = _git(
+            remote_candidate = _git_read(
                 "ls-remote",
                 "--exit-code",
                 workspace.repository_uri,
@@ -486,7 +487,7 @@ def _validate_changed_files(
     if invalid:
         raise _git_error(
             "EXTERNAL_WORKSPACE_PATH_POLICY_VIOLATION",
-            "Candidate 修改了 Workcell Policy 未授权路径。",
+            "Candidate 修改了 Workcell Policy 未授权路径：" + ", ".join(invalid[:20]),
         )
     for item in changed_files:
         target = worktree / item
@@ -542,36 +543,58 @@ def _git(
     *arguments: str,
     cwd: Path | None = None,
     environment: dict[str, str],
+    max_attempts: int = 1,
 ) -> str:
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be positive")
     operation = _git_operation(arguments)
-    try:
-        completed = subprocess.run(
-            ["git", *arguments],
-            cwd=cwd,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120,
-        )
-    except subprocess.TimeoutExpired as error:
-        raise _git_error(
-            "EXTERNAL_GIT_COMMAND_FAILED",
-            f"Git {operation} 超过 120 秒，命令已终止。",
-        ) from error
-    except OSError as error:
-        raise _git_error(
-            "EXTERNAL_GIT_COMMAND_FAILED",
-            f"Git {operation} 无法启动或完成。",
-        ) from error
-    if completed.returncode != 0:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            completed = subprocess.run(
+                ["git", *arguments],
+                cwd=cwd,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired as error:
+            if attempt < max_attempts:
+                continue
+            raise _git_error(
+                "EXTERNAL_GIT_COMMAND_FAILED",
+                f"Git {operation} 超过 120 秒，命令已终止。",
+            ) from error
+        except OSError as error:
+            if attempt < max_attempts:
+                continue
+            raise _git_error(
+                "EXTERNAL_GIT_COMMAND_FAILED",
+                f"Git {operation} 无法启动或完成。",
+            ) from error
+        if completed.returncode == 0:
+            return completed.stdout
+        if attempt < max_attempts:
+            time.sleep(float(attempt))
+            continue
         diagnostic = _redact_git_diagnostic(completed.stderr, environment)
         suffix = f"：{diagnostic}" if diagnostic else "；Git 未提供错误详情。"
         raise _git_error(
             "EXTERNAL_GIT_COMMAND_FAILED",
             f"Git {operation} 失败（exit {completed.returncode}）{suffix}",
         )
-    return completed.stdout
+    raise AssertionError("unreachable")
+
+
+def _git_read(
+    *arguments: str,
+    cwd: Path | None = None,
+    environment: dict[str, str],
+) -> str:
+    """Retry one transient failure for idempotent remote-read operations only."""
+
+    return _git(*arguments, cwd=cwd, environment=environment, max_attempts=3)
 
 
 def _git_operation(arguments: tuple[str, ...]) -> str:

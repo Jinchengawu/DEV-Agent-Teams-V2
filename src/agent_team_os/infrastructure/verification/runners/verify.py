@@ -197,18 +197,37 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
             def do_GET(self) -> None:
                 path = urllib.parse.urlsplit(self.path)
                 if path.path == "/api/health":
-                    target = backend_url + "/health" + ("?" + path.query if path.query else "")
-                    try:
-                        with urllib.request.urlopen(target, timeout=3) as response:
-                            status, body = response.status, response.read()
-                    except urllib.error.HTTPError as error:
-                        status, body = error.code, error.read()
-                    self.send_response(status)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(body)
+                    self._proxy_health(path.query, method="GET")
                 else:
                     super().do_GET()
+
+            def do_HEAD(self) -> None:
+                path = urllib.parse.urlsplit(self.path)
+                if path.path == "/api/health":
+                    self._proxy_health(path.query, method="HEAD")
+                else:
+                    super().do_HEAD()
+
+            def _proxy_health(self, query: str, *, method: str) -> None:
+                target = backend_url + "/health" + ("?" + query if query else "")
+                request = urllib.request.Request(target, method=method)
+                try:
+                    with urllib.request.urlopen(request, timeout=3) as response:
+                        status = response.status
+                        headers = response.headers
+                        body = response.read() if method == "GET" else b""
+                except urllib.error.HTTPError as error:
+                    status = error.code
+                    headers = error.headers
+                    body = error.read() if method == "GET" else b""
+                self.send_response(status)
+                for name in ("Content-Type", "Cache-Control"):
+                    if value := headers.get(name):
+                        self.send_header(name, value)
+                self.send_header("Content-Length", headers.get("Content-Length", str(len(body))))
+                self.end_headers()
+                if method == "GET":
+                    self.wfile.write(body)
 
             def log_message(self, *_args: object) -> None:
                 pass

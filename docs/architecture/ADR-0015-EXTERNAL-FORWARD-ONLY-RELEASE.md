@@ -27,8 +27,10 @@ ADR-0012 为受管 Bare Git 的四仓 Release Bundle 定义了 CAS Compensation�
    不 Force Push。
 9. 部分成功时 Delivery 进入非终态 `needs_attention`，Project 进入 `release_drifted`，
    Delivery Lease 继续持有，不激活 Manifest。
-10. `resume-forward` 只接受原 Bundle：已应用仓必须仍等于 Candidate，未应用仓必须仍等于 Base。
-    不满足时继续人工协调，v0.5 不重写 Bundle、Rebase 或生成补偿提交。
+10. `resume-forward` 只接受原 Bundle：已有 Receipt 的仓必须仍等于 Candidate；
+    无 Receipt 的仓必须等于 Base，或在 Push 已成功但回读/Receipt 持久化失败时
+    精确等于同 Bundle Candidate。后一种只补写 `recovered=true` Receipt，不再 Push。
+    其他状态继续人工协调，v0.5 不重写 Bundle、Rebase 或生成补偿提交。
 11. 全部远端回读成功后才激活 `ReleaseManifestV2`；Manifest 中的四个 SHA 必须与回执一致。
 
 ## 取消、拒绝与 Apply 的并发裁决
@@ -95,6 +97,9 @@ ADR-0012 为受管 Bare Git 的四仓 Release Bundle 定义了 CAS Compensation�
 已经完整提交，返回既有结果，不把成功降回 `needs_attention`。否则以最新 Attempt Version
 保存恢复状态与错误；数据库无法写入时继续上抛错误，不能用通用 `failed` 掩盖未完成的发布。
 已持久化的未完成 Attempt 或 Drift Health 仍作为恢复与准入保护依据。
+若 Push 已成功但远程 SHA 回读或 Receipt 持久化失败，`resume-forward` 只在远程
+`main` 精确等于原 Bundle Candidate 时恢复 Receipt；该恢复不执行新 Push，也不接受
+任何第三个 SHA。
 
 本机制不是跨远端仓库的分布式原子事务。已经成功的远端不回滚；未完成的发布仍只允许原 Bundle
 的 `resume-forward`，没有新增 Force Push、Rebase、Bundle 重写、自动补偿或放弃恢复语义。

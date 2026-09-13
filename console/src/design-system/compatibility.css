@@ -83,16 +83,31 @@ body {
 
 .run-row.ant-btn,
 .evidence-table > .ant-btn,
-.evidence-list > .ant-btn {
+.evidence-list > .ant-btn,
+.team-catalog-list > .ant-btn {
   height: auto;
   white-space: normal;
   box-shadow: none;
 }
 
 .run-row.ant-btn > span,
-.evidence-table > .ant-btn > span,
 .evidence-list > .ant-btn > span {
   display: contents;
+}
+
+.evidence-row-content {
+  min-width: 0;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: inherit;
+  gap: inherit;
+  align-items: center;
+  white-space: normal;
+}
+
+.team-catalog-list > .ant-btn > span {
+  min-width: 0;
+  white-space: normal;
 }
 
 .stage-rail {

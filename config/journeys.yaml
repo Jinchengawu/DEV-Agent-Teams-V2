@@ -121,7 +121,7 @@ journeys:
         id: design-repair
         policy:
           exit_condition: design-workcell-passed
-          max_iterations: 3
+          max_iterations: 4
           timeout_seconds: 900
           on_exhausted: fail
         nodes:
@@ -156,7 +156,7 @@ journeys:
         id: frontend-repair
         policy:
           exit_condition: frontend-candidate-passed
-          max_iterations: 3
+          max_iterations: 4
           timeout_seconds: 900
           on_exhausted: fail
         nodes:
@@ -172,7 +172,7 @@ journeys:
         id: backend-repair
         policy:
           exit_condition: backend-candidate-passed
-          max_iterations: 3
+          max_iterations: 4
           timeout_seconds: 900
           on_exhausted: fail
         nodes:
@@ -188,7 +188,7 @@ journeys:
         id: qa-delivery-repair
         policy:
           exit_condition: qa-candidate-passed
-          max_iterations: 3
+          max_iterations: 4
           timeout_seconds: 900
           on_exhausted: fail
         nodes:

@@ -49,7 +49,9 @@ Verifier 只接受一个已经完成的 Delivery，不启动 Agent、不重新�
   Workcell Snapshot Hash 不能绕过验收；
 - Requirements/Tasking 使用冻结的真实 `hermes.acp` Binding，全部 Workcell Slot 使用真实
   `codex.cli` Binding；每个 Planning Root 只能有一个 `legacy(1)` Attempt，Workcell Main 必须精确
-  保留 `planning(1) → synthesis(2)` 两次 Attempt，Child 只能有一次 `delegate(1)` Attempt；Root/父子
+  保留 `planning(1) → synthesis(2)` 两次 Attempt；普通 Child 只能有一次 `delegate(1)` Attempt，
+  Reviewer Child 允许产品 Workcell Kernel 已定义的有界契约重试
+  `delegate(1 failed: INVALID_REVIEW_CODES) → delegate(2 succeeded)`；Root/父子
   拓扑、DelegationPlan、Workspace Access、Method、Artifact 与 Binding Hash/Runtime Identity 均匹配
   冻结 Snapshot；
 - Required Knowledge Context 全部存在，Citation 只来自冻结 Context，且授权 Stamp 在结果接纳时
@@ -61,6 +63,10 @@ Verifier 只接受一个已经完成的 Delivery，不启动 Agent、不重新�
 
 Report 使用内容寻址 Hash，且不保存 Secret、Credential Reference、Repository URI、知识正文或
 模型原始响应。`FAIL=0`、`WARN=0`、`skipped=0` 才能标记 `passed`。
+
+Reviewer 重试不会放宽验收：两次 Attempt 必须属于同一可观察 Child Run、使用同一冻结 Binding，
+ordinal 连续，首个失败码必须属于 `INVALID_REVIEW_CODES`，两份结果 Artifact 均可校验，且最终
+Attempt 必须成功。第三次尝试、其他错误码、Binding 漂移或最终失败继续 Fail Closed。
 
 ### Readiness 与 Report 状态
 

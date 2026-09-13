@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from http.client import HTTPConnection
 from urllib.parse import urlsplit
 
 from playwright.sync_api import expect, sync_playwright
@@ -53,6 +54,22 @@ class HealthE2E(unittest.TestCase):
         self.page.goto(f"{self.base_url}/?status=invalid")
         expect(self.page.get_by_test_id("health-status")).to_have_text("unavailable")
         expect(self.page.get_by_test_id("health-error")).to_be_visible()
+
+    def test_gateway_preserves_get_and_head_contract(self) -> None:
+        parsed = urlsplit(self.base_url)
+        connection = HTTPConnection(parsed.hostname, parsed.port, timeout=5)
+        try:
+            for method in ("GET", "HEAD"):
+                with self.subTest(method=method):
+                    connection.request(method, "/api/health?status=degraded")
+                    response = connection.getresponse()
+                    body = response.read()
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                    if method == "HEAD":
+                        self.assertEqual(body, b"")
+        finally:
+            connection.close()
 
 
 if __name__ == "__main__":

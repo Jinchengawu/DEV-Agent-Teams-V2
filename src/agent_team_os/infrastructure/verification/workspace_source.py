@@ -2,14 +2,46 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from ..git import ExternalGitBinding, external_git_environment
 from .tool_environment import tool_error
+
+_GIT_READ_ATTEMPTS = 3
+
+
+def _git_read(
+    *args: str,
+    environment: dict[str, str],
+    retry_cleanup: Path | None = None,
+) -> bytes:
+    last_returncode = -1
+    for attempt in range(1, _GIT_READ_ATTEMPTS + 1):
+        if attempt > 1 and retry_cleanup is not None and retry_cleanup.exists():
+            shutil.rmtree(retry_cleanup)
+        completed = subprocess.run(
+            ("git", *args),
+            env=environment,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode == 0:
+            return completed.stdout
+        last_returncode = completed.returncode
+        if attempt < _GIT_READ_ATTEMPTS:
+            time.sleep(float(attempt))
+    operation = args[0] if args else "unknown"
+    raise tool_error(
+        f"Git 只读操作 {operation} 连续 {_GIT_READ_ATTEMPTS} 次失败"
+        f"（exit {last_returncode}），无法读取已验证 Revision 的仓库配置。"
+    )
 
 
 @contextmanager
@@ -27,14 +59,9 @@ def read_configuration(
             environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null")
 
             def git(*args: str) -> bytes:
-                completed = subprocess.run(
-                    ("git", *args), env=environment, capture_output=True, timeout=30, check=False
-                )
-                if completed.returncode:
-                    raise tool_error("无法读取已验证 Revision 的仓库配置。")
-                return completed.stdout
+                return _git_read(*args, environment=environment)
 
-            git(
+            _git_read(
                 "clone",
                 "--bare",
                 "--no-local",
@@ -46,6 +73,8 @@ def read_configuration(
                 "--",
                 binding.remote_uri,
                 str(repository),
+                environment=environment,
+                retry_cleanup=repository,
             )
             current = (
                 git("--git-dir", str(repository), "rev-parse", "refs/heads/main").decode().strip()

@@ -187,6 +187,24 @@ class ConcurrentTenantProvider(DeterministicTenantProvider):
                 self.active -= 1
 
 
+class ConcurrentCredentialFailureProvider(ConcurrentTenantProvider):
+    def fetch_snapshot(self, source_id: str) -> ProviderSnapshot:
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        try:
+            time.sleep(0.04)
+            self.fetch_count += 1
+            raise ProviderFailure(
+                "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED",
+                f"credential unavailable for {source_id}",
+                unavailable=True,
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 class DeterministicTenantResolver:
     def __init__(self, provider: DeterministicTenantProvider) -> None:
         self.provider = provider
@@ -269,6 +287,156 @@ async def test_administrator_creates_tenant_connection_from_secret_references(
     assert created.json()["app_id_ref"] == "env:FEISHU_APP_ID"
     assert created.json()["app_secret_ref"] == "env:FEISHU_APP_SECRET"
     assert "app_secret" not in created.text.replace("app_secret_ref", "")
+
+
+@pytest.mark.anyio
+async def test_administrator_rotates_connection_references_and_must_diagnose_again(
+    tmp_path: Path,
+) -> None:
+    app = _app(
+        tmp_path / "tenant-knowledge.sqlite",
+        resolver=DeterministicTenantResolver(DeterministicTenantProvider()),
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await client.post(
+            "/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "admin", "password": ADMIN_PASSWORD},
+        )
+        headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": client.cookies["agent_team_os_csrf"],
+        }
+        created = await client.post(
+            "/v1/knowledge/connections",
+            headers=headers,
+            json={
+                "provider_kind": "feishu",
+                "display_name": "研发知识库",
+                "app_id_ref": "env:FEISHU_APP_ID",
+                "app_secret_ref": "env:FEISHU_APP_SECRET",
+            },
+        )
+        diagnosed = await client.post(
+            f"/v1/knowledge/connections/{created.json()['id']}/diagnose",
+            headers=headers,
+        )
+        rotated = await client.put(
+            f"/v1/knowledge/connections/{created.json()['id']}/credential-references",
+            headers=headers,
+            json={
+                "app_id_ref": "keychain:agent-team-os.feishu.app-id",
+                "app_secret_ref": "keychain:agent-team-os.feishu.app-secret",
+                "expected_version": diagnosed.json()["version"],
+            },
+        )
+
+    assert rotated.status_code == 200
+    assert rotated.json()["status"] == "unverified"
+    assert rotated.json()["authorization_version"] == diagnosed.json()["authorization_version"] + 1
+    assert rotated.json()["version"] == diagnosed.json()["version"] + 1
+    assert rotated.json()["app_id_ref"] == "keychain:agent-team-os.feishu.app-id"
+    assert rotated.json()["app_secret_ref"] == "keychain:agent-team-os.feishu.app-secret"
+    assert rotated.json()["last_diagnosed_at"] is None
+    assert rotated.json()["last_error_code"] is None
+
+
+@pytest.mark.anyio
+async def test_connection_reference_rotation_rejects_stale_version(tmp_path: Path) -> None:
+    app = _app(tmp_path / "tenant-knowledge.sqlite")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await client.post(
+            "/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "admin", "password": ADMIN_PASSWORD},
+        )
+        headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": client.cookies["agent_team_os_csrf"],
+        }
+        created = await client.post(
+            "/v1/knowledge/connections",
+            headers=headers,
+            json={
+                "provider_kind": "feishu",
+                "display_name": "研发知识库",
+                "app_id_ref": "env:FEISHU_APP_ID",
+                "app_secret_ref": "env:FEISHU_APP_SECRET",
+            },
+        )
+        payload = {
+            "app_id_ref": "keychain:agent-team-os.feishu.app-id",
+            "app_secret_ref": "keychain:agent-team-os.feishu.app-secret",
+            "expected_version": created.json()["version"],
+        }
+        first = await client.put(
+            f"/v1/knowledge/connections/{created.json()['id']}/credential-references",
+            headers=headers,
+            json=payload,
+        )
+        stale = await client.put(
+            f"/v1/knowledge/connections/{created.json()['id']}/credential-references",
+            headers=headers,
+            json={**payload, "app_id_ref": "env:STALE_APP_ID"},
+        )
+        listed = await client.get("/v1/knowledge/connections")
+
+    assert first.status_code == 200
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "KNOWLEDGE_CONNECTION_VERSION_CONFLICT"
+    assert listed.json()[0]["app_id_ref"] == "keychain:agent-team-os.feishu.app-id"
+
+
+@pytest.mark.anyio
+async def test_connection_reference_rotation_rejects_duplicate_app_id_reference(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path / "tenant-knowledge.sqlite")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await client.post(
+            "/v1/auth/login",
+            headers={"Origin": ORIGIN},
+            json={"username": "admin", "password": ADMIN_PASSWORD},
+        )
+        headers = {
+            "Origin": ORIGIN,
+            "X-CSRF-Token": client.cookies["agent_team_os_csrf"],
+        }
+        first = await client.post(
+            "/v1/knowledge/connections",
+            headers=headers,
+            json={
+                "provider_kind": "feishu",
+                "display_name": "研发知识库",
+                "app_id_ref": "keychain:agent-team-os.feishu.app-id",
+                "app_secret_ref": "keychain:agent-team-os.feishu.app-secret",
+            },
+        )
+        second = await client.post(
+            "/v1/knowledge/connections",
+            headers=headers,
+            json={
+                "provider_kind": "feishu",
+                "display_name": "备用知识库",
+                "app_id_ref": "env:FEISHU_BACKUP_APP_ID",
+                "app_secret_ref": "env:FEISHU_BACKUP_APP_SECRET",
+            },
+        )
+        conflicted = await client.put(
+            f"/v1/knowledge/connections/{second.json()['id']}/credential-references",
+            headers=headers,
+            json={
+                "app_id_ref": first.json()["app_id_ref"],
+                "app_secret_ref": "keychain:agent-team-os.feishu.backup-app-secret",
+                "expected_version": second.json()["version"],
+            },
+        )
+        preserved = await client.get("/v1/knowledge/connections")
+
+    assert conflicted.status_code == 409
+    assert conflicted.json()["code"] == "KNOWLEDGE_CONNECTION_CONFLICT"
+    second_after = next(item for item in preserved.json() if item["id"] == second.json()["id"])
+    assert second_after["app_id_ref"] == "env:FEISHU_BACKUP_APP_ID"
 
 
 @pytest.mark.anyio
@@ -1062,6 +1230,40 @@ async def test_worker_never_exceeds_configured_two_fetches(tmp_path: Path) -> No
 
 
 @pytest.mark.anyio
+async def test_worker_concurrent_credential_failures_idempotently_degrade_connection(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "scheduled-credential-failure.sqlite"
+    clock = MutableClock()
+    provider = ConcurrentCredentialFailureProvider()
+    app = _app(
+        database,
+        resolver=DeterministicTenantResolver(provider),
+        clock=clock,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await _create_approved_source(client, "scheduled-credential-failure")
+
+    manager, policy = _sync_runtime(database, provider, clock)
+    scheduler = KnowledgeSyncScheduler(
+        manager,
+        SQLiteProjectRepository(database),
+        policy=policy,
+        clock=clock,
+    )
+    worker = KnowledgeSyncWorker(manager, policy=policy, clock=clock)
+
+    assert len(scheduler.enqueue_due()) == 3
+    completed = await worker.run_once()
+
+    assert len(completed) == 3
+    assert {job.status for job in completed} == {"failed"}
+    connection = manager.repository.list_connections()[0]
+    assert connection.status == "degraded"
+    assert connection.last_error_code == "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED"
+
+
+@pytest.mark.anyio
 async def test_source_freshness_and_daily_directory_reconciliation_fail_closed(
     tmp_path: Path,
 ) -> None:
@@ -1104,6 +1306,45 @@ async def test_source_freshness_and_daily_directory_reconciliation_fail_closed(
             (binding_id,),
         ).fetchone()
     assert source_status == ("tombstoned",)
+
+
+@pytest.mark.anyio
+async def test_directory_reconciliation_skips_binding_while_connection_is_degraded(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "degraded-connection-reconciliation.sqlite"
+    clock = MutableClock()
+    provider = DeterministicTenantProvider()
+    app = _app(
+        database,
+        resolver=DeterministicTenantResolver(provider),
+        clock=clock,
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=ORIGIN) as client:
+        await _create_approved_source(client, "degraded-reconciliation")
+
+    manager, policy = _sync_runtime(database, provider, clock)
+    connection = manager.repository.list_connections()[0]
+    manager.repository.update_connection(
+        connection.model_copy(
+            update={
+                "status": "degraded",
+                "version": connection.version + 1,
+                "last_error_code": "KNOWLEDGE_CREDENTIAL_REFERENCE_UNRESOLVED",
+            }
+        ),
+        connection.version,
+    )
+    clock.advance(timedelta(hours=25))
+
+    def unexpected_refresh(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("degraded connection must not trigger binding reconciliation")
+
+    monkeypatch.setattr(manager, "refresh_binding", unexpected_refresh)
+    reconciler = KnowledgeDirectoryReconciler(manager, policy=policy, clock=clock)
+
+    assert reconciler.reconcile_due() == ()
 
 
 async def _create_approved_source(

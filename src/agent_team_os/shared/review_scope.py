@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import (
@@ -107,6 +108,7 @@ def validate_workcell_acceptance(
     if not isinstance(criteria, list | tuple) or not criteria:
         raise review_error(invalid, "需求缺少可引用的 Acceptance。")
     criteria_ids: list[str] = []
+    criteria_statements: dict[str, str] = {}
     for criterion in criteria:
         if (
             not isinstance(criterion, dict)
@@ -117,6 +119,7 @@ def validate_workcell_acceptance(
         ):
             raise review_error(invalid, "Acceptance ID 或原始正文无效。")
         criteria_ids.append(criterion["id"])
+        criteria_statements[criterion["id"]] = criterion["statement"]
     if len(set(criteria_ids)) != len(criteria_ids):
         raise review_error(invalid, "需求中的 Acceptance ID 重复。")
     if (
@@ -152,9 +155,42 @@ def validate_workcell_acceptance(
             or any(not item.responsibility.strip() for item in assignment.acceptance)
         ):
             raise review_error(invalid, "本仓责任存在重复、越界引用或空责任说明。")
+        for item in assignment.acceptance:
+            if _requires_another_workcell_repository(
+                criteria_statements[item.acceptance_id],
+                owner=assignment.workcell_key,
+                workcells=required_workcells,
+            ) or _requires_another_workcell_repository(
+                item.responsibility,
+                owner=assignment.workcell_key,
+                workcells=required_workcells,
+            ):
+                raise review_error(
+                    invalid,
+                    "Workcell Acceptance 不得要求执行、挂载或修改其他 "
+                    "Workcell 的 Repository/Candidate；跨仓只能消费 ArtifactAttachment。",
+                )
         assigned.update(identifiers)
     if assigned != set(task_ids):
         raise review_error(invalid, "Task 中的 Acceptance 未被本次 Workcell 责任映射完整覆盖。")
+
+
+def _requires_another_workcell_repository(
+    text: str,
+    *,
+    owner: str,
+    workcells: tuple[str, ...],
+) -> bool:
+    action = r"(?:执行|运行|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
+    repository = r"(?:candidate|repository|workspace|仓库|代码仓|工作区|测试|tests?)"
+    lowered = text.lower()
+    for other in workcells:
+        if other == owner:
+            continue
+        escaped = re.escape(other.lower())
+        if re.search(rf"{action}.{{0,160}}{escaped}.{{0,160}}{repository}", lowered):
+            return True
+    return False
 
 
 def compile_review_scope(

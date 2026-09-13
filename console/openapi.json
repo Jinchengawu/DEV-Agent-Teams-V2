@@ -7774,6 +7774,85 @@
         }
       }
     },
+    "/v1/knowledge/connections/{connection_id}/credential-references": {
+      "put": {
+        "summary": "Update Connection Credential References",
+        "operationId": "update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put",
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantConnectionCredentialReferenceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantConnection"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/knowledge/connections/{connection_id}/diagnose": {
       "post": {
         "summary": "Diagnose Connection",
@@ -23003,6 +23082,35 @@
           "app_secret_ref"
         ],
         "title": "TenantConnectionCreate"
+      },
+      "TenantConnectionCredentialReferenceUpdate": {
+        "properties": {
+          "app_id_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Id Ref"
+          },
+          "app_secret_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Secret Ref"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "app_id_ref",
+          "app_secret_ref",
+          "expected_version"
+        ],
+        "title": "TenantConnectionCredentialReferenceUpdate"
       },
       "TenantProviderBinding": {
         "properties": {

@@ -13,6 +13,7 @@ from .tenant_domain import (
     KnowledgeSyncJobRequest,
     TenantConnection,
     TenantConnectionCreate,
+    TenantConnectionCredentialReferenceUpdate,
     TenantProviderBinding,
     TenantProviderBindingCreate,
     TenantProviderSnapshotRecord,
@@ -40,6 +41,19 @@ def create_tenant_knowledge_router(
         request_body: TenantConnectionCreate, request: Request
     ) -> TenantConnection:
         return service.create_connection(actor(request), request_body)
+
+    @router.put(
+        "/v1/knowledge/connections/{connection_id}/credential-references",
+        response_model=TenantConnection,
+    )
+    def update_connection_credential_references(
+        connection_id: str,
+        request_body: TenantConnectionCredentialReferenceUpdate,
+        request: Request,
+    ) -> TenantConnection:
+        return service.update_connection_credential_references(
+            actor(request), connection_id, request_body
+        )
 
     @router.post(
         "/v1/knowledge/connections/{connection_id}/diagnose",

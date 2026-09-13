@@ -1,3 +1,4 @@
+import sqlite3
 import time
 from pathlib import Path
 
@@ -299,6 +300,40 @@ def test_delivery_pins_the_requested_published_journey_revision(tmp_path: Path) 
     )
     assert created.json()["resolved_journey_sha256"] == revision.fingerprint
     assert missing.status_code == 404
+
+
+def test_builtin_journey_import_restores_missing_runtime_instance_on_restart(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "control.sqlite"
+    service = ControlPlaneService(
+        database,
+        probe=ReadyProbe(),
+        config_root=Path(__file__).parents[1] / "config",
+    )
+    first = service.import_builtin_journey(
+        planning_identity="codex-cli",
+        execution_identity="codex-cli",
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "DELETE FROM control_records WHERE kind='agent-instance' AND id=?",
+            ("builtin:codex-cli",),
+        )
+        connection.commit()
+
+    restarted = ControlPlaneService(
+        database,
+        probe=ReadyProbe(),
+        config_root=Path(__file__).parents[1] / "config",
+    )
+    second = restarted.import_builtin_journey(
+        planning_identity="codex-cli",
+        execution_identity="codex-cli",
+    )
+
+    assert second == first
+    assert restarted.get_instance("builtin:codex-cli").health.status == "ready"
 
 
 def test_board_commands_and_legacy_knowledge_writes_are_separated(tmp_path: Path) -> None:

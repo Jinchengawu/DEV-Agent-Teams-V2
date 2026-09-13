@@ -69,10 +69,12 @@ export function EvidencePage() {
       <div className="panel-head"><div><span>证据目录</span><small>{filtered.length} / {records.length} 条 · 项目 {projectId}</small></div><small>选择一行打开 420px 完整性检查器</small></div>
       {filtered.length === 0 ? <EmptyState title="没有符合条件的真实证据" detail="清除筛选，或先完成交付阶段。系统不会补造缺失证据。"/> :
         <div className="evidence-table" role="list">{filtered.map((item) => <Button type="text" key={item.id} className={selected?.id === item.id && inspectorOpen ? "selected" : ""} onClick={() => { setSelected(item); setInspectorOpen(true); setCopyNotice(""); }}>
-          <span><strong>{artifactTypeLabel(item.kind)}</strong><small>{item.id} · {item.delivery_id} · {item.producer_identity}</small></span>
-          <span><strong>{item.source_kind}</strong><small>{item.source_id}</small></span>
-          <StatusBadge value={item.status}/>
-          <span className="evidence-hash"><code>{item.content_sha256?.slice(0, 16) ?? "无哈希"}</code><small>{item.verified_at ?? "尚未验证"}</small></span>
+          <span className="evidence-row-content">
+            <span><strong>{artifactTypeLabel(item.kind)}</strong><small>{item.id} · {item.delivery_id} · {item.producer_identity}</small></span>
+            <span><strong>{item.source_kind}</strong><small>{item.source_id}</small></span>
+            <StatusBadge value={item.status}/>
+            <span className="evidence-hash"><code>{item.content_sha256?.slice(0, 16) ?? "无哈希"}</code><small>{item.verified_at ?? "尚未验证"}</small></span>
+          </span>
         </Button>)}</div>}
     </section>
 

@@ -47,8 +47,56 @@ def test_codex_task_preserves_explicit_four_workcell_acceptance_for_plan_gate() 
         task["workcell_acceptance"]
     )
     assert all(key in runner.prompts[0] for key in WORKCELL_KEYS)
+    assert (
+        "Return raw JSON only with: title, instructions, acceptance_ids, "
+        "workcell_acceptance." in runner.prompts[0]
+    )
+    assert "Do not invent permissions, executable commands or system_policy" in runner.prompts[0]
+    assert "Do not include permissions, commands, paths, system_policy" not in runner.prompts[0]
     legacy = TaskContract(title="old", instructions="old", acceptance_ids=("AC-1",))
     assert "workcell_acceptance" not in legacy.model_dump(mode="json")
+
+
+def test_codex_task_planning_preserves_frozen_literals_and_constraints() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, task = planning_payloads()
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+
+    asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    prompt = runner.prompts[0]
+    assert "exact literal" in prompt
+    assert "const" in prompt
+    assert "Canonical Identifier" in prompt
+    assert "不得弱化为任意非空值" in prompt
+
+
+def test_codex_task_planning_keeps_release_authority_outside_workcell_responsibilities() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, task = planning_payloads()
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+
+    asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    prompt = runner.prompts[0]
+    assert "Repository Candidate/Artifact" in prompt
+    assert "ReleaseBundle" in prompt
+    assert "resume-forward" in prompt
+    assert "不得分配给任何 Workcell" in prompt
+    assert "Design Workcell 负责规格、Schema 或测试向量" in prompt
+    assert "实际运行时行为由对应实现 Workcell 和 QA E2E 验证" in prompt
 
 
 def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:
@@ -57,12 +105,33 @@ def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities()
 
     requirements, task = planning_payloads()
     task.pop("workcell_acceptance")
-    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+    runner = ScriptedCodexRoleRunner([json.dumps(task), json.dumps(task)])
     with pytest.raises(ProductError) as rejected:
         asyncio.run(CodexPlanningService(runner).plan(
             RequirementArtifact.model_validate(requirements), required_workcells=WORKCELL_KEYS
         ))
     assert rejected.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
+
+
+def test_codex_task_planning_repairs_product_semantic_validation_once() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements, valid_task = planning_payloads()
+    invalid_task = dict(valid_task)
+    invalid_task.pop("workcell_acceptance")
+    runner = ScriptedCodexRoleRunner([json.dumps(invalid_task), json.dumps(valid_task)])
+
+    result = asyncio.run(
+        CodexPlanningService(runner).plan(
+            RequirementArtifact.model_validate(requirements),
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    assert result.workcell_acceptance is not None
+    assert len(runner.prompts) == 2
+    assert "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID" in runner.prompts[1]
+    assert 'instruction-authority="none"' in runner.prompts[1]
 
 
 def test_codex_planning_uses_the_last_complete_json_message() -> None:

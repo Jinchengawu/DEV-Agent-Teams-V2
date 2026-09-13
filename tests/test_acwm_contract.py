@@ -134,11 +134,11 @@ def test_v050_workcell_journey_keeps_four_repositories_and_parallel_fe_be() -> N
         loop_id: (loop.policy.exit_condition, loop.policy.max_iterations)
         for loop_id, loop in loops.items()
     } == {
-        "design-repair": ("design-workcell-passed", 3),
+        "design-repair": ("design-workcell-passed", 4),
         "qa-preparation-repair": ("qa-preparation-artifacts-passed", 2),
-        "frontend-repair": ("frontend-candidate-passed", 3),
-        "backend-repair": ("backend-candidate-passed", 3),
-        "qa-delivery-repair": ("qa-candidate-passed", 3),
+        "frontend-repair": ("frontend-candidate-passed", 4),
+        "backend-repair": ("backend-candidate-passed", 4),
+        "qa-delivery-repair": ("qa-candidate-passed", 4),
     }
     assert all(
         child.workflow_mode == "agentscope.workcell-team"
