@@ -40,17 +40,21 @@ def design(root: Path) -> dict[str, object]:
     contract = json.loads((root / "contract.json").read_text())
     schema = json.loads((root / "schema.json").read_text())
     vectors = json.loads((root / "vectors.json").read_text())
-    if contract.get("contract_id") != "health-contract-v1":
+    contract_id = contract.get("contract_id")
+    if contract_id not in {"health-contract-v1", "health-contract-v2"}:
         raise ValueError("设计合同 ID 不匹配")
+    is_v2 = contract_id == "health-contract-v2"
+    required_fields = {"status", "version", *( {"service"} if is_v2 else set())}
     jsonschema.Draft202012Validator.check_schema(schema)
     if (
         schema.get("type") != "object"
         or schema.get("additionalProperties") is not False
-        or set(schema.get("required", [])) != {"status", "version"}
+        or set(schema.get("required", [])) != required_fields
         or set(schema["properties"]["status"].get("enum", [])) != {"ok", "degraded", "unavailable"}
-        or schema["properties"]["version"].get("const") != "health-contract-v1"
+        or schema["properties"]["version"].get("const") != contract_id
+        or (is_v2 and schema["properties"].get("service", {}).get("const") != "backend-demo")
     ):
-        raise ValueError("设计 Schema 偏离冻结的 health-contract-v1 合同")
+        raise ValueError(f"设计 Schema 偏离冻结的 {contract_id} 合同")
     valid = vectors.get("valid", [])
     invalid = vectors.get("invalid", [])
     if not valid or not invalid:
@@ -58,7 +62,7 @@ def design(root: Path) -> dict[str, object]:
     if {item["payload"].get("status") for item in valid} != {"ok", "degraded", "unavailable"}:
         raise ValueError("设计正向量必须覆盖全部状态")
     validator = jsonschema.Draft202012Validator(schema)
-    cases = []
+    cases: list[dict[str, object]] = []
     for category, values in (("valid", valid), ("invalid", invalid)):
         for item in values:
             accepted = validator.is_valid(item["payload"])
@@ -68,9 +72,74 @@ def design(root: Path) -> dict[str, object]:
                     "status": "passed" if accepted == (category == "valid") else "failed",
                 }
             )
+    if is_v2:
+        _validate_health_contract_v2_metadata(contract)
+        cases.extend(_health_contract_v2_header_cases(vectors))
     if len({case["id"] for case in cases}) != len(cases):
         raise ValueError("设计向量 ID 重复")
     return result(cases)
+
+
+def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> None:
+    success = contract.get("success_responses")
+    if not isinstance(success, Mapping):
+        raise ValueError("health-contract-v2 缺少成功响应合同")
+    headers = success.get("required_headers")
+    expected_headers = {
+        "X-Health-Contract": "health-contract-v2",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    actual_headers = (
+        {name: value.get("value") for name, value in headers.items() if isinstance(value, Mapping)}
+        if isinstance(headers, Mapping)
+        else {}
+    )
+    if (
+        contract.get("contract_version") != "health-contract-v2"
+        or success.get("methods") != ["GET", "HEAD"]
+        or success.get("path") != "/health"
+        or success.get("success_body_fields") != ["status", "version", "service"]
+        or success.get("body_schema") != "schema.json"
+        or success.get("head_body_bytes") != 0
+        or actual_headers != expected_headers
+    ):
+        raise ValueError("health-contract-v2 成功响应元数据不匹配")
+
+
+def _health_contract_v2_header_cases(vectors: Mapping[str, object]) -> list[dict[str, object]]:
+    expected_headers = {
+        "X-Health-Contract": "health-contract-v2",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    valid = vectors.get("header_valid")
+    invalid = vectors.get("header_invalid")
+    if not isinstance(valid, list) or not valid or not isinstance(invalid, list) or not invalid:
+        raise ValueError("health-contract-v2 必须含非空 Header 正反向量")
+    cases: list[dict[str, object]] = []
+    valid_methods: set[str] = set()
+    for category, values in (("header-valid", valid), ("header-invalid", invalid)):
+        for item in values:
+            response = item.get("response", {}) if isinstance(item, Mapping) else {}
+            headers = response.get("headers", {}) if isinstance(response, Mapping) else {}
+            method = response.get("method") if isinstance(response, Mapping) else None
+            accepted = (
+                isinstance(headers, Mapping)
+                and all(headers.get(name) == value for name, value in expected_headers.items())
+                and (method != "HEAD" or response.get("body") == "")
+            )
+            if category == "header-valid" and accepted and isinstance(method, str):
+                valid_methods.add(method)
+            cases.append(
+                {
+                    "id": f"{category}:{item['id']}",
+                    "status": "passed" if accepted == (category == "header-valid") else "failed",
+                }
+            )
+    if valid_methods != {"GET", "HEAD"}:
+        raise ValueError("health-contract-v2 Header 正向量必须覆盖 GET 与 HEAD")
+    return cases
 
 
 class Results(unittest.TestResult):
