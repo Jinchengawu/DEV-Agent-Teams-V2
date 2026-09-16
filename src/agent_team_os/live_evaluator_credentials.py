@@ -27,6 +27,9 @@ class KeychainBackend(Protocol):
 class MacOSKeychainBackend:
     """Use Security.framework so secrets never enter process arguments or stdout."""
 
+    security: ctypes.CDLL
+    core_foundation: ctypes.CDLL
+
     def __init__(self) -> None:
         if sys.platform != "darwin":
             raise RuntimeError("LIVE_EVALUATOR_KEYCHAIN_REQUIRES_MACOS")
