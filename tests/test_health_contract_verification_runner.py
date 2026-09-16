@@ -141,6 +141,36 @@ def test_design_runner_accepts_strict_health_contract_v2(tmp_path: Path) -> None
     assert report["passed"] >= 9
 
 
+def test_design_runner_accepts_equivalent_v2_success_contract_shape(tmp_path: Path) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract.pop("success_responses")
+    contract["success_contract"] = {
+        "status_code": 200,
+        "body": {
+            "schema": "./schema.json",
+            "allowed_fields": ["status", "version", "service"],
+            "required_fields": ["status", "version", "service"],
+        },
+        "responses": [
+            {"method": "GET", "path": "/health", "body": "json"},
+            {"method": "HEAD", "path": "/health", "body": "empty"},
+        ],
+        "headers": {
+            "X-Health-Contract": "health-contract-v2",
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    }
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    report = design(tmp_path)
+
+    assert report["failed"] == 0
+
+
 def test_design_runner_rejects_v2_without_service_constraint(tmp_path: Path) -> None:
     _write_design(tmp_path, contract_version="health-contract-v2")
     schema_path = tmp_path / "schema.json"

@@ -82,27 +82,58 @@ def design(root: Path) -> dict[str, object]:
 
 def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> None:
     success = contract.get("success_responses")
-    if not isinstance(success, Mapping):
-        raise ValueError("health-contract-v2 缺少成功响应合同")
-    headers = success.get("required_headers")
     expected_headers = {
         "X-Health-Contract": "health-contract-v2",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
     }
-    actual_headers = (
-        {name: value.get("value") for name, value in headers.items() if isinstance(value, Mapping)}
-        if isinstance(headers, Mapping)
-        else {}
+    if isinstance(success, Mapping):
+        headers = success.get("required_headers")
+        actual_headers = (
+            {
+                name: value.get("value")
+                for name, value in headers.items()
+                if isinstance(value, Mapping)
+            }
+            if isinstance(headers, Mapping)
+            else {}
+        )
+        if (
+            contract.get("contract_version") != "health-contract-v2"
+            or success.get("methods") != ["GET", "HEAD"]
+            or success.get("path") != "/health"
+            or success.get("success_body_fields") != ["status", "version", "service"]
+            or success.get("body_schema") != "schema.json"
+            or success.get("head_body_bytes") != 0
+            or actual_headers != expected_headers
+        ):
+            raise ValueError("health-contract-v2 成功响应元数据不匹配")
+        return
+
+    success_contract = contract.get("success_contract")
+    if not isinstance(success_contract, Mapping):
+        raise ValueError("health-contract-v2 缺少成功响应合同")
+    body = success_contract.get("body")
+    responses = success_contract.get("responses")
+    alternate_headers = success_contract.get("headers")
+    response_contracts = (
+        {
+            (response.get("method"), response.get("path"), response.get("body"))
+            for response in responses
+            if isinstance(response, Mapping)
+        }
+        if isinstance(responses, list)
+        else set()
     )
+    expected_responses = {("GET", "/health", "json"), ("HEAD", "/health", "empty")}
     if (
-        contract.get("contract_version") != "health-contract-v2"
-        or success.get("methods") != ["GET", "HEAD"]
-        or success.get("path") != "/health"
-        or success.get("success_body_fields") != ["status", "version", "service"]
-        or success.get("body_schema") != "schema.json"
-        or success.get("head_body_bytes") != 0
-        or actual_headers != expected_headers
+        success_contract.get("status_code") != 200
+        or not isinstance(body, Mapping)
+        or body.get("schema") not in {"schema.json", "./schema.json"}
+        or body.get("allowed_fields") != ["status", "version", "service"]
+        or body.get("required_fields") != ["status", "version", "service"]
+        or response_contracts != expected_responses
+        or alternate_headers != expected_headers
     ):
         raise ValueError("health-contract-v2 成功响应元数据不匹配")
 
