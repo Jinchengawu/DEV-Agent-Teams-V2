@@ -32,7 +32,11 @@ from .codex_runtime import approved_planning_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
 from .shared.errors import ProductError
 from .shared.hashes import sha256_json
-from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
+from .shared.review_scope import (
+    WorkcellAcceptanceAssignment,
+    WorkcellAcceptanceResponsibility,
+    validate_workcell_acceptance,
+)
 
 
 class CodexRoleRunner(Protocol):
@@ -116,8 +120,15 @@ Approved requirements:
             prompt,
             _TaskSemantics,
             validate=lambda value: _validate_task_semantics(
-                requirements, value, required_workcells
+                requirements,
+                _compile_prefixed_workcell_acceptance(
+                    requirements, value, required_workcells
+                ),
+                required_workcells,
             ),
+        )
+        semantics = _compile_prefixed_workcell_acceptance(
+            requirements, semantics, required_workcells
         )
         return _task_from_semantics(semantics)
 
@@ -254,8 +265,15 @@ Approved requirements:
             prompt,
             _TaskSemantics,
             validate=lambda value: _validate_task_semantics(
-                requirements, value, required_workcells
+                requirements,
+                _compile_prefixed_workcell_acceptance(
+                    requirements, value, required_workcells
+                ),
+                required_workcells,
             ),
+        )
+        semantics = _compile_prefixed_workcell_acceptance(
+            requirements, semantics, required_workcells
         )
         return _task_from_semantics(semantics)
 
@@ -265,12 +283,7 @@ def _workcell_planning_instruction(
 ) -> str:
     if not required_workcells:
         return ""
-    owner_map = {
-        criterion.id: owner
-        for criterion in requirements.acceptance_criteria
-        for owner in required_workcells
-        if f"-{owner.upper()}-" in criterion.id.upper()
-    }
+    owner_map = _prefixed_acceptance_owner_map(requirements, required_workcells) or {}
     instruction = (
         "\n\n产品冻结的 Workcell 列表：" + json.dumps(required_workcells) + "。"
         "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
@@ -295,6 +308,62 @@ def _workcell_planning_instruction(
             + "。"
         )
     return instruction
+
+
+def _prefixed_acceptance_owner_map(
+    requirements: RequirementArtifact,
+    required_workcells: tuple[str, ...],
+) -> dict[str, str] | None:
+    if not required_workcells:
+        return None
+    owners: dict[str, str] = {}
+    for criterion in requirements.acceptance_criteria:
+        matches = tuple(
+            workcell
+            for workcell in required_workcells
+            if f"-{workcell.upper()}-" in criterion.id.upper()
+        )
+        if len(matches) != 1:
+            return None
+        owners[criterion.id] = matches[0]
+    if set(owners.values()) != set(required_workcells):
+        return None
+    return owners
+
+
+def _compile_prefixed_workcell_acceptance(
+    requirements: RequirementArtifact,
+    semantics: _TaskSemantics,
+    required_workcells: tuple[str, ...],
+) -> _TaskSemantics:
+    owners = _prefixed_acceptance_owner_map(requirements, required_workcells)
+    if owners is None:
+        return semantics
+    assignments = tuple(
+        WorkcellAcceptanceAssignment(
+            workcell_key=workcell,
+            acceptance=tuple(
+                WorkcellAcceptanceResponsibility(
+                    acceptance_id=criterion.id,
+                    responsibility=(
+                        f"仅在 {workcell} Repository Candidate/Artifact 内实现并机器验证 "
+                        f"{criterion.id}。"
+                    ),
+                )
+                for criterion in requirements.acceptance_criteria
+                if owners[criterion.id] == workcell
+            ),
+        )
+        for workcell in required_workcells
+    )
+    return semantics.model_copy(
+        update={
+            "acceptance_ids": tuple(
+                criterion.id for criterion in requirements.acceptance_criteria
+            ),
+            "workcell_acceptance": assignments,
+        }
+    )
 
 
 def _explicit_acceptance_ids(user_request: str) -> tuple[str, ...]:

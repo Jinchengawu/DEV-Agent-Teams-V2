@@ -143,6 +143,49 @@ def test_codex_task_planning_includes_frozen_prefix_owner_map() -> None:
     assert '"HC2-FRONTEND-001":"frontend"' in prompt
     assert '"HC2-BACKEND-001":"backend"' in prompt
     assert '"HC2-QA-001":"qa"' in prompt
+
+
+def test_codex_task_planning_compiles_complete_prefix_owner_map_in_product() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    ids = {
+        "design": "HC3-DESIGN-001",
+        "frontend": "HC3-FRONTEND-001",
+        "backend": "HC3-BACKEND-001",
+        "qa": "HC3-QA-001",
+    }
+    requirements = RequirementArtifact.model_validate(
+        {
+            "summary": "health contract v2",
+            "acceptance_criteria": [
+                {"id": acceptance_id, "statement": f"{workcell} owned behavior"}
+                for workcell, acceptance_id in ids.items()
+            ],
+        }
+    )
+    invalid_model_task = {
+        "title": "health contract v2",
+        "instructions": "implement the approved requirements",
+        "acceptance_ids": [ids["qa"]],
+        "workcell_acceptance": None,
+    }
+    runner = ScriptedCodexRoleRunner([json.dumps(invalid_model_task)])
+
+    result = asyncio.run(
+        CodexPlanningService(runner).plan(
+            requirements,
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    assert result.acceptance_ids == tuple(ids.values())
+    assert result.workcell_acceptance is not None
+    assert {
+        item.workcell_key: tuple(entry.acceptance_id for entry in item.acceptance)
+        for item in result.workcell_acceptance
+    } == {workcell: (acceptance_id,) for workcell, acceptance_id in ids.items()}
+    assert len(runner.prompts) == 1
+    prompt = runner.prompts[0]
     assert "QA 只能在自有 Repository 中验证可观察行为" in prompt
 
 
