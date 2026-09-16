@@ -221,7 +221,7 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
                     headers = error.headers
                     body = error.read() if method == "GET" else b""
                 self.send_response(status)
-                for name in ("Content-Type", "Cache-Control"):
+                for name in ("Content-Type", "Cache-Control", "X-Health-Contract"):
                     if value := headers.get(name):
                         self.send_header(name, value)
                 self.send_header("Content-Length", headers.get("Content-Length", str(len(body))))

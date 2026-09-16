@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 CONTRACT_ID = "health-contract-v1"
+HEALTH_CONTRACT_HEADER = "X-Health-Contract"
 HEALTH_STATUSES = frozenset({"ok", "degraded", "unavailable"})
 
 
@@ -32,14 +33,24 @@ class HealthHandler(BaseHTTPRequestHandler):
             200,
             {"status": values[0], "version": CONTRACT_ID},
             include_body=include_body,
+            health_contract=True,
         )
 
-    def respond(self, status: int, payload: dict[str, str], *, include_body: bool) -> None:
+    def respond(
+        self,
+        status: int,
+        payload: dict[str, str],
+        *,
+        include_body: bool,
+        health_contract: bool = False,
+    ) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        if health_contract:
+            self.send_header(HEALTH_CONTRACT_HEADER, CONTRACT_ID)
         self.end_headers()
         if include_body:
             self.wfile.write(body)

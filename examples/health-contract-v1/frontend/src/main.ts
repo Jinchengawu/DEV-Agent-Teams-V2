@@ -1,5 +1,8 @@
 import { parseHealthResponse } from "./health";
 
+const HEALTH_CONTRACT_HEADER = "X-Health-Contract";
+const HEALTH_CONTRACT_HEADER_VALUE = "health-contract-v1";
+
 const statusElement = document.querySelector<HTMLElement>('[data-testid="health-status"]');
 const errorElement = document.querySelector<HTMLElement>('[data-testid="health-error"]');
 
@@ -11,6 +14,9 @@ async function showHealth(): Promise<void> {
       cache: "no-store",
     });
     if (!response.ok) throw new Error("HEALTH_REQUEST_FAILED");
+    if (response.headers.get(HEALTH_CONTRACT_HEADER) !== HEALTH_CONTRACT_HEADER_VALUE) {
+      throw new Error("HEALTH_CONTRACT_HEADER_INVALID");
+    }
     const result = parseHealthResponse(await response.json());
     statusElement.textContent = result.status;
     errorElement.hidden = true;

@@ -66,6 +66,9 @@ class HealthE2E(unittest.TestCase):
                     body = response.read()
                     self.assertEqual(response.status, 200)
                     self.assertEqual(response.getheader("Cache-Control"), "no-store")
+                    self.assertEqual(
+                        response.getheader("X-Health-Contract"), "health-contract-v1"
+                    )
                     if method == "HEAD":
                         self.assertEqual(body, b"")
         finally:
