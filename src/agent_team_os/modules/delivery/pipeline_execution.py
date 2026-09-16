@@ -545,6 +545,8 @@ class PipelineExecutionModule:
                 command="fail",
                 node_id=running,
                 expected_version=run.version,
+                failure_type=type(error).__name__,
+                failure_code=getattr(error, "code", "PIPELINE_EXECUTION_FAILED"),
             )
         self._repository.save(
             delivery.model_copy(
