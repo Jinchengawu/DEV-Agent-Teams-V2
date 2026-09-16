@@ -178,6 +178,41 @@ def test_codex_planning_service_uses_explicit_codex_identity() -> None:
     assert "simulat" not in runner.prompts[0].lower()
 
 
+def test_codex_analysis_retries_when_explicit_acceptance_ids_are_changed_or_extended() -> None:
+    request = """Four repositories must implement exactly:
+HC2-DESIGN-001: design contract
+HC2-FRONTEND-001: frontend behavior
+HC2-BACKEND-001: backend behavior
+HC2-QA-001: QA behavior
+"""
+    invalid = {
+        "summary": "health contract",
+        "non_goals": [],
+        "risks": [],
+        "acceptance_criteria": [
+            {"id": "HC2-DESIGN-001", "statement": "design contract"},
+            {"id": "HC2-FRONTEND-001", "statement": "frontend behavior"},
+            {"id": "HC2-BACKEND-001", "statement": "backend behavior"},
+            {"id": "HC2-QA-001", "statement": "QA behavior"},
+            {"id": "HC2-RELEASE-001", "statement": "product release control"},
+        ],
+    }
+    valid = dict(invalid)
+    valid["acceptance_criteria"] = invalid["acceptance_criteria"][:-1]
+    runner = ScriptedCodexRoleRunner([json.dumps(invalid), json.dumps(valid)])
+
+    result = asyncio.run(CodexPlanningService(runner).analyze(request))
+
+    assert [item.id for item in result.acceptance_criteria] == [
+        "HC2-DESIGN-001",
+        "HC2-FRONTEND-001",
+        "HC2-BACKEND-001",
+        "HC2-QA-001",
+    ]
+    assert len(runner.prompts) == 2
+    assert "EXPLICIT_ACCEPTANCE_IDS_CHANGED" in runner.prompts[1]
+
+
 def test_codex_role_runner_resolves_runtime_config_for_each_attempt(tmp_path: Path) -> None:
     scripts: list[Path] = []
     for label in ("first-policy", "updated-policy"):

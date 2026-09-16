@@ -8,6 +8,7 @@ they never claim that a Hermes instance was invoked.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -61,16 +62,24 @@ class CodexSimulatedHermesPlanning:
         self._runner = runner
 
     async def analyze(self, user_request: str) -> RequirementArtifact:
+        explicit_ids = _explicit_acceptance_ids(user_request)
         prompt = f"""You are temporarily simulating the Hermes PM role.
 Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
 Each acceptance criterion must have a stable id and a machine-verifiable statement.
+When the user supplies explicit acceptance ids, preserve exactly that id set; do not add,
+rename, merge or remove ids and do not create acceptance for product control-plane actions.
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 Do not include permissions, commands, paths, markdown or commentary.
 
 User request:
 {user_request}
 """
-        return await self._structured("hermes-pm-simulator", prompt, RequirementArtifact)
+        return await self._structured(
+            "hermes-pm-simulator",
+            prompt,
+            RequirementArtifact,
+            validate=lambda value: _validate_explicit_acceptance_ids(value, explicit_ids),
+        )
 
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
@@ -191,16 +200,24 @@ class CodexPlanningService(CodexSimulatedHermesPlanning):
     evidence_identity = "codex-cli"
 
     async def analyze(self, user_request: str) -> RequirementArtifact:
+        explicit_ids = _explicit_acceptance_ids(user_request)
         prompt = f"""You are the product analysis role in Agent-Team-OS.
 Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
 Each acceptance criterion must have a stable id and a machine-verifiable statement.
+When the user supplies explicit acceptance ids, preserve exactly that id set; do not add,
+rename, merge or remove ids and do not create acceptance for product control-plane actions.
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 Do not include permissions, commands, paths, markdown or commentary.
 
 User request:
 {user_request}
 """
-        return await self._structured("product-analysis", prompt, RequirementArtifact)
+        return await self._structured(
+            "product-analysis",
+            prompt,
+            RequirementArtifact,
+            validate=lambda value: _validate_explicit_acceptance_ids(value, explicit_ids),
+        )
 
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
@@ -260,6 +277,26 @@ def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
         "不得分配给任何 Workcell，也不得写成 QA Repository 的交付责任。"
         "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
     )
+
+
+def _explicit_acceptance_ids(user_request: str) -> tuple[str, ...]:
+    identifiers = re.findall(
+        r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+-\d{3})(?![A-Z0-9-])",
+        user_request.upper(),
+    )
+    return tuple(dict.fromkeys(identifiers))
+
+
+def _validate_explicit_acceptance_ids(
+    requirements: RequirementArtifact, explicit_ids: tuple[str, ...]
+) -> None:
+    if not explicit_ids:
+        return
+    actual = tuple(criterion.id for criterion in requirements.acceptance_criteria)
+    if len(actual) != len(set(actual)) or set(actual) != set(explicit_ids):
+        raise PlanningOutputError(
+            "EXPLICIT_ACCEPTANCE_IDS_CHANGED: preserve exactly " + ", ".join(explicit_ids)
+        )
 
 
 def _validate_task_workcells(
