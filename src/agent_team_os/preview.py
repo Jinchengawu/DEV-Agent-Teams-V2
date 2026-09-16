@@ -184,7 +184,13 @@ class CodexPreviewReadiness:
         checks = tuple(
             check
             for check in RuntimeReadiness().inspect().checks
-            if check.name in {"python:acwm", "python:agentscope", "codex-login"}
+            if check.name
+            in {
+                "python:acwm",
+                "python:agentscope",
+                "codex-cli-version",
+                "codex-login",
+            }
         ) + (
             DependencyCheck(
                 name="cli:git",
