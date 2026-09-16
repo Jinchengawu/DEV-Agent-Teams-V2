@@ -110,7 +110,7 @@ corresponding machine-verifiable tests in every repository role selected by the 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells)
+        prompt += _workcell_planning_instruction(required_workcells, requirements)
         semantics = await self._structured(
             "hermes-admin-simulator",
             prompt,
@@ -248,7 +248,7 @@ corresponding machine-verifiable tests in every repository role selected by the 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells)
+        prompt += _workcell_planning_instruction(required_workcells, requirements)
         semantics = await self._structured(
             "task-planning",
             prompt,
@@ -260,10 +260,18 @@ Approved requirements:
         return _task_from_semantics(semantics)
 
 
-def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
+def _workcell_planning_instruction(
+    required_workcells: tuple[str, ...], requirements: RequirementArtifact
+) -> str:
     if not required_workcells:
         return ""
-    return (
+    owner_map = {
+        criterion.id: owner
+        for criterion in requirements.acceptance_criteria
+        for owner in required_workcells
+        if f"-{owner.upper()}-" in criterion.id.upper()
+    }
+    instruction = (
         "\n\n产品冻结的 Workcell 列表：" + json.dumps(required_workcells) + "。"
         "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
         "数组元素包含 acceptance_id 与本仓具体 responsibility。只覆盖以上 Workcell，"
@@ -275,8 +283,18 @@ def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
         "Plan/Design/Release Gate、Review 阻断、ReleaseBundle、PR 状态、Apply、"
         "resume-forward 和 ReleaseManifest 属于 Agent-Team-OS 产品控制面，"
         "不得分配给任何 Workcell，也不得写成 QA Repository 的交付责任。"
+        "QA 只能在自有 Repository 中验证可观察行为；不得把运行、读取或修改 "
+        "Frontend/Backend/Design Repository、Candidate 或测试写成 QA 责任。"
         "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
     )
+    if owner_map:
+        instruction += (
+            "\n以下 Acceptance owner map 由产品根据 Canonical ID 前缀冻结，"
+            "workcell_acceptance 必须精确匹配且不得跨 Workcell 复制："
+            + json.dumps(owner_map, ensure_ascii=False, separators=(",", ":"))
+            + "。"
+        )
+    return instruction
 
 
 def _explicit_acceptance_ids(user_request: str) -> tuple[str, ...]:

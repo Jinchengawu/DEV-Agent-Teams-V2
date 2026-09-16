@@ -99,6 +99,53 @@ def test_codex_task_planning_keeps_release_authority_outside_workcell_responsibi
     assert "实际运行时行为由对应实现 Workcell 和 QA E2E 验证" in prompt
 
 
+def test_codex_task_planning_includes_frozen_prefix_owner_map() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    ids = {
+        "design": "HC2-DESIGN-001",
+        "frontend": "HC2-FRONTEND-001",
+        "backend": "HC2-BACKEND-001",
+        "qa": "HC2-QA-001",
+    }
+    requirements = RequirementArtifact.model_validate(
+        {
+            "summary": "four repositories",
+            "acceptance_criteria": [
+                {"id": acceptance_id, "statement": f"{workcell} owned behavior"}
+                for workcell, acceptance_id in ids.items()
+            ],
+        }
+    )
+    task = {
+        "title": "four repositories",
+        "instructions": "implement each owned behavior",
+        "acceptance_ids": list(ids.values()),
+        "workcell_acceptance": [
+            {
+                "workcell_key": workcell,
+                "acceptance": [
+                    {
+                        "acceptance_id": acceptance_id,
+                        "responsibility": f"implement in the {workcell} repository only",
+                    }
+                ],
+            }
+            for workcell, acceptance_id in ids.items()
+        ],
+    }
+    runner = ScriptedCodexRoleRunner([json.dumps(task)])
+
+    asyncio.run(CodexPlanningService(runner).plan(requirements, required_workcells=WORKCELL_KEYS))
+
+    prompt = runner.prompts[0]
+    assert '"HC2-DESIGN-001":"design"' in prompt
+    assert '"HC2-FRONTEND-001":"frontend"' in prompt
+    assert '"HC2-BACKEND-001":"backend"' in prompt
+    assert '"HC2-QA-001":"qa"' in prompt
+    assert "QA 只能在自有 Repository 中验证可观察行为" in prompt
+
+
 def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:
     from agent_team_os.delivery import RequirementArtifact
     from agent_team_os.shared.errors import ProductError
