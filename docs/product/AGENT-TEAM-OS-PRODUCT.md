@@ -15,7 +15,7 @@
 | `main` 对照 | 本地 `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` 已落后于 `origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f` |
 | 合并状态 | v0.5.1 Feishu Knowledge/RAG 与 Release Acceptance V2 位于功能分支，尚未合并 `main`；Deterministic 通过不等于 Live Release 验收 |
 | ACWM 锁定版本 | `agent-capability-workflow-matrix==0.5.1`，Revision `ae46ea81a2795b4b6dd5c46ce8c271c68e98b9ed`；Stage Input Artifact Contract 已发布并进入产品依赖锁 |
-| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，135 条 Path、164 个 HTTP Operation |
+| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，141 条 Path、170 个 HTTP Operation |
 
 ### 0.1 能力事实等级
 
@@ -1177,24 +1177,24 @@ Roadmap 是进入下一轮架构评审的边界，不是当前承诺或已实现
 
 ## 附录 B：Console OpenAPI 分组索引
 
-以下统计来自 `console/openapi.json`，总计 **107 Path / 132 Operation**。为避免复制 Schema，表中只给
-领域索引与 Path Family；字段、状态码和 Body 以 OpenAPI 为准。
+以下统计来自 `console/openapi.json`，总计 **141 Path / 170 Operation**。为避免复制 Schema，表中只给
+领域索引与 Path Family；各领域行不再维护容易漂移的重复计数，字段、状态码和 Body 以 OpenAPI 为准。
 
-| 领域 | Path / Operation | Path Family 与主要动作 |
+| 领域 | 统计 | Path Family 与主要动作 |
 |---|---:|---|
-| Identity | 7 / 8 | `/v1/auth/*`；`/v1/users*`：Bootstrap、Login、Session、Logout、用户管理 |
-| Project | 15 / 20 | `/v1/projects*`；`/v1/workspaces/backend-demo/reset`：项目、仓库、资源授权、Team Activation、Release Health |
-| Team | 6 / 8 | `/v1/team-templates*`；`/v1/team-template-drafts*`：Draft、Validate、Publish、Revision |
-| Pipeline | 16 / 21 | `/v1/pipelines*`、`/v1/pipeline-drafts*`、`/v1/pipeline-runs*`、`/v1/journey*`、`/v1/capability-bindings*` |
-| Agent | 19 / 24 | `/v1/agent-profiles*`、`/v1/agent-deployments*`、`/v1/agent-instances*`、`/v1/provider-manifests*`、`/v1/runtime-adapters` |
-| Delivery | 15 / 16 | `/v1/deliveries*`、`/v1/board`、`/v1/work-items/*/command`、`/v1/events/stream` |
-| Workcell | 4 / 4 | `/v1/workspace-bindings/*/verify`、`/v1/workcell-runs*` |
-| Release | 4 / 4 | `/v1/releases*`、`/v1/release-gates*`：查询、Resume Forward、Gate History |
-| Evidence | 3 / 3 | `/v1/evidence*`：列表、Verify、Verification History |
-| Knowledge | 16 / 21 | `/v1/wiki*`、`/v1/knowledge*`：Space、Document、Revision、Comment、Search、Derivation、Publication |
-| Settings | 2 / 3 | `/v1/readiness`、`/v1/settings` |
+| Identity | 见 OpenAPI | `/v1/auth/*`；`/v1/users*`：Bootstrap、Login、Session、Logout、用户管理 |
+| Project | 见 OpenAPI | `/v1/projects*`；`/v1/workspaces/backend-demo/reset`：项目、仓库、资源授权、Team Activation、Release Health |
+| Team | 见 OpenAPI | `/v1/team-templates*`；`/v1/team-template-drafts*`：Draft、Validate、Publish、Revision |
+| Pipeline | 见 OpenAPI | `/v1/pipelines*`、`/v1/pipeline-drafts*`、`/v1/pipeline-runs*`、`/v1/journey*`、`/v1/capability-bindings*` |
+| Agent | 见 OpenAPI | `/v1/agent-profiles*`、`/v1/agent-deployments*`、`/v1/agent-instances*`、`/v1/provider-manifests*`、`/v1/runtime-adapters` |
+| Delivery | 见 OpenAPI | `/v1/deliveries*`、`/v1/board`、`/v1/work-items/*/command`、`/v1/events/stream`；ReleaseBundleV2 使用 `/release-decision`，旧 `/candidate-decision` 仅保留兼容 |
+| Workcell | 见 OpenAPI | `/v1/workspace-bindings/*/verify`、`/v1/workcell-runs*` |
+| Release | 见 OpenAPI | `/v1/releases*`、`/v1/release-gates*`：查询、Resume Forward、Gate History |
+| Evidence | 见 OpenAPI | `/v1/evidence*`：列表、Verify、Verification History |
+| Knowledge | 见 OpenAPI | `/v1/wiki*`、`/v1/knowledge*`：Space、Document、Revision、Comment、Search、Derivation、Publication |
+| Settings | 见 OpenAPI | `/v1/readiness`、`/v1/settings` |
 | Evaluation | 0 / 0 | 不在 Console OpenAPI；运行时 Router 另有 6 个 Operation |
-| **合计** | **107 / 132** | 生成的 Console Client 契约 |
+| **合计** | **141 / 170** | 生成的 Console Client 契约 |
 
 Evaluation 运行时 Router 的 6 个 Operation 是：
 

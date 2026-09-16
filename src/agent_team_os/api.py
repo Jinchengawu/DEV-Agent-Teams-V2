@@ -158,12 +158,21 @@ class PlanDecisionRequest(BaseModel):
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class CandidateDecisionRequest(BaseModel):
+class ReleaseDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    decision: Literal["accept", "reject"]
+    decision: Literal["accept", "reject"] = Field(
+        description=(
+            "accept 会执行当前 Release Gate 绑定的 Apply 策略并改变仓库 Main；"
+            "reject 会拒绝当前发布主题。"
+        )
+    )
     expected_version: int = Field(ge=1)
     expected_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CandidateDecisionRequest(ReleaseDecisionRequest):
+    """旧版候选决策请求；保留用于 API 向后兼容。"""
 
 
 class DesignDecisionRequest(BaseModel):
@@ -1917,9 +1926,53 @@ def create_app(
         )
 
     @app.post(
+        "/v1/deliveries/{delivery_id}/release-decision",
+        response_model=DeliveryRun,
+        status_code=status.HTTP_202_ACCEPTED,
+        summary="批准或拒绝当前 Release Gate",
+        description=(
+            "accept 会立即启动当前 Delivery 的 Apply 策略：External V2 执行逐仓非 Force "
+            "Fast-forward，Managed V1 执行既有 CAS Apply。该操作可能改变仓库 Main。"
+        ),
+    )
+    async def decide_release(
+        delivery_id: str,
+        request_body: ReleaseDecisionRequest,
+        request: Request,
+        service: Annotated[DeliveryCoordinator, Depends(get_coordinator)],
+    ) -> DeliveryRun:
+        require_permission(request, Permission.CANDIDATE_APPLY)
+        require_delivery_capability(
+            request,
+            delivery_id,
+            ProjectCapability.DELIVERY_DECIDE,
+            resource_suffix=":release-decision",
+            reason="decide delivery release",
+        )
+        try:
+            return service.start_candidate_decision(
+                delivery_id,
+                decision=request_body.decision,
+                expected_version=request_body.expected_version,
+                expected_subject_sha256=request_body.expected_subject_sha256,
+            )
+        except DeliveryNotFoundError as error:
+            raise HTTPException(status_code=404, detail="delivery not found") from error
+        except DeliveryVersionConflictError as error:
+            raise HTTPException(status_code=409, detail="delivery version conflict") from error
+        except DeliveryStateConflictError as error:
+            raise HTTPException(status_code=409, detail="delivery state conflict") from error
+
+    @app.post(
         "/v1/deliveries/{delivery_id}/candidate-decision",
         response_model=DeliveryRun,
         status_code=status.HTTP_202_ACCEPTED,
+        deprecated=True,
+        summary="旧版候选决策接口",
+        description=(
+            "已弃用，请改用 release-decision。为兼容旧客户端保留；accept 同样会启动 Apply "
+            "并可能改变仓库 Main。"
+        ),
     )
     async def decide_candidate(
         delivery_id: str,
@@ -1933,7 +1986,7 @@ def create_app(
             delivery_id,
             ProjectCapability.DELIVERY_DECIDE,
             resource_suffix=":candidate-decision",
-            reason="decide delivery candidate",
+            reason="decide delivery candidate through deprecated API",
         )
         try:
             return service.start_candidate_decision(

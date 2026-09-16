@@ -79,6 +79,15 @@ export function useCreateDelivery(projectId: string, onCreated: (id: string) => 
 export type DeliveryDecision = "approve-plan" | "reject-plan" | "approve-design" | "reject-design" | "accept-candidate" | "reject-candidate";
 type DecisionInput = { delivery: Delivery; decision: DeliveryDecision };
 
+export function deliveryDecisionPath(
+  delivery: Pick<Delivery, "release_bundle_v2_sha256">,
+  decision: DeliveryDecision,
+) {
+  if (decision.endsWith("plan")) return "plan-decision";
+  if (decision.endsWith("design")) return "design-decision";
+  return delivery.release_bundle_v2_sha256 ? "release-decision" : "candidate-decision";
+}
+
 export function useDeliveryDecision() {
   const client = useQueryClient();
   return useMutation({
@@ -86,7 +95,7 @@ export function useDeliveryDecision() {
       const plan = decision.endsWith("plan");
       const design = decision.endsWith("design");
       const gate = plan ? delivery.plan_gate : design ? delivery.design_gate : delivery.candidate_gate;
-      const path = plan ? "plan-decision" : design ? "design-decision" : "candidate-decision";
+      const path = deliveryDecisionPath(delivery, decision);
       if (!gate) throw new Error("当前审批主题尚未生成，请等待状态推进。");
       return request<Delivery>(`/v1/deliveries/${delivery.id}/${path}`, {
         method: "POST",
