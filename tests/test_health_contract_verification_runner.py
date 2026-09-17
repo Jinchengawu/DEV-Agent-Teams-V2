@@ -224,6 +224,54 @@ def test_design_runner_accepts_equivalent_v2_singular_success_response_shape(
     assert report["failed"] == 0
 
 
+def test_design_runner_accepts_strict_embedded_schema_and_response_headers(
+    tmp_path: Path,
+) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    schema = json.loads((tmp_path / "schema.json").read_text())
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract.pop("success_responses")
+    headers = {
+        "X-Health-Contract": "health-contract-v2",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    contract.update(
+        {
+            "success_response": {
+                "method": "GET",
+                "path": "/health",
+                "status_code": 200,
+                "body_schema": "schema.json",
+                "body": schema,
+                "headers": headers,
+            },
+            "success_response_headers": {
+                name: {
+                    "required_value": value,
+                    "applies_to": ["GET /health", "HEAD /health"],
+                    "scope": "successful responses only",
+                }
+                for name, value in headers.items()
+            },
+            "head_response": {
+                "method": "HEAD",
+                "path": "/health",
+                "status_code": 200,
+                "body_bytes": 0,
+                "headers": headers,
+            },
+        }
+    )
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    report = design(tmp_path)
+
+    assert report["failed"] == 0
+
+
 def test_design_runner_accepts_split_contract_header_and_full_response_vectors(
     tmp_path: Path,
 ) -> None:

@@ -121,30 +121,73 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             if isinstance(version_header, Mapping)
             else None
         )
-        if (
-            success_response.get("method") != "GET"
-            or success_response.get("path") != "/health"
-            or success_response.get("status") != 200
-            or success_response.get("body_schema") not in {"schema.json", "./schema.json"}
-            or not isinstance(body, Mapping)
-            or body.get("type") != "object"
-            or body.get("closed") is not True
-            or body.get("required_keys") != ["status", "version", "service"]
-            or body.get("version") != "health-contract-v2"
-            or body.get("service") != "backend-demo"
-            or not isinstance(version_header_contract, Mapping)
-            or version_header_contract.get("required_value") != "health-contract-v2"
-            or version_header_contract.get("applies_to") != ["GET /health", "HEAD /health"]
-            or required_headers
-            != {
+        compact_body = (
+            isinstance(body, Mapping)
+            and body.get("type") == "object"
+            and body.get("closed") is True
+            and body.get("required_keys") == ["status", "version", "service"]
+            and body.get("version") == "health-contract-v2"
+            and body.get("service") == "backend-demo"
+        )
+        properties = body.get("properties") if isinstance(body, Mapping) else None
+        embedded_schema_body = (
+            isinstance(body, Mapping)
+            and body.get("type") == "object"
+            and body.get("additionalProperties") is False
+            and body.get("required") == ["status", "version", "service"]
+            and isinstance(properties, Mapping)
+            and set(properties) == {"status", "version", "service"}
+            and properties.get("status")
+            == {"type": "string", "enum": ["ok", "degraded", "unavailable"]}
+            and properties.get("version")
+            == {"type": "string", "const": "health-contract-v2"}
+            and properties.get("service")
+            == {"type": "string", "const": "backend-demo"}
+        )
+        legacy_metadata = (
+            success_response.get("status") == 200
+            and compact_body
+            and isinstance(version_header_contract, Mapping)
+            and version_header_contract.get("required_value") == "health-contract-v2"
+            and version_header_contract.get("applies_to")
+            == ["GET /health", "HEAD /health"]
+            and required_headers
+            == {
                 "Cache-Control": "no-store",
                 "X-Content-Type-Options": "nosniff",
             }
-            or not isinstance(head_response, Mapping)
-            or head_response.get("method") != "HEAD"
-            or head_response.get("path") != "/health"
-            or head_response.get("body_length") != 0
-            or set(head_response.get("headers_equal_to_get", [])) != set(expected_headers)
+            and isinstance(head_response, Mapping)
+            and head_response.get("method") == "HEAD"
+            and head_response.get("path") == "/health"
+            and head_response.get("body_length") == 0
+            and set(head_response.get("headers_equal_to_get", [])) == set(expected_headers)
+        )
+        declared_headers = (
+            {
+                name: value.get("required_value")
+                for name, value in version_header.items()
+                if isinstance(value, Mapping)
+            }
+            if isinstance(version_header, Mapping)
+            else {}
+        )
+        strict_metadata = (
+            success_response.get("status_code") == 200
+            and embedded_schema_body
+            and success_response.get("headers") == expected_headers
+            and declared_headers == expected_headers
+            and isinstance(head_response, Mapping)
+            and head_response.get("method") == "HEAD"
+            and head_response.get("path") == "/health"
+            and head_response.get("status_code") == 200
+            and head_response.get("body_bytes") == 0
+            and head_response.get("headers") == expected_headers
+        )
+        if (
+            success_response.get("method") != "GET"
+            or success_response.get("path") != "/health"
+            or success_response.get("body_schema") not in {"schema.json", "./schema.json"}
+            or not (legacy_metadata or strict_metadata)
         ):
             raise ValueError("health-contract-v2 成功响应元数据不匹配")
         return
