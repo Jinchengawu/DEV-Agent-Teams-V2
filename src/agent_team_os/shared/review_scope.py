@@ -181,8 +181,9 @@ def _requires_another_workcell_repository(
     owner: str,
     workcells: tuple[str, ...],
 ) -> bool:
-    action = r"(?:执行|运行|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
+    action = r"(?:执行|运行(?!时)|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
     repository = r"(?:candidate|repository|workspace|仓库|代码仓|工作区|测试|tests?)"
+    same_clause = r"[^。；;.!?\n]{0,160}"
     lowered = text.lower()
     for other in workcells:
         if other == owner:
@@ -190,7 +191,7 @@ def _requires_another_workcell_repository(
         escaped = re.escape(other.lower())
         workcell = rf"(?<![a-z0-9_-]){escaped}(?![a-z0-9_-])"
         for match in re.finditer(
-            rf"(?P<action>{action}).{{0,160}}{workcell}.{{0,160}}{repository}", lowered
+            rf"(?P<action>{action}){same_clause}{workcell}{same_clause}{repository}", lowered
         ):
             clause_start = max(
                 lowered.rfind(separator, 0, match.start("action"))

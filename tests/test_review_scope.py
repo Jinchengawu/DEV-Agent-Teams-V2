@@ -383,6 +383,21 @@ def test_task_ownership_allows_explicit_cross_repository_prohibition() -> None:
     validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
 
 
+def test_task_ownership_does_not_treat_runtime_audit_as_cross_repository_execution() -> None:
+    requirements, task = planning_payloads()
+    qa_acceptance_id = task["workcell_acceptance"][3]["acceptance"][0]["acceptance_id"]
+    for criterion in requirements["acceptance_criteria"]:
+        if criterion["id"] == qa_acceptance_id:
+            criterion["statement"] = (
+                "QA Candidate 包含对应可执行测试；静态依赖和运行时访问审计均未发现"
+                "对 Frontend、Backend 或 Design Repository、Candidate、工作树或测试文件"
+                "的读取、运行或修改。"
+            )
+            break
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
 def test_task_ownership_does_not_treat_frozen_literal_as_workcell_reference() -> None:
     requirements, task = planning_payloads()
     requirements["acceptance_criteria"][0]["statement"] = (
