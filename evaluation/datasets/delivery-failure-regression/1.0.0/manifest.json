@@ -1,0 +1,15 @@
+{
+  "suite_id": "delivery-failure-regression",
+  "version": "1.0.0",
+  "proof_scope": "offline_contract_regression",
+  "cases_file": "cases.jsonl",
+  "schema_file": "schema.json",
+  "fixtures_file": "fixtures.json",
+  "cases_sha256": "5681810b9308e84bc09d4fdca181f13c0b5310939811815fcb9bb9576fd0da22",
+  "schema_sha256": "df14461ed4bd1a056f92d31f9297039da2b8f7822ba080b5c6f5eb92690e15bd",
+  "fixtures_sha256": "2aba98c524a1ae137ff0eee3a4959955f60ceded5258c0bbac40996f930ef889",
+  "case_counts": {
+    "workcell_acceptance": 4,
+    "design_contract": 11
+  }
+}
