@@ -190,7 +190,7 @@ def _requires_another_workcell_repository(
     owner: str,
     workcells: tuple[str, ...],
 ) -> bool:
-    action = r"(?:执行|运行(?!时)|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
+    action = r"(?:执行(?!记录)|运行(?!时)|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
     repository = r"(?:candidate|repository|workspace|仓库|代码仓|工作区|测试|tests?)"
     same_clause = r"[^。；;.!?\n]{0,160}"
     lowered = text.lower()

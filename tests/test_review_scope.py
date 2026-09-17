@@ -408,17 +408,28 @@ def test_task_ownership_allows_shared_criterion_with_local_responsibilities() ->
     validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
 
 
-def test_task_ownership_allows_explicit_unmodified_repository_prohibition() -> None:
+@pytest.mark.parametrize(
+    "qa_statement",
+    [
+        (
+            "QA 测试仅从 QA Repository 发起并通过公开接口观察行为，"
+            "未读取或修改 Design、Frontend、Backend Repository、Candidate 或测试。"
+        ),
+        (
+            "QA Repository 的测试代码、报告规格和执行记录不包含对 Frontend、Backend "
+            "或 Design Repository 路径、Git Candidate、源码文件、测试命令或进程的"
+            "读取、修改或启动操作。"
+        ),
+    ],
+)
+def test_task_ownership_allows_explicit_repository_prohibitions(qa_statement: str) -> None:
     requirements, task = planning_payloads()
     acceptance_ids = [f"AC-{workcell.upper()}" for workcell in WORKCELL_KEYS]
     requirements["acceptance_criteria"] = [
         {
             "id": acceptance_id,
             "statement": (
-                "QA 测试仅从 QA Repository 发起并通过公开接口观察行为，"
-                "未读取或修改 Design、Frontend、Backend Repository、Candidate 或测试。"
-                if workcell == "qa"
-                else f"{workcell} 仅验证本仓产物。"
+                qa_statement if workcell == "qa" else f"{workcell} 仅验证本仓产物。"
             ),
         }
         for workcell, acceptance_id in zip(WORKCELL_KEYS, acceptance_ids, strict=True)
