@@ -169,24 +169,6 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             and properties.get("service")
             == {"type": "string", "const": "backend-demo"}
         )
-        legacy_metadata = (
-            success_response.get("status") == 200
-            and compact_body
-            and isinstance(version_header_contract, Mapping)
-            and version_header_contract.get("required_value") == "health-contract-v2"
-            and version_header_contract.get("applies_to")
-            == ["GET /health", "HEAD /health"]
-            and required_headers
-            == {
-                "Cache-Control": "no-store",
-                "X-Content-Type-Options": "nosniff",
-            }
-            and isinstance(head_response, Mapping)
-            and head_response.get("method") == "HEAD"
-            and head_response.get("path") == "/health"
-            and head_response.get("body_length") == 0
-            and set(head_response.get("headers_equal_to_get", [])) == set(expected_headers)
-        )
         declared_headers = (
             {
                 name: value.get("required_value")
@@ -196,35 +178,76 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             if isinstance(version_header, Mapping)
             else {}
         )
-        strict_metadata = (
-            success_response.get("status_code") == 200
-            and embedded_schema_body
-            and success_response.get("headers") == expected_headers
-            and declared_headers == expected_headers
-            and isinstance(head_response, Mapping)
-            and head_response.get("method") == "HEAD"
-            and head_response.get("path") == "/health"
-            and head_response.get("status_code") == 200
-            and head_response.get("body_bytes") == 0
-            and head_response.get("headers") == expected_headers
-        )
-        if compact_body and required_headers != {
-            "Cache-Control": "no-store",
-            "X-Content-Type-Options": "nosniff",
-        }:
-            raise ValueError(
-                "health-contract-v2 成功响应元数据不匹配："
-                "顶层 contract.required_success_headers 必须精确为 "
-                '{"Cache-Control":"no-store",'
-                '"X-Content-Type-Options":"nosniff"}'
+        mismatches = []
+        if success_response.get("method") != "GET":
+            mismatches.append('success_response.method 必须为 "GET"')
+        if success_response.get("path") != "/health":
+            mismatches.append('success_response.path 必须为 "/health"')
+        if success_response.get("body_schema") not in {"schema.json", "./schema.json"}:
+            mismatches.append('success_response.body_schema 必须指向 "schema.json"')
+        if compact_body:
+            if success_response.get("status") != 200:
+                mismatches.append("success_response.status 必须为 200")
+            if not (
+                isinstance(version_header_contract, Mapping)
+                and version_header_contract.get("required_value") == "health-contract-v2"
+                and version_header_contract.get("applies_to")
+                == ["GET /health", "HEAD /health"]
+            ):
+                mismatches.append(
+                    "success_response_headers.X-Health-Contract 必须声明 "
+                    'required_value="health-contract-v2" 且同时适用 GET/HEAD'
+                )
+            if required_headers != {
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            }:
+                mismatches.append(
+                    "顶层 contract.required_success_headers 必须精确为 "
+                    '{"Cache-Control":"no-store",'
+                    '"X-Content-Type-Options":"nosniff"}'
+                )
+            if not (
+                isinstance(head_response, Mapping)
+                and head_response.get("method") == "HEAD"
+                and head_response.get("path") == "/health"
+                and head_response.get("body_length") == 0
+                and set(head_response.get("headers_equal_to_get", []))
+                == set(expected_headers)
+            ):
+                mismatches.append(
+                    "顶层 contract.head_response 必须声明 method=HEAD、"
+                    "path=/health、body_length=0，且 headers_equal_to_get 覆盖三个固定 Header"
+                )
+        elif embedded_schema_body:
+            if success_response.get("status_code") != 200:
+                mismatches.append("success_response.status_code 必须为 200")
+            if success_response.get("headers") != expected_headers:
+                mismatches.append("success_response.headers 必须精确包含三个固定 Header")
+            if declared_headers != expected_headers:
+                mismatches.append(
+                    "success_response_headers 必须为三个固定 Header 声明 required_value"
+                )
+            if not (
+                isinstance(head_response, Mapping)
+                and head_response.get("method") == "HEAD"
+                and head_response.get("path") == "/health"
+                and head_response.get("status_code") == 200
+                and head_response.get("body_bytes") == 0
+                and head_response.get("headers") == expected_headers
+            ):
+                mismatches.append(
+                    "顶层 contract.head_response 必须声明 HEAD /health、"
+                    "status_code=200、body_bytes=0 与三个固定 Header"
+                )
+        else:
+            mismatches.append(
+                "success_response.body 必须使用支持的 compact contract 或完整内嵌 Schema"
             )
-        if (
-            success_response.get("method") != "GET"
-            or success_response.get("path") != "/health"
-            or success_response.get("body_schema") not in {"schema.json", "./schema.json"}
-            or not (legacy_metadata or strict_metadata)
-        ):
-            raise ValueError("health-contract-v2 成功响应元数据不匹配")
+        if mismatches:
+            raise ValueError(
+                "health-contract-v2 成功响应元数据不匹配：" + "; ".join(mismatches)
+            )
         return
 
     success_contract = contract.get("success_contract")
