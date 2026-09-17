@@ -23,6 +23,7 @@ from ...modules.workcells.verification_evidence import (
     command_values,
     passed_counts,
     render_command,
+    result_contract_failure_diagnostic,
     result_counts,
     validate_report_v2,
 )
@@ -253,6 +254,9 @@ async def verify_fullstack(
             passed = exit_code == 0 and passed_counts(step, counts)
             if not passed and status == "passed":
                 status = "failed"
+            diagnostic = result_contract_failure_diagnostic(step, counts)
+            if diagnostic:
+                log_text = f"{log_text.rstrip()}\n{diagnostic}\n".lstrip()
             # 只继承非敏感环境；额外脱敏由上层通用日志策略保持一致。
             log = store.put_bytes(redact(log_text).encode(), media_type="text/plain")
             steps.append(

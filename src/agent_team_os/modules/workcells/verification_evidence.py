@@ -42,6 +42,33 @@ def qa_cases_covered(ids: tuple[str, ...]) -> bool:
     )
 
 
+def result_contract_failure_diagnostic(
+    step: str, counts: tuple[int, int, int, int, tuple[str, ...]]
+) -> str:
+    """返回可直接交给 Repair Agent 的产品结果合同诊断。"""
+
+    ids = counts[4]
+    if step != "qa" or qa_cases_covered(ids):
+        return ""
+    missing_legacy = sorted(QA_CASES.difference(ids))
+    missing_versioned = [
+        prefix
+        for prefix in QA_ACCEPTANCE_CASE_PREFIXES
+        if not any(
+            prefix in case_id
+            and (
+                (suffix := case_id.split(prefix, 1)[1]) == "" or suffix.startswith("_")
+            )
+            for case_id in ids
+        )
+    ]
+    return (
+        "产品结果合同未通过：QA 稳定 Case ID 必须完整覆盖任一组；"
+        f"legacy 组缺少 {missing_legacy}；"
+        f"versioned 组缺少 {missing_versioned}。"
+    )
+
+
 def command_values(snapshot: VerificationQualificationV2, root: Path, index: int) -> dict[str, str]:
     values: dict[str, str] = {item.name: item.executable for item in snapshot.tools}
     values.update({item.name: item.root for item in snapshot.dependencies})
