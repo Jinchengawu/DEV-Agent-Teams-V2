@@ -269,7 +269,7 @@ class PassedVerifier:
         )
 
 
-def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Path) -> None:
+def test_next_bounded_loop_receives_cumulative_failed_workcell_evidence(tmp_path: Path) -> None:
     artifacts = ContentAddressedArtifactStorage(tmp_path / "artifacts")
     result = artifacts.put_json(
         {
@@ -379,6 +379,11 @@ def test_next_bounded_loop_receives_latest_failed_workcell_evidence(tmp_path: Pa
     assert payload["contract_version"] == "workcell-repair-context-v1"
     assert payload["previous_loop_iteration"] == 2
     assert payload["failure_code"] == "MACHINE_VERIFICATION_FAILED"
+    assert [item["loop_iteration"] for item in payload["failure_history"]] == [1, 2]
+    assert payload["failure_history"][0]["failure_code"] == "EMPTY_WORKSPACE_CANDIDATE"
+    assert payload["failure_history"][1]["candidate_verification"]["steps"][0]["log"] == (
+        "KeyError: 'payload'\n"
+    )
     assert payload["candidate_verification"]["steps"][0]["result"]["cases"][0] == {
         "id": "test_health_head_matches_get",
         "status": "failed",
