@@ -189,7 +189,22 @@ def _requires_another_workcell_repository(
             continue
         escaped = re.escape(other.lower())
         workcell = rf"(?<![a-z0-9_-]){escaped}(?![a-z0-9_-])"
-        if re.search(rf"{action}.{{0,160}}{workcell}.{{0,160}}{repository}", lowered):
+        for match in re.finditer(
+            rf"(?P<action>{action}).{{0,160}}{workcell}.{{0,160}}{repository}", lowered
+        ):
+            clause_start = max(
+                lowered.rfind(separator, 0, match.start("action"))
+                for separator in ("。", "；", ";", ".", "!", "?", "\n")
+            )
+            prefix = lowered[clause_start + 1 : match.start("action")]
+            if re.search(
+                r"(?:不得|禁止|不可|不能|不允许|不应|不包含)"
+                r"[^ 。；;.!?\n]{0,32}$|"
+                r"(?:must\s+not|do(?:es)?\s+not|cannot|may\s+not|mustn't|don't|doesn't)"
+                r"(?:\s+\S+){0,8}\s*$",
+                prefix,
+            ):
+                continue
             return True
     return False
 
