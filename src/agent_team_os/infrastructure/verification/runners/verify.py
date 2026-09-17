@@ -192,6 +192,16 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             and head_response.get("body_bytes") == 0
             and head_response.get("headers") == expected_headers
         )
+        if compact_body and required_headers != {
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        }:
+            raise ValueError(
+                "health-contract-v2 成功响应元数据不匹配："
+                "required_success_headers 必须精确为 "
+                '{"Cache-Control":"no-store",'
+                '"X-Content-Type-Options":"nosniff"}'
+            )
         if (
             success_response.get("method") != "GET"
             or success_response.get("path") != "/health"
