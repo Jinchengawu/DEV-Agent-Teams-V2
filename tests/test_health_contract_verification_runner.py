@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_team_os.infrastructure.verification.runners.verify import design
+from agent_team_os.infrastructure.verification.runners.verify import design, qa
 
 
 def _write_design(root: Path, *, contract_version: str) -> None:
@@ -307,3 +307,63 @@ def test_design_runner_rejects_v2_without_service_constraint(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="health-contract-v2"):
         design(tmp_path)
+
+
+def test_qa_runner_preserves_published_security_headers(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate"
+    tests = candidate / "tests"
+    tests.mkdir(parents=True)
+    (tests / "test_proxy.py").write_text(
+        """
+import os
+import unittest
+import urllib.request
+
+
+class ProxyHeadersTest(unittest.TestCase):
+    def test_success_response_preserves_security_header(self) -> None:
+        with urllib.request.urlopen(
+            os.environ["ATOS_QA_BASE_URL"] + "/api/health", timeout=3
+        ) as response:
+            self.assertEqual(response.headers.get("X-Content-Type-Options"), "nosniff")
+""",
+        encoding="utf-8",
+    )
+    inputs = tmp_path / "inputs"
+    backend = inputs / "health-backend-runtime-v1" / "src"
+    backend.mkdir(parents=True)
+    (inputs / "health-frontend-dist-v1").mkdir(parents=True)
+    (backend / "server.py").write_text(
+        """
+import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        body = b'{"status":"ok","version":"health-contract-v2","service":"backend-demo"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Health-Contract", "health-contract-v2")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args: object) -> None:
+        pass
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, required=True)
+args = parser.parse_args()
+ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+""",
+        encoding="utf-8",
+    )
+
+    report = qa(candidate, inputs)
+
+    assert report["failed"] == 0
+    assert report["skipped"] == 0
