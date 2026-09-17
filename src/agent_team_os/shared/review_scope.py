@@ -146,6 +146,10 @@ def validate_workcell_acceptance(
         or set(keys) != set(required_workcells)
     ):
         raise review_error(invalid, "责任映射必须且只能覆盖冻结 Pipeline 所选 Workcell。")
+    acceptance_owners: dict[str, set[str]] = {}
+    for assignment in assignments:
+        for item in assignment.acceptance:
+            acceptance_owners.setdefault(item.acceptance_id, set()).add(assignment.workcell_key)
     assigned: set[str] = set()
     for assignment in assignments:
         identifiers = tuple(item.acceptance_id for item in assignment.acceptance)
@@ -156,11 +160,16 @@ def validate_workcell_acceptance(
         ):
             raise review_error(invalid, "本仓责任存在重复、越界引用或空责任说明。")
         for item in assignment.acceptance:
-            if _requires_another_workcell_repository(
-                criteria_statements[item.acceptance_id],
-                owner=assignment.workcell_key,
-                workcells=required_workcells,
-            ) or _requires_another_workcell_repository(
+            shared_criterion = len(acceptance_owners.get(item.acceptance_id, ())) > 1
+            criterion_requires_other_repository = (
+                not shared_criterion
+                and _requires_another_workcell_repository(
+                    criteria_statements[item.acceptance_id],
+                    owner=assignment.workcell_key,
+                    workcells=required_workcells,
+                )
+            )
+            if criterion_requires_other_repository or _requires_another_workcell_repository(
                 item.responsibility,
                 owner=assignment.workcell_key,
                 workcells=required_workcells,
@@ -201,6 +210,9 @@ def _requires_another_workcell_repository(
             if re.search(
                 r"(?:不得|禁止|不可|不能|不允许|不应|不包含)"
                 r"[^ 。；;.!?\n]{0,32}$|"
+                r"未(?:执行|运行|挂载|直接读取|读取|修改|写入)"
+                r"(?:[、或和以及]*(?:执行|运行|挂载|直接读取|读取|修改|写入))*"
+                r"[、或和以及]*$|"
                 r"(?:must\s+not|do(?:es)?\s+not|cannot|may\s+not|mustn't|don't|doesn't)"
                 r"(?:\s+\S+){0,8}\s*$",
                 prefix,

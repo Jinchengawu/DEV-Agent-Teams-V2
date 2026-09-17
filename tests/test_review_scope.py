@@ -398,6 +398,45 @@ def test_task_ownership_does_not_treat_runtime_audit_as_cross_repository_executi
     validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
 
 
+def test_task_ownership_allows_shared_criterion_with_local_responsibilities() -> None:
+    requirements, task = planning_payloads()
+    requirements["acceptance_criteria"][0]["statement"] = (
+        "对四个 Repository Candidate 分别执行机器检查，Design、Frontend、Backend、"
+        "QA 的变更均必须位于各自 Repository 的批准目录。"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+def test_task_ownership_allows_explicit_unmodified_repository_prohibition() -> None:
+    requirements, task = planning_payloads()
+    acceptance_ids = [f"AC-{workcell.upper()}" for workcell in WORKCELL_KEYS]
+    requirements["acceptance_criteria"] = [
+        {
+            "id": acceptance_id,
+            "statement": (
+                "QA 测试仅从 QA Repository 发起并通过公开接口观察行为，"
+                "未读取或修改 Design、Frontend、Backend Repository、Candidate 或测试。"
+                if workcell == "qa"
+                else f"{workcell} 仅验证本仓产物。"
+            ),
+        }
+        for workcell, acceptance_id in zip(WORKCELL_KEYS, acceptance_ids, strict=True)
+    ]
+    task["acceptance_ids"] = acceptance_ids
+    for assignment, acceptance_id in zip(
+        task["workcell_acceptance"], acceptance_ids, strict=True
+    ):
+        assignment["acceptance"] = [
+            {
+                "acceptance_id": acceptance_id,
+                "responsibility": "仅操作当前 Workcell Repository 并机器验证。",
+            }
+        ]
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
 def test_task_ownership_does_not_treat_frozen_literal_as_workcell_reference() -> None:
     requirements, task = planning_payloads()
     requirements["acceptance_criteria"][0]["statement"] = (
