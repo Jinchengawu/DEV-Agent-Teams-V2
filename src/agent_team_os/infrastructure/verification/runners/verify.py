@@ -57,10 +57,11 @@ def design(root: Path) -> dict[str, object]:
         raise ValueError(f"设计 Schema 偏离冻结的 {contract_id} 合同")
     valid = vectors.get("valid", [])
     invalid = vectors.get("invalid", [])
+    validation_errors: list[str] = []
     if not valid or not invalid:
-        raise ValueError("设计合同必须含非空正反向量")
+        validation_errors.append("设计合同必须含非空正反向量")
     if {item["payload"].get("status") for item in valid} != {"ok", "degraded", "unavailable"}:
-        raise ValueError("设计正向量必须覆盖全部状态")
+        validation_errors.append("设计正向量必须覆盖全部状态")
     validator = jsonschema.Draft202012Validator(schema)
     cases: list[dict[str, object]] = []
     for category, values in (("valid", valid), ("invalid", invalid)):
@@ -73,10 +74,18 @@ def design(root: Path) -> dict[str, object]:
                 }
             )
     if is_v2:
-        _validate_health_contract_v2_metadata(contract)
-        cases.extend(_health_contract_v2_header_cases(vectors))
+        try:
+            _validate_health_contract_v2_metadata(contract)
+        except ValueError as error:
+            validation_errors.append(str(error))
+        try:
+            cases.extend(_health_contract_v2_header_cases(vectors))
+        except ValueError as error:
+            validation_errors.append(str(error))
     if len({case["id"] for case in cases}) != len(cases):
-        raise ValueError("设计向量 ID 重复")
+        validation_errors.append("设计向量 ID 重复")
+    if validation_errors:
+        raise ValueError("; ".join(validation_errors))
     return result(cases)
 
 

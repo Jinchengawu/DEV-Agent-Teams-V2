@@ -309,6 +309,30 @@ def test_design_runner_rejects_v2_without_service_constraint(tmp_path: Path) -> 
         design(tmp_path)
 
 
+def test_design_runner_reports_all_independent_v2_contract_failures(tmp_path: Path) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract.pop("success_responses")
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+    vectors_path = tmp_path / "vectors.json"
+    vectors = json.loads(vectors_path.read_text())
+    vectors["valid"] = []
+    vectors["invalid"] = []
+    vectors.pop("header_valid")
+    vectors.pop("header_invalid")
+    vectors_path.write_text(json.dumps(vectors), encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        design(tmp_path)
+
+    message = str(raised.value)
+    assert "设计合同必须含非空正反向量" in message
+    assert "health-contract-v2 缺少成功响应合同" in message
+    assert "health-contract-v2 必须含非空 Header 正反向量" in message
+
+
 def test_qa_runner_preserves_published_security_headers(tmp_path: Path) -> None:
     candidate = tmp_path / "candidate"
     tests = candidate / "tests"
