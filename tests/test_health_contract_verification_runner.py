@@ -285,7 +285,10 @@ def test_design_runner_reports_missing_legacy_success_headers(tmp_path: Path) ->
     )
     contract_path.write_text(json.dumps(contract), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="required_success_headers"):
+    with pytest.raises(
+        ValueError,
+        match=r"顶层 contract\.required_success_headers",
+    ):
         design(tmp_path)
 
 

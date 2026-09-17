@@ -214,7 +214,7 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
         }:
             raise ValueError(
                 "health-contract-v2 成功响应元数据不匹配："
-                "required_success_headers 必须精确为 "
+                "顶层 contract.required_success_headers 必须精确为 "
                 '{"Cache-Control":"no-store",'
                 '"X-Content-Type-Options":"nosniff"}'
             )
