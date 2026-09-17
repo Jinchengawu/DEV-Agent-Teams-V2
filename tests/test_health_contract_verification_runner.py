@@ -161,6 +161,26 @@ def test_design_runner_reports_noncanonical_success_responses_shape(
         design(tmp_path)
 
 
+def test_design_runner_reports_required_headers_object_shape(tmp_path: Path) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract["success_responses"]["required_headers"] = [
+        "X-Health-Contract: health-contract-v2",
+        "Cache-Control: no-store",
+        "X-Content-Type-Options: nosniff",
+    ]
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(ValueError) as raised:
+        design(tmp_path)
+
+    message = str(raised.value)
+    assert '"X-Health-Contract":{"value":"health-contract-v2"}' in message
+    assert '"Cache-Control":{"value":"no-store"}' in message
+    assert '"X-Content-Type-Options":{"value":"nosniff"}' in message
+
+
 def test_design_runner_accepts_equivalent_v2_success_contract_shape(tmp_path: Path) -> None:
     _write_design(tmp_path, contract_version="health-contract-v2")
     contract_path = tmp_path / "contract.json"

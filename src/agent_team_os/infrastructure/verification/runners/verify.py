@@ -125,9 +125,10 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             mismatches.append("success_responses.head_body_bytes 必须为 0")
         if actual_headers != expected_headers:
             mismatches.append(
-                "success_responses.required_headers 必须精确声明 "
-                "X-Health-Contract=health-contract-v2、Cache-Control=no-store 与 "
-                "X-Content-Type-Options=nosniff"
+                "success_responses.required_headers 必须是 Header 名到 value 对象的映射："
+                '{"X-Health-Contract":{"value":"health-contract-v2"},'
+                '"Cache-Control":{"value":"no-store"},'
+                '"X-Content-Type-Options":{"value":"nosniff"}}'
             )
         if mismatches:
             raise ValueError(
