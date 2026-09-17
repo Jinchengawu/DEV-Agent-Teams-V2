@@ -171,6 +171,85 @@ def test_design_runner_accepts_equivalent_v2_success_contract_shape(tmp_path: Pa
     assert report["failed"] == 0
 
 
+def test_design_runner_accepts_equivalent_v2_singular_success_response_shape(
+    tmp_path: Path,
+) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract.pop("success_responses")
+    contract.update(
+        {
+            "success_response": {
+                "method": "GET",
+                "path": "/health",
+                "status": 200,
+                "body_schema": "schema.json",
+                "body": {
+                    "type": "object",
+                    "closed": True,
+                    "required_keys": ["status", "version", "service"],
+                    "version": "health-contract-v2",
+                    "service": "backend-demo",
+                },
+            },
+            "success_response_headers": {
+                "X-Health-Contract": {
+                    "required_value": "health-contract-v2",
+                    "applies_to": ["GET /health", "HEAD /health"],
+                    "scope": "successful responses only",
+                }
+            },
+            "required_success_headers": {
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+            "head_response": {
+                "method": "HEAD",
+                "path": "/health",
+                "body_length": 0,
+                "headers_equal_to_get": [
+                    "X-Health-Contract",
+                    "Cache-Control",
+                    "X-Content-Type-Options",
+                ],
+            },
+        }
+    )
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    report = design(tmp_path)
+
+    assert report["failed"] == 0
+
+
+def test_design_runner_accepts_split_contract_header_and_full_response_vectors(
+    tmp_path: Path,
+) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    vectors_path = tmp_path / "vectors.json"
+    vectors = json.loads(vectors_path.read_text())
+    vectors["response_valid"] = vectors["header_valid"]
+    vectors["header_valid"] = [
+        {
+            **item,
+            "response": {
+                **item["response"],
+                "headers": {
+                    "X-Health-Contract": item["response"]["headers"]["X-Health-Contract"]
+                },
+            },
+        }
+        for item in vectors["header_valid"]
+    ]
+    vectors_path.write_text(json.dumps(vectors), encoding="utf-8")
+
+    report = design(tmp_path)
+
+    assert report["failed"] == 0
+
+
 def test_design_runner_rejects_v2_without_service_constraint(tmp_path: Path) -> None:
     _write_design(tmp_path, contract_version="health-contract-v2")
     schema_path = tmp_path / "schema.json"

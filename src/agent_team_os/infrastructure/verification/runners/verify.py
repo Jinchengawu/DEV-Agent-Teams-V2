@@ -110,6 +110,45 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             raise ValueError("health-contract-v2 成功响应元数据不匹配")
         return
 
+    success_response = contract.get("success_response")
+    if isinstance(success_response, Mapping):
+        body = success_response.get("body")
+        version_header = contract.get("success_response_headers")
+        required_headers = contract.get("required_success_headers")
+        head_response = contract.get("head_response")
+        version_header_contract = (
+            version_header.get("X-Health-Contract")
+            if isinstance(version_header, Mapping)
+            else None
+        )
+        if (
+            success_response.get("method") != "GET"
+            or success_response.get("path") != "/health"
+            or success_response.get("status") != 200
+            or success_response.get("body_schema") not in {"schema.json", "./schema.json"}
+            or not isinstance(body, Mapping)
+            or body.get("type") != "object"
+            or body.get("closed") is not True
+            or body.get("required_keys") != ["status", "version", "service"]
+            or body.get("version") != "health-contract-v2"
+            or body.get("service") != "backend-demo"
+            or not isinstance(version_header_contract, Mapping)
+            or version_header_contract.get("required_value") != "health-contract-v2"
+            or version_header_contract.get("applies_to") != ["GET /health", "HEAD /health"]
+            or required_headers
+            != {
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            }
+            or not isinstance(head_response, Mapping)
+            or head_response.get("method") != "HEAD"
+            or head_response.get("path") != "/health"
+            or head_response.get("body_length") != 0
+            or set(head_response.get("headers_equal_to_get", [])) != set(expected_headers)
+        ):
+            raise ValueError("health-contract-v2 成功响应元数据不匹配")
+        return
+
     success_contract = contract.get("success_contract")
     if not isinstance(success_contract, Mapping):
         raise ValueError("health-contract-v2 缺少成功响应合同")
@@ -149,6 +188,35 @@ def _health_contract_v2_header_cases(vectors: Mapping[str, object]) -> list[dict
     if not isinstance(valid, list) or not valid or not isinstance(invalid, list) or not invalid:
         raise ValueError("health-contract-v2 必须含非空 Header 正反向量")
     cases: list[dict[str, object]] = []
+    full_response_methods: set[str] = set()
+    full_responses = vectors.get("response_valid")
+    if isinstance(full_responses, list):
+        for item in full_responses:
+            response = item.get("response", {}) if isinstance(item, Mapping) else {}
+            headers = response.get("headers", {}) if isinstance(response, Mapping) else {}
+            method = response.get("method") if isinstance(response, Mapping) else None
+            accepted = (
+                method in {"GET", "HEAD"}
+                and response.get("path") == "/health"
+                and response.get("status") == 200
+                and isinstance(headers, Mapping)
+                and all(headers.get(name) == value for name, value in expected_headers.items())
+                and (method != "HEAD" or response.get("body") == "")
+            )
+            if accepted and isinstance(method, str):
+                full_response_methods.add(method)
+            cases.append(
+                {
+                    "id": f"response-valid:{item['id']}",
+                    "status": "passed" if accepted else "failed",
+                }
+            )
+    split_header_vectors = full_response_methods == {"GET", "HEAD"}
+    header_vector_expectation = (
+        {"X-Health-Contract": "health-contract-v2"}
+        if split_header_vectors
+        else expected_headers
+    )
     valid_methods: set[str] = set()
     for category, values in (("header-valid", valid), ("header-invalid", invalid)):
         for item in values:
@@ -156,8 +224,14 @@ def _health_contract_v2_header_cases(vectors: Mapping[str, object]) -> list[dict
             headers = response.get("headers", {}) if isinstance(response, Mapping) else {}
             method = response.get("method") if isinstance(response, Mapping) else None
             accepted = (
-                isinstance(headers, Mapping)
-                and all(headers.get(name) == value for name, value in expected_headers.items())
+                method in {"GET", "HEAD"}
+                and response.get("path") == "/health"
+                and response.get("status") == 200
+                and isinstance(headers, Mapping)
+                and all(
+                    headers.get(name) == value
+                    for name, value in header_vector_expectation.items()
+                )
                 and (method != "HEAD" or response.get("body") == "")
             )
             if category == "header-valid" and accepted and isinstance(method, str):
@@ -168,7 +242,7 @@ def _health_contract_v2_header_cases(vectors: Mapping[str, object]) -> list[dict
                     "status": "passed" if accepted == (category == "header-valid") else "failed",
                 }
             )
-    if valid_methods != {"GET", "HEAD"}:
+    if valid_methods | full_response_methods != {"GET", "HEAD"}:
         raise ValueError("health-contract-v2 Header 正向量必须覆盖 GET 与 HEAD")
     return cases
 
