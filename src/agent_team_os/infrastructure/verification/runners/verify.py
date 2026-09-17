@@ -252,7 +252,16 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
 
     success_contract = contract.get("success_contract")
     if not isinstance(success_contract, Mapping):
-        raise ValueError("health-contract-v2 缺少成功响应合同")
+        raise ValueError(
+            "health-contract-v2 缺少成功响应合同：建议使用顶层 "
+            "contract.success_response（method=GET、path=/health、status=200、"
+            "body_schema=schema.json，body 为封闭 status/version/service 合同）；"
+            "顶层 contract.success_response_headers.X-Health-Contract 必须同时适用 "
+            "GET/HEAD；顶层 contract.required_success_headers 必须精确声明 "
+            "Cache-Control=no-store 与 X-Content-Type-Options=nosniff；顶层 "
+            "contract.head_response 必须声明 HEAD /health、body_length=0 与"
+            "三个固定 Header。"
+        )
     body = success_contract.get("body")
     responses = success_contract.get("responses")
     alternate_headers = success_contract.get("headers")

@@ -447,6 +447,9 @@ def test_design_runner_reports_all_independent_v2_contract_failures(tmp_path: Pa
     message = str(raised.value)
     assert "设计合同必须含非空正反向量" in message
     assert "health-contract-v2 缺少成功响应合同" in message
+    assert "顶层 contract.success_response" in message
+    assert "顶层 contract.required_success_headers" in message
+    assert "顶层 contract.head_response" in message
     assert "health-contract-v2 必须含非空 Header 正反向量" in message
 
 
