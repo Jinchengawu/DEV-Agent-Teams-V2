@@ -97,6 +97,8 @@ def test_codex_task_planning_keeps_release_authority_outside_workcell_responsibi
     assert "不得分配给任何 Workcell" in prompt
     assert "Design Workcell 负责规格、Schema 或测试向量" in prompt
     assert "实际运行时行为由对应实现 Workcell 和 QA E2E 验证" in prompt
+    assert "responsibility 中不得出现其他 Workcell 名称" in prompt
+    assert "仅操作当前 Workcell Repository" in prompt
 
 
 def test_codex_task_planning_includes_frozen_prefix_owner_map() -> None:
