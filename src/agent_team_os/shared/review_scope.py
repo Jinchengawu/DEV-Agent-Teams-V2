@@ -188,7 +188,8 @@ def _requires_another_workcell_repository(
         if other == owner:
             continue
         escaped = re.escape(other.lower())
-        if re.search(rf"{action}.{{0,160}}{escaped}.{{0,160}}{repository}", lowered):
+        workcell = rf"(?<![a-z0-9_-]){escaped}(?![a-z0-9_-])"
+        if re.search(rf"{action}.{{0,160}}{workcell}.{{0,160}}{repository}", lowered):
             return True
     return False
 

@@ -369,6 +369,15 @@ def test_task_ownership_allows_cross_workcell_artifact_consumption() -> None:
     validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
 
 
+def test_task_ownership_does_not_treat_frozen_literal_as_workcell_reference() -> None:
+    requirements, task = planning_payloads()
+    requirements["acceptance_criteria"][0]["statement"] = (
+        "执行机器检查时，严格验证 service === 'backend-demo'，并运行本仓真实测试。"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
 def test_legacy_scope_and_finding_fields_preserve_original_hash_inputs() -> None:
     legacy_snapshot = _snapshot().model_dump(mode="json")
     legacy_snapshot.pop("review_scope")
