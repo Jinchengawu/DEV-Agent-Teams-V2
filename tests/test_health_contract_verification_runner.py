@@ -141,6 +141,26 @@ def test_design_runner_accepts_strict_health_contract_v2(tmp_path: Path) -> None
     assert report["passed"] >= 9
 
 
+def test_design_runner_reports_noncanonical_success_responses_shape(
+    tmp_path: Path,
+) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract["success_responses"] = {
+        "GET /health": {"body": {"schema": "schema.json"}},
+        "HEAD /health": {"body": "empty"},
+    }
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"contract_version.*success_responses\.methods.*success_responses\.path",
+    ):
+        design(tmp_path)
+
+
 def test_design_runner_accepts_equivalent_v2_success_contract_shape(tmp_path: Path) -> None:
     _write_design(tmp_path, contract_version="health-contract-v2")
     contract_path = tmp_path / "contract.json"

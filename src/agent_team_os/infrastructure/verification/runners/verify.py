@@ -107,16 +107,32 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             if isinstance(headers, Mapping)
             else {}
         )
-        if (
-            contract.get("contract_version") != "health-contract-v2"
-            or success.get("methods") != ["GET", "HEAD"]
-            or success.get("path") != "/health"
-            or success.get("success_body_fields") != ["status", "version", "service"]
-            or success.get("body_schema") != "schema.json"
-            or success.get("head_body_bytes") != 0
-            or actual_headers != expected_headers
-        ):
-            raise ValueError("health-contract-v2 成功响应元数据不匹配")
+        mismatches: list[str] = []
+        if contract.get("contract_version") != "health-contract-v2":
+            mismatches.append('contract_version 必须为 "health-contract-v2"')
+        if success.get("methods") != ["GET", "HEAD"]:
+            mismatches.append('success_responses.methods 必须为 ["GET","HEAD"]')
+        if success.get("path") != "/health":
+            mismatches.append('success_responses.path 必须为 "/health"')
+        if success.get("success_body_fields") != ["status", "version", "service"]:
+            mismatches.append(
+                "success_responses.success_body_fields 必须为 "
+                '["status","version","service"]'
+            )
+        if success.get("body_schema") != "schema.json":
+            mismatches.append('success_responses.body_schema 必须为 "schema.json"')
+        if success.get("head_body_bytes") != 0:
+            mismatches.append("success_responses.head_body_bytes 必须为 0")
+        if actual_headers != expected_headers:
+            mismatches.append(
+                "success_responses.required_headers 必须精确声明 "
+                "X-Health-Contract=health-contract-v2、Cache-Control=no-store 与 "
+                "X-Content-Type-Options=nosniff"
+            )
+        if mismatches:
+            raise ValueError(
+                "health-contract-v2 成功响应元数据不匹配：" + "; ".join(mismatches)
+            )
         return
 
     success_response = contract.get("success_response")
