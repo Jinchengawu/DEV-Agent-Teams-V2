@@ -184,7 +184,11 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
             mismatches.append('success_response.method 必须为 "GET"')
         if success_response.get("path") != "/health":
             mismatches.append('success_response.path 必须为 "/health"')
-        if success_response.get("body_schema") not in {"schema.json", "./schema.json"}:
+        body_schema = success_response.get("body_schema")
+        if not isinstance(body_schema, str) or body_schema not in {
+            "schema.json",
+            "./schema.json",
+        }:
             mismatches.append('success_response.body_schema 必须指向 "schema.json"')
         if compact_body:
             if success_response.get("status") != 200:
@@ -254,7 +258,12 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
     success_contract = contract.get("success_contract")
     if not isinstance(success_contract, Mapping):
         raise ValueError(
-            "health-contract-v2 缺少成功响应合同：建议使用顶层 "
+            "health-contract-v2 缺少成功响应合同：优先使用顶层 "
+            "contract.success_responses，精确包含 "
+            'methods=["GET","HEAD"]、path="/health"、'
+            'success_body_fields=["status","version","service"]、'
+            'body_schema="schema.json"、head_body_bytes=0，以及 required_headers '
+            "中三个 Header 到 {value,match} 对象的映射；也支持顶层 "
             "contract.success_response（method=GET、path=/health、status=200、"
             "body_schema=schema.json，body 为封闭 status/version/service 合同）；"
             "顶层 contract.success_response_headers.X-Health-Contract 必须同时适用 "
@@ -266,15 +275,20 @@ def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> Non
     body = success_contract.get("body")
     responses = success_contract.get("responses")
     alternate_headers = success_contract.get("headers")
-    response_contracts = (
-        {
-            (response.get("method"), response.get("path"), response.get("body"))
-            for response in responses
-            if isinstance(response, Mapping)
-        }
-        if isinstance(responses, list)
-        else set()
-    )
+    response_contracts: set[tuple[str, str, str]] = set()
+    if isinstance(responses, list):
+        for response in responses:
+            if not isinstance(response, Mapping):
+                continue
+            method = response.get("method")
+            path = response.get("path")
+            response_body = response.get("body")
+            if (
+                isinstance(method, str)
+                and isinstance(path, str)
+                and isinstance(response_body, str)
+            ):
+                response_contracts.add((method, path, response_body))
     expected_responses = {("GET", "/health", "json"), ("HEAD", "/health", "empty")}
     if (
         success_contract.get("status_code") != 200

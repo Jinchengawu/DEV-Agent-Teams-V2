@@ -361,6 +361,31 @@ def test_design_runner_reports_missing_top_level_head_response(tmp_path: Path) -
         design(tmp_path)
 
 
+def test_design_runner_reports_object_body_schema_without_type_error(tmp_path: Path) -> None:
+    _write_design(tmp_path, contract_version="health-contract-v2")
+    contract_path = tmp_path / "contract.json"
+    contract = json.loads(contract_path.read_text())
+    contract.pop("contract_version")
+    contract.pop("success_responses")
+    contract["success_response"] = {
+        "method": "GET",
+        "path": "/health",
+        "status": 200,
+        "body_schema": {"$ref": "schema.json"},
+        "body": {
+            "type": "object",
+            "closed": True,
+            "required_keys": ["status", "version", "service"],
+            "version": "health-contract-v2",
+            "service": "backend-demo",
+        },
+    }
+    contract_path.write_text(json.dumps(contract), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"body_schema 必须指向"):
+        design(tmp_path)
+
+
 def test_design_runner_accepts_strict_embedded_schema_and_response_headers(
     tmp_path: Path,
 ) -> None:
@@ -467,6 +492,7 @@ def test_design_runner_reports_all_independent_v2_contract_failures(tmp_path: Pa
     message = str(raised.value)
     assert "设计合同必须含非空正反向量" in message
     assert "health-contract-v2 缺少成功响应合同" in message
+    assert "contract.success_responses" in message
     assert "顶层 contract.success_response" in message
     assert "顶层 contract.required_success_headers" in message
     assert "顶层 contract.head_response" in message
