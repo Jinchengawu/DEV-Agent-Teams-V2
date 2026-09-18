@@ -128,6 +128,10 @@ class SQLiteVectorIndexAdapter:
 
 
 def _load_sqlite_vec(connection: sqlite3.Connection) -> None:
+    if not hasattr(connection, "enable_load_extension") or not hasattr(
+        connection, "load_extension"
+    ):
+        raise RuntimeError("KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE")
     connection.enable_load_extension(True)
     try:
         sqlite_vec.load(connection)

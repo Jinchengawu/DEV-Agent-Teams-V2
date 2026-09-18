@@ -56,6 +56,14 @@ from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanni
 ADMIN_PASSWORD = "secure-admin-2026"
 
 
+class SQLiteWithoutExtensionLoading:
+    def __enter__(self) -> SQLiteWithoutExtensionLoading:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+
 class DeterministicWorkspaceProvisioner:
     def provision(self, repository_ref: str) -> str:
         return f"seed:{repository_ref}"
@@ -285,6 +293,21 @@ def _publish_build_contracts(
         ),
     )
     return profile, qualification
+
+
+def test_vector_adapter_names_unsupported_sqlite_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "agent_team_os.infrastructure.knowledge.sqlite_vector_index.sqlite3.connect",
+        lambda *_args, **_kwargs: SQLiteWithoutExtensionLoading(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE",
+    ):
+        SQLiteVectorIndexAdapter().describe()
 
 
 def test_block_aware_chunker_caps_and_overlaps_long_blocks() -> None:

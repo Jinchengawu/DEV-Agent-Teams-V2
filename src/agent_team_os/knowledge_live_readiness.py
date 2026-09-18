@@ -112,6 +112,7 @@ class KnowledgeLiveFacts(_ImmutableModel):
     qualified_ollama_model_count: int = Field(default=0, ge=0)
     verified_index_policy_count: int = Field(default=0, ge=0)
     live_ollama_model_count: int = Field(default=0, ge=0)
+    vector_index_runtime_ready: bool = False
 
 
 class KnowledgeLiveReadinessCheck(_ImmutableModel):
@@ -455,6 +456,7 @@ class KnowledgeLiveFactsCollector:
             qualified_ollama_model_count=len(qualified_policy_ids),
             verified_index_policy_count=len(verified_index_policy_ids),
             live_ollama_model_count=len(live_model_policy_ids),
+            vector_index_runtime_ready=vector_descriptor is not None,
         )
 
     def _git_credential_is_resolvable(self, reference: str) -> bool:
@@ -745,6 +747,18 @@ def evaluate_knowledge_live_readiness(
             ),
             blocked_detail=(
                 "没有同时满足凭据可解析、权限探测新鲜且项目已批准 RAG 的 Feishu Source。"
+            ),
+        ),
+        _check(
+            "vector-index-runtime",
+            facts.vector_index_runtime_ready,
+            "Python SQLite Runtime 已允许加载已锁定的 sqlite-vec 扩展。",
+            (
+                "使用支持 sqlite3.Connection.enable_load_extension 的 Python 构建"
+                "（推荐 Python 3.12），重建虚拟环境后重新执行 Readiness。"
+            ),
+            blocked_detail=(
+                "Python SQLite Runtime 不能加载已锁定的 sqlite-vec 扩展。"
             ),
         ),
         _check(

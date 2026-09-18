@@ -1106,6 +1106,8 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
   共享长期 Agent Memory；Hybrid Index/Embedding 只服务受批准 Source 的检索和冻结 Delivery Context；
 - Feishu Tenant、Ollama bge-m3、Hermes、Codex 与四个 GitHub 私仓尚未形成同一干净 Revision 的
   Live Release Acceptance Report；当前只能是 `blocked/not_run`；
+- Hybrid Index 依赖能加载 `sqlite-vec` 的 Python SQLite Runtime；仓库推荐 Python 3.12，
+  缺少 `enable_load_extension` 时 Readiness 会明确阻断，不执行静默降级；
 - 没有发布安装包、Git Tag 或 GitHub Release；仓库当前没有 License。
 
 ### 11.2 控制台与体验
