@@ -135,6 +135,7 @@ class DeterministicWorkcellAgent:
         invalid_review_calls: frozenset[int] = frozenset(),
         fatal_review_calls: frozenset[int] = frozenset(),
         invalid_synthesis_calls: frozenset[int] = frozenset(),
+        invalid_writer_citation_calls: frozenset[int] = frozenset(),
         writes_candidate: bool = True,
         writes_forbidden_path: bool = False,
         writer_error_detail: str | None = None,
@@ -146,12 +147,14 @@ class DeterministicWorkcellAgent:
         self.invalid_review_calls = invalid_review_calls
         self.fatal_review_calls = fatal_review_calls
         self.invalid_synthesis_calls = invalid_synthesis_calls
+        self.invalid_writer_citation_calls = invalid_writer_citation_calls
         self.writes_candidate = writes_candidate
         self.writes_forbidden_path = writes_forbidden_path
         self.writer_error_detail = writer_error_detail
         self.writer_error_code = writer_error_code
         self.review_calls = 0
         self.synthesis_calls = 0
+        self.writer_calls = 0
 
     async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
         self.invocations.append(invocation)
@@ -177,6 +180,7 @@ class DeterministicWorkcellAgent:
                 knowledge_citation_ids=self.citation_ids,
             )
         if invocation.workspace_access == "workspace_write":
+            self.writer_calls += 1
             if self.writer_error_detail is not None:
                 raise ProductError(
                     code=self.writer_error_code,
@@ -195,7 +199,11 @@ class DeterministicWorkcellAgent:
             return WorkcellAgentOutput(
                 runtime_identity="deterministic-workcell",
                 content={"changed": self.writes_candidate},
-                knowledge_citation_ids=self.citation_ids,
+                knowledge_citation_ids=(
+                    ("citation-allowedcitation-allowed",)
+                    if self.writer_calls in self.invalid_writer_citation_calls
+                    else self.citation_ids
+                ),
             )
         self.review_calls += 1
         review_evidence = json.loads(
@@ -257,7 +265,12 @@ class RecordingKnowledgeGuard:
         self.admit(delivery, stage_path)
         self.validations.append(citation_ids)
         if citation_ids != ("citation-allowed",):
-            raise AssertionError("unexpected citation set")
+            raise ProductError(
+                code="KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+                title="引用不在上下文",
+                detail="Agent 返回了不属于冻结 Context 的 Citation",
+                repair="从冻结 Context 重新选择 Citation ID。",
+            )
         return citation_ids
 
 
@@ -734,8 +747,29 @@ def test_failed_writer_attempt_persists_a_redacted_diagnostic_artifact(
     assert payload["failure_code"] == error_code
     assert payload["failure_detail"] == "usage limit reached; api_key=[REDACTED]"
     assert payload["phase"] == "delegate"
-    attempt = next(item for item in tree.attempts if item.agent_run_id == writer.id)
-    assert attempt.result_artifact_sha256 == diagnostic.sha256
+    attempts = [item for item in tree.attempts if item.agent_run_id == writer.id]
+    if expected_repair:
+        assert [item.status for item in attempts] == ["failed", "failed"]
+        assert attempts[0].result_artifact_sha256 is not None
+        retry_path = (
+            artifacts.root
+            / "sha256"
+            / attempts[0].result_artifact_sha256[:2]
+            / attempts[0].result_artifact_sha256
+        )
+        retry_payload = artifacts.get_json(
+            ArtifactReference(
+                uri="artifact://sha256/" + attempts[0].result_artifact_sha256,
+                sha256=attempts[0].result_artifact_sha256,
+                media_type="application/json",
+                size_bytes=retry_path.stat().st_size,
+            )
+        )
+        assert retry_payload["contract_version"] == "workcell-citation-retry-v1"
+        assert attempts[1].result_artifact_sha256 == diagnostic.sha256
+    else:
+        assert len(attempts) == 1
+        assert attempts[0].result_artifact_sha256 == diagnostic.sha256
 
 
 def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
@@ -777,15 +811,27 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
         "invalid_review_calls",
         "fatal_review_calls",
         "invalid_synthesis_calls",
+        "invalid_writer_citation_calls",
         "writes_candidate",
         "writes_forbidden_path",
         "workspace_prepare_error",
         "expected_status",
     ),
     [
-        (frozenset(), frozenset(), frozenset(), frozenset(), True, False, False, "succeeded"),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            False,
+            "succeeded",
+        ),
         (
             frozenset({1}),
+            frozenset(),
             frozenset(),
             frozenset(),
             frozenset(),
@@ -799,26 +845,89 @@ def test_cancelled_stage_terminalizes_the_workcell_run() -> None:
             frozenset(),
             frozenset(),
             frozenset(),
+            frozenset(),
             False,
             False,
             False,
             "repair_required",
         ),
-        (frozenset(), frozenset(), frozenset(), frozenset(), True, True, False, "repair_required"),
-        (frozenset(), frozenset(), frozenset(), frozenset(), True, False, True, "repair_required"),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            True,
+            True,
+            False,
+            "repair_required",
+        ),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            True,
+            "repair_required",
+        ),
         (
             frozenset({2}),
             frozenset({1}),
             frozenset(),
             frozenset(),
+            frozenset(),
             True,
             False,
             False,
             "repair_required",
         ),
-        (frozenset(), frozenset({1}), frozenset({2}), frozenset(), True, False, False, "fatal"),
-        (frozenset({1}), frozenset(), frozenset({2}), frozenset(), True, False, False, "fatal"),
-        (frozenset(), frozenset(), frozenset(), frozenset({1}), True, False, False, "succeeded"),
+        (
+            frozenset(),
+            frozenset({1}),
+            frozenset({2}),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            False,
+            "fatal",
+        ),
+        (
+            frozenset({1}),
+            frozenset(),
+            frozenset({2}),
+            frozenset(),
+            frozenset(),
+            True,
+            False,
+            False,
+            "fatal",
+        ),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset({1}),
+            frozenset(),
+            True,
+            False,
+            False,
+            "succeeded",
+        ),
+        (
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset(),
+            frozenset({1}),
+            True,
+            False,
+            False,
+            "succeeded",
+        ),
     ],
 )
 def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
@@ -827,6 +936,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     invalid_review_calls: frozenset[int],
     fatal_review_calls: frozenset[int],
     invalid_synthesis_calls: frozenset[int],
+    invalid_writer_citation_calls: frozenset[int],
     writes_candidate: bool,
     writes_forbidden_path: bool,
     workspace_prepare_error: bool,
@@ -910,6 +1020,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
         invalid_review_calls=invalid_review_calls,
         fatal_review_calls=fatal_review_calls,
         invalid_synthesis_calls=invalid_synthesis_calls,
+        invalid_writer_citation_calls=invalid_writer_citation_calls,
         writes_candidate=writes_candidate,
         writes_forbidden_path=writes_forbidden_path,
     )
@@ -1134,6 +1245,14 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
             for item in agent.invocations
         )
     writer = next(item for item in tree.agent_runs if item.delegate_purpose == "workspace_write")
+    if invalid_writer_citation_calls:
+        writer_attempts = [item for item in tree.attempts if item.agent_run_id == writer.id]
+        assert [item.status for item in writer_attempts] == ["failed", "succeeded"]
+        assert writer_attempts[0].error_code == "KNOWLEDGE_CITATION_NOT_IN_CONTEXT"
+        assert any(
+            "上一次 Delegate 输出的 Citation 契约被拒绝" in item.instruction
+            for item in agent.invocations
+        )
     assert [item.contract_id for item in writer.artifact_envelopes] == [
         "workspace-candidate-v2",
         "workspace-candidate-diff-v1",
@@ -1161,8 +1280,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert '"tests/**"' in writer_instruction
     assert "禁止修改允许路径之外的文件" in writer_instruction
     assert (
-        "根目录 verification.json 是产品冻结验证配置，只读且不属于 Candidate"
-        in writer_instruction
+        "根目录 verification.json 是产品冻结验证配置，只读且不属于 Candidate" in writer_instruction
     )
     assert "不得自行替换验收 ID" in writer_instruction
     assert "Regression Oracle Boundary" in writer_instruction

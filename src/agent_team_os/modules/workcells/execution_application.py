@@ -286,6 +286,54 @@ class WorkcellExecutionModule:
             raise _repository_error(error) from error
         return self.tree(child.workcell_run_id)
 
+    def retry_invalid_delegate_attempt(
+        self,
+        agent_run_id: str,
+        *,
+        error_code: str,
+        result_artifact_sha256: Sha256,
+        max_attempts: int = 2,
+    ) -> WorkcellRunTree:
+        """Retry one citation-invalid Delegate output on the same observable Child Run."""
+        try:
+            child = self.repository.get_agent(agent_run_id)
+        except KeyError as error:
+            raise _error(
+                "AGENT_RUN_NOT_FOUND",
+                "AgentRun 不存在",
+                "刷新 WorkcellRun Tree 后重试。",
+                404,
+            ) from error
+        if (
+            child.run_role != "child"
+            or child.delegate_purpose == "review"
+            or child.workcell_run_id is None
+        ):
+            raise _error(
+                "AGENT_RUN_NOT_PRODUCER_CHILD",
+                "只能重试可观测的 Producer Child Attempt",
+                "选择 Writer 或 Artifact Delegate Child Run。",
+            )
+        if error_code not in {
+            "KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+            "KNOWLEDGE_CITATION_REQUIRED",
+        }:
+            raise _error(
+                "AGENT_ATTEMPT_RETRY_REASON_INVALID",
+                "只允许对 Citation 输出契约错误进行原位重试",
+                "其他失败应由 ACWM bounded Loop 创建新 WorkcellRun。",
+            )
+        try:
+            self.repository.retry_child_attempt(
+                child,
+                error_code=error_code,
+                result_artifact_sha256=result_artifact_sha256,
+                max_attempts=max_attempts,
+            )
+        except RuntimeError as error:
+            raise _repository_error(error) from error
+        return self.tree(child.workcell_run_id)
+
     def retry_invalid_synthesis_attempt(
         self,
         agent_run_id: str,

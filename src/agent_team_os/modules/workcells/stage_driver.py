@@ -1106,7 +1106,7 @@ class WorkcellStageDriver:
                 self._attachment_payload(tree),
             )
             try:
-                output = await self._run_agent(delivery, invocation)
+                output = await self._run_producer_with_citation_retry(delivery, invocation)
             except ProductError as error:
                 diagnostic_reference = self.artifacts.put_json(
                     {
@@ -1205,7 +1205,7 @@ class WorkcellStageDriver:
                 (writer, evidence),
                 output.knowledge_citation_ids,
             )
-        output = await self._run_agent(
+        output = await self._run_producer_with_citation_retry(
             delivery,
             _delegate_invocation(
                 delivery,
@@ -1236,6 +1236,55 @@ class WorkcellStageDriver:
             None,
             output.knowledge_citation_ids,
         )
+
+    async def _run_producer_with_citation_retry(
+        self,
+        delivery: DeliveryRun,
+        invocation: WorkcellAgentInvocation,
+    ) -> WorkcellAgentOutput:
+        """Correct one malformed Citation set without consuming an ACWM repair iteration."""
+        current = invocation
+        for attempt_index in range(2):
+            try:
+                return await self._run_agent(delivery, current)
+            except ProductError as error:
+                if error.code not in {
+                    "KNOWLEDGE_CITATION_NOT_IN_CONTEXT",
+                    "KNOWLEDGE_CITATION_REQUIRED",
+                } or attempt_index == 1:
+                    raise
+                invalid_reference = self.artifacts.put_json(
+                    {
+                        "contract_version": "workcell-citation-retry-v1",
+                        "error_code": error.code,
+                        "failure_detail": _redact(error.detail),
+                        "phase": invocation.phase,
+                        "allowed_knowledge_citation_ids": list(
+                            invocation.allowed_knowledge_citation_ids
+                        ),
+                    }
+                )
+                self.kernel.retry_invalid_delegate_attempt(
+                    invocation.agent_run_id,
+                    error_code=error.code,
+                    result_artifact_sha256=invalid_reference.sha256,
+                )
+                current = invocation.model_copy(
+                    update={
+                        "instruction": invocation.instruction
+                        + "\n上一次 Delegate 输出的 Citation 契约被拒绝："
+                        + error.code
+                        + "。这是同一 Child Run 的最后一次有界 Attempt。"
+                        "Workspace 中的已有修改保持不变；检查当前结果并重新输出完整 JSON。"
+                        "knowledge_citation_ids 只能逐字从下列冻结 ID 中选择，"
+                        "禁止拼接、缩写或推导："
+                        + json.dumps(
+                            invocation.allowed_knowledge_citation_ids,
+                            ensure_ascii=False,
+                        )
+                    }
+                )
+        raise AssertionError("bounded producer citation retry exhausted without a result")
 
     async def _execute_reviews(
         self,
