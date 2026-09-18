@@ -64,6 +64,18 @@ class StaticMethodRuntime:
         )
 
 
+def test_writer_accessibility_capability_is_specific_to_frontend_and_qa() -> None:
+    frontend = workcell_stage_driver._accessibility_verification_contract("frontend")
+    qa = workcell_stage_driver._accessibility_verification_contract("qa")
+
+    assert "@testing-library/dom@10.4.1" in frontend
+    assert "Playwright" in qa
+    assert "get_by_role" in qa
+    assert "Aria snapshot" in qa
+    assert "accessible name" in qa
+    assert workcell_stage_driver._accessibility_verification_contract("backend") == ""
+
+
 def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
