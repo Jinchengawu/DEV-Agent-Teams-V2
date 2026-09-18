@@ -59,6 +59,9 @@ def test_prepare_node_environment_links_exact_nested_scoped_package(
     (nested / "package.json").write_text(
         json.dumps({"name": "@scope/pkg", "version": "2.0.0"})
     )
+    alias = source / ".pnpm/consumer@1.0.0/node_modules/@scope/pkg"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(nested)
     monkeypatch.setattr(
         tool_environment,
         "NODE_PACKAGES",

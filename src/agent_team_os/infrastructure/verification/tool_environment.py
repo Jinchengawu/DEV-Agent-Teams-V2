@@ -65,17 +65,17 @@ def _node_package_source(source: Path, name: str, version: str) -> Path:
             item.parent
             for item in (source / ".pnpm").glob(f"*/node_modules/{name}/package.json")
         ]
-    exact = []
+    exact: dict[Path, Path] = {}
     for candidate in candidates:
         try:
             metadata = json.loads((candidate / "package.json").read_text())
         except (OSError, ValueError):
             continue
         if metadata.get("version") == version:
-            exact.append(candidate)
+            exact[candidate.resolve()] = candidate.resolve()
     if len(exact) != 1:
         raise tool_error(f"离线 {name} 版本不匹配或来源不唯一。")
-    return exact[0]
+    return next(iter(exact.values()))
 
 
 def prepare_node_environment(source: Path, target: Path) -> Path:
