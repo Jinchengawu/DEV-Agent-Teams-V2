@@ -347,6 +347,116 @@ def test_task_ownership_requires_actual_requirement_membership_and_complete_cove
     assert invalid.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
 
 
+def test_task_ownership_rejects_cross_workcell_candidate_execution() -> None:
+    requirements, task = planning_payloads()
+    task["workcell_acceptance"][3]["acceptance"][0]["responsibility"] = (
+        "执行 Design、Frontend、Backend 的真实 Candidate 测试并汇总结果"
+    )
+
+    with pytest.raises(ProductError) as invalid:
+        validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+    assert invalid.value.code == "WORKCELL_ACCEPTANCE_ASSIGNMENT_INVALID"
+    assert "ArtifactAttachment" in invalid.value.detail
+
+
+def test_task_ownership_allows_cross_workcell_artifact_consumption() -> None:
+    requirements, task = planning_payloads()
+    task["workcell_acceptance"][3]["acceptance"][0]["responsibility"] = (
+        "消费 Frontend Candidate ArtifactAttachment 并验证跨层行为"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+def test_task_ownership_allows_explicit_cross_repository_prohibition() -> None:
+    requirements, task = planning_payloads()
+    qa_acceptance_id = task["workcell_acceptance"][3]["acceptance"][0]["acceptance_id"]
+    for criterion in requirements["acceptance_criteria"]:
+        if criterion["id"] == qa_acceptance_id:
+            criterion["statement"] = (
+                "QA 测试和报告内容不包含读取、运行或修改 Frontend、Backend、"
+                "Design Repository、Candidate 或其测试的步骤。"
+            )
+            break
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+def test_task_ownership_does_not_treat_runtime_audit_as_cross_repository_execution() -> None:
+    requirements, task = planning_payloads()
+    qa_acceptance_id = task["workcell_acceptance"][3]["acceptance"][0]["acceptance_id"]
+    for criterion in requirements["acceptance_criteria"]:
+        if criterion["id"] == qa_acceptance_id:
+            criterion["statement"] = (
+                "QA Candidate 包含对应可执行测试；静态依赖和运行时访问审计均未发现"
+                "对 Frontend、Backend 或 Design Repository、Candidate、工作树或测试文件"
+                "的读取、运行或修改。"
+            )
+            break
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+def test_task_ownership_allows_shared_criterion_with_local_responsibilities() -> None:
+    requirements, task = planning_payloads()
+    requirements["acceptance_criteria"][0]["statement"] = (
+        "对四个 Repository Candidate 分别执行机器检查，Design、Frontend、Backend、"
+        "QA 的变更均必须位于各自 Repository 的批准目录。"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+@pytest.mark.parametrize(
+    "qa_statement",
+    [
+        (
+            "QA 测试仅从 QA Repository 发起并通过公开接口观察行为，"
+            "未读取或修改 Design、Frontend、Backend Repository、Candidate 或测试。"
+        ),
+        (
+            "QA Repository 的测试代码、报告规格和执行记录不包含对 Frontend、Backend "
+            "或 Design Repository 路径、Git Candidate、源码文件、测试命令或进程的"
+            "读取、修改或启动操作。"
+        ),
+    ],
+)
+def test_task_ownership_allows_explicit_repository_prohibitions(qa_statement: str) -> None:
+    requirements, task = planning_payloads()
+    acceptance_ids = [f"AC-{workcell.upper()}" for workcell in WORKCELL_KEYS]
+    requirements["acceptance_criteria"] = [
+        {
+            "id": acceptance_id,
+            "statement": (
+                qa_statement if workcell == "qa" else f"{workcell} 仅验证本仓产物。"
+            ),
+        }
+        for workcell, acceptance_id in zip(WORKCELL_KEYS, acceptance_ids, strict=True)
+    ]
+    task["acceptance_ids"] = acceptance_ids
+    for assignment, acceptance_id in zip(
+        task["workcell_acceptance"], acceptance_ids, strict=True
+    ):
+        assignment["acceptance"] = [
+            {
+                "acceptance_id": acceptance_id,
+                "responsibility": "仅操作当前 Workcell Repository 并机器验证。",
+            }
+        ]
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
+def test_task_ownership_does_not_treat_frozen_literal_as_workcell_reference() -> None:
+    requirements, task = planning_payloads()
+    requirements["acceptance_criteria"][0]["statement"] = (
+        "执行机器检查时，严格验证 service === 'backend-demo'，并运行本仓真实测试。"
+    )
+
+    validate_workcell_acceptance(requirements, task, WORKCELL_KEYS)
+
+
 def test_legacy_scope_and_finding_fields_preserve_original_hash_inputs() -> None:
     legacy_snapshot = _snapshot().model_dump(mode="json")
     legacy_snapshot.pop("review_scope")

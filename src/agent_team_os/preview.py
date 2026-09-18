@@ -19,6 +19,7 @@ from acwm.config import CodexCLIConfig
 from fastapi import FastAPI
 
 from .api import create_app
+from .codex_runtime import approved_planning_codex_command
 from .codex_simulation import ACWMCodexRoleRunner, CodexPlanningService
 from .control_plane import ControlPlaneService
 from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
@@ -183,7 +184,13 @@ class CodexPreviewReadiness:
         checks = tuple(
             check
             for check in RuntimeReadiness().inspect().checks
-            if check.name in {"python:acwm", "python:agentscope", "codex-login"}
+            if check.name
+            in {
+                "python:acwm",
+                "python:agentscope",
+                "codex-cli-version",
+                "codex-login",
+            }
         ) + (
             DependencyCheck(
                 name="cli:git",
@@ -262,6 +269,7 @@ def build_preview_app() -> FastAPI:
     runner = ACWMCodexRoleRunner(
         workspace=project_root,
         config_provider=lambda: CodexCLIConfig(
+            command=approved_planning_codex_command(),
             sandbox="read-only",
             timeout_seconds=settings.get().planning_timeout_seconds,
         ),

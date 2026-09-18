@@ -81,34 +81,47 @@ class SQLiteTenantKnowledgeRepository:
             ).fetchall()
         return tuple(TenantConnection.model_validate(dict(row)) for row in rows)
 
-    def update_connection(self, connection_record: TenantConnection, expected_version: int) -> None:
+    def update_connection(
+        self,
+        connection_record: TenantConnection,
+        expected_version: int,
+        *,
+        event_type: str = "knowledge.connection-diagnosed",
+    ) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            updated = connection.execute(
-                """UPDATE knowledge_connections SET status=?,authorization_version=?,
-                version=?,updated_at=?,
-                last_diagnosed_at=?,last_error_code=? WHERE id=? AND version=?""",
-                (
-                    connection_record.status,
-                    connection_record.authorization_version,
-                    connection_record.version,
-                    connection_record.updated_at.isoformat(),
+            try:
+                updated = connection.execute(
+                    """UPDATE knowledge_connections SET app_id_ref=?,app_secret_ref=?,
+                    status=?,authorization_version=?,version=?,updated_at=?,
+                    last_diagnosed_at=?,last_error_code=? WHERE id=? AND version=?""",
                     (
-                        None
-                        if connection_record.last_diagnosed_at is None
-                        else connection_record.last_diagnosed_at.isoformat()
+                        connection_record.app_id_ref,
+                        connection_record.app_secret_ref,
+                        connection_record.status,
+                        connection_record.authorization_version,
+                        connection_record.version,
+                        connection_record.updated_at.isoformat(),
+                        (
+                            None
+                            if connection_record.last_diagnosed_at is None
+                            else connection_record.last_diagnosed_at.isoformat()
+                        ),
+                        connection_record.last_error_code,
+                        connection_record.id,
+                        expected_version,
                     ),
-                    connection_record.last_error_code,
-                    connection_record.id,
-                    expected_version,
-                ),
-            )
+                )
+            except sqlite3.IntegrityError as error:
+                connection.rollback()
+                raise RuntimeError("KNOWLEDGE_CONNECTION_CONFLICT") from error
             if updated.rowcount != 1:
+                connection.rollback()
                 raise RuntimeError("KNOWLEDGE_CONNECTION_VERSION_CONFLICT")
             self._append_event(
                 connection,
                 ProductEvent(
-                    event_type="knowledge.connection-diagnosed",
+                    event_type=event_type,
                     aggregate_type="knowledge-connection",
                     aggregate_id=connection_record.id,
                     aggregate_version=connection_record.version,

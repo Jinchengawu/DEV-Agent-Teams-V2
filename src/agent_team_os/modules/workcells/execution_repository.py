@@ -389,6 +389,117 @@ class SQLiteWorkcellExecutionRepository:
                 _bump_workcell(connection, child.workcell_run_id, now)
         return finished
 
+    def retry_child_attempt(
+        self,
+        child: AgentRun,
+        *,
+        error_code: str,
+        result_artifact_sha256: str,
+        max_attempts: int,
+    ) -> AgentRun:
+        """Record a rejected provider output and retry the same observable Child Run."""
+        now = datetime.now(UTC)
+        if child.workcell_run_id is None:
+            raise RuntimeError("AGENT_RUN_NOT_IN_WORKCELL")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT status,attempt_id FROM agent_runs WHERE id=?",
+                (child.id,),
+            ).fetchone()
+            if current != ("running", child.attempt_id):
+                raise RuntimeError("AGENT_RUN_NOT_RUNNING")
+            attempt_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM agent_attempts WHERE agent_run_id=?",
+                    (child.id,),
+                ).fetchone()[0]
+            )
+            if attempt_count >= max_attempts:
+                raise RuntimeError("AGENT_ATTEMPT_RETRY_LIMIT_EXCEEDED")
+            cursor = connection.execute(
+                """UPDATE agent_attempts SET status='failed',error_code=?,finished_at=?,
+                result_artifact_sha256=? WHERE id=? AND status='running'""",
+                (error_code, now.isoformat(), result_artifact_sha256, child.attempt_id),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_ATTEMPT_NOT_RUNNING")
+            retry = AgentAttempt(
+                agent_run_id=child.id,
+                phase="delegate",
+                ordinal=attempt_count + 1,
+                provider_binding_hash=child.resolved_binding_hash,
+                runtime_identity=child.runtime_identity,
+                status="running",
+                started_at=now,
+            )
+            connection.execute(
+                "UPDATE agent_runs SET attempt_id=?,updated_at=? WHERE id=?",
+                (retry.id, now.isoformat(), child.id),
+            )
+            _insert_attempt(connection, retry)
+            _bump_workcell(connection, child.workcell_run_id, now)
+        return child.model_copy(update={"attempt_id": retry.id, "updated_at": now})
+
+    def retry_main_synthesis_attempt(
+        self,
+        main: AgentRun,
+        *,
+        error_code: str,
+        result_artifact_sha256: str,
+        max_attempts: int,
+    ) -> AgentRun:
+        """Record an invalid synthesis output and retry the same observable Main Run."""
+        now = datetime.now(UTC)
+        if main.workcell_run_id is None:
+            raise RuntimeError("AGENT_RUN_NOT_IN_WORKCELL")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT status FROM agent_runs WHERE id=?",
+                (main.id,),
+            ).fetchone()
+            if current != ("running",):
+                raise RuntimeError("AGENT_RUN_NOT_RUNNING")
+            running_attempt = connection.execute(
+                """SELECT id FROM agent_attempts
+                WHERE agent_run_id=? AND phase='synthesis' AND status='running'""",
+                (main.id,),
+            ).fetchone()
+            if running_attempt is None:
+                raise RuntimeError("AGENT_ATTEMPT_NOT_RUNNING")
+            attempt_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM agent_attempts WHERE agent_run_id=?",
+                    (main.id,),
+                ).fetchone()[0]
+            )
+            if attempt_count >= max_attempts:
+                raise RuntimeError("AGENT_ATTEMPT_RETRY_LIMIT_EXCEEDED")
+            cursor = connection.execute(
+                """UPDATE agent_attempts SET status='failed',error_code=?,finished_at=?,
+                result_artifact_sha256=? WHERE id=? AND phase='synthesis' AND status='running'""",
+                (error_code, now.isoformat(), result_artifact_sha256, running_attempt[0]),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("AGENT_ATTEMPT_NOT_RUNNING")
+            retry = AgentAttempt(
+                agent_run_id=main.id,
+                phase="synthesis",
+                ordinal=attempt_count + 1,
+                provider_binding_hash=main.resolved_binding_hash,
+                runtime_identity=main.runtime_identity,
+                status="running",
+                started_at=now,
+            )
+            connection.execute(
+                "UPDATE agent_runs SET updated_at=? WHERE id=?",
+                (now.isoformat(), main.id),
+            )
+            _insert_attempt(connection, retry)
+            _bump_workcell(connection, main.workcell_run_id, now)
+        return main.model_copy(update={"updated_at": now})
+
     def put_verification(
         self,
         run: WorkcellRun,

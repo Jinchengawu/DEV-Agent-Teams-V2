@@ -199,7 +199,7 @@ def test_verified_candidate_accepts_only_with_an_exact_apply_receipt() -> None:
         ).json()
         candidate = wait_for(client, created["id"], "awaiting_candidate_decision")
         accepted = client.post(
-            f"/v1/deliveries/{created['id']}/candidate-decision",
+            f"/v1/deliveries/{created['id']}/release-decision",
             json={
                 "decision": "accept",
                 "expected_version": candidate["version"],

@@ -81,6 +81,8 @@ class PipelineRunLedger:
         body_node_id: str | None = None,
         activated_conditions: tuple[str, ...] = (),
         exit_condition_met: bool | None = None,
+        failure_type: str | None = None,
+        failure_code: str | None = None,
     ) -> PipelineRunRecord:
         current = self.repository.get(run_id)
         if current.version != expected_version:
@@ -115,6 +117,8 @@ class PipelineRunLedger:
                 {
                     "node_id": node_id,
                     **({"body_node_id": body_node_id} if body_node_id is not None else {}),
+                    **({"failure_type": failure_type} if failure_type is not None else {}),
+                    **({"failure_code": failure_code} if failure_code is not None else {}),
                 },
             ),
         ):
@@ -133,6 +137,8 @@ class PipelineRunLedger:
         body_node_id: str | None = None,
         activated_conditions: tuple[str, ...] = (),
         exit_condition_met: bool | None = None,
+        failure_type: str | None = None,
+        failure_code: str | None = None,
     ) -> PipelineRunRecord:
         """Apply a GraphRun transition inside a caller-owned SQLite UnitOfWork."""
         current = self.repository.get_on(connection, run_id)
@@ -169,6 +175,8 @@ class PipelineRunLedger:
                 {
                     "node_id": node_id,
                     **({"body_node_id": body_node_id} if body_node_id is not None else {}),
+                    **({"failure_type": failure_type} if failure_type is not None else {}),
+                    **({"failure_code": failure_code} if failure_code is not None else {}),
                 },
             ),
         )

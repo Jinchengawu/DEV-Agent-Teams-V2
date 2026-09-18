@@ -1436,6 +1436,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/knowledge/connections/{connection_id}/credential-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Connection Credential References */
+        put: operations["update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/knowledge/connections/{connection_id}/diagnose": {
         parameters: {
             query?: never;
@@ -2311,6 +2328,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/deliveries/{delivery_id}/release-decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批准或拒绝当前 Release Gate
+         * @description accept 会立即启动当前 Delivery 的 Apply 策略：External V2 执行逐仓非 Force Fast-forward，Managed V1 执行既有 CAS Apply。该操作可能改变仓库 Main。
+         */
+        post: operations["decide_release_v1_deliveries__delivery_id__release_decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/deliveries/{delivery_id}/candidate-decision": {
         parameters: {
             query?: never;
@@ -2320,7 +2357,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Decide Candidate */
+        /**
+         * 旧版候选决策接口
+         * @deprecated
+         * @description 已弃用，请改用 release-decision。为兼容旧客户端保留；accept 同样会启动 Apply 并可能改变仓库 Main。
+         */
         post: operations["decide_candidate_v1_deliveries__delivery_id__candidate_decision_post"];
         delete?: never;
         options?: never;
@@ -3126,10 +3167,14 @@ export interface components {
              */
             knowledge_citation_ids: string[];
         };
-        /** CandidateDecisionRequest */
+        /**
+         * CandidateDecisionRequest
+         * @description 旧版候选决策请求；保留用于 API 向后兼容。
+         */
         CandidateDecisionRequest: {
             /**
              * Decision
+             * @description accept 会执行当前 Release Gate 绑定的 Apply 策略并改变仓库 Main；reject 会拒绝当前发布主题。
              * @enum {string}
              */
             decision: "accept" | "reject";
@@ -5780,6 +5825,19 @@ export interface components {
              */
             verified_at?: string;
         };
+        /** ReleaseDecisionRequest */
+        ReleaseDecisionRequest: {
+            /**
+             * Decision
+             * @description accept 会执行当前 Release Gate 绑定的 Apply 策略并改变仓库 Main；reject 会拒绝当前发布主题。
+             * @enum {string}
+             */
+            decision: "accept" | "reject";
+            /** Expected Version */
+            expected_version: number;
+            /** Expected Subject Sha256 */
+            expected_subject_sha256: string;
+        };
         /** ReleaseHealthV2 */
         ReleaseHealthV2: {
             /** Project Id */
@@ -6652,6 +6710,15 @@ export interface components {
             app_id_ref: string;
             /** App Secret Ref */
             app_secret_ref: string;
+        };
+        /** TenantConnectionCredentialReferenceUpdate */
+        TenantConnectionCredentialReferenceUpdate: {
+            /** App Id Ref */
+            app_id_ref: string;
+            /** App Secret Ref */
+            app_secret_ref: string;
+            /** Expected Version */
+            expected_version: number;
         };
         /** TenantProviderBinding */
         TenantProviderBinding: {
@@ -13647,6 +13714,68 @@ export interface operations {
             };
         };
     };
+    update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantConnectionCredentialReferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TenantConnection"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     diagnose_connection_v1_knowledge_connections__connection_id__diagnose_post: {
         parameters: {
             query?: never;
@@ -17094,6 +17223,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProductEvent"][];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    decide_release_v1_deliveries__delivery_id__release_decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryRun"];
                 };
             };
             /** @description 目标资源不存在 */

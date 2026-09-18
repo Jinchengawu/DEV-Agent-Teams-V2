@@ -183,7 +183,15 @@ def test_current_documentation_does_not_reference_retired_architecture_images() 
     )
     assert "尚未合入 `main`" not in product
     assert "origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f" in product
-    assert "135 条 Path、164 个 HTTP Operation" in product
+    openapi = json.loads((ROOT / "console" / "openapi.json").read_text(encoding="utf-8"))
+    operation_methods = {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
+    path_count = len(openapi["paths"])
+    operation_count = sum(
+        method in operation_methods
+        for path_item in openapi["paths"].values()
+        for method in path_item
+    )
+    assert f"{path_count} 条 Path、{operation_count} 个 HTTP Operation" in product
     assert "Global Role ∩ ProjectRole ∩ Approved Source Scope" in product
     assert "Release Acceptance V2" in product
     assert "107 条 Path" not in product

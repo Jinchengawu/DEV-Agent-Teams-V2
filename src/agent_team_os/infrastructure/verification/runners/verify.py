@@ -40,25 +40,30 @@ def design(root: Path) -> dict[str, object]:
     contract = json.loads((root / "contract.json").read_text())
     schema = json.loads((root / "schema.json").read_text())
     vectors = json.loads((root / "vectors.json").read_text())
-    if contract.get("contract_id") != "health-contract-v1":
+    contract_id = contract.get("contract_id")
+    if contract_id not in {"health-contract-v1", "health-contract-v2"}:
         raise ValueError("设计合同 ID 不匹配")
+    is_v2 = contract_id == "health-contract-v2"
+    required_fields = {"status", "version", *( {"service"} if is_v2 else set())}
     jsonschema.Draft202012Validator.check_schema(schema)
     if (
         schema.get("type") != "object"
         or schema.get("additionalProperties") is not False
-        or set(schema.get("required", [])) != {"status", "version"}
+        or set(schema.get("required", [])) != required_fields
         or set(schema["properties"]["status"].get("enum", [])) != {"ok", "degraded", "unavailable"}
-        or schema["properties"]["version"].get("const") != "health-contract-v1"
+        or schema["properties"]["version"].get("const") != contract_id
+        or (is_v2 and schema["properties"].get("service", {}).get("const") != "backend-demo")
     ):
-        raise ValueError("设计 Schema 偏离冻结的 health-contract-v1 合同")
+        raise ValueError(f"设计 Schema 偏离冻结的 {contract_id} 合同")
     valid = vectors.get("valid", [])
     invalid = vectors.get("invalid", [])
+    validation_errors: list[str] = []
     if not valid or not invalid:
-        raise ValueError("设计合同必须含非空正反向量")
+        validation_errors.append("设计合同必须含非空正反向量")
     if {item["payload"].get("status") for item in valid} != {"ok", "degraded", "unavailable"}:
-        raise ValueError("设计正向量必须覆盖全部状态")
+        validation_errors.append("设计正向量必须覆盖全部状态")
     validator = jsonschema.Draft202012Validator(schema)
-    cases = []
+    cases: list[dict[str, object]] = []
     for category, values in (("valid", valid), ("invalid", invalid)):
         for item in values:
             accepted = validator.is_valid(item["payload"])
@@ -68,9 +73,303 @@ def design(root: Path) -> dict[str, object]:
                     "status": "passed" if accepted == (category == "valid") else "failed",
                 }
             )
+    if is_v2:
+        try:
+            _validate_health_contract_v2_metadata(contract)
+        except ValueError as error:
+            validation_errors.append(str(error))
+        try:
+            cases.extend(_health_contract_v2_header_cases(vectors))
+        except ValueError as error:
+            validation_errors.append(str(error))
     if len({case["id"] for case in cases}) != len(cases):
-        raise ValueError("设计向量 ID 重复")
+        validation_errors.append("设计向量 ID 重复")
+    if validation_errors:
+        raise ValueError("; ".join(validation_errors))
     return result(cases)
+
+
+def _validate_health_contract_v2_metadata(contract: Mapping[str, object]) -> None:
+    success = contract.get("success_responses")
+    expected_headers = {
+        "X-Health-Contract": "health-contract-v2",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if isinstance(success, Mapping):
+        headers = success.get("required_headers")
+        actual_headers = (
+            {
+                name: value.get("value")
+                for name, value in headers.items()
+                if isinstance(value, Mapping)
+            }
+            if isinstance(headers, Mapping)
+            else {}
+        )
+        mismatches: list[str] = []
+        if contract.get("contract_version") != "health-contract-v2":
+            mismatches.append('contract_version 必须为 "health-contract-v2"')
+        if success.get("methods") != ["GET", "HEAD"]:
+            mismatches.append('success_responses.methods 必须为 ["GET","HEAD"]')
+        if success.get("path") != "/health":
+            mismatches.append('success_responses.path 必须为 "/health"')
+        if success.get("success_body_fields") != ["status", "version", "service"]:
+            mismatches.append(
+                "success_responses.success_body_fields 必须为 "
+                '["status","version","service"]'
+            )
+        if success.get("body_schema") != "schema.json":
+            mismatches.append('success_responses.body_schema 必须为 "schema.json"')
+        if success.get("head_body_bytes") != 0:
+            mismatches.append("success_responses.head_body_bytes 必须为 0")
+        if actual_headers != expected_headers:
+            mismatches.append(
+                "success_responses.required_headers 必须是 Header 名到 value 对象的映射："
+                '{"X-Health-Contract":{"value":"health-contract-v2"},'
+                '"Cache-Control":{"value":"no-store"},'
+                '"X-Content-Type-Options":{"value":"nosniff"}}'
+            )
+        if mismatches:
+            raise ValueError(
+                "health-contract-v2 成功响应元数据不匹配：" + "; ".join(mismatches)
+            )
+        return
+
+    success_response = contract.get("success_response")
+    if isinstance(success_response, Mapping):
+        body = success_response.get("body")
+        version_header = contract.get("success_response_headers")
+        required_headers = contract.get("required_success_headers")
+        head_response = contract.get("head_response")
+        version_header_contract = (
+            version_header.get("X-Health-Contract")
+            if isinstance(version_header, Mapping)
+            else None
+        )
+        compact_body = (
+            isinstance(body, Mapping)
+            and body.get("type") == "object"
+            and body.get("closed") is True
+            and body.get("required_keys") == ["status", "version", "service"]
+            and body.get("version") == "health-contract-v2"
+            and body.get("service") == "backend-demo"
+        )
+        properties = body.get("properties") if isinstance(body, Mapping) else None
+        embedded_schema_body = (
+            isinstance(body, Mapping)
+            and body.get("type") == "object"
+            and body.get("additionalProperties") is False
+            and body.get("required") == ["status", "version", "service"]
+            and isinstance(properties, Mapping)
+            and set(properties) == {"status", "version", "service"}
+            and properties.get("status")
+            == {"type": "string", "enum": ["ok", "degraded", "unavailable"]}
+            and properties.get("version")
+            == {"type": "string", "const": "health-contract-v2"}
+            and properties.get("service")
+            == {"type": "string", "const": "backend-demo"}
+        )
+        declared_headers = (
+            {
+                name: value.get("required_value")
+                for name, value in version_header.items()
+                if isinstance(value, Mapping)
+            }
+            if isinstance(version_header, Mapping)
+            else {}
+        )
+        mismatches = []
+        if success_response.get("method") != "GET":
+            mismatches.append('success_response.method 必须为 "GET"')
+        if success_response.get("path") != "/health":
+            mismatches.append('success_response.path 必须为 "/health"')
+        body_schema = success_response.get("body_schema")
+        if not isinstance(body_schema, str) or body_schema not in {
+            "schema.json",
+            "./schema.json",
+        }:
+            mismatches.append('success_response.body_schema 必须指向 "schema.json"')
+        if compact_body:
+            if success_response.get("status") != 200:
+                mismatches.append("success_response.status 必须为 200")
+            if not (
+                isinstance(version_header_contract, Mapping)
+                and version_header_contract.get("required_value") == "health-contract-v2"
+                and version_header_contract.get("applies_to")
+                == ["GET /health", "HEAD /health"]
+            ):
+                mismatches.append(
+                    "success_response_headers.X-Health-Contract 必须声明 "
+                    'required_value="health-contract-v2" 且同时适用 GET/HEAD'
+                )
+            if required_headers != {
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            }:
+                mismatches.append(
+                    "顶层 contract.required_success_headers 必须精确为 "
+                    '{"Cache-Control":"no-store",'
+                    '"X-Content-Type-Options":"nosniff"}'
+                )
+            if not (
+                isinstance(head_response, Mapping)
+                and head_response.get("method") == "HEAD"
+                and head_response.get("path") == "/health"
+                and head_response.get("body_length") == 0
+                and set(head_response.get("headers_equal_to_get", []))
+                == set(expected_headers)
+            ):
+                mismatches.append(
+                    "顶层 contract.head_response 必须声明 method=HEAD、"
+                    "path=/health、body_length=0，且 headers_equal_to_get 覆盖三个固定 Header"
+                )
+        elif embedded_schema_body:
+            if success_response.get("status_code") != 200:
+                mismatches.append("success_response.status_code 必须为 200")
+            if success_response.get("headers") != expected_headers:
+                mismatches.append("success_response.headers 必须精确包含三个固定 Header")
+            if declared_headers != expected_headers:
+                mismatches.append(
+                    "success_response_headers 必须为三个固定 Header 声明 required_value"
+                )
+            if not (
+                isinstance(head_response, Mapping)
+                and head_response.get("method") == "HEAD"
+                and head_response.get("path") == "/health"
+                and head_response.get("status_code") == 200
+                and head_response.get("body_bytes") == 0
+                and head_response.get("headers") == expected_headers
+            ):
+                mismatches.append(
+                    "顶层 contract.head_response 必须声明 HEAD /health、"
+                    "status_code=200、body_bytes=0 与三个固定 Header"
+                )
+        else:
+            mismatches.append(
+                "success_response.body 必须使用支持的 compact contract 或完整内嵌 Schema"
+            )
+        if mismatches:
+            raise ValueError(
+                "health-contract-v2 成功响应元数据不匹配：" + "; ".join(mismatches)
+            )
+        return
+
+    success_contract = contract.get("success_contract")
+    if not isinstance(success_contract, Mapping):
+        raise ValueError(
+            "health-contract-v2 缺少成功响应合同：优先使用顶层 "
+            "contract.success_responses，精确包含 "
+            'methods=["GET","HEAD"]、path="/health"、'
+            'success_body_fields=["status","version","service"]、'
+            'body_schema="schema.json"、head_body_bytes=0，以及 required_headers '
+            "中三个 Header 到 {value,match} 对象的映射；也支持顶层 "
+            "contract.success_response（method=GET、path=/health、status=200、"
+            "body_schema=schema.json，body 为封闭 status/version/service 合同）；"
+            "顶层 contract.success_response_headers.X-Health-Contract 必须同时适用 "
+            "GET/HEAD；顶层 contract.required_success_headers 必须精确声明 "
+            "Cache-Control=no-store 与 X-Content-Type-Options=nosniff；顶层 "
+            "contract.head_response 必须声明 HEAD /health、body_length=0 与"
+            "三个固定 Header。"
+        )
+    body = success_contract.get("body")
+    responses = success_contract.get("responses")
+    alternate_headers = success_contract.get("headers")
+    response_contracts: set[tuple[str, str, str]] = set()
+    if isinstance(responses, list):
+        for response in responses:
+            if not isinstance(response, Mapping):
+                continue
+            method = response.get("method")
+            path = response.get("path")
+            response_body = response.get("body")
+            if (
+                isinstance(method, str)
+                and isinstance(path, str)
+                and isinstance(response_body, str)
+            ):
+                response_contracts.add((method, path, response_body))
+    expected_responses = {("GET", "/health", "json"), ("HEAD", "/health", "empty")}
+    if (
+        success_contract.get("status_code") != 200
+        or not isinstance(body, Mapping)
+        or body.get("schema") not in {"schema.json", "./schema.json"}
+        or body.get("allowed_fields") != ["status", "version", "service"]
+        or body.get("required_fields") != ["status", "version", "service"]
+        or response_contracts != expected_responses
+        or alternate_headers != expected_headers
+    ):
+        raise ValueError("health-contract-v2 成功响应元数据不匹配")
+
+
+def _health_contract_v2_header_cases(vectors: Mapping[str, object]) -> list[dict[str, object]]:
+    expected_headers = {
+        "X-Health-Contract": "health-contract-v2",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    valid = vectors.get("header_valid")
+    invalid = vectors.get("header_invalid")
+    if not isinstance(valid, list) or not valid or not isinstance(invalid, list) or not invalid:
+        raise ValueError("health-contract-v2 必须含非空 Header 正反向量")
+    cases: list[dict[str, object]] = []
+    full_response_methods: set[str] = set()
+    full_responses = vectors.get("response_valid")
+    if isinstance(full_responses, list):
+        for item in full_responses:
+            response = item.get("response", {}) if isinstance(item, Mapping) else {}
+            headers = response.get("headers", {}) if isinstance(response, Mapping) else {}
+            method = response.get("method") if isinstance(response, Mapping) else None
+            accepted = (
+                method in {"GET", "HEAD"}
+                and response.get("path") == "/health"
+                and response.get("status") == 200
+                and isinstance(headers, Mapping)
+                and all(headers.get(name) == value for name, value in expected_headers.items())
+                and (method != "HEAD" or response.get("body") == "")
+            )
+            if accepted and isinstance(method, str):
+                full_response_methods.add(method)
+            cases.append(
+                {
+                    "id": f"response-valid:{item['id']}",
+                    "status": "passed" if accepted else "failed",
+                }
+            )
+    split_header_vectors = full_response_methods == {"GET", "HEAD"}
+    header_vector_expectation = (
+        {"X-Health-Contract": "health-contract-v2"}
+        if split_header_vectors
+        else expected_headers
+    )
+    valid_methods: set[str] = set()
+    for category, values in (("header-valid", valid), ("header-invalid", invalid)):
+        for item in values:
+            response = item.get("response", {}) if isinstance(item, Mapping) else {}
+            headers = response.get("headers", {}) if isinstance(response, Mapping) else {}
+            method = response.get("method") if isinstance(response, Mapping) else None
+            accepted = (
+                method in {"GET", "HEAD"}
+                and response.get("path") == "/health"
+                and response.get("status") == 200
+                and isinstance(headers, Mapping)
+                and all(
+                    headers.get(name) == value
+                    for name, value in header_vector_expectation.items()
+                )
+                and (method != "HEAD" or response.get("body") == "")
+            )
+            if category == "header-valid" and accepted and isinstance(method, str):
+                valid_methods.add(method)
+            cases.append(
+                {
+                    "id": f"{category}:{item['id']}",
+                    "status": "passed" if accepted == (category == "header-valid") else "failed",
+                }
+            )
+    if valid_methods | full_response_methods != {"GET", "HEAD"}:
+        raise ValueError("health-contract-v2 Header 正向量必须覆盖 GET 与 HEAD")
+    return cases
 
 
 class Results(unittest.TestResult):
@@ -111,17 +410,29 @@ class Results(unittest.TestResult):
 
 
 def python_tests(root: Path) -> dict[str, object]:
-    sys.path.insert(0, str(root))
-    suite = unittest.defaultTestLoader.discover(str(root / "tests"))
-    discovered = suite.countTestCases()
-    output = Results()
-    suite.run(output)
-    data = result(output.cases)
-    data["discovered"] = discovered
-    # 类级 setup/teardown 错误也必须由结果合同看见。
-    if not discovered or output.testsRun != discovered:
-        data["failed"] = max(1, int(data["failed"]))
-    return data
+    original_sys_path = sys.path.copy()
+    original_module_names = set(sys.modules)
+    candidate_root = root.resolve()
+    try:
+        sys.path.insert(0, str(root))
+        suite = unittest.TestLoader().discover(str(root / "tests"))
+        discovered = suite.countTestCases()
+        output = Results()
+        suite.run(output)
+        data = result(output.cases)
+        data["discovered"] = discovered
+        # 类级 setup/teardown 错误也必须由结果合同看见。
+        if not discovered or output.testsRun != discovered:
+            data["failed"] = max(1, int(data["failed"]))
+        return data
+    finally:
+        sys.path[:] = original_sys_path
+        for name in set(sys.modules) - original_module_names:
+            module_file = getattr(sys.modules.get(name), "__file__", None)
+            if module_file is not None and Path(module_file).resolve().is_relative_to(
+                candidate_root
+            ):
+                sys.modules.pop(name, None)
 
 
 def free_port() -> int:
@@ -188,7 +499,46 @@ def backend_http(root: Path, inputs: Path) -> dict[str, object]:
 
 def qa(root: Path, inputs: Path) -> dict[str, object]:
     frontend = inputs / "health-frontend-dist-v1"
+    design_path = inputs / "health-design-v1" / "contract.json"
+    design_contract = json.loads(design_path.read_text()) if design_path.is_file() else {}
+    requires_product_observations = (
+        design_contract.get("contract_id") == "health-contract-v2"
+    )
     with backend(inputs / "health-backend-runtime-v1") as backend_url:
+
+        observations: dict[str, object] = {
+            "contract_version": "qa-product-observations-v1",
+            "fault_modes_observed": set(),
+        }
+
+        def response_headers(headers: Mapping[str, str]) -> dict[str, str | None]:
+            return {
+                name.lower(): headers.get(name)
+                for name in (
+                    "Cache-Control",
+                    "X-Health-Contract",
+                    "X-Content-Type-Options",
+                )
+            }
+
+        def inject_fault(body: bytes, fault: str) -> bytes:
+            payload = json.loads(body)
+            if not isinstance(payload, dict):
+                raise ValueError("QA fault injection requires an object response")
+            if fault == "missing_service":
+                payload.pop("service", None)
+            elif fault == "wrong_service":
+                payload["service"] = "other-service"
+            elif fault == "extra_field":
+                payload["extra"] = True
+            elif fault == "wrong_version":
+                payload["version"] = "health-contract-v1"
+            else:
+                raise ValueError("QA fault mode is not product-approved")
+            cast_modes = observations["fault_modes_observed"]
+            assert isinstance(cast_modes, set)
+            cast_modes.add(fault)
+            return json.dumps(payload, separators=(",", ":")).encode()
 
         class Handler(http.server.SimpleHTTPRequestHandler):
             def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -197,18 +547,63 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
             def do_GET(self) -> None:
                 path = urllib.parse.urlsplit(self.path)
                 if path.path == "/api/health":
-                    target = backend_url + "/health" + ("?" + path.query if path.query else "")
-                    try:
-                        with urllib.request.urlopen(target, timeout=3) as response:
-                            status, body = response.status, response.read()
-                    except urllib.error.HTTPError as error:
-                        status, body = error.code, error.read()
-                    self.send_response(status)
-                    self.send_header("Content-Type", "application/json")
-                    self.end_headers()
-                    self.wfile.write(body)
+                    self._proxy_health(path.query, method="GET")
                 else:
                     super().do_GET()
+
+            def do_HEAD(self) -> None:
+                path = urllib.parse.urlsplit(self.path)
+                if path.path == "/api/health":
+                    self._proxy_health(path.query, method="HEAD")
+                else:
+                    super().do_HEAD()
+
+            def _proxy_health(self, query: str, *, method: str) -> None:
+                target = backend_url + "/health" + ("?" + query if query else "")
+                request = urllib.request.Request(target, method=method)
+                try:
+                    with urllib.request.urlopen(request, timeout=3) as response:
+                        status = response.status
+                        headers = response.headers
+                        body = response.read() if method == "GET" else b""
+                except urllib.error.HTTPError as error:
+                    status = error.code
+                    headers = error.headers
+                    body = error.read() if method == "GET" else b""
+                fault = self.headers.get("X-Agent-Team-OS-QA-Fault")
+                if fault and status == 200 and method == "GET":
+                    try:
+                        body = inject_fault(body, fault)
+                    except (ValueError, json.JSONDecodeError):
+                        status = 400
+                        body = b'{"error":"QA_FAULT_INVALID"}'
+                elif status == 200 and not fault:
+                    if method == "GET":
+                        payload = json.loads(body)
+                        observations["success_get"] = {
+                            "body_keys": sorted(payload),
+                            "version": payload.get("version"),
+                            "service": payload.get("service"),
+                            "headers": response_headers(headers),
+                        }
+                    else:
+                        observations["success_head"] = {
+                            "body_bytes": len(body),
+                            "headers": response_headers(headers),
+                        }
+                self.send_response(status)
+                for name in (
+                    "Content-Type",
+                    "Cache-Control",
+                    "X-Health-Contract",
+                    "X-Content-Type-Options",
+                ):
+                    if value := headers.get(name):
+                        self.send_header(name, value)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if method == "GET":
+                    self.wfile.write(body)
 
             def log_message(self, *_args: object) -> None:
                 pass
@@ -218,7 +613,13 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
         thread.start()
         os.environ["ATOS_QA_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
         try:
-            return python_tests(root)
+            report = python_tests(root)
+            modes = observations["fault_modes_observed"]
+            assert isinstance(modes, set)
+            observations["fault_modes_observed"] = sorted(modes)
+            report["product_observations"] = observations
+            report["requires_product_observations"] = requires_product_observations
+            return report
         finally:
             server.shutdown()
             server.server_close()

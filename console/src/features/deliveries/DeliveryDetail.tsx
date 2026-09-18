@@ -86,7 +86,9 @@ export function DeliveryDetail({
 
     <DeliveryStageRail delivery={delivery}/>
     <ConflictState error={decisionError}/>
-    {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>请根据失败代码修正需求或运行依赖，再创建新的交付。失败运行不会污染任何项目仓库的 Main。</span></div></div>}
+    {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>{delivery.status === "needs_attention"
+      ? "部分仓库可能已经推进：已成功推进的仓库不会回滚。请确认远端状态后，使用下方四仓发布面板的 Resume forward 继续同一个 ReleaseBundle。"
+      : "请查看失败代码、Attempt 与验证证据，修正需求或运行依赖后按当前状态允许的方式恢复。"}</span></div></div>}
     {evidenceError && <ErrorState error={evidenceError}/>}
     {publicationsError && <ErrorState error={publicationsError}/>}
     {publicationRetryError && <ErrorState error={publicationRetryError}/>}

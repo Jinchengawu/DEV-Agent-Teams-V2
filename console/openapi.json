@@ -7774,6 +7774,85 @@
         }
       }
     },
+    "/v1/knowledge/connections/{connection_id}/credential-references": {
+      "put": {
+        "summary": "Update Connection Credential References",
+        "operationId": "update_connection_credential_references_v1_knowledge_connections__connection_id__credential_references_put",
+        "parameters": [
+          {
+            "name": "connection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Connection Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantConnectionCredentialReferenceUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantConnection"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/knowledge/connections/{connection_id}/diagnose": {
       "post": {
         "summary": "Diagnose Connection",
@@ -12126,10 +12205,92 @@
         }
       }
     },
+    "/v1/deliveries/{delivery_id}/release-decision": {
+      "post": {
+        "summary": "批准或拒绝当前 Release Gate",
+        "description": "accept 会立即启动当前 Delivery 的 Apply 策略：External V2 执行逐仓非 Force Fast-forward，Managed V1 执行既有 CAS Apply。该操作可能改变仓库 Main。",
+        "operationId": "decide_release_v1_deliveries__delivery_id__release_decision_post",
+        "parameters": [
+          {
+            "name": "delivery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Delivery Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReleaseDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryRun"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/deliveries/{delivery_id}/candidate-decision": {
       "post": {
-        "summary": "Decide Candidate",
+        "summary": "旧版候选决策接口",
+        "description": "已弃用，请改用 release-decision。为兼容旧客户端保留；accept 同样会启动 Apply 并可能改变仓库 Main。",
         "operationId": "decide_candidate_v1_deliveries__delivery_id__candidate_decision_post",
+        "deprecated": true,
         "parameters": [
           {
             "name": "delivery_id",
@@ -14292,7 +14453,8 @@
               "accept",
               "reject"
             ],
-            "title": "Decision"
+            "title": "Decision",
+            "description": "accept 会执行当前 Release Gate 绑定的 Apply 策略并改变仓库 Main；reject 会拒绝当前发布主题。"
           },
           "expected_version": {
             "type": "integer",
@@ -14312,7 +14474,8 @@
           "expected_version",
           "expected_subject_sha256"
         ],
-        "title": "CandidateDecisionRequest"
+        "title": "CandidateDecisionRequest",
+        "description": "旧版候选决策请求；保留用于 API 向后兼容。"
       },
       "CandidateVerification": {
         "properties": {
@@ -20889,6 +21052,37 @@
         ],
         "title": "ReleaseBundleV2"
       },
+      "ReleaseDecisionRequest": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "accept",
+              "reject"
+            ],
+            "title": "Decision",
+            "description": "accept 会执行当前 Release Gate 绑定的 Apply 策略并改变仓库 Main；reject 会拒绝当前发布主题。"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "expected_subject_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Subject Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "expected_version",
+          "expected_subject_sha256"
+        ],
+        "title": "ReleaseDecisionRequest"
+      },
       "ReleaseHealthV2": {
         "properties": {
           "project_id": {
@@ -23003,6 +23197,35 @@
           "app_secret_ref"
         ],
         "title": "TenantConnectionCreate"
+      },
+      "TenantConnectionCredentialReferenceUpdate": {
+        "properties": {
+          "app_id_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Id Ref"
+          },
+          "app_secret_ref": {
+            "type": "string",
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "App Secret Ref"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "app_id_ref",
+          "app_secret_ref",
+          "expected_version"
+        ],
+        "title": "TenantConnectionCredentialReferenceUpdate"
       },
       "TenantProviderBinding": {
         "properties": {

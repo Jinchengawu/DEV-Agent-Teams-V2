@@ -230,6 +230,11 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   租约装配；运行期间 Detached View 根目录、Overlay 和 Candidate 文件保持只读，
   Codex 同时使用 `read-only` Sandbox。最后一个并发 Reviewer 结束后由产品移除
   Overlay 并恢复原权限；该租约不暴露给 Agent。
+- 产品将当前 Attempt 的业务 Workspace 绝对路径冻结为 `Method Project Root`，
+  明确要求 Method Skill 中的 `{project-root}` 逐字替换为该路径；不得用控制仓、
+  进程启动目录或 `CODEX_HOME` 自行推断。`CODEX_HOME/_bmad` 同时作为受控兼容
+  别名指向同一 Workspace Overlay；别名跟随同一租约安装、校验与清理，
+  不增加 Workspace 权限，不进入 Candidate Diff。
 - Codex 子进程只继承最小系统环境白名单与 Adapter 授权 Override；产品进程中的
   Feishu/GitHub Token、Secret 和 Password 不会被隐式传入 AgentAttempt。
 - 该机制只证明本地 Codex CLI 能执行已登记 Attempt，不会把 Codex 模拟规划提升为真实 Hermes
@@ -256,7 +261,10 @@ TeamTemplateRevision
 
 机器验证采用单独的产品预置 Verification Profile：Workspace Governance 保存选择及工具资格，
 Snapshot 冻结命令、超时、非敏感环境、工具版本/路径/二进制 Hash 和资格 Hash。Writer 运行前复核当前
-工具身份，Release Acceptance 校验冻结方案与实际报告；Git Verification 的既有语义不变。
+工具身份，Release Acceptance 校验冻结方案与实际报告；Git Verification 的既有语义不变。Writer 只产出
+受控代码与测试变更，不拥有包含产品占位符、冻结依赖或受限端口权限的验证环境，不得自行
+安装依赖或宣称冻结验证通过；完整命令执行、结果合同判定与 Candidate 接纳仍唯一归属 Product
+Machine Verification。
 保留 V1 Python unittest/Node native test；V2 health-contract-v1 切片按仓固定 Design 合同、
 Frontend TypeScript/Vitest/Vite、Backend unittest/HTTP 和 QA Chromium。配置、工具依赖闭包及结果
 合同都被资格 Hash 冻结，零测试、全跳过、配置/工具漂移与超时失败。资格化只读检查，不安装依赖；
@@ -314,6 +322,9 @@ Main planning
 固定不变量：
 
 - 一个 ACWM Stage Attempt 对应一个 `WorkcellRun`；Repair 由 ACWM bounded Loop 创建新 Run。
+  Workcell Execution 将同 Stage 最近一轮的失败代码、机器 case 与日志正文、已校验 Blocking
+  Finding 与 Delegate 诊断冻结为 `workcell-repair-context-v1` 传入新 Run，避免
+  无失败证据的盲目重试；不传 Session、Memory 或其他仓库挂载。
 - Child 深度固定为 1；Main 最多三个 Child、并发最多两个、Writer 最多一个。
 - Main planning 与 synthesis 是同一 Main Run 下的不同 AgentAttempt。
 - 每个 Main/Child 都必须先有产品创建的 AgentRun/AgentAttempt；Runtime Adapter 不得隐藏派生。
@@ -324,9 +335,14 @@ Main planning
   Workcell。产品已对完整 Candidate Diff 做内容寻址，仓库内额外 manifest 不是隐式验收前提。
 - Tasking 明确每仓 Acceptance 责任，由 Plan Gate 批准；产品从批准来源编译冻结 Review Scope。
   Finding 必须且只能引用本仓 Acceptance 或冻结 System Policy，原始 JSON 必须与登记记录一致。
-  无效 Review 的原始输出仍保留并进入既有有界 Repair；同批有效阻断不会被无效输出抹除。
+  无效 Review 的原始输出仍保留；产品只允许在同一 Reviewer Child Run 内
+  新建一次可观测 AgentAttempt 来修正输出契约，不改 Candidate 或 Scope。
+  重试仍无效时进入既有 ACWM 有界 Repair；同批有效阻断不会被无效输出抹除。
 - Main synthesis 必须读取本 Workcell 已冻结的 Child Artifact 正文、Machine Verification、
   Result Validation 与 Review Artifact，不得在缺少局部执行事实时合成成功结果。
+  若 Codex 最终响应仅违反单一 JSON object 输出合同，产品可在同一 Main Run 内新建一次
+  可观察 synthesis AgentAttempt；原失败 Attempt 保留错误码与诊断 Artifact，冻结的 Child、
+  Candidate、Verification、Review 与 Provider Binding 均不得改变。第二次失败继续 Fail Closed。
 - Child 之间只传递内容寻址 ArtifactEnvelope；Git Candidate 以 Metadata + Hash-bound Diff Artifact 表达，
   不传原始 Session、Memory、聊天历史或 Repository 挂载。
 - Cancel 向未完成 Child 传播并终止 Codex 进程；重启时不可恢复 Attempt 标记为 `interrupted`。
@@ -347,7 +363,9 @@ Main planning
 - 已成功仓库不回滚、不 Force Push；
 - Delivery 进入非终态 `needs_attention`；
 - Project 进入 `release_drifted`，Lease 继续持有；
-- `resume-forward` 只接受原 Bundle，并验证已应用仓仍为 Candidate、未应用仓仍为 Base；
+- `resume-forward` 只接受原 Bundle：有 Receipt 的仓必须仍为 Candidate；无 Receipt 的仓
+  只允许仍为 Base，或在 Push 已成功但回读/Receipt 丢失时精确为同 Bundle Candidate；
+  后一种只恢复 `recovered=true` Receipt，不再 Push；
 - 条件不满足时继续人工协调，不自动 Rebase、改写 Bundle 或生成补偿提交。
 
 V2 完成时，在同一个 SQLite 事务中提交 Manifest、Attempt completed、Health healthy、Delivery completed、
@@ -717,6 +735,56 @@ Affected authorities/modules/data/states: Verification Profile/Qualification/Rep
 Compatibility and migration: 保留 V1 Profile 原序列化与哈希；V2 采用明确版本联合；不复制 ACWM Runtime Contract，不共享仓库挂载。
 Plan/ADR reference: docs/plans/2026-09-05-DELIVERY-CLOSURE-PLAN.md；ADR-0012、ADR-0014、ADR-0019
 Implemented evidence: 真实四仓工具 12 项、公共 API 配置/冻结 1 项、取消/旧 Profile 11 项、来源篡改 9 项通过；同 Delivery V2 Stage/Publication/QA/四仓 Apply/Release 与默认 R2 共 4 项通过。正式同 Revision/Live 另验。
+
+ARCH-20260911-02
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Cross-boundary
+Decision: Review 输出契约错误可在同一 Reviewer Child Run 内以新 AgentAttempt 有界重试一次；不改变 Candidate、Scope 或 Provider Binding。
+Affected authorities/modules/data/states: Workcell Stage Driver、AgentRun/AgentAttempt Ledger、Review Artifact 校验；不改 ACWM Loop 权威。
+Compatibility and migration: 不需要 Migration；现有 AgentAttempt 表已支持同 Run 多 Attempt；非契约错误与第二次无效继续 Fail Closed。
+Plan/ADR reference: ADR-0014 修订。
+Implemented evidence: Kernel/Stage Driver 专项验证同 Child 两次 Attempt、原始失败 Artifact Hash、有界成功与超限失败；四仓 Live Gate 需在本 Revision 重跑。
+
+ARCH-20260911-03
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Cross-boundary
+Decision: Attempt 期间以受控别名将 BMAD `{project-root}` 兼容到当前 Workspace Project Support Overlay。
+Affected authorities/modules/data/states: Codex Workcell Adapter、Method Runtime CODEX_HOME、Workspace Overlay Lease；不改 Method Pack 内容哈希或 Workspace Access。
+Compatibility and migration: 不需要 Migration；无 BMAD Runtime Source 的 Attempt 不变；别名冲突、篡改与业务 Workspace 内 CODEX_HOME 均失败关闭。
+Plan/ADR reference: ADR-0014 修订。
+Implemented evidence: Codex Adapter 与 Runtime Overlay 16 项专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑。
+
+ARCH-20260911-04
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Local
+Decision: 每个 Codex AgentAttempt 显式冻结当前业务 Workspace 为 Method Project Root，禁止模型从控制仓、进程目录或 CODEX_HOME 推断 `{project-root}`。
+Affected authorities/modules/data/states: Codex Workcell Adapter 的 Method 指令边界；不改 Workspace Access、Method Pack Hash 或 Overlay Lease。
+Compatibility and migration: 不需要 Migration；无 Method 的 Attempt 也获得相同工作目录声明，不增加文件系统权限。
+Plan/ADR reference: ADR-0014 现有 Method Pack Overlay 边界内的实现加固，不新增 ADR。
+Implemented evidence: Codex Adapter 指令绑定与 Overlay 专项测试通过；四仓 Live Gate 待在加载该 Revision 的进程中验证。
+
+ARCH-20260911-05
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Cross-boundary
+Decision: Main synthesis 的单一 JSON object 输出合同错误可在同一 Main Run 内以新 AgentAttempt 有界重试一次；不改变任何冻结执行证据。
+Affected authorities/modules/data/states: Workcell Stage Driver、AgentRun/AgentAttempt Ledger、Main synthesis；不改 ACWM Loop 权威。
+Compatibility and migration: 不需要 Migration；现有 AgentAttempt 表已支持同 Main Run 多 Attempt；非输出合同错误与第二次无效继续 Fail Closed。
+Plan/ADR reference: ADR-0014 修订。
+Implemented evidence: Kernel 与 Stage Driver 专项验证 planning/synthesis/synthesis Attempt 序列、失败诊断 Artifact、有界成功和状态终结；四仓 Live Gate 需在本 Revision 重跑。
+
+ARCH-20260911-06
+State: Implemented/Verified
+Accepted at: 2026-09-11
+Architecture Impact: Critical
+Decision: Forward-only Apply 在 Push 已成功但 SHA 回读或 Receipt 持久化丢失时，允许 `resume-forward` 对精确同 Bundle Candidate 生成 recovered Receipt，不重复 Push。
+Affected authorities/modules/data/states: ExternalForwardReleaseCoordinator preflight、RemoteApplyReceipt、needs_attention/release_drifted 恢复。
+Compatibility and migration: 不需要 Migration；已有 Receipt 仍必须绑定 Candidate，无 Receipt 且远程为任意第三个 SHA 仍 Fail Closed。
+Plan/ADR reference: ADR-0015 修订。
+Implemented evidence: Push 成功但回读失败的回归先红后绿；同 Bundle 恢复四份 Receipt，首份 `recovered=true`，Manifest/Health/Lease 正常终结。
 ```
 
 新条目必须使用以下结构：
@@ -753,6 +821,13 @@ Acceptance evidence required:
 | `ARCH-20260905-03` | 2026-09-05 | `Implemented/Verified` | 已批准 Plan 派生 Review Scope；原始 Review 留存、归属校验与有界修复 | ADR-0014/0019 | 43 项 Scope/Kernel/Stage/R2 专项；最新 Console 浏览器责任、Diff/Review 与来源关联通过；正式同 Revision Live 待验 |
 
 | `ARCH-20260905-04` | 2026-09-05 | `Implemented/Verified` | V2 按仓真实工具验证、固定配置/依赖资格及 Hash-bound 产物包消费 | ADR-0012/0014/0019 | 真实四仓工具/HTTP配置、篡改与清理回归；同 Delivery Stage→QA→Apply→Release 全链通过；Live 待验 |
+| `ARCH-20260911-01` | 2026-09-11 | `Implemented/Verified` | bounded Repair 以内容寻址 Artifact 将同 Stage 最近一轮失败证据传入新 WorkcellRun | ADR-0014 修订 | Repair Context 结构、最新失败选择、机器 case、Blocking Review 与 Delegate 诊断专项测试通过；四仓 Live Gate 需重跑 |
+| `ARCH-20260911-02` | 2026-09-11 | `Implemented/Verified` | 同一 Reviewer Child Run 对结构化 Review 契约错误进行一次可观测 Attempt 重试 | ADR-0014 修订 | 28 项 Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
+| `ARCH-20260911-03` | 2026-09-11 | `Implemented/Verified` | Attempt `CODEX_HOME/_bmad` 受控别名指向当前 Workspace Project Support Overlay | ADR-0014 修订 | 16 项 Adapter/Overlay 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待重跑 |
+| `ARCH-20260911-04` | 2026-09-11 | `Implemented/Verified` | Codex AgentAttempt 显式冻结 Method Project Root，禁止 `{project-root}` 误解析到控券 | ADR-0014 边界内加固 | Adapter 指令绑定与 Overlay 专项通过；四仓 Live Gate 待加载本 Revision 重跑 |
+| `ARCH-20260911-05` | 2026-09-11 | `Implemented/Verified` | 同一 Main Run 对 synthesis 单一 JSON object 输出合同错误进行一次可观察 Attempt 重试 | ADR-0014 修订 | Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
+| `ARCH-20260911-06` | 2026-09-11 | `Implemented/Verified` | Push 成功但 SHA 回读/Receipt 丢失时，同 Bundle Candidate 可恢复 Receipt 且不重复 Push | ADR-0015 修订 | 丢失回读回归先红后绿；四仓 Receipt、Manifest、Health 与 Lease 终结通过 |
+| `ARCH-20260911-07` | 2026-09-11 | `Implemented/Verified` | Release Acceptance 接纳 Workcell Kernel 已允许的同 Reviewer Child 有界契约重试，不把合法重试误判为隐藏或失败 Attempt | ADR-0019 修订 | 单次成功与 `failed(INVALID_REVIEW_CODES) → succeeded` 正例、其他错误与越界序列反例；真实 QA Reviewer 重试差异已定位 |
 
 ## 14. Plan Architecture Review 与文档对账
 

@@ -98,6 +98,53 @@ def test_codex_workcell_agent_parses_only_the_last_agent_message(
     assert output.content == {"changed_files": ["design/health-contract-v1.json"]}
 
 
+def test_codex_workcell_agent_freezes_method_project_root_in_instruction(
+    tmp_path: Path,
+) -> None:
+    code = """
+import json
+import sys
+
+instruction = sys.stdin.read()
+event = {
+    "type": "item.completed",
+    "item": {
+        "type": "agent_message",
+        "text": json.dumps({"instruction": instruction}),
+    },
+}
+print(json.dumps(event))
+"""
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-project-root",
+                workcell_run_id="workcell-project-root",
+                agent_run_id="agent-project-root",
+                phase="delegate",
+                workcell_key="frontend",
+                stage_path="frontend-repair/frontend",
+                instruction="write",
+                workspace=tmp_path,
+                workspace_access="workspace_write",
+                method_id="bmad-build",
+            )
+        )
+    )
+
+    instruction = str(output.content["instruction"])
+    assert f"Method Project Root\uff1a{tmp_path.resolve()}" in instruction
+    assert (
+        "{project-root} \u5fc5\u987b\u9010\u5b57\u66ff\u6362\u4e3a Method Project Root"
+        in instruction
+    )
+
+
 def test_codex_workcell_agent_mounts_bmad_support_without_git_pollution(
     tmp_path: Path,
 ) -> None:
@@ -109,6 +156,8 @@ def test_codex_workcell_agent_mounts_bmad_support_without_git_pollution(
     scripts.mkdir(parents=True)
     (scripts / "render_skill.py").write_text("# verified renderer\n", encoding="utf-8")
     (scripts / "config_utils.py").write_text("# verified config\n", encoding="utf-8")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
     code = """
 import json
 import os
@@ -119,6 +168,7 @@ from pathlib import Path
 sys.stdin.read()
 root = Path.cwd()
 overlay = root / "_bmad"
+codex_home_overlay = Path(os.environ["CODEX_HOME"]) / "_bmad"
 renderer = (overlay / "scripts" / "render_skill.py").read_text(encoding="utf-8")
 status = subprocess.check_output(["git", "status", "--short"], text=True)
 (root / "src").mkdir(exist_ok=True)
@@ -130,6 +180,10 @@ payload = {
     "runtime_source_leaked": "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE" in os.environ,
     "config_present": (overlay / "config.toml").is_file(),
     "bmm_config_present": (overlay / "bmm" / "config.yaml").is_file(),
+    "codex_home_project_root_alias": (
+        codex_home_overlay.resolve() == overlay.resolve()
+        and (codex_home_overlay / "scripts" / "render_skill.py").is_file()
+    ),
 }
 event = {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(payload)}}
 print(json.dumps(event))
@@ -152,7 +206,10 @@ print(json.dumps(event))
                 workspace=workspace,
                 workspace_access="workspace_write",
                 method_id="bmad-build",
-                environment={"AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(source)},
+                environment={
+                    "AGENT_TEAM_OS_BMAD_RUNTIME_SOURCE": str(source),
+                    "CODEX_HOME": str(codex_home),
+                },
             )
         )
     )
@@ -164,8 +221,10 @@ print(json.dumps(event))
         "runtime_source_leaked": False,
         "config_present": True,
         "bmm_config_present": True,
+        "codex_home_project_root_alias": True,
     }
     assert not (workspace / "_bmad").exists()
+    assert not (codex_home / "_bmad").exists()
     assert subprocess.check_output(
         ["git", "status", "--short"], cwd=workspace, text=True
     ).splitlines() == ["?? src/"]
@@ -246,10 +305,14 @@ def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
     required_clause = (
         "允许列表非空时，knowledge_citation_ids 必须至少包含其中一个 ID"
     )
+    authority_clause = (
+        "只有该允许列表是 citation ID 的声明权威"
+    )
     code = (
         "import json,sys; text=sys.stdin.read(); "
         f"required={required_clause!r} in text; "
-        "payload={'requires_citation': required, "
+        f"authority={authority_clause!r} in text; "
+        "payload={'requires_citation': required, 'allowlist_is_authority': authority, "
         "'knowledge_citation_ids': ['citation-allowed']}; "
         "event={'type':'item.completed','item':{'type':'agent_message',"
         "'text':json.dumps(payload)}}; print(json.dumps(event))"
@@ -276,7 +339,10 @@ def test_codex_workcell_agent_requires_a_citation_for_non_empty_context(
         )
     )
 
-    assert output.content == {"requires_citation": True}
+    assert output.content == {
+        "requires_citation": True,
+        "allowlist_is_authority": True,
+    }
     assert output.knowledge_citation_ids == ("citation-allowed",)
 
 

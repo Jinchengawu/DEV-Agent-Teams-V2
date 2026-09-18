@@ -145,6 +145,8 @@ def test_pipeline_run_records_failure_and_cancel_transitions(tmp_path: Path) -> 
         command="fail",
         node_id="plan",
         expected_version=running.version,
+        failure_type="CodexCLIError",
+        failure_code="PIPELINE_EXECUTION_FAILED",
     )
     cancelled_run = ledger.start(delivery_id="delivery-cancelled", revision=_revision())
     cancelled = ledger.transition(
@@ -156,9 +158,13 @@ def test_pipeline_run_records_failure_and_cancel_transitions(tmp_path: Path) -> 
 
     assert failed.status == "failed"
     assert cancelled.status == "cancelled"
-    assert [event.event_type for event in repository.list_events(failed.id)][-1] == (
-        "pipeline-node.failed"
-    )
+    failure_event = repository.list_events(failed.id)[-1]
+    assert failure_event.event_type == "pipeline-node.failed"
+    assert failure_event.payload == {
+        "node_id": "plan",
+        "failure_type": "CodexCLIError",
+        "failure_code": "PIPELINE_EXECUTION_FAILED",
+    }
     assert [event.event_type for event in repository.list_events(cancelled.id)][-1] == (
         "pipeline-run.cancelled"
     )

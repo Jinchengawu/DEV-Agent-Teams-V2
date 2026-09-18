@@ -8,6 +8,7 @@ they never claim that a Hermes instance was invoked.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,9 +28,15 @@ from acwm.domain import (
 )
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .codex_runtime import approved_planning_codex_command
 from .delivery import PlanningServiceError, RequirementArtifact, TaskContract
+from .shared.errors import ProductError
 from .shared.hashes import sha256_json
-from .shared.review_scope import WorkcellAcceptanceAssignment, validate_workcell_acceptance
+from .shared.review_scope import (
+    WorkcellAcceptanceAssignment,
+    WorkcellAcceptanceResponsibility,
+    validate_workcell_acceptance,
+)
 
 
 class CodexRoleRunner(Protocol):
@@ -59,49 +66,79 @@ class CodexSimulatedHermesPlanning:
         self._runner = runner
 
     async def analyze(self, user_request: str) -> RequirementArtifact:
+        explicit_ids = _explicit_acceptance_ids(user_request)
         prompt = f"""You are temporarily simulating the Hermes PM role.
 Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
 Each acceptance criterion must have a stable id and a machine-verifiable statement.
+When the user supplies explicit acceptance ids, preserve exactly that id set; do not add,
+rename, merge or remove ids and do not create acceptance for product control-plane actions.
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 Do not include permissions, commands, paths, markdown or commentary.
 
 User request:
 {user_request}
 """
-        return await self._structured("hermes-pm-simulator", prompt, RequirementArtifact)
+        return await self._structured(
+            "hermes-pm-simulator",
+            prompt,
+            RequirementArtifact,
+            validate=lambda value: _validate_explicit_acceptance_ids(value, explicit_ids),
+        )
 
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("hermes-admin-simulator", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        prompt += _workcell_planning_instruction(required_workcells, requirements)
+        semantics = await self._structured(
+            "hermes-admin-simulator",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements,
+                _compile_prefixed_workcell_acceptance(
+                    requirements, value, required_workcells
+                ),
+                required_workcells,
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        semantics = _compile_prefixed_workcell_acceptance(
+            requirements, semantics, required_workcells
+        )
+        return _task_from_semantics(semantics)
 
     async def _structured(
-        self, role: str, prompt: str, model: type[StructuredModel]
+        self,
+        role: str,
+        prompt: str,
+        model: type[StructuredModel],
+        *,
+        validate: Callable[[StructuredModel], None] | None = None,
     ) -> StructuredModel:
         schema = json.dumps(
             model.model_json_schema(),
@@ -113,12 +150,17 @@ Approved requirements:
         for attempt in range(2):
             response = await self._runner.run(role, prompt)
             try:
-                return model.model_validate_json(self._json_object(response))
-            except (ValidationError, ValueError) as error:
+                parsed = model.model_validate_json(self._json_object(response))
+                if validate is not None:
+                    validate(parsed)
+                return parsed
+            except (ValidationError, ValueError, ProductError, PlanningOutputError) as error:
                 last_error = error
                 if attempt == 1:
                     break
                 prompt += self._repair_context(response, error)
+        if isinstance(last_error, (ProductError, PlanningOutputError)):
+            raise last_error
         raise PlanningOutputError(
             "Codex simulator returned invalid structured output"
         ) from last_error
@@ -126,7 +168,8 @@ Approved requirements:
     @staticmethod
     def _repair_context(response: str, error: Exception) -> str:
         invalid_response = response[-8_000:].replace("</", "<\\/")
-        validation_error = str(error)[-4_000:].replace("</", "<\\/")
+        error_code = f"{error.code}: " if isinstance(error, ProductError) else ""
+        validation_error = (error_code + str(error))[-4_000:].replace("</", "<\\/")
         return f"""
 
 The prior ephemeral attempt violated the JSON contract. The blocks below are
@@ -168,58 +211,182 @@ class CodexPlanningService(CodexSimulatedHermesPlanning):
     evidence_identity = "codex-cli"
 
     async def analyze(self, user_request: str) -> RequirementArtifact:
+        explicit_ids = _explicit_acceptance_ids(user_request)
         prompt = f"""You are the product analysis role in Agent-Team-OS.
 Return raw JSON only with: summary, non_goals, risks, acceptance_criteria.
 Each acceptance criterion must have a stable id and a machine-verifiable statement.
+When the user supplies explicit acceptance ids, preserve exactly that id set; do not add,
+rename, merge or remove ids and do not create acceptance for product control-plane actions.
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 Do not include permissions, commands, paths, markdown or commentary.
 
 User request:
 {user_request}
 """
-        return await self._structured("product-analysis", prompt, RequirementArtifact)
+        return await self._structured(
+            "product-analysis",
+            prompt,
+            RequirementArtifact,
+            validate=lambda value: _validate_explicit_acceptance_ids(value, explicit_ids),
+        )
 
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        output_fields = "title, instructions, acceptance_ids"
+        exclusions = (
+            "Do not include permissions, commands, paths, system_policy, "
+            "markdown or commentary."
+        )
+        if required_workcells:
+            output_fields += ", workcell_acceptance"
+            exclusions = (
+                "Do not invent permissions, executable commands or system_policy. "
+                "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
         prompt = f"""You are the task planning role in Agent-Team-OS.
-Return raw JSON only with: title, instructions, acceptance_ids.
+Return raw JSON only with: {output_fields}.
 Create exactly one bounded product-delivery task. Preserve every approved product, UI,
 frontend, backend and QA concern that appears in the input; backend-only requests must
 remain backend-only. Use only acceptance ids from the input.
+Preserve every frozen exact literal, const value, Canonical Identifier and prohibition
+verbatim; 不得弱化为任意非空值、可选值或近义表述。
 This is a planning-only role turn. Do not call tools, inspect the workspace, or read files.
 The instructions must require non-empty implementation or specification changes and
 corresponding machine-verifiable tests in every repository role selected by the Pipeline.
-Do not include permissions, commands, paths, system_policy, markdown or commentary.
+{exclusions}
 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells)
-        semantics = await self._structured("task-planning", prompt, _TaskSemantics)
-        allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
-        if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
-            raise PlanningOutputError("Task referenced unknown acceptance criteria")
-        task = TaskContract(
-            title=semantics.title,
-            instructions=semantics.instructions,
-            acceptance_ids=semantics.acceptance_ids,
-            workcell_acceptance=semantics.workcell_acceptance,
+        prompt += _workcell_planning_instruction(required_workcells, requirements)
+        semantics = await self._structured(
+            "task-planning",
+            prompt,
+            _TaskSemantics,
+            validate=lambda value: _validate_task_semantics(
+                requirements,
+                _compile_prefixed_workcell_acceptance(
+                    requirements, value, required_workcells
+                ),
+                required_workcells,
+            ),
         )
-        _validate_task_workcells(requirements, task, required_workcells)
-        return task
+        semantics = _compile_prefixed_workcell_acceptance(
+            requirements, semantics, required_workcells
+        )
+        return _task_from_semantics(semantics)
 
 
-def _workcell_planning_instruction(required_workcells: tuple[str, ...]) -> str:
+def _workcell_planning_instruction(
+    required_workcells: tuple[str, ...], requirements: RequirementArtifact
+) -> str:
     if not required_workcells:
         return ""
-    return (
+    owner_map = _prefixed_acceptance_owner_map(requirements, required_workcells) or {}
+    instruction = (
         "\n\n产品冻结的 Workcell 列表：" + json.dumps(required_workcells) + "。"
         "输出还必须包含 workcell_acceptance；每个元素为 workcell_key 和 acceptance 数组，"
         "数组元素包含 acceptance_id 与本仓具体 responsibility。只覆盖以上 Workcell，"
         "所有任务验收 ID 均须有人负责。共享验收项必须分别说明各仓责任，不能复制全局要求。"
+        "Workcell responsibility 只能描述本仓 Repository Candidate/Artifact 及其机器验证。"
+        "responsibility 中不得出现其他 Workcell 名称、其 Repository/Candidate/Workspace，"
+        "包括否定句；隔离责任统一表述为仅操作当前 Workcell Repository，"
+        "并只消费内容寻址 ArtifactAttachment。"
+        "Design Workcell 负责规格、Schema 或测试向量时，其机器验证只能验证"
+        "本仓产物的一致性、可解析性和可执行性；不得要求 Design 导入、启动或读取"
+        "Backend、Frontend 或 QA 的实现。实际运行时行为由对应实现 Workcell 和 QA E2E 验证。"
+        "Plan/Design/Release Gate、Review 阻断、ReleaseBundle、PR 状态、Apply、"
+        "resume-forward 和 ReleaseManifest 属于 Agent-Team-OS 产品控制面，"
+        "不得分配给任何 Workcell，也不得写成 QA Repository 的交付责任。"
+        "QA 只能在自有 Repository 中验证可观察行为；不得把运行、读取或修改 "
+        "Frontend/Backend/Design Repository、Candidate 或测试写成 QA 责任。"
         "责任分配将在 Plan Gate 展示并等待用户批准；此时需求和任务尚未获批。"
     )
+    if owner_map:
+        instruction += (
+            "\n以下 Acceptance owner map 由产品根据 Canonical ID 前缀冻结，"
+            "workcell_acceptance 必须精确匹配且不得跨 Workcell 复制："
+            + json.dumps(owner_map, ensure_ascii=False, separators=(",", ":"))
+            + "。"
+        )
+    return instruction
+
+
+def _prefixed_acceptance_owner_map(
+    requirements: RequirementArtifact,
+    required_workcells: tuple[str, ...],
+) -> dict[str, str] | None:
+    if not required_workcells:
+        return None
+    owners: dict[str, str] = {}
+    for criterion in requirements.acceptance_criteria:
+        matches = tuple(
+            workcell
+            for workcell in required_workcells
+            if f"-{workcell.upper()}-" in criterion.id.upper()
+        )
+        if len(matches) != 1:
+            return None
+        owners[criterion.id] = matches[0]
+    if set(owners.values()) != set(required_workcells):
+        return None
+    return owners
+
+
+def _compile_prefixed_workcell_acceptance(
+    requirements: RequirementArtifact,
+    semantics: _TaskSemantics,
+    required_workcells: tuple[str, ...],
+) -> _TaskSemantics:
+    owners = _prefixed_acceptance_owner_map(requirements, required_workcells)
+    if owners is None:
+        return semantics
+    assignments = tuple(
+        WorkcellAcceptanceAssignment(
+            workcell_key=workcell,
+            acceptance=tuple(
+                WorkcellAcceptanceResponsibility(
+                    acceptance_id=criterion.id,
+                    responsibility=(
+                        f"仅在 {workcell} Repository Candidate/Artifact 内实现并机器验证 "
+                        f"{criterion.id}。"
+                    ),
+                )
+                for criterion in requirements.acceptance_criteria
+                if owners[criterion.id] == workcell
+            ),
+        )
+        for workcell in required_workcells
+    )
+    return semantics.model_copy(
+        update={
+            "acceptance_ids": tuple(
+                criterion.id for criterion in requirements.acceptance_criteria
+            ),
+            "workcell_acceptance": assignments,
+        }
+    )
+
+
+def _explicit_acceptance_ids(user_request: str) -> tuple[str, ...]:
+    identifiers = re.findall(
+        r"(?<![A-Z0-9-])([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+-\d{3})(?![A-Z0-9-])",
+        user_request.upper(),
+    )
+    return tuple(dict.fromkeys(identifiers))
+
+
+def _validate_explicit_acceptance_ids(
+    requirements: RequirementArtifact, explicit_ids: tuple[str, ...]
+) -> None:
+    if not explicit_ids:
+        return
+    actual = tuple(criterion.id for criterion in requirements.acceptance_criteria)
+    if len(actual) != len(set(actual)) or set(actual) != set(explicit_ids):
+        raise PlanningOutputError(
+            "EXPLICIT_ACCEPTANCE_IDS_CHANGED: preserve exactly " + ", ".join(explicit_ids)
+        )
 
 
 def _validate_task_workcells(
@@ -229,6 +396,26 @@ def _validate_task_workcells(
         validate_workcell_acceptance(
             requirements.model_dump(mode="json"), task.model_dump(mode="json"), required_workcells
         )
+
+
+def _task_from_semantics(semantics: _TaskSemantics) -> TaskContract:
+    return TaskContract(
+        title=semantics.title,
+        instructions=semantics.instructions,
+        acceptance_ids=semantics.acceptance_ids,
+        workcell_acceptance=semantics.workcell_acceptance,
+    )
+
+
+def _validate_task_semantics(
+    requirements: RequirementArtifact,
+    semantics: _TaskSemantics,
+    required_workcells: tuple[str, ...],
+) -> None:
+    allowed_ids = {criterion.id for criterion in requirements.acceptance_criteria}
+    if not semantics.acceptance_ids or not set(semantics.acceptance_ids) <= allowed_ids:
+        raise PlanningOutputError("Task referenced unknown acceptance criteria")
+    _validate_task_workcells(requirements, _task_from_semantics(semantics), required_workcells)
 
 
 class ACWMCodexRoleRunner:
@@ -244,7 +431,11 @@ class ACWMCodexRoleRunner:
         if config is not None and config_provider is not None:
             raise ValueError("config and config_provider are mutually exclusive")
         self.workspace = workspace.resolve()
-        self._config = config or CodexCLIConfig(sandbox="read-only", timeout_seconds=120)
+        self._config = config or CodexCLIConfig(
+            command=approved_planning_codex_command(),
+            sandbox="read-only",
+            timeout_seconds=120,
+        )
         self._config_provider = config_provider
         self._role_turn = AgentScopeRoleTurnAdapter()
         self._active_adapters: set[CodexCLICapabilityAdapter] = set()

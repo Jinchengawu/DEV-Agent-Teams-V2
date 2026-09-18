@@ -14,7 +14,12 @@ from ...shared.errors import ProductError
 from ...shared.hashes import Sha256, sha256_json
 from ...shared.verification import VerificationDependencyIdentity, VerificationFileIdentity
 
-NODE_PACKAGES = {"typescript": "5.9.3", "vitest": "3.2.7", "vite": "7.3.6"}
+NODE_PACKAGES = {
+    "typescript": "5.9.3",
+    "vitest": "3.2.7",
+    "vite": "7.3.6",
+    "@testing-library/dom": "10.4.1",
+}
 
 
 def tool_error(detail: str) -> ProductError:
@@ -52,18 +57,39 @@ def node_modules_root() -> Path:
     return (root / "node_modules").resolve()
 
 
+def _node_package_source(source: Path, name: str, version: str) -> Path:
+    direct = source / name
+    candidates = [direct] if direct.exists() or direct.is_symlink() else []
+    if not candidates:
+        candidates = [
+            item.parent
+            for item in (source / ".pnpm").glob(f"*/node_modules/{name}/package.json")
+        ]
+    exact: dict[Path, Path] = {}
+    for candidate in candidates:
+        try:
+            metadata = json.loads((candidate / "package.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if metadata.get("version") == version:
+            exact[candidate.resolve()] = candidate.resolve()
+    if len(exact) != 1:
+        raise tool_error(f"离线 {name} 版本不匹配或来源不唯一。")
+    return next(iter(exact.values()))
+
+
 def prepare_node_environment(source: Path, target: Path) -> Path:
     """从已经安装的 pnpm 包复制依赖闭包，不联网，不执行包安装脚本。"""
     source = source.resolve()
     destination = target.resolve() / "node_modules"
     if destination.exists():
         raise tool_error("显式准备目标已存在，不能覆盖冻结工具环境。")
-    for name, version in NODE_PACKAGES.items():
-        metadata = json.loads((source / name / "package.json").read_text())
-        if metadata.get("version") != version:
-            raise tool_error(f"离线 {name} 版本不匹配。")
+    package_sources = {
+        name: _node_package_source(source, name, version)
+        for name, version in NODE_PACKAGES.items()
+    }
     destination.mkdir(parents=True)
-    pending = [source / name for name in NODE_PACKAGES]
+    pending = list(package_sources.values())
     copied: set[Path] = set()
     while pending:
         item = pending.pop()
@@ -91,6 +117,13 @@ def prepare_node_environment(source: Path, target: Path) -> Path:
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
         pending.extend(path for path in bucket.rglob("*") if path.is_symlink())
+    for name, package_source in package_sources.items():
+        target = destination / name
+        if target.exists() or target.is_symlink():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        copied_package = destination / package_source.resolve().relative_to(source)
+        target.symlink_to(os.path.relpath(copied_package, target.parent), target_is_directory=True)
     digest = hash_tree(destination)
     (destination.parent / "environment.json").write_text(
         json.dumps(

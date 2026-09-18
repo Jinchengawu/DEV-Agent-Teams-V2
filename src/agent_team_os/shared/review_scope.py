@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import (
@@ -107,6 +108,7 @@ def validate_workcell_acceptance(
     if not isinstance(criteria, list | tuple) or not criteria:
         raise review_error(invalid, "需求缺少可引用的 Acceptance。")
     criteria_ids: list[str] = []
+    criteria_statements: dict[str, str] = {}
     for criterion in criteria:
         if (
             not isinstance(criterion, dict)
@@ -117,6 +119,7 @@ def validate_workcell_acceptance(
         ):
             raise review_error(invalid, "Acceptance ID 或原始正文无效。")
         criteria_ids.append(criterion["id"])
+        criteria_statements[criterion["id"]] = criterion["statement"]
     if len(set(criteria_ids)) != len(criteria_ids):
         raise review_error(invalid, "需求中的 Acceptance ID 重复。")
     if (
@@ -143,6 +146,10 @@ def validate_workcell_acceptance(
         or set(keys) != set(required_workcells)
     ):
         raise review_error(invalid, "责任映射必须且只能覆盖冻结 Pipeline 所选 Workcell。")
+    acceptance_owners: dict[str, set[str]] = {}
+    for assignment in assignments:
+        for item in assignment.acceptance:
+            acceptance_owners.setdefault(item.acceptance_id, set()).add(assignment.workcell_key)
     assigned: set[str] = set()
     for assignment in assignments:
         identifiers = tuple(item.acceptance_id for item in assignment.acceptance)
@@ -152,9 +159,67 @@ def validate_workcell_acceptance(
             or any(not item.responsibility.strip() for item in assignment.acceptance)
         ):
             raise review_error(invalid, "本仓责任存在重复、越界引用或空责任说明。")
+        for item in assignment.acceptance:
+            shared_criterion = len(acceptance_owners.get(item.acceptance_id, ())) > 1
+            criterion_requires_other_repository = (
+                not shared_criterion
+                and _requires_another_workcell_repository(
+                    criteria_statements[item.acceptance_id],
+                    owner=assignment.workcell_key,
+                    workcells=required_workcells,
+                )
+            )
+            if criterion_requires_other_repository or _requires_another_workcell_repository(
+                item.responsibility,
+                owner=assignment.workcell_key,
+                workcells=required_workcells,
+            ):
+                raise review_error(
+                    invalid,
+                    "Workcell Acceptance 不得要求执行、挂载或修改其他 "
+                    "Workcell 的 Repository/Candidate；跨仓只能消费 ArtifactAttachment。",
+                )
         assigned.update(identifiers)
     if assigned != set(task_ids):
         raise review_error(invalid, "Task 中的 Acceptance 未被本次 Workcell 责任映射完整覆盖。")
+
+
+def _requires_another_workcell_repository(
+    text: str,
+    *,
+    owner: str,
+    workcells: tuple[str, ...],
+) -> bool:
+    action = r"(?:执行(?!记录)|运行(?!时)|挂载|直接读取|修改|写入|execute|run|mount|modify|write)"
+    repository = r"(?:candidate|repository|workspace|仓库|代码仓|工作区|测试|tests?)"
+    same_clause = r"[^。；;.!?\n]{0,160}"
+    lowered = text.lower()
+    for other in workcells:
+        if other == owner:
+            continue
+        escaped = re.escape(other.lower())
+        workcell = rf"(?<![a-z0-9_-]){escaped}(?![a-z0-9_-])"
+        for match in re.finditer(
+            rf"(?P<action>{action}){same_clause}{workcell}{same_clause}{repository}", lowered
+        ):
+            clause_start = max(
+                lowered.rfind(separator, 0, match.start("action"))
+                for separator in ("。", "；", ";", ".", "!", "?", "\n")
+            )
+            prefix = lowered[clause_start + 1 : match.start("action")]
+            if re.search(
+                r"(?:不得|禁止|不可|不能|不允许|不应|不包含)"
+                r"[^ 。；;.!?\n]{0,32}$|"
+                r"未(?:执行|运行|挂载|直接读取|读取|修改|写入)"
+                r"(?:[、或和以及]*(?:执行|运行|挂载|直接读取|读取|修改|写入))*"
+                r"[、或和以及]*$|"
+                r"(?:must\s+not|do(?:es)?\s+not|cannot|may\s+not|mustn't|don't|doesn't)"
+                r"(?:\s+\S+){0,8}\s*$",
+                prefix,
+            ):
+                continue
+            return True
+    return False
 
 
 def compile_review_scope(

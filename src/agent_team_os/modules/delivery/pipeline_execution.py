@@ -545,6 +545,8 @@ class PipelineExecutionModule:
                 command="fail",
                 node_id=running,
                 expected_version=run.version,
+                failure_type=type(error).__name__,
+                failure_code=getattr(error, "code", "PIPELINE_EXECUTION_FAILED"),
             )
         self._repository.save(
             delivery.model_copy(
@@ -1711,20 +1713,17 @@ class PipelineExecutionModule:
                 delivery.release_bundle is not None or delivery.release_bundle_v2_sha256 is not None
             )
         workcell_exit = {
-            "design-workcell-passed": "design",
+            "design-workcell-passed": "design-repair/design",
             "qa-preparation-artifacts-passed": "qa-preparation-repair/qa-preparation",
-            "frontend-candidate-passed": "frontend",
-            "backend-candidate-passed": "backend",
-            "qa-candidate-passed": "qa",
+            "frontend-candidate-passed": "frontend-repair/frontend",
+            "backend-candidate-passed": "backend-repair/backend",
+            "qa-candidate-passed": "qa-delivery-repair/qa-delivery",
         }
         if exit_condition in workcell_exit and self._workcell_stage_driver is not None:
-            expected = workcell_exit[exit_condition]
+            expected_stage_path = workcell_exit[exit_condition]
             return any(
                 tree.workcell_run.status == "succeeded"
-                and (
-                    tree.workcell_run.stage_path == expected
-                    or tree.workcell_run.workcell_key == expected
-                )
+                and tree.workcell_run.stage_path == expected_stage_path
                 for tree in self._workcell_stage_driver.kernel.list_delivery(delivery_id)
             )
         if exit_condition.endswith("-candidate-verified"):

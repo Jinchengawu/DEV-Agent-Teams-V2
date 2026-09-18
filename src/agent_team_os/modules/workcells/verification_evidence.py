@@ -26,6 +26,95 @@ QA_CASES = frozenset(
     "test_health_e2e.HealthE2E." + name
     for name in ("test_ok", "test_degraded", "test_unavailable", "test_invalid_response")
 )
+QA_ACCEPTANCE_CASE_PREFIXES = tuple(f".test_qa_{index:03d}" for index in range(1, 5))
+QA_FAULT_MODES = frozenset(
+    {"missing_service", "wrong_service", "extra_field", "wrong_version"}
+)
+QA_REQUIRED_HEADERS = {
+    "cache-control": "no-store",
+    "x-health-contract": "health-contract-v2",
+    "x-content-type-options": "nosniff",
+}
+
+
+def qa_product_observations_valid(result: object) -> bool:
+    """验证产品运行器生成的 QA 观测，不信任 Candidate 自报结果。"""
+
+    if not isinstance(result, dict):
+        return False
+    observations = result.get("product_observations")
+    if not isinstance(observations, dict):
+        return False
+    get_observation = observations.get("success_get")
+    head_observation = observations.get("success_head")
+    fault_modes = observations.get("fault_modes_observed")
+    return bool(
+        observations.get("contract_version") == "qa-product-observations-v1"
+        and isinstance(get_observation, dict)
+        and get_observation.get("body_keys") == ["service", "status", "version"]
+        and get_observation.get("version") == "health-contract-v2"
+        and get_observation.get("service") == "backend-demo"
+        and get_observation.get("headers") == QA_REQUIRED_HEADERS
+        and isinstance(head_observation, dict)
+        and head_observation.get("body_bytes") == 0
+        and head_observation.get("headers") == QA_REQUIRED_HEADERS
+        and isinstance(fault_modes, list)
+        and set(fault_modes) == QA_FAULT_MODES
+        and len(fault_modes) == len(QA_FAULT_MODES)
+    )
+
+
+def qa_cases_covered(ids: tuple[str, ...]) -> bool:
+    return QA_CASES.issubset(ids) or all(
+        any(
+            prefix in case_id
+            and (
+                (suffix := case_id.split(prefix, 1)[1]) == "" or suffix.startswith("_")
+            )
+            for case_id in ids
+        )
+        for prefix in QA_ACCEPTANCE_CASE_PREFIXES
+    )
+
+
+def result_contract_failure_diagnostic(
+    step: str,
+    counts: tuple[int, int, int, int, tuple[str, ...]],
+    result: object | None = None,
+) -> str:
+    """返回可直接交给 Repair Agent 的产品结果合同诊断。"""
+
+    if (
+        step == "qa"
+        and isinstance(result, dict)
+        and result.get("requires_product_observations") is True
+        and not qa_product_observations_valid(result)
+    ):
+        return (
+            "产品结果合同未通过：health-contract-v2 QA 必须包含由产品验证运行器"
+            "生成的完整 product_observations，包含 GET/HEAD 实际值与四种批准的"
+            " fault mode 观测。"
+        )
+    ids = counts[4]
+    if step != "qa" or qa_cases_covered(ids):
+        return ""
+    missing_legacy = sorted(QA_CASES.difference(ids))
+    missing_versioned = [
+        prefix
+        for prefix in QA_ACCEPTANCE_CASE_PREFIXES
+        if not any(
+            prefix in case_id
+            and (
+                (suffix := case_id.split(prefix, 1)[1]) == "" or suffix.startswith("_")
+            )
+            for case_id in ids
+        )
+    ]
+    return (
+        "产品结果合同未通过：QA 稳定 Case ID 必须完整覆盖任一组；"
+        f"legacy 组缺少 {missing_legacy}；"
+        f"versioned 组缺少 {missing_versioned}。"
+    )
 
 
 def command_values(snapshot: VerificationQualificationV2, root: Path, index: int) -> dict[str, str]:
@@ -96,7 +185,7 @@ def passed_counts(step: str, counts: tuple[int, int, int, int, tuple[str, ...]])
         and len(ids) == discovered
         and len(set(ids)) == len(ids)
         and all(ids)
-        and (step != "qa" or QA_CASES.issubset(ids))
+        and (step != "qa" or qa_cases_covered(ids))
         and (
             step != "backend-http"
             or set(ids) == {"http:ok", "http:degraded", "http:unavailable", "http:invalid"}
@@ -139,15 +228,29 @@ def validate_report_v2(
             continue
         import json
 
+        raw_result = json.loads(store.get_bytes(step.result, max_bytes=2_000_000))
         counts = result_counts(
             snapshot.profile.id,
             step.step,
-            json.loads(store.get_bytes(step.result, max_bytes=2_000_000)),
+            raw_result,
+        )
+        raw_observations = (
+            raw_result.get("product_observations")
+            if isinstance(raw_result, dict)
+            and isinstance(raw_result.get("product_observations"), dict)
+            else None
+        )
+        observations_required = bool(
+            step.step == "qa"
+            and isinstance(raw_result, dict)
+            and raw_result.get("requires_product_observations") is True
         )
         valid = (
             valid
             and passed_counts(step.step, counts)
             and counts == (step.discovered, step.passed, step.failed, step.skipped, step.case_ids)
+            and step.product_observations == raw_observations
+            and (not observations_required or qa_product_observations_valid(raw_result))
         )
     input_contracts = []
     for reference in report.inputs:

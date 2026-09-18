@@ -50,14 +50,14 @@ class GitHubPullRequestProvider:
                 "per_page": 100,
             }
         )
-        found = self.transport.request(
+        found = self._request(
             "GET",
             f"{api_root}/pulls?{query}",
             token=token,
         )
         pull = _matching_pull(found, candidate)
         if pull is None:
-            created = self.transport.request(
+            created = self._request(
                 "POST",
                 f"{api_root}/pulls",
                 token=token,
@@ -81,6 +81,22 @@ class GitHubPullRequestProvider:
                 )
             pull = cast(dict[str, object], created)
         return _receipt(candidate, pull)
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        token: str,
+        payload: dict[str, object] | None = None,
+    ) -> object:
+        for attempt in range(2):
+            try:
+                return self.transport.request(method, url, token=token, payload=payload)
+            except ProductError as error:
+                if error.code != "GITHUB_PR_PROVIDER_TRANSIENT" or attempt == 1:
+                    raise
+        raise AssertionError("bounded GitHub PR retry exhausted without a result")
 
 
 class _UrllibGitHubTransport:
@@ -108,10 +124,25 @@ class _UrllibGitHubTransport:
         try:
             with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                 return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, json.JSONDecodeError) as error:
+        except urllib.error.HTTPError as error:
+            code = (
+                "GITHUB_PR_PROVIDER_TRANSIENT"
+                if error.code in {408, 429, 500, 502, 503, 504}
+                else "GITHUB_PR_PROVIDER_REJECTED"
+            )
+            raise _github_error(
+                code,
+                f"GitHub PR API 返回 HTTP {error.code}。",
+            ) from error
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise _github_error(
+                "GITHUB_PR_PROVIDER_TRANSIENT",
+                "GitHub PR API 连接失败或超时。",
+            ) from error
+        except json.JSONDecodeError as error:
             raise _github_error(
                 "GITHUB_PR_PROVIDER_FAILED",
-                "GitHub PR API 调用失败或返回无效 JSON。",
+                "GitHub PR API 返回无效 JSON。",
             ) from error
 
 

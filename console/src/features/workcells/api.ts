@@ -75,12 +75,14 @@ export function useCreateWorkspaceBinding(projectId: string) {
 
 export function useVerifyWorkspaceBinding(projectId: string) {
   const client = useQueryClient();
+  const refreshTopology = () => client.invalidateQueries({ queryKey: workcellKeys.project(projectId) });
   return useMutation({
     mutationFn: ({ workspaceId, expectedVersion }: { workspaceId: string; expectedVersion: number }) => request<WorkspaceBinding>(
       `/v1/workspace-bindings/${encodeURIComponent(workspaceId)}/verify`,
       { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) },
     ),
-    onSuccess: () => client.invalidateQueries({ queryKey: workcellKeys.project(projectId) }),
+    onSuccess: refreshTopology,
+    onError: refreshTopology,
   });
 }
 

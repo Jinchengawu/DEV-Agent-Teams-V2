@@ -121,7 +121,6 @@ def builtin_workcell_stage_map() -> dict[str, WorkcellStageBinding]:
             {
                 "delegate_1": ("bmad-testarch-test-design", "artifact"),
                 "delegate_2": ("bmad-testarch-atdd", "artifact"),
-                "delegate_3": ("bmad-testarch-trace", "artifact"),
             },
         ),
         "frontend-repair/frontend": _stage(
