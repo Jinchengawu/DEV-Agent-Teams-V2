@@ -330,6 +330,48 @@ def test_qa_contract_failure_log_names_missing_stable_case_ids(
     assert ".test_qa_004" in log
 
 
+def test_qa_v2_result_contract_rejects_missing_product_observations(
+    verified_four_repositories,
+):
+    _root, store, results = verified_four_repositories
+    qa = results["qa"]
+    sources = tuple(
+        results[key]["source"] for key in ("design", "frontend", "backend")
+    )
+
+    async def passing_without_observations(command, **_kwargs):
+        Path(command[6]).write_text(
+            '{"discovered":4,"passed":4,"failed":0,"skipped":0,'
+            '"requires_product_observations":true,'
+            '"case_ids":['
+            '"test_health_e2e.HealthE2E.test_ok",'
+            '"test_health_e2e.HealthE2E.test_degraded",'
+            '"test_health_e2e.HealthE2E.test_unavailable",'
+            '"test_health_e2e.HealthE2E.test_invalid_response"]}'
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    status, raw_report = asyncio.run(
+        verify_fullstack(
+            workspace=qa["workspace"],
+            candidate=qa["candidate"],
+            qualification=qa["qualification"],
+            workcell_key="qa",
+            delivery_id="actual-health-four-repositories",
+            sources=sources,
+            store=store,
+            run_command=passing_without_observations,
+            redact=lambda value: value,
+        )
+    )
+    report = VerificationReportV2.model_validate(raw_report)
+    log = store.get_bytes(report.steps[0].log).decode()
+
+    assert status == "failed"
+    assert not report.steps[0].result_contract_passed
+    assert "product_observations" in log
+
+
 def test_package_budget_checked_before_reading_oversized_file(tmp_path):
     from agent_team_os.infrastructure.verification.packages import create_package
 

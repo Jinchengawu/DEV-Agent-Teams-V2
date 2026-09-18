@@ -24,6 +24,7 @@ class VerificationStepResultV2(BaseModel):
     result_contract_passed: bool
     result: ArtifactReference | None = None
     log: ArtifactReference
+    product_observations: dict[str, object] | None = None
 
 
 class VerificationReportV2(BaseModel):

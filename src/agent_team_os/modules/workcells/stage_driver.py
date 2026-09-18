@@ -1975,6 +1975,7 @@ def _delegate_invocation(
             "对‘保持其他已发布语义’之类的概括要求，应保留并运行已有回归测试；"
             "不得自行发明新的 endpoint、path、status、Body 或 Header 精确值并将其"
             "升级为发布基线。新增 Oracle 必须能逐字指向上述三类冻结证据之一。"
+            f"{_qa_live_verification_contract(tree.workcell_run.workcell_key)}"
             f"{repair_contract}"
             f"{path_policy}"
             f"{review_contract}"
@@ -2020,6 +2021,24 @@ def _accessibility_verification_contract(workcell_key: str) -> str:
             "selector 或仅检查 role 属性来伪造可访问性证据。"
         )
     return ""
+
+
+def _qa_live_verification_contract(workcell_key: str) -> str:
+    if workcell_key != "qa":
+        return ""
+    return (
+        "\nQA Product Live Verification Capability：产品验证运行器在仅绑定 "
+        "loopback 的临时真实 HTTP 集成环境中提供白名单故障注入。"
+        "QA 测试可以在 Playwright page/context 上设置 "
+        "X-Agent-Team-OS-QA-Fault Header，值只能为 missing_service、"
+        "wrong_service、extra_field 或 wrong_version。产品代理会先请求已验证"
+        " Backend Runtime，再对该次成功响应执行唯一批准的边界变换；"
+        "因此不得使用 page.route/route.fulfill 或 Candidate 自建 mock server 替代该机制。"
+        " Product Machine Verification Report 内联的 product_observations "
+        "是 GET/HEAD 实际键、version、service、Header、HEAD Body 字节数及四种"
+        " fault mode 的权威机器可读运行证据；仅因 Candidate 中的报告模板保持"
+        " not_verified 不得阻断，但 product_observations 缺失或不完整时必须阻断。"
+    )
 
 
 def _stage_citation_ids(delivery: DeliveryRun, stage_path: str) -> tuple[str, ...]:

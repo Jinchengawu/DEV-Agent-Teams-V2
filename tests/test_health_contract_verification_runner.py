@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from agent_team_os.infrastructure.verification.runners.verify import design, qa
+from agent_team_os.modules.workcells.verification_evidence import qa_product_observations_valid
 
 
 def _write_design(root: Path, *, contract_version: str) -> None:
@@ -557,3 +558,174 @@ ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
     assert report["failed"] == 0
     assert report["skipped"] == 0
+
+
+def test_qa_runner_provides_product_faults_and_records_actual_observations(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate"
+    tests = candidate / "tests"
+    tests.mkdir(parents=True)
+    (tests / "test_product_faults.py").write_text(
+        """
+import json
+import os
+import unittest
+import urllib.request
+
+
+class ProductFaultsTest(unittest.TestCase):
+    def request(self, *, method="GET", fault=None):
+        request = urllib.request.Request(
+            os.environ["ATOS_QA_BASE_URL"] + "/api/health?status=ok",
+            method=method,
+            headers={"X-Agent-Team-OS-QA-Fault": fault} if fault else {},
+        )
+        return urllib.request.urlopen(request, timeout=3)
+
+    def test_success_get_and_head(self) -> None:
+        with self.request() as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get("X-Health-Contract"), "health-contract-v2")
+            self.assertEqual(
+                json.loads(response.read()),
+                {"status": "ok", "version": "health-contract-v2", "service": "backend-demo"},
+            )
+        with self.request(method="HEAD") as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.read(), b"")
+
+    def test_product_faults_are_real_http_responses(self) -> None:
+        expected = {
+            "missing_service": {"status": "ok", "version": "health-contract-v2"},
+            "wrong_service": {
+                "status": "ok", "version": "health-contract-v2", "service": "other-service"
+            },
+            "extra_field": {
+                "status": "ok", "version": "health-contract-v2", "service": "backend-demo",
+                "extra": True,
+            },
+            "wrong_version": {
+                "status": "ok", "version": "health-contract-v1", "service": "backend-demo"
+            },
+        }
+        for fault, body in expected.items():
+            with self.subTest(fault=fault), self.request(fault=fault) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.read()), body)
+""",
+        encoding="utf-8",
+    )
+    inputs = tmp_path / "inputs"
+    backend = inputs / "health-backend-runtime-v1" / "src"
+    backend.mkdir(parents=True)
+    (inputs / "health-frontend-dist-v1").mkdir(parents=True)
+    (backend / "server.py").write_text(
+        """
+import argparse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+class Handler(BaseHTTPRequestHandler):
+    def handle_request(self, *, include_body):
+        body = b'{"status":"ok","version":"health-contract-v2","service":"backend-demo"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Health-Contract", "health-contract-v2")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if include_body:
+            self.wfile.write(body)
+
+    def do_GET(self):
+        self.handle_request(include_body=True)
+
+    def do_HEAD(self):
+        self.handle_request(include_body=False)
+
+    def log_message(self, *_args):
+        pass
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, required=True)
+args = parser.parse_args()
+ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+""",
+        encoding="utf-8",
+    )
+
+    report = qa(candidate, inputs)
+
+    assert report["failed"] == 0
+    assert report["skipped"] == 0
+    assert report["product_observations"] == {
+        "contract_version": "qa-product-observations-v1",
+        "success_get": {
+            "body_keys": ["service", "status", "version"],
+            "version": "health-contract-v2",
+            "service": "backend-demo",
+            "headers": {
+                "cache-control": "no-store",
+                "x-health-contract": "health-contract-v2",
+                "x-content-type-options": "nosniff",
+            },
+        },
+        "success_head": {
+            "body_bytes": 0,
+            "headers": {
+                "cache-control": "no-store",
+                "x-health-contract": "health-contract-v2",
+                "x-content-type-options": "nosniff",
+            },
+        },
+        "fault_modes_observed": [
+            "extra_field",
+            "missing_service",
+            "wrong_service",
+            "wrong_version",
+        ],
+    }
+    assert qa_product_observations_valid(report)
+
+
+def test_qa_product_observations_reject_missing_fault_or_runtime_value() -> None:
+    complete = {
+        "product_observations": {
+            "contract_version": "qa-product-observations-v1",
+            "success_get": {
+                "body_keys": ["service", "status", "version"],
+                "version": "health-contract-v2",
+                "service": "backend-demo",
+                "headers": {
+                    "cache-control": "no-store",
+                    "x-health-contract": "health-contract-v2",
+                    "x-content-type-options": "nosniff",
+                },
+            },
+            "success_head": {
+                "body_bytes": 0,
+                "headers": {
+                    "cache-control": "no-store",
+                    "x-health-contract": "health-contract-v2",
+                    "x-content-type-options": "nosniff",
+                },
+            },
+            "fault_modes_observed": [
+                "extra_field",
+                "missing_service",
+                "wrong_service",
+                "wrong_version",
+            ],
+        }
+    }
+
+    missing_fault = json.loads(json.dumps(complete))
+    missing_fault["product_observations"]["fault_modes_observed"].pop()
+    wrong_version = json.loads(json.dumps(complete))
+    wrong_version["product_observations"]["success_get"]["version"] = "health-contract-v1"
+
+    assert not qa_product_observations_valid(missing_fault)
+    assert not qa_product_observations_valid(wrong_version)

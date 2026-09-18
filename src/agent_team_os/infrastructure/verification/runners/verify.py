@@ -487,7 +487,46 @@ def backend_http(root: Path, inputs: Path) -> dict[str, object]:
 
 def qa(root: Path, inputs: Path) -> dict[str, object]:
     frontend = inputs / "health-frontend-dist-v1"
+    design_path = inputs / "health-design-v1" / "contract.json"
+    design_contract = json.loads(design_path.read_text()) if design_path.is_file() else {}
+    requires_product_observations = (
+        design_contract.get("contract_id") == "health-contract-v2"
+    )
     with backend(inputs / "health-backend-runtime-v1") as backend_url:
+
+        observations: dict[str, object] = {
+            "contract_version": "qa-product-observations-v1",
+            "fault_modes_observed": set(),
+        }
+
+        def response_headers(headers: Mapping[str, str]) -> dict[str, str | None]:
+            return {
+                name.lower(): headers.get(name)
+                for name in (
+                    "Cache-Control",
+                    "X-Health-Contract",
+                    "X-Content-Type-Options",
+                )
+            }
+
+        def inject_fault(body: bytes, fault: str) -> bytes:
+            payload = json.loads(body)
+            if not isinstance(payload, dict):
+                raise ValueError("QA fault injection requires an object response")
+            if fault == "missing_service":
+                payload.pop("service", None)
+            elif fault == "wrong_service":
+                payload["service"] = "other-service"
+            elif fault == "extra_field":
+                payload["extra"] = True
+            elif fault == "wrong_version":
+                payload["version"] = "health-contract-v1"
+            else:
+                raise ValueError("QA fault mode is not product-approved")
+            cast_modes = observations["fault_modes_observed"]
+            assert isinstance(cast_modes, set)
+            cast_modes.add(fault)
+            return json.dumps(payload, separators=(",", ":")).encode()
 
         class Handler(http.server.SimpleHTTPRequestHandler):
             def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -519,6 +558,27 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
                     status = error.code
                     headers = error.headers
                     body = error.read() if method == "GET" else b""
+                fault = self.headers.get("X-Agent-Team-OS-QA-Fault")
+                if fault and status == 200 and method == "GET":
+                    try:
+                        body = inject_fault(body, fault)
+                    except (ValueError, json.JSONDecodeError):
+                        status = 400
+                        body = b'{"error":"QA_FAULT_INVALID"}'
+                elif status == 200 and not fault:
+                    if method == "GET":
+                        payload = json.loads(body)
+                        observations["success_get"] = {
+                            "body_keys": sorted(payload),
+                            "version": payload.get("version"),
+                            "service": payload.get("service"),
+                            "headers": response_headers(headers),
+                        }
+                    else:
+                        observations["success_head"] = {
+                            "body_bytes": len(body),
+                            "headers": response_headers(headers),
+                        }
                 self.send_response(status)
                 for name in (
                     "Content-Type",
@@ -528,7 +588,7 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
                 ):
                     if value := headers.get(name):
                         self.send_header(name, value)
-                self.send_header("Content-Length", headers.get("Content-Length", str(len(body))))
+                self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 if method == "GET":
                     self.wfile.write(body)
@@ -541,7 +601,13 @@ def qa(root: Path, inputs: Path) -> dict[str, object]:
         thread.start()
         os.environ["ATOS_QA_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
         try:
-            return python_tests(root)
+            report = python_tests(root)
+            modes = observations["fault_modes_observed"]
+            assert isinstance(modes, set)
+            observations["fault_modes_observed"] = sorted(modes)
+            report["product_observations"] = observations
+            report["requires_product_observations"] = requires_product_observations
+            return report
         finally:
             server.shutdown()
             server.server_close()

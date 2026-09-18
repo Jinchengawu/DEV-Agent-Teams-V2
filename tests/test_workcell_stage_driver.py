@@ -76,6 +76,19 @@ def test_writer_accessibility_capability_is_specific_to_frontend_and_qa() -> Non
     assert workcell_stage_driver._accessibility_verification_contract("backend") == ""
 
 
+def test_qa_live_verification_capability_freezes_product_fault_and_evidence_boundary() -> None:
+    qa = workcell_stage_driver._qa_live_verification_contract("qa")
+
+    assert "X-Agent-Team-OS-QA-Fault" in qa
+    assert "missing_service" in qa
+    assert "wrong_service" in qa
+    assert "extra_field" in qa
+    assert "wrong_version" in qa
+    assert "page.route/route.fulfill" in qa
+    assert "product_observations" in qa
+    assert workcell_stage_driver._qa_live_verification_contract("frontend") == ""
+
+
 def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

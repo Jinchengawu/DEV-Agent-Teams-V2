@@ -22,6 +22,7 @@ from ...modules.workcells.verification_evidence import (
     STEP_NAMES,
     command_values,
     passed_counts,
+    qa_product_observations_valid,
     render_command,
     result_contract_failure_diagnostic,
     result_counts,
@@ -251,10 +252,19 @@ async def verify_fullstack(
                 except (ValueError, OSError):
                     pass
             counts = result_counts(qualification.profile.id, step, raw)
-            passed = exit_code == 0 and passed_counts(step, counts)
+            observations_required = bool(
+                step == "qa"
+                and isinstance(raw, dict)
+                and raw.get("requires_product_observations") is True
+            )
+            passed = (
+                exit_code == 0
+                and passed_counts(step, counts)
+                and (not observations_required or qa_product_observations_valid(raw))
+            )
             if not passed and status == "passed":
                 status = "failed"
-            diagnostic = result_contract_failure_diagnostic(step, counts)
+            diagnostic = result_contract_failure_diagnostic(step, counts, raw)
             if diagnostic:
                 log_text = f"{log_text.rstrip()}\n{diagnostic}\n".lstrip()
             # 只继承非敏感环境；额外脱敏由上层通用日志策略保持一致。
@@ -273,6 +283,12 @@ async def verify_fullstack(
                     result_contract_passed=passed,
                     result=result_ref,
                     log=log,
+                    product_observations=(
+                        raw.get("product_observations")
+                        if isinstance(raw, dict)
+                        and isinstance(raw.get("product_observations"), dict)
+                        else None
+                    ),
                 )
             )
             if not passed:
