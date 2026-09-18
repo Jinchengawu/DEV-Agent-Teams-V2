@@ -134,7 +134,7 @@ Agent-Team-OS 建立了独立 Evaluation 评测域，用于可重复验证能力
 
 ### 前置条件
 
-- Python `3.12` （仓库通过 `.python-version` 固定推荐系列）。Python 3.11 仅在其
+- Python `3.12`（推荐使用 `uv sync --python 3.12`，不改写全局 pyenv）。Python 3.11 仅在其
   `sqlite3.Connection` 支持 `enable_load_extension` 时可用，否则 Hybrid Index Readiness
   会以 `KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE` Fail Closed。
 - [`uv`](https://docs.astral.sh/uv/)

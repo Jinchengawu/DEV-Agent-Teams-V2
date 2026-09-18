@@ -116,7 +116,7 @@ See the [English methodology](docs/evaluation/METHODOLOGY.en.md),
 
 ### Prerequisites
 
-- Python `3.12` (the recommended series is pinned by `.python-version`). Python 3.11 is
+- Python `3.12` (recommended via `uv sync --python 3.12` without changing global pyenv). Python 3.11 is
   supported only when `sqlite3.Connection.enable_load_extension` is available; otherwise
   Hybrid Index readiness fails closed with
   `KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE`.
