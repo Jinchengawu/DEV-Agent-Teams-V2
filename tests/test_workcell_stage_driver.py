@@ -1160,6 +1160,10 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert '"design/**"' in writer_instruction
     assert '"tests/**"' in writer_instruction
     assert "禁止修改允许路径之外的文件" in writer_instruction
+    assert (
+        "根目录 verification.json 是产品冻结验证配置，只读且不属于 Candidate"
+        in writer_instruction
+    )
     assert "不得自行替换验收 ID" in writer_instruction
     assert "Regression Oracle Boundary" in writer_instruction
     assert "base_revision 所冻结的当前 Repository Base tracked source" in writer_instruction

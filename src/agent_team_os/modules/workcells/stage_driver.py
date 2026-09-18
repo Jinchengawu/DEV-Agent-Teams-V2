@@ -1826,6 +1826,8 @@ def _delegate_invocation(
             "\nWorkspace Path Policy：只能新增或修改以下 Glob 范围："
             + json.dumps(_allowed_paths(tree.workcell_run.workcell_key), ensure_ascii=False)
             + "。禁止修改允许路径之外的文件；测试也必须放在允许的 tests/** 内。"
+            "根目录 verification.json 是产品冻结验证配置，只读且不属于 Candidate；"
+            "即使修复上下文或验证日志提到它，也不得修改、重写、格式化或提交。"
             "Candidate 不得包含 __pycache__、*.pyc 或 *.pyo 等 Python 运行时生成物；"
             "运行测试后必须清理这些文件或确保其未被 Git 跟踪。"
             "最终回复前必须执行 git status --short，并逐项核对真实变更路径；"
