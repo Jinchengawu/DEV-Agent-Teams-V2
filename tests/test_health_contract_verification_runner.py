@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_team_os.infrastructure.verification.runners.verify import design, qa
+from agent_team_os.infrastructure.verification.runners.verify import design, python_tests, qa
 from agent_team_os.modules.workcells.verification_evidence import qa_product_observations_valid
 
 
@@ -122,6 +122,29 @@ def _write_design(root: Path, *, contract_version: str) -> None:
     files = (("contract.json", contract), ("schema.json", schema), ("vectors.json", vectors))
     for name, value in files:
         (root / name).write_text(json.dumps(value), encoding="utf-8")
+
+
+def test_python_tests_isolates_discovery_between_candidate_roots(tmp_path: Path) -> None:
+    reports = []
+    for candidate_name in ("first-candidate", "second-candidate"):
+        candidate = tmp_path / candidate_name
+        tests = candidate / "tests"
+        tests.mkdir(parents=True)
+        (tests / "test_health.py").write_text(
+            """
+import unittest
+
+
+class HealthTest(unittest.TestCase):
+    def test_health(self) -> None:
+        self.assertTrue(True)
+""",
+            encoding="utf-8",
+        )
+        reports.append(python_tests(candidate))
+
+    assert [report["passed"] for report in reports] == [1, 1]
+    assert [report["failed"] for report in reports] == [0, 0]
 
 
 def test_design_runner_keeps_v1_compatibility(tmp_path: Path) -> None:

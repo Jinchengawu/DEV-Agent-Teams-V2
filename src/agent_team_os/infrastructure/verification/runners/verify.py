@@ -410,17 +410,29 @@ class Results(unittest.TestResult):
 
 
 def python_tests(root: Path) -> dict[str, object]:
-    sys.path.insert(0, str(root))
-    suite = unittest.defaultTestLoader.discover(str(root / "tests"))
-    discovered = suite.countTestCases()
-    output = Results()
-    suite.run(output)
-    data = result(output.cases)
-    data["discovered"] = discovered
-    # 类级 setup/teardown 错误也必须由结果合同看见。
-    if not discovered or output.testsRun != discovered:
-        data["failed"] = max(1, int(data["failed"]))
-    return data
+    original_sys_path = sys.path.copy()
+    original_module_names = set(sys.modules)
+    candidate_root = root.resolve()
+    try:
+        sys.path.insert(0, str(root))
+        suite = unittest.TestLoader().discover(str(root / "tests"))
+        discovered = suite.countTestCases()
+        output = Results()
+        suite.run(output)
+        data = result(output.cases)
+        data["discovered"] = discovered
+        # 类级 setup/teardown 错误也必须由结果合同看见。
+        if not discovered or output.testsRun != discovered:
+            data["failed"] = max(1, int(data["failed"]))
+        return data
+    finally:
+        sys.path[:] = original_sys_path
+        for name in set(sys.modules) - original_module_names:
+            module_file = getattr(sys.modules.get(name), "__file__", None)
+            if module_file is not None and Path(module_file).resolve().is_relative_to(
+                candidate_root
+            ):
+                sys.modules.pop(name, None)
 
 
 def free_port() -> int:
