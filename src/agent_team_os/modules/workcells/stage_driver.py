@@ -1873,6 +1873,8 @@ def _delegate_invocation(
             "\nReview Output Contract：最终 JSON 必须显式包含 blocking_findings 数组，"
             "缺失该键必须视为无效。每个 Blocking Finding 必须包含 code、summary、"
             "evidence_sha256，并且只能二选一填写 acceptance_id 或 system_policy_id。"
+            "每个 Blocking Finding 不得包含其他字段；detail、required_change、location、"
+            "locations、evidence、verification 等补充说明必须压缩进 summary，不能作为额外键。"
             "code 是独立问题码，不能代替引用字段；evidence_sha256 必须是 64 位小写十六进制。"
             "最终 JSON 还必须包含 reviewed_candidate_sha 与 reviewed_diff_sha256，且必须逐字"
             "等于 Candidate Review Evidence 中的 candidate_revision 与 diff_sha256。"

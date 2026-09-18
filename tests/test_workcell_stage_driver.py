@@ -1192,6 +1192,7 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert all("reviewed_candidate_sha" in item for item in review_instructions)
     assert all("reviewed_diff_sha256" in item for item in review_instructions)
     assert all("缺失该键必须视为无效" in item for item in review_instructions)
+    assert all("不得包含其他字段" in item for item in review_instructions)
     assert all("Frozen Acceptance Contract" in item for item in review_instructions)
     assert all("当前 Workcell Candidate 的合规审查" in item for item in review_instructions)
     assert all("不得因其他 Workcell 尚未交付" in item for item in review_instructions)
