@@ -46,6 +46,26 @@ def test_frontend_profile_freezes_testing_library_dom_capability() -> None:
     assert tool_environment.NODE_PACKAGES["@testing-library/dom"] == "10.4.1"
 
 
+def test_health_contract_frontend_declares_all_offline_verification_tools() -> None:
+    manifest = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "examples"
+            / "health-contract-v1"
+            / "frontend"
+            / "package.json"
+        ).read_text()
+    )
+    declared = {
+        **manifest.get("dependencies", {}),
+        **manifest.get("devDependencies", {}),
+    }
+
+    assert {
+        name: declared.get(name) for name in tool_environment.NODE_PACKAGES
+    } == tool_environment.NODE_PACKAGES
+
+
 def test_prepare_node_environment_links_exact_nested_scoped_package(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
