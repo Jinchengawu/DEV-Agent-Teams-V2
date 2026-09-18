@@ -20,11 +20,11 @@ def fullstack_profiles() -> tuple[VerificationProfileV2, ...]:
             output_contract="health-design-v1",
         ),
         VerificationProfileV2(
-            revision=1,
+            revision=2,
             timeout_seconds=120,
             environment={"CI": "1"},
             id="frontend-ts-vite-vitest-v1",
-            name="Frontend TypeScript / Vitest / Vite",
+            name="Frontend TypeScript / Vitest / Vite / Testing Library DOM",
             workcell_key="frontend",
             tool_names=("node",),
             commands=(

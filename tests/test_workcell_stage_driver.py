@@ -1162,6 +1162,8 @@ def test_stage_driver_terminalizes_children_and_returns_bounded_repair_outcomes(
     assert "禁止修改允许路径之外的文件" in writer_instruction
     assert "不得自行替换验收 ID" in writer_instruction
     assert "Regression Oracle Boundary" in writer_instruction
+    assert "base_revision 所冻结的当前 Repository Base tracked source" in writer_instruction
+    assert "不得从 Candidate 运行结果反推基线" in writer_instruction
     assert "不得自行发明新的 endpoint、path、status、Body 或 Header" in writer_instruction
     assert "当前 AgentAttempt 的唯一交付目标是 design Workcell" in writer_instruction
     assert "用户目标中的其他 Workcell 条目仅是交付背景" in writer_instruction

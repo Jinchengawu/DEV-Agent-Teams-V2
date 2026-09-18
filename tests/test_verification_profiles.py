@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
 
 from agent_team_os.delivery import DeliveryWorkspaceSnapshot
 from agent_team_os.infrastructure.git import ExternalCandidateEvidence
+from agent_team_os.infrastructure.verification import tool_environment
 from agent_team_os.infrastructure.verification.command_toolchain import LocalVerificationToolchain
 from agent_team_os.modules.workcells.execution_domain import WorkcellWorkspaceSnapshot
 from agent_team_os.modules.workcells.stage_driver import CommandWorkcellMachineVerifier
@@ -35,6 +37,42 @@ def test_product_profiles_refuse_zero_tests_and_do_not_publish_unqualified_pnpm(
         "node-native-test-v1",
         "# tests 2\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n",
     )
+
+
+def test_frontend_profile_freezes_testing_library_dom_capability() -> None:
+    profile = VerificationProfileCatalog().get("frontend-ts-vite-vitest-v1")
+    assert profile.revision == 2
+    assert "Testing Library DOM" in profile.name
+    assert tool_environment.NODE_PACKAGES["@testing-library/dom"] == "10.4.1"
+
+
+def test_prepare_node_environment_links_exact_nested_scoped_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    direct = source / "alpha"
+    direct.mkdir()
+    (direct / "package.json").write_text(json.dumps({"name": "alpha", "version": "1.0.0"}))
+    nested = source / ".pnpm/pkg@2.0.0/node_modules/@scope/pkg"
+    nested.mkdir(parents=True)
+    (nested / "package.json").write_text(
+        json.dumps({"name": "@scope/pkg", "version": "2.0.0"})
+    )
+    monkeypatch.setattr(
+        tool_environment,
+        "NODE_PACKAGES",
+        {"alpha": "1.0.0", "@scope/pkg": "2.0.0"},
+    )
+
+    node_modules = tool_environment.prepare_node_environment(source, tmp_path / "target")
+
+    linked = node_modules / "@scope/pkg"
+    assert linked.is_symlink()
+    assert linked.resolve() == (node_modules / nested.relative_to(source)).resolve()
+    assert json.loads((linked / "package.json").read_text())["version"] == "2.0.0"
+    receipt = json.loads((node_modules.parent / "environment.json").read_text())
+    assert receipt["packages"] == {"alpha": "1.0.0", "@scope/pkg": "2.0.0"}
 
 
 def test_qa_result_contract_accepts_versioned_acceptance_case_names() -> None:
