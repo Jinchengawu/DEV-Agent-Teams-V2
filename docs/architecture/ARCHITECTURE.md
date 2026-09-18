@@ -193,7 +193,8 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
 - Migration `0001–0045` 按校验和串行执行，已应用文件被修改时 Fail Closed；
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
-- Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。
+- Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。Board 将
+  Delivery `needs_attention` 显式投影到无拖拽命令的独立恢复列，不用 UI 投影改写 Release 语义。
 
 ### 6.2 大 Artifact 与 Git
 

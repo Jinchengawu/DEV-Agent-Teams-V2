@@ -166,7 +166,7 @@ Terminal states release the lease. Archived projects remain readable but cannot 
 
 ### Board
 
-The Board is an event-derived projection, not another task state machine. Its columns reflect Delivery, Stage and Gate facts. Commands such as approve, reject or cancel are validated by the owning domain; an arbitrary drag cannot turn an executing item into a completed item.
+The Board is an event-derived projection, not another task state machine. Its columns reflect Delivery, Stage and Gate facts. Commands such as approve, reject or cancel are validated by the owning domain; an arbitrary drag cannot turn an executing item into a completed item. `needs_attention` has its own non-draggable recovery lane so a partial Apply is not presented as ordinary execution or failure.
 
 ### Visual orchestration
 

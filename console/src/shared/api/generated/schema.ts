@@ -7052,7 +7052,7 @@ export interface components {
              * Column
              * @enum {string}
              */
-            column: "backlog" | "plan-approval" | "design-approval" | "executing" | "candidate-approval" | "completed" | "failed-cancelled";
+            column: "backlog" | "plan-approval" | "design-approval" | "executing" | "needs-attention" | "candidate-approval" | "completed" | "failed-cancelled";
             /**
              * Acceptance Ids
              * @default []

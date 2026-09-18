@@ -28,6 +28,7 @@ const statuses: Record<string, string> = {
   "design-approval": "设计审批",
   "candidate-approval": "候选审批",
   "failed-cancelled": "失败 / 取消",
+  "needs-attention": "需要人工恢复",
   default: "默认",
   enabled: "已授权",
   disabled: "未授权",

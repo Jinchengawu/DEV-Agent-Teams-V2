@@ -17,11 +17,12 @@ type WorkItem = components["schemas"]["WorkItem"];
 type BoardColumn = WorkItem["column"];
 type WorkCommand = components["schemas"]["WorkItemCommand"]["command"];
 
-const columns: Array<{ id: BoardColumn; label: string; note: string }> = [
+export const boardColumns: Array<{ id: BoardColumn; label: string; note: string }> = [
   { id: "backlog", label: "待规划", note: "等待机器生成计划" },
   { id: "plan-approval", label: "计划审批", note: "需要人工授权" },
   { id: "design-approval", label: "设计审批", note: "确认 UI 规范" },
   { id: "executing", label: "执行中", note: "机器受控运行" },
+  { id: "needs-attention", label: "需要人工恢复", note: "部分仓已推进，只能 Resume forward" },
   { id: "candidate-approval", label: "候选审批", note: "检查差异与证据" },
   { id: "completed", label: "已完成", note: "已生成应用回执" },
   { id: "failed-cancelled", label: "失败 / 取消", note: "主分支未被污染" },
@@ -63,7 +64,7 @@ export function BoardPage() {
     onSuccess: async () => { setPending(undefined); await Promise.all([client.invalidateQueries({ queryKey: ["board", projectId] }), client.invalidateQueries({ queryKey: ["deliveries", projectId] })]); },
   });
   const visibleItems = useMemo(() => filterWorkItems(board.data ?? [], query, columnFilter), [board.data, columnFilter, query]);
-  const grouped = useMemo(() => Object.fromEntries(columns.map((column) => [column.id, visibleItems.filter((item) => item.column === column.id)])) as Record<BoardColumn, WorkItem[]>, [visibleItems]);
+  const grouped = useMemo(() => Object.fromEntries(boardColumns.map((column) => [column.id, visibleItems.filter((item) => item.column === column.id)])) as Record<BoardColumn, WorkItem[]>, [visibleItems]);
 
   if (board.isLoading) return <LoadingState label="正在从交付事件重建看板投影…"/>;
   if (board.error) return <ErrorState error={board.error} retry={() => board.refetch()}/>;
@@ -75,7 +76,7 @@ export function BoardPage() {
     if (!item || !target || target === item.column) return;
     const proposed = resolveDropCommand(item, target);
     if (!proposed) {
-      setNotice(`不能从“${columns.find((entry) => entry.id === item.column)?.label}”直接移动到“${columns.find((entry) => entry.id === target)?.label}”。状态由交付命令和证据决定。`);
+      setNotice(`不能从“${boardColumns.find((entry) => entry.id === item.column)?.label}”直接移动到“${boardColumns.find((entry) => entry.id === target)?.label}”。状态由交付命令和证据决定。`);
       return;
     }
     setNotice(undefined);
@@ -83,10 +84,10 @@ export function BoardPage() {
   };
 
   return <>
-    <div className="board-toolbar"><div><span className="eyebrow">项目事件投影 · {projectId}</span><b>拖动卡片只发出合法命令</b></div><div className="board-filters"><Input aria-label="搜索看板任务" prefix={<Search size={15}/>} placeholder="搜索任务、交付或验收 ID" value={query} onChange={(event) => setQuery(event.target.value)}/><label>状态列<Select aria-label="筛选状态列" value={columnFilter} onChange={setColumnFilter} options={[{ value: "all", label: "全部状态" }, ...columns.map((column) => ({ value: column.id, label: column.label }))]}/></label><span>{visibleItems.length}/{board.data?.length ?? 0} 个任务</span></div></div>
+    <div className="board-toolbar"><div><span className="eyebrow">项目事件投影 · {projectId}</span><b>拖动卡片只发出合法命令</b></div><div className="board-filters"><Input aria-label="搜索看板任务" prefix={<Search size={15}/>} placeholder="搜索任务、交付或验收 ID" value={query} onChange={(event) => setQuery(event.target.value)}/><label>状态列<Select aria-label="筛选状态列" value={columnFilter} onChange={setColumnFilter} options={[{ value: "all", label: "全部状态" }, ...boardColumns.map((column) => ({ value: column.id, label: column.label }))]}/></label><span>{visibleItems.length}/{board.data?.length ?? 0} 个任务</span></div></div>
     {notice && <div className="conflict-banner"><b>非法状态跳转已回弹</b><span>{notice}</span><Button type="text" aria-label="关闭提示" icon={<X size={15}/>} onClick={() => setNotice(undefined)}/></div>}
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={({ active: drag }: DragStartEvent) => setActive(board.data?.find((item) => item.id === drag.id))} onDragEnd={onDragEnd} onDragCancel={() => setActive(undefined)}>
-      <section className="board interactive-board">{columns.map((column) => <BoardLane key={column.id} {...column} items={grouped[column.id]} onOpen={setSelected}/>)}</section>
+      <section className="board interactive-board">{boardColumns.map((column) => <BoardLane key={column.id} {...column} items={grouped[column.id]} onOpen={setSelected}/>)}</section>
       <DragOverlay>{active && <WorkCard item={active} overlay/>}</DragOverlay>
     </DndContext>
     <ConfirmDialog open={Boolean(pending)} title={pending ? commandLabel(pending.command) : "确认看板命令"} detail={`此操作将对交付 ${pending?.item.delivery_id ?? ""} 发出真实命令。卡片只会在后端成功写入状态、事件和对应证据后进入目标列。`} confirmLabel="确认发出命令" cancelLabel="返回看板" tone={pending && ["reject-plan", "reject-design", "reject-candidate", "cancel"].includes(pending.command) ? "danger" : "warning"} pending={command.isPending} onCancel={() => setPending(undefined)} onConfirm={() => { if (pending) command.mutate({ item: pending.item, command: pending.command }); }}/>
