@@ -48,6 +48,17 @@ export function filterWorkItems(items: WorkItem[], query: string, column?: Board
 
 type PendingDrop = { item: WorkItem; target: BoardColumn; command: WorkCommand };
 
+const DEFAULT_LANE_ITEM_LIMIT = 12;
+
+export function sliceBoardLaneItems(
+  items: WorkItem[],
+  expanded: boolean,
+  limit = DEFAULT_LANE_ITEM_LIMIT,
+) {
+  const visible = expanded ? items : items.slice(0, limit);
+  return { visible, remaining: Math.max(0, items.length - visible.length) };
+}
+
 export function BoardPage() {
   const projectId = useProjectId();
   const client = useQueryClient();
@@ -98,7 +109,16 @@ export function BoardPage() {
 
 function BoardLane({ id, label, note, items, onOpen }: { id: BoardColumn; label: string; note: string; items: WorkItem[]; onOpen: (item: WorkItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id });
-  return <div ref={setNodeRef} className={`board-column ${isOver ? "drop-target" : ""}`}><div className="column-head"><div><b>{label}</b><small>{note}</small></div><span>{items.length}</span></div>{items.length === 0 ? <div className="lane-empty">当前筛选下没有任务</div> : items.map((item) => <WorkCard key={item.id} item={item} onOpen={() => onOpen(item)}/>)}</div>;
+  const [expanded, setExpanded] = useState(false);
+  const { visible, remaining } = sliceBoardLaneItems(items, expanded);
+  return <div ref={setNodeRef} className={`board-column ${isOver ? "drop-target" : ""}`}>
+    <div className="column-head"><div><b>{label}</b><small>{note}</small></div><span>{items.length}</span></div>
+    <div className="board-lane-items">
+      {items.length === 0 ? <div className="lane-empty">当前筛选下没有任务</div> : visible.map((item) => <WorkCard key={item.id} item={item} onOpen={() => onOpen(item)}/>)}
+      {remaining > 0 && <Button type="text" className="board-lane-more" onClick={() => setExpanded(true)}>显示其余 {remaining} 条</Button>}
+      {expanded && items.length > DEFAULT_LANE_ITEM_LIMIT && <Button type="text" className="board-lane-more" onClick={() => setExpanded(false)}>收起到最近 {DEFAULT_LANE_ITEM_LIMIT} 条</Button>}
+    </div>
+  </div>;
 }
 
 function WorkCard({ item, overlay = false, onOpen }: { item: WorkItem; overlay?: boolean; onOpen?: () => void }) {
