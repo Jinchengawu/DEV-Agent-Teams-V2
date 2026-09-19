@@ -629,7 +629,7 @@ export function OrchestrationPage() {
                 setSelectedNodeId(undefined);
               }}
             />
-            <div className="flow" ref={flowContainer}>
+            <div className="flow orchestration-canvas-scroll" ref={flowContainer}>
               <ReactFlow
                 nodes={nodes}
                 edges={edges}

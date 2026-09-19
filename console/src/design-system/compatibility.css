@@ -110,6 +110,28 @@ body {
   white-space: normal;
 }
 
+.team-catalog-list > .ant-btn {
+  color: var(--role-text-primary);
+  background: var(--role-surface);
+  border-color: var(--role-border-subtle);
+}
+
+.team-catalog-list > .ant-btn:hover {
+  color: var(--role-text-primary);
+  background: var(--role-surface-selected);
+  border-color: var(--role-focus);
+}
+
+.team-catalog-list > .ant-btn.selected {
+  color: var(--role-text-primary);
+  background: var(--role-surface-selected);
+  border-color: var(--role-focus);
+}
+
+.team-catalog-list > .ant-btn.selected small {
+  color: var(--role-text-secondary);
+}
+
 .stage-rail {
   grid-template-columns: repeat(8, minmax(88px, 1fr));
 }
@@ -363,6 +385,42 @@ body {
 
 .workspace-verification-profile .ant-select-input {
   min-height: 0;
+}
+
+.workspace-verification-profile {
+  min-width: 0;
+}
+
+.workspace-verification-profile .ant-select {
+  width: 100%;
+}
+
+/* Team topology uses the same semantic tokens as the surrounding surface. */
+.team-topology-views { min-width: 0; }
+.team-topology-canvas {
+  background-color: var(--role-surface-subtle);
+  background-image: linear-gradient(var(--role-border-subtle) 1px, transparent 1px), linear-gradient(90deg, var(--role-border-subtle) 1px, transparent 1px);
+  border-color: var(--role-border);
+}
+.team-topology-canvas::before { color: var(--role-text-meta); }
+.team-topology-canvas line { stroke: var(--role-focus); }
+.topology-workcell {
+  color: var(--role-text-primary);
+  background: var(--role-surface);
+  border-color: var(--role-border);
+  border-left-color: var(--status-success-dot);
+  box-shadow: 0 8px 20px color-mix(in oklab, var(--fg), transparent 91%);
+}
+.topology-workcell code { color: var(--role-focus); }
+.topology-workcell small { color: var(--role-text-muted); }
+.team-topology-list { display: none; margin: 0; padding: 0; list-style: none; }
+
+@media (max-width: 620px) {
+  .team-topology-canvas { display: none; }
+  .team-topology-list { display: grid; gap: 8px; }
+  .team-topology-list li { min-width: 0; display: grid; gap: 4px; padding: 11px; background: var(--role-surface-subtle); border: 1px solid var(--role-border-subtle); border-left: 3px solid var(--status-success-dot); border-radius: var(--radius-md); }
+  .team-topology-list code, .team-topology-list small { color: var(--role-text-muted); overflow-wrap: anywhere; }
+  .team-topology-list .topology-link { border-left-color: var(--role-focus); }
 }
 
 .surface-card,

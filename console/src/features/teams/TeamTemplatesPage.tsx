@@ -113,13 +113,19 @@ function WorkcellDefinitionCard({ workcell, workcellKeys, topology, onlyWorkcell
   return <article className="workcell-definition"><header><span><GitFork size={15}/><code>{workcell.workcell_key}</code></span><Button type="text" danger aria-label={`删除 ${workcell.name}`} icon={<Trash2 size={14}/>} disabled={onlyWorkcell} onClick={remove}/></header><label>显示名称<Input value={workcell.name} onChange={(event) => update({ name: event.target.value })}/></label><label>职责<Input.TextArea rows={2} value={workcell.responsibility} onChange={(event) => update({ responsibility: event.target.value })}/></label><div className="workcell-policy-grid"><label>Child 上限<InputNumber min={0} max={3} value={policy.max_children} onChange={(value) => update({ delegation_policy: { ...policy, max_children: Number(value ?? 0) } })}/></label><label>并发上限<InputNumber min={1} max={2} value={policy.max_concurrency} onChange={(value) => update({ delegation_policy: { ...policy, max_concurrency: Number(value ?? 1) } })}/></label><label>Writer 上限<InputNumber min={0} max={1} value={policy.max_writers} onChange={(value) => update({ delegation_policy: { ...policy, max_writers: Number(value ?? 0) } })}/></label><label>预算（秒）<InputNumber min={30} max={3600} value={policy.wall_clock_budget_seconds} onChange={(value) => update({ delegation_policy: { ...policy, wall_clock_budget_seconds: Number(value ?? 900) } })}/></label></div><label>允许的 Delegate Purpose<Select mode="multiple" value={workcell.delegate_purposes} onChange={(value) => update({ delegate_purposes: value as WorkcellDefinition["delegate_purposes"] })} options={["workspace_write", "artifact", "review"].map((value) => ({ value, label: value }))}/></label><label>Artifact 输出到<Select mode="multiple" value={topology.links.filter((item) => item.source_workcell_key === workcell.workcell_key).map((item) => item.target_workcell_key)} onChange={updateTargets} options={workcellKeys.filter((key) => key !== workcell.workcell_key).map((value) => ({ value, label: value }))}/></label></article>;
 }
 
-function TopologyCanvas({ workcells, topology }: { workcells: WorkcellDefinition[]; topology: TeamTopology }) {
+export function TopologyCanvas({ workcells, topology }: { workcells: WorkcellDefinition[]; topology: TeamTopology }) {
   const nodes = topology.nodes.map((node, index) => ({ ...node, x: Math.max(4, Math.min(76, node.x / 9)), y: Math.max(8, Math.min(76, node.y / 5 + index % 2 * 3)) }));
   const byKey = new Map(nodes.map((node) => [node.workcell_key, node]));
   const names = new Map(workcells.map((item) => [item.workcell_key, item.name]));
-  return <div className="team-topology-canvas" aria-label="Workcell Artifact 拓扑">
-    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none">{topology.links.map((link) => { const source = byKey.get(link.source_workcell_key); const target = byKey.get(link.target_workcell_key); return source && target ? <line key={`${link.source_workcell_key}:${link.target_workcell_key}`} x1={source.x + 8} y1={source.y + 6} x2={target.x} y2={target.y + 6}/> : null; })}</svg>
-    {nodes.map((node) => <div className="topology-workcell" key={node.workcell_key} style={{ left: `${node.x}%`, top: `${node.y}%` }}><span>{names.get(node.workcell_key) ?? node.workcell_key}</span><code>{node.workcell_key}</code><small>git_repository_v1</small></div>)}
+  return <div className="team-topology-views">
+    <div className="team-topology-canvas" aria-label="Workcell Artifact 拓扑">
+      <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none">{topology.links.map((link) => { const source = byKey.get(link.source_workcell_key); const target = byKey.get(link.target_workcell_key); return source && target ? <line key={`${link.source_workcell_key}:${link.target_workcell_key}`} x1={source.x + 8} y1={source.y + 6} x2={target.x} y2={target.y + 6}/> : null; })}</svg>
+      {nodes.map((node) => <div className="topology-workcell" key={node.workcell_key} style={{ left: `${node.x}%`, top: `${node.y}%` }}><span>{names.get(node.workcell_key) ?? node.workcell_key}</span><code>{node.workcell_key}</code><small>git_repository_v1</small></div>)}
+    </div>
+    <ul className="team-topology-list" aria-label="Workcell Artifact 拓扑列表">
+      {workcells.map((workcell) => <li key={workcell.workcell_key}><b>{workcell.name}</b><code>{workcell.workcell_key}</code><small>git_repository_v1</small></li>)}
+      {topology.links.map((link) => <li className="topology-link" key={`${link.source_workcell_key}:${link.target_workcell_key}`}><b>{link.source_workcell_key} → {link.target_workcell_key}</b><small>{link.label ?? "ArtifactAttachment"}</small></li>)}
+    </ul>
   </div>;
 }
 
