@@ -258,10 +258,20 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .loop-workspace-dialog > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding: 20px 24px; margin: 0; border-bottom: 1px solid var(--line); }
 .loop-workspace-dialog > header h2 { margin: 5px 0; font-size: 24px; }
 .loop-workspace-dialog > header p { margin: 0; color: var(--muted); font-size: 14px; }
-.loop-workspace-content { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 0; min-height: 0; }
-.loop-workspace-content > aside { display: grid; align-content: start; gap: 16px; padding: 22px; border-right: 1px solid var(--line); background: #f7f9fc; }
-.loop-workspace-content .loop-body-editor { min-width: 0; min-height: 0; padding: 22px; grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-.loop-workspace-content .loop-flow { height: auto; min-height: 420px; }
+.loop-workspace-content { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 0; min-height: 0; overflow: hidden; }
+.loop-workspace-content > aside { min-height: 0; display: grid; align-content: start; gap: 16px; padding: 22px; border-right: 1px solid var(--line); background: #f7f9fc; overflow-y: auto; scrollbar-gutter: stable; }
+.loop-workspace-content .loop-body-editor {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  align-content: start;
+  padding: 22px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  grid-template-rows: repeat(5, max-content) minmax(420px, 1fr);
+}
+.loop-workspace-content .loop-flow { height: clamp(420px, 55vh, 620px); min-height: 420px; }
 .node-jump { display: grid; grid-template-columns: max-content minmax(220px, 360px); align-items: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 12px; }
 .node-jump select { min-height: 36px; }
 .knowledge-activity { grid-column: 1 / -1; }
@@ -278,6 +288,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 760px) { .node-jump { grid-template-columns: 1fr; } .node-jump select { min-height: 44px; width: 100%; } }
 .loop-workspace-content .dependency-creator { grid-template-columns: auto repeat(3, minmax(120px, 1fr)) auto; }
 .loop-workspace-content .dependency-creator > b, .loop-workspace-content .dependency-creator button { grid-column: auto; }
+.binding-snapshot { max-height: 560px; overflow-y: auto; scrollbar-gutter: stable; }
 
 @media (max-width: 1480px) {
   .pipeline-orchestration { grid-template-columns: 220px minmax(0, 1fr); }
@@ -298,8 +309,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .pipeline-orchestration { grid-template-columns: 1fr; }
   .pipeline-catalog, .orchestration-inspector { grid-column: 1; }
   .pipeline-catalog { min-height: auto; }
-  .loop-workspace-content { grid-template-columns: 1fr; overflow: auto; }
-  .loop-workspace-content > aside { grid-template-columns: 1fr 1fr; border-right: 0; border-bottom: 1px solid var(--line); }
+  .loop-workspace-dialog { height: calc(100dvh - 32px); }
+  .loop-workspace-content { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .loop-workspace-content > aside { grid-template-columns: repeat(4, minmax(150px, 1fr)); overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--line); }
   .board-toolbar { align-items: stretch; flex-direction: column; }
   .board-filters { min-width: 0; grid-template-columns: 1fr 150px; }
   .board-filters > span { grid-column: 1 / -1; }
@@ -308,6 +320,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (max-width: 600px) {
+  .loop-workspace-backdrop { padding: 0; }
+  .loop-workspace-dialog { width: 100vw; height: 100dvh; border-radius: 0; }
+  .loop-workspace-dialog > header { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }
+  .loop-workspace-dialog > header button { width: 100%; }
+  .loop-workspace-content > aside { grid-template-columns: repeat(2, minmax(150px, 1fr)); padding: 14px 16px; }
+  .loop-workspace-content .loop-body-editor { padding: 16px; }
+  .loop-workspace-content .dependency-creator { grid-template-columns: 1fr; }
+  .loop-workspace-content .dependency-creator > b, .loop-workspace-content .dependency-creator button { grid-column: 1; }
   .app-shell { grid-template-columns: 58px minmax(0, 1fr); }
   .main-sidebar { padding-inline: 5px; }
   main { padding: 20px 14px 44px; }

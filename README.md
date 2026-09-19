@@ -134,7 +134,9 @@ Agent-Team-OS 建立了独立 Evaluation 评测域，用于可重复验证能力
 
 ### 前置条件
 
-- Python `>=3.11,<3.13`
+- Python `3.12`（推荐使用 `uv sync --python 3.12`，不改写全局 pyenv）。Python 3.11 仅在其
+  `sqlite3.Connection` 支持 `enable_load_extension` 时可用，否则 Hybrid Index Readiness
+  会以 `KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE` Fail Closed。
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
 - Node.js 与 pnpm（`console/package.json` 固定 `pnpm@10.13.1`）
@@ -190,6 +192,7 @@ Delivery 并发，但允许同一 Delivery 内 Frontend/Backend Workcell 和不�
 ### 看板
 
 看板是由事件构建的投影，不是另一套任务状态机。各列反映 Delivery、Stage 与 Gate 事实。批准、拒绝、取消等命令由权威领域验证；任意拖动不能把执行中卡片直接变成已完成。
+`needs_attention` 单独投影为“需要人工恢复”列，不提供拖拽命令，避免把部分 Apply 误当为普通执行或失败。
 
 ### 可视化编排
 

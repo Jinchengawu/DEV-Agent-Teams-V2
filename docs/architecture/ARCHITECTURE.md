@@ -180,6 +180,9 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
   `sqlite-vec` 都是 Adapter。Knowledge Application 只通过 `EmbeddingPort` 和 `VectorIndexPort`
   访问模型与向量引擎。
 - Domain Model 和 Application Service 保持 Runtime/Framework 无关。
+- `sqlite-vec` Adapter 需要 Python SQLite Runtime 开放 `enable_load_extension`；推荐运行时为
+  Python 3.12。该能力由 Knowledge Live Readiness 单独投影，缺失时 Fail Closed，不回退为
+  未资格化的纯 Python 向量计算。
 - ACWM Runtime Contract 不复制到本仓库；产品只保存编译结果、绑定 Snapshot 和运行投影。
 - 外部 SDK 对象不能穿过 Port 进入领域模型，必须标准化为产品 DTO 或 Artifact Reference。
 
@@ -193,7 +196,8 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
 - Migration `0001–0045` 按校验和串行执行，已应用文件被修改时 Fail Closed；
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
-- Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。
+- Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。Board 将
+  Delivery `needs_attention` 显式投影到无拖拽命令的独立恢复列，不用 UI 投影改写 Release 语义。
 
 ### 6.2 大 Artifact 与 Git
 

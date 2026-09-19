@@ -236,6 +236,29 @@ def test_board_projection_rebuild_is_deterministic() -> None:
     assert first.items[0].version == 3
 
 
+def test_board_projects_release_recovery_as_a_distinct_non_actionable_column() -> None:
+    projection = BoardProjector().rebuild(
+        (
+            ProductEvent(
+                id="event-release-recovery",
+                event_type="delivery.needs_attention",
+                aggregate_type="delivery",
+                aggregate_id="delivery-partially-applied",
+                aggregate_version=8,
+                payload={
+                    "status": "needs_attention",
+                    "title": "四仓发布需要恢复",
+                    "acceptance_ids": ["AC-RELEASE-001"],
+                },
+            ),
+        )
+    )
+
+    item = projection.items[0]
+    assert item.column == "needs-attention"
+    assert item.available_commands == ()
+
+
 def test_foundation_interfaces_expose_events_evidence_and_problem_details(
     tmp_path: Path,
 ) -> None:

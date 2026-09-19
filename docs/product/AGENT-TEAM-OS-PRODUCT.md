@@ -298,7 +298,6 @@ stateDiagram-v2
     applying --> completed: 全部 Apply + Manifest Active
     applying --> needs_attention: 部分 Apply 或 Drift
     needs_attention --> applying: resume-forward 预检通过
-    needs_attention --> cancelled: 通用 Cancel [已知治理缺口]
     awaiting_plan_decision --> rejected: reject
     awaiting_design_decision --> rejected: reject
     awaiting_candidate_decision --> rejected: reject
@@ -314,9 +313,9 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Forward-only 设计把 `needs_attention` 定义为**非终态**：项目 Lease 应继续持有，Manifest 不激活。
-但当前通用 Delivery Cancel 路径仍可令其进入 `cancelled` 并释放 Lease；这是图中显式标注的实现缺口，
-不是合法的 Release 恢复语义。
+Forward-only 设计把 `needs_attention` 定义为**非终态**：项目 Lease 继续持有，Manifest 不激活。
+通用 Delivery Cancel 会拒绝 `applying/needs_attention`；恢复只能经同一 Bundle 的 `resume-forward`
+或人工协调后的显式治理流程进行。
 
 #### WorkcellRun 与 AgentAttempt
 
@@ -533,10 +532,9 @@ Team Activate 会验证远端存在 `main`，并运行非 Force `git push --dry-
 6. 条件成立则从未完成位置继续；全部回读成功后激活 Manifest；
 7. 任一条件不成立则保持人工协调。v0.5 不自动 Rebase、补偿提交或换 Bundle。
 
-设计上的 Forward-only 恢复路径没有“放弃并自动清理 Drift”的终态。当前通用 Delivery Cancel API
-仍接受包括 `needs_attention` 在内的非终态 Delivery：Cancel 会把 Delivery 置为 `cancelled` 并释放项目
-Lease，但**不会**修复已部分推进的远端、清除 `release_drifted` 或激活 Manifest。这是当前实现与目标
-治理边界之间的已知缺口；它不是 Release 恢复手段。远端未人工对齐前不应开始下一次发布。
+设计上的 Forward-only 恢复路径没有“放弃并自动清理 Drift”的终态。通用 Delivery Cancel API
+对 `applying/needs_attention` 返回状态冲突，不改写 Delivery/Event/Receipt，不释放项目 Lease。
+远端未经同 Bundle `resume-forward` 完成或人工对齐前，项目治理会阻止新 Delivery。
 
 ### 4.6 审计、Evidence 与 Knowledge
 
@@ -666,7 +664,7 @@ Break-glass 访问，但产品会追加 `ProjectAccessAudit`，不会把管理�
 | 状态变化 | 权威领域接受命令后重建投影；UI 不能直接改状态。 |
 | 输出证据 | WorkItem 来源、合法命令、对应 Delivery/Event。 |
 | 权限 | 命令沿用 Delivery 权限；Viewer 不能通过拖动写入。 |
-| 失败恢复 | 非法拖动拒绝并刷新权威状态。`needs_attention` 的已知投影限制见第 11 章。 |
+| 失败恢复 | 非法拖动拒绝并刷新权威状态。`needs_attention` 投影到独立“需要人工恢复”列，卡片不提供拖拽命令，操作者需进入 Delivery/Release Health 执行 `resume-forward`。 |
 
 ### 5.9 ReleaseBundleV2、PR 与 Forward-only Apply
 
@@ -1108,17 +1106,17 @@ Revision 是否通过，必须读取绑定同一 Git SHA 的命令输出、Evide
   共享长期 Agent Memory；Hybrid Index/Embedding 只服务受批准 Source 的检索和冻结 Delivery Context；
 - Feishu Tenant、Ollama bge-m3、Hermes、Codex 与四个 GitHub 私仓尚未形成同一干净 Revision 的
   Live Release Acceptance Report；当前只能是 `blocked/not_run`；
+- Hybrid Index 依赖能加载 `sqlite-vec` 的 Python SQLite Runtime；仓库推荐 Python 3.12，
+  缺少 `enable_load_extension` 时 Readiness 会明确阻断，不执行静默降级；
 - 没有发布安装包、Git Tag 或 GitHub Release；仓库当前没有 License。
 
 ### 11.2 控制台与体验
 
 - Evaluation 有 API/CLI/数据集，但没有 `/evaluation` 页面；其 Router 也未进入 Console OpenAPI 导出；
-- Board 没有独立 `needs_attention` 列。领域投影没有该显式映射时会走默认
-  `failed-cancelled` 列，可能把“可恢复的部分 Apply”视觉上混同为失败/取消；Delivery 详情与
-  Release Health 仍显示真实 `needs_attention` / `release_drifted`。这是已知展示限制，本次文档任务不修改代码；
-- 通用 Delivery Cancel 当前可把 `needs_attention` 置为 `cancelled` 并释放 Lease，但不会清除
-  `release_drifted` 或修复远端；项目治理尚未阻止操作者在这种 Drift 未协调时开始后续 Delivery。这是
-  Forward-only 治理缺口，Cancel 不能被当作恢复成功；
+- Board 已将 `needs_attention` 映射到独立“需要人工恢复”列，不再与执行中或失败/取消混同；
+  该卡片没有拖拽命令，Release Health 保留 `release_drifted` 与 `resume-forward` 入口；
+- 通用 Delivery Cancel 已拒绝 `applying/needs_attention`，项目 Lease 和 Release Receipt 保持不变；
+  项目治理在 Drift 未协调时阻止新 Delivery，Cancel 不能被当作恢复成功；
 - 当前前端自动化覆盖组件和关键闭环，但不能代替逐页布局、可访问性、不同视口、空/错/历史数据和
   长时运行的系统性体验验收；
 - 本地评测数据与账号是会话/数据目录特定事实，不能把 Preview Fixture 当生产历史数据。

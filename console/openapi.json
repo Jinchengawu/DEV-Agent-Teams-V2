@@ -24123,6 +24123,7 @@
               "plan-approval",
               "design-approval",
               "executing",
+              "needs-attention",
               "candidate-approval",
               "completed",
               "failed-cancelled"

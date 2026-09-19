@@ -116,7 +116,10 @@ See the [English methodology](docs/evaluation/METHODOLOGY.en.md),
 
 ### Prerequisites
 
-- Python `>=3.11,<3.13`
+- Python `3.12` (recommended via `uv sync --python 3.12` without changing global pyenv). Python 3.11 is
+  supported only when `sqlite3.Connection.enable_load_extension` is available; otherwise
+  Hybrid Index readiness fails closed with
+  `KNOWLEDGE_SQLITE_VEC_EXTENSION_LOADING_UNAVAILABLE`.
 - [`uv`](https://docs.astral.sh/uv/)
 - Git
 - Node.js and pnpm (`pnpm@10.13.1` is pinned in `console/package.json`)
@@ -166,7 +169,7 @@ Terminal states release the lease. Archived projects remain readable but cannot 
 
 ### Board
 
-The Board is an event-derived projection, not another task state machine. Its columns reflect Delivery, Stage and Gate facts. Commands such as approve, reject or cancel are validated by the owning domain; an arbitrary drag cannot turn an executing item into a completed item.
+The Board is an event-derived projection, not another task state machine. Its columns reflect Delivery, Stage and Gate facts. Commands such as approve, reject or cancel are validated by the owning domain; an arbitrary drag cannot turn an executing item into a completed item. `needs_attention` has its own non-draggable recovery lane so a partial Apply is not presented as ordinary execution or failure.
 
 ### Visual orchestration
 

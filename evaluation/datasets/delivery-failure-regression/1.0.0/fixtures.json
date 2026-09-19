@@ -1,0 +1,59 @@
+{
+  "ownership-base-v1": {
+    "requirements": {"summary": "登录交付", "acceptance_criteria": [{"id": "AC-LOGIN", "statement": "用户可以完成登录"}]},
+    "task": {
+      "title": "登录交付", "instructions": "按批准职责实现登录", "acceptance_ids": ["AC-LOGIN"],
+      "workcell_acceptance": [
+        {"workcell_key": "design", "acceptance": [{"acceptance_id": "AC-LOGIN", "responsibility": "记录登录的页面交互和错误状态规范"}]},
+        {"workcell_key": "frontend", "acceptance": [{"acceptance_id": "AC-LOGIN", "responsibility": "实现登录页面交互和错误状态"}]},
+        {"workcell_key": "backend", "acceptance": [{"acceptance_id": "AC-LOGIN", "responsibility": "实现登录认证接口和错误响应"}]},
+        {"workcell_key": "qa", "acceptance": [{"acceptance_id": "AC-LOGIN", "responsibility": "验证登录跨层流程并记录结果"}]}
+      ]
+    },
+    "required_workcells": ["design", "frontend", "backend", "qa"]
+  },
+  "health-contract-v2-base": {
+    "contract.json": {
+      "contract_id": "health-contract-v2", "contract_version": "health-contract-v2",
+      "success_responses": {
+        "methods": ["GET", "HEAD"], "path": "/health",
+        "required_headers": {
+          "X-Health-Contract": {"value": "health-contract-v2", "match": "exact"},
+          "Cache-Control": {"value": "no-store", "match": "exact"},
+          "X-Content-Type-Options": {"value": "nosniff", "match": "exact"}
+        },
+        "success_body_fields": ["status", "version", "service"], "body_schema": "schema.json", "head_body_bytes": 0
+      }
+    },
+    "schema.json": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "additionalProperties": false,
+      "required": ["status", "version", "service"],
+      "properties": {
+        "status": {"type": "string", "enum": ["ok", "degraded", "unavailable"]},
+        "version": {"type": "string", "const": "health-contract-v2"},
+        "service": {"type": "string", "const": "backend-demo"}
+      }
+    },
+    "vectors.json": {
+      "valid": [
+        {"id": "ok", "payload": {"status": "ok", "version": "health-contract-v2", "service": "backend-demo"}},
+        {"id": "degraded", "payload": {"status": "degraded", "version": "health-contract-v2", "service": "backend-demo"}},
+        {"id": "unavailable", "payload": {"status": "unavailable", "version": "health-contract-v2", "service": "backend-demo"}}
+      ],
+      "invalid": [
+        {"id": "wrong-status", "payload": {"status": "bad", "version": "health-contract-v2", "service": "backend-demo"}},
+        {"id": "missing-service", "payload": {"status": "ok", "version": "health-contract-v2"}},
+        {"id": "wrong-service", "payload": {"status": "ok", "version": "health-contract-v2", "service": "frontend-demo"}},
+        {"id": "extra-field", "payload": {"status": "ok", "version": "health-contract-v2", "service": "backend-demo", "extra": true}}
+      ],
+      "header_valid": [
+        {"id": "get", "response": {"method": "GET", "path": "/health", "status": 200, "headers": {"X-Health-Contract": "health-contract-v2", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}}},
+        {"id": "head", "response": {"method": "HEAD", "path": "/health", "status": 200, "headers": {"X-Health-Contract": "health-contract-v2", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}, "body": ""}}
+      ],
+      "header_invalid": [
+        {"id": "missing", "response": {"method": "GET", "headers": {}}},
+        {"id": "wrong", "response": {"method": "HEAD", "headers": {"X-Health-Contract": "health-contract-v1"}, "body": ""}}
+      ]
+    }
+  }
+}

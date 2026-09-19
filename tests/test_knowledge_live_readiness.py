@@ -69,6 +69,7 @@ def _ready_facts() -> KnowledgeLiveFacts:
         qualified_ollama_model_count=1,
         verified_index_policy_count=1,
         live_ollama_model_count=1,
+        vector_index_runtime_ready=True,
     )
 
 
@@ -168,6 +169,26 @@ def test_live_readiness_fails_closed_without_leaking_credentials() -> None:
     serialized = report.model_dump_json()
     assert "tenant-app-secret" not in serialized
     assert "session-only-token" not in serialized
+
+
+def test_live_readiness_names_missing_sqlite_extension_loading_capability() -> None:
+    report = evaluate_knowledge_live_readiness(
+        project_id="alpha",
+        facts=_ready_facts().model_copy(update={"vector_index_runtime_ready": False}),
+        flags=FeatureFlags(
+            feishu_tenant_sync_v1=True,
+            knowledge_hybrid_index_v1=True,
+            delivery_knowledge_context_v1=True,
+        ),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
+        runtime=_runtime_ready(),
+    )
+
+    check = next(item for item in report.checks if item.name == "vector-index-runtime")
+    assert report.status == "blocked"
+    assert check.status == "blocked"
+    assert check.repair is not None
+    assert "enable_load_extension" in check.repair
 
 
 def test_managed_git_or_incomplete_pipeline_cannot_satisfy_live_readiness() -> None:
