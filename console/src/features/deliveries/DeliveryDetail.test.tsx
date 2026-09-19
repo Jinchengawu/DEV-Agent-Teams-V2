@@ -28,6 +28,29 @@ function delivery(): Delivery {
 }
 
 describe("交付黄金纵切", () => {
+  it("首屏提供当前状态、下一动作和可键盘访问的章节导航", () => {
+    render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
+
+    expect(screen.getByRole("region", { name: "交付行动摘要" })).toBeTruthy();
+    expect(screen.getByText("当前状态")).toBeTruthy();
+    expect(screen.getByText("下一步")).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "交付详情章节" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "候选与发布" })).toBeTruthy();
+  });
+
+  it("长交付目标默认收起，并允许用户显式展开完整正文", async () => {
+    const longRequest = delivery();
+    longRequest.user_request = "实现跨四个独立仓库的健康检查、可观测性、失败恢复和发布验证，".repeat(8);
+    render(<MemoryRouter><DeliveryDetail delivery={longRequest} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
+
+    const title = screen.getByRole("heading", { level: 2 });
+    expect(title.className).toContain("delivery-request-title");
+    expect(title.className).not.toContain("expanded");
+    await userEvent.click(screen.getByRole("button", { name: "展开完整目标" }));
+    expect(title.className).toContain("expanded");
+    expect(screen.getByRole("button", { name: "收起目标" })).toBeTruthy();
+  });
+
   it("计划审批前展示每仓验收责任和原始验收正文", async () => {
     const planned = delivery();
     planned.task!.workcell_acceptance = [{ workcell_key: "frontend", acceptance: [{ acceptance_id: "AC-001", responsibility: "展示健康状态和请求失败状态" }] }];

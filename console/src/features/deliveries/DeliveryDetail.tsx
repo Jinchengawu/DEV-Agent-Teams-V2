@@ -63,6 +63,7 @@ export function DeliveryDetail({
 }: Props) {
   const [pendingDecision, setPendingDecision] = useState<DeliveryDecision>();
   const [inspectorSelection, setInspectorSelection] = useState<InspectorSelection>();
+  const [requestExpanded, setRequestExpanded] = useState(false);
   const verified = evidence.filter((item) => item.status === "verified");
   const graphNodes = pipelineRun ? graphNodeProjections(pipelineRun.snapshot) : [];
   const repositoryCandidates = delivery.repository_candidates ?? [];
@@ -77,12 +78,23 @@ export function DeliveryDetail({
   const confirmation = decisionConfirmation(pendingDecision, releaseMode);
   const blockingPublications = publications.filter((publication) => publication.status !== "published");
   const inspector = inspectorModel(inspectorSelection, delivery);
+  const blocker = delivery.error_code ?? (blockingPublications.length ? "知识产物尚未发布完成" : "当前没有已记录阻塞");
+  const nextAction = deliveryNextAction(delivery.status);
 
   return <div className="delivery-detail">
     <section className="run-hero surface-card">
-      <div><span className="eyebrow">交付 {delivery.id.slice(0, 8)} · 真实运行</span><h2>{delivery.user_request}</h2><p className="run-meta">流水线 {delivery.pipeline_revision_id ?? delivery.journey_revision_id ?? "未绑定发布版本"} · 聚合版本 {delivery.version} · 更新于 {formatDateTime(delivery.updated_at)}</p></div>
+      <div><span className="eyebrow">交付 {delivery.id.slice(0, 8)} · 真实运行</span><h2 className={`delivery-request-title${requestExpanded ? " expanded" : ""}`}>{delivery.user_request}</h2>{delivery.user_request.length > 120 && <Button type="link" className="delivery-request-toggle" onClick={() => setRequestExpanded((value) => !value)}>{requestExpanded ? "收起目标" : "展开完整目标"}</Button>}<p className="run-meta">流水线 {delivery.pipeline_revision_id ?? delivery.journey_revision_id ?? "未绑定发布版本"} · 聚合版本 {delivery.version} · 更新于 {formatDateTime(delivery.updated_at)}</p></div>
       <StatusBadge value={delivery.status}/>
     </section>
+
+    <section className="delivery-action-summary surface-card" aria-label="交付行动摘要">
+      <div><span>当前状态</span><b>{statusLabel(delivery.status)}</b></div>
+      <div><span>阻塞原因</span><b>{blocker}</b></div>
+      <div><span>下一步</span><b>{nextAction.label}</b><small>{nextAction.permission}</small></div>
+    </section>
+    <nav className="delivery-section-nav" aria-label="交付详情章节">
+      <a href="#delivery-runtime">运行账本</a><a href="#delivery-plan">规划与设计</a><a href="#delivery-release">候选与发布</a><a href="#delivery-evidence">证据与事件</a>
+    </nav>
 
     <DeliveryStageRail delivery={delivery}/>
     <ConflictState error={decisionError}/>
@@ -102,9 +114,9 @@ export function DeliveryDetail({
     </section>}
 
     {pipelineError && <ErrorState error={pipelineError}/>}
-    {pipelineRun && <section className="panel surface-card pipeline-run-ledger"><div className="panel-head"><span>ACWM DAG 运行账本</span><small>GraphRun V{pipelineRun.version} · {pipelineRun.status}</small></div><div className="pipeline-run-meta"><span>不可变图指纹</span><code>{pipelineRun.graph_fingerprint}</code></div><div className="pipeline-node-projections">{graphNodes.map((node) => <article key={node.node_id}><i data-status={node.status}/><b>{node.node_id}</b><StatusBadge value={node.status}/><small>尝试 {node.attempt}</small></article>)}</div></section>}
+    {pipelineRun && <section id="delivery-runtime" className="panel surface-card pipeline-run-ledger"><div className="panel-head"><span>ACWM DAG 运行账本</span><small>GraphRun V{pipelineRun.version} · {pipelineRun.status}</small></div><div className="pipeline-run-meta"><span>不可变图指纹</span><code>{pipelineRun.graph_fingerprint}</code></div><div className="pipeline-node-projections">{graphNodes.map((node) => <article key={node.node_id}><i data-status={node.status}/><b>{node.node_id}</b><StatusBadge value={node.status}/><small>尝试 {node.attempt}</small></article>)}</div></section>}
 
-    <div className="detail-grid">
+    <div id="delivery-plan" className="detail-grid">
       <section className="panel surface-card artifact-panel">
         <div className="panel-head"><div><span>产品规划与任务授权</span><small>{identityLabel(delivery.planning_identity)}</small></div>{delivery.plan_gate && <Button className={delivery.status === "awaiting_plan_decision" ? "primary screen-primary" : "secondary"} onClick={() => setInspectorSelection({ kind: "plan" })}>{delivery.status === "awaiting_plan_decision" ? "审查计划" : "检查计划"}</Button>}</div>
         {delivery.requirements ? <><h3>{delivery.requirements.summary}</h3><ul>{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code>{item.statement}</li>)}</ul></> : <p className="muted">需求产物尚未生成。</p>}
@@ -126,7 +138,7 @@ export function DeliveryDetail({
       </section>
     </div>
 
-    <section className="panel surface-card artifact-panel repository-candidates-panel">
+    <section id="delivery-release" className="panel surface-card artifact-panel repository-candidates-panel">
       <div className="panel-head"><span>多仓候选变更与机器验证</span><small>{identityLabel(delivery.execution_identity ?? undefined)}</small></div>
       {repositoryCandidates.length ? <Tabs className="repository-candidate-tabs" items={repositoryCandidates.map((item) => ({
         key: item.role,
@@ -149,7 +161,7 @@ export function DeliveryDetail({
       {delivery.release_manifest_v2_sha256 && <div className="release-manifest"><div className="release-manifest-head"><CheckCircle2 size={22}/><div><b>ReleaseManifestV2 已激活</b><span>四仓远端 main 已回读为获批 Candidate；详细 RemoteApplyReceipt 见下方 Workcell Release Surface。</span><code>{delivery.release_manifest_v2_sha256}</code></div></div></div>}
     </section>
 
-    <div className="detail-grid evidence-rail">
+    <div id="delivery-evidence" className="detail-grid evidence-rail">
       <section className="panel surface-card"><div className="panel-head"><span>可信证据轨</span><small>{verified.length}/{evidence.length} 已验证</small></div>
         {evidence.length === 0 ? <p className="muted">当前阶段尚无证据。只有真实产物生成后才会出现记录。</p> : <div className="evidence-list">{evidence.map((item) => <Button type="text" key={item.id} onClick={() => setInspectorSelection({ kind: "evidence", record: item })}><StatusBadge value={item.status}/><span><b>{artifactTypeLabel(item.kind)}</b><small>{item.producer_identity} · {item.source_id}</small></span><code>{item.content_sha256 ?? "无可验证内容哈希"}</code></Button>)}</div>}
         <Link className="secondary evidence-ledger-link" to={`${projectPath(delivery.project_id, "evidence")}?delivery_id=${encodeURIComponent(delivery.id)}`}>在项目证据账本中查看</Link>
@@ -162,6 +174,15 @@ export function DeliveryDetail({
     {inspector && <Inspector open kicker={inspector.kicker} title={inspector.title} tabs={inspector.tabs} onClose={() => setInspectorSelection(undefined)}/>}
     <ConfirmDialog open={Boolean(pendingDecision)} title={confirmation.title} detail={confirmation.detail} confirmLabel={confirmation.label} tone={pendingDecision?.startsWith("reject") || pendingDecision === "accept-candidate" ? "danger" : "warning"} pending={decisionPending} onCancel={() => setPendingDecision(undefined)} onConfirm={() => { if (pendingDecision) onDecision(pendingDecision); setPendingDecision(undefined); }}/>
   </div>;
+}
+
+function deliveryNextAction(status: string): { label: string; permission: string } {
+  if (status === "awaiting_plan_decision") return { label: "审查计划并决定是否启动设计", permission: "需要 Editor 或 Administrator" };
+  if (status === "awaiting_design_decision") return { label: "审查设计候选并决定是否进入实现", permission: "需要 Editor 或 Administrator" };
+  if (status === "awaiting_candidate_decision") return { label: "核对验证、Review 与 ReleaseBundle 后决定发布", permission: "需要 Editor 或 Administrator；Apply 会再次确认" };
+  if (status === "needs_attention") return { label: "核对远端回执并执行 Resume forward", permission: "需要 Administrator 与同一 ReleaseBundle" };
+  if (["completed", "rejected", "failed", "cancelled"].includes(status)) return { label: "查看证据与最终回执", permission: "只读访问即可" };
+  return { label: "等待当前机器阶段完成或刷新运行状态", permission: "无需 Gate 决策" };
 }
 
 function inspectorModel(selection: InspectorSelection | undefined, delivery: Delivery): { kicker: string; title: string; tabs: InspectorTab[] } | undefined {
