@@ -94,3 +94,31 @@ test("页面缓存未初始化但系统已有管理员时使用同一凭据登�
     "POST /v1/auth/login",
   ]);
 });
+
+test("已初始化系统的登录页不预填管理员用户名", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const path = String(input);
+    if (path === "/v1/auth/bootstrap-status") {
+      return new Response(JSON.stringify({ bootstrap_required: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (path === "/v1/auth/session") {
+      return new Response(JSON.stringify({ code: "IDENTITY_SESSION_REQUIRED", title: "需要登录", detail: "会话不存在。" }), {
+        status: 401,
+        headers: { "content-type": "application/problem+json" },
+      });
+    }
+    throw new Error(`unexpected request: ${path}`);
+  });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AuthGate><div>受保护的控制台</div></AuthGate>
+    </QueryClientProvider>,
+  );
+
+  await screen.findByRole("heading", { name: "登录 Agent-Team-OS" });
+  expect((screen.getByLabelText("用户名") as HTMLInputElement).value).toBe("");
+});

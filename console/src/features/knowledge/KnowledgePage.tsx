@@ -23,6 +23,9 @@ type KnowledgeActivityItem = components["schemas"]["KnowledgeActivityItem"];
 type KnowledgeDerivationCreate = components["schemas"]["KnowledgeDerivationCreate"];
 type KnowledgeDerivationResult = components["schemas"]["KnowledgeDerivationResult"];
 
+const KNOWLEDGE_ACTIVITY_PAGE_SIZE = 12;
+type ActivityAge = "all" | "24h" | "7d" | "30d";
+
 type MarkdownPayload = {
   format: "markdown";
   text: string;
@@ -162,6 +165,11 @@ export function KnowledgePage() {
   const [roleKey, setRoleKey] = useState("");
   const [deliveryFilter, setDeliveryFilter] = useState("");
   const [sourceKind, setSourceKind] = useState("");
+  const [activityLimit, setActivityLimit] = useState(KNOWLEDGE_ACTIVITY_PAGE_SIZE);
+  const [activitySourceKind, setActivitySourceKind] = useState("");
+  const [activityDeliveryId, setActivityDeliveryId] = useState("");
+  const [activityAge, setActivityAge] = useState<ActivityAge>("all");
+  const [activityIncludeGlobal, setActivityIncludeGlobal] = useState(true);
 
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceDescription, setNewSpaceDescription] = useState("");
@@ -192,6 +200,11 @@ export function KnowledgePage() {
     setRoleKey("");
     setDeliveryFilter("");
     setSourceKind("");
+    setActivityLimit(KNOWLEDGE_ACTIVITY_PAGE_SIZE);
+    setActivitySourceKind("");
+    setActivityDeliveryId("");
+    setActivityAge("all");
+    setActivityIncludeGlobal(true);
   }, [projectId]);
 
   useEffect(() => {
@@ -242,13 +255,25 @@ export function KnowledgePage() {
   });
 
   const activity = useQuery({
-    queryKey: ["knowledge-activity", projectId],
-    queryFn: ({ signal }) =>
-      request<KnowledgeActivityItem[]>(
-        `/v1/knowledge/activity?project_id=${encodeURIComponent(projectId)}&include_global=true&limit=50`,
-        { signal },
-      ),
+    queryKey: ["knowledge-activity", projectId, activityLimit, activitySourceKind, activityDeliveryId, activityAge, activityIncludeGlobal],
+    queryFn: ({ signal }) => {
+      const parameters = new URLSearchParams({
+        project_id: projectId,
+        include_global: String(activityIncludeGlobal),
+        limit: String(Math.min(activityLimit + 1, 100)),
+      });
+      if (activitySourceKind) parameters.set("source_kind", activitySourceKind);
+      if (activityDeliveryId.trim()) parameters.set("delivery_id", activityDeliveryId.trim());
+      if (activityAge !== "all") {
+        const hours = activityAge === "24h" ? 24 : activityAge === "7d" ? 24 * 7 : 24 * 30;
+        parameters.set("before", new Date(Date.now() - hours * 60 * 60 * 1000).toISOString());
+      }
+      return request<KnowledgeActivityItem[]>(`/v1/knowledge/activity?${parameters.toString()}`, { signal });
+    },
   });
+  const visibleActivity = activity.data?.slice(0, activityLimit) ?? [];
+  const activityHasMore = (activity.data?.length ?? 0) > activityLimit;
+  const activityAtLimit = activityLimit >= 100 && (activity.data?.length ?? 0) >= 100;
 
   const deriveSource = useMutation({
     mutationFn: ({ item, targetSpaceId }: { item: KnowledgeActivityItem; targetSpaceId: string }) =>
@@ -434,13 +459,20 @@ export function KnowledgePage() {
           <span>项目知识动态</span>
           <small>交付证据、Wiki 修订与外部来源按时间汇总，不改变各自权威数据</small>
         </div>
+        <div className="knowledge-activity-filters" aria-label="知识动态筛选">
+          <label>项目范围<Select aria-label="知识动态项目范围" value={activityIncludeGlobal ? "project-and-global" : "project-only"} onChange={(value) => { setActivityIncludeGlobal(value === "project-and-global"); setActivityLimit(KNOWLEDGE_ACTIVITY_PAGE_SIZE); }} options={[{ value: "project-only", label: "仅当前项目" }, { value: "project-and-global", label: "当前项目 + 已授权全局" }]}/></label>
+          <label>来源<Select aria-label="知识动态来源" value={activitySourceKind} onChange={(value) => { setActivitySourceKind(value); setActivityLimit(KNOWLEDGE_ACTIVITY_PAGE_SIZE); }} options={[{ value: "", label: "全部来源" }, { value: "wiki", label: "项目文档" }, { value: "evidence", label: "不可变证据" }, { value: "provider-snapshot", label: "外部来源快照" }]}/></label>
+          <label>Delivery<Input aria-label="知识动态 Delivery" value={activityDeliveryId} onChange={(event) => { setActivityDeliveryId(event.target.value); setActivityLimit(KNOWLEDGE_ACTIVITY_PAGE_SIZE); }} placeholder="Delivery ID" /></label>
+          <label>时间范围<Select aria-label="知识动态时间范围" value={activityAge} onChange={(value) => { setActivityAge(value); setActivityLimit(KNOWLEDGE_ACTIVITY_PAGE_SIZE); }} options={[{ value: "all", label: "全部时间" }, { value: "24h", label: "24 小时以前" }, { value: "7d", label: "7 天以前" }, { value: "30d", label: "30 天以前" }]}/></label>
+        </div>
         {activity.isLoading ? (
           <LoadingState label="正在读取项目知识动态…" />
         ) : activity.error ? (
           <ErrorState error={activity.error} retry={() => activity.refetch()} />
-        ) : activity.data?.length ? (
+        ) : visibleActivity.length ? (
+          <>
           <div className="knowledge-activity-list" role="list">
-            {activity.data.map((item) => {
+            {visibleActivity.map((item) => {
               const title = summarizeActivityTitle(item.title);
               const summary = summarizeActivity(item.summary);
               return (
@@ -496,6 +528,10 @@ export function KnowledgePage() {
               );
             })}
           </div>
+          <div className="knowledge-activity-pagination" role="status">
+            {activityHasMore ? <Button onClick={() => setActivityLimit((current) => Math.min(current + KNOWLEDGE_ACTIVITY_PAGE_SIZE, 100))}>加载更多（当前 {visibleActivity.length} 条）</Button> : activityAtLimit ? <span>已达当前接口上限 100 条，请使用筛选缩小范围。</span> : <span>已显示全部 {visibleActivity.length} 条。</span>}
+          </div>
+          </>
         ) : (
           <EmptyState
             title="当前项目还没有知识来源"

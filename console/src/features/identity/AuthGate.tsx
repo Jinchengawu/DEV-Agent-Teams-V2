@@ -65,7 +65,7 @@ function IdentityForm({
   mode: "bootstrap" | "login";
   onAuthenticated: (user: CurrentUser) => void;
 }) {
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState(mode === "bootstrap" ? "admin" : "");
   const [displayName, setDisplayName] = useState("系统管理员");
   const [password, setPassword] = useState("");
   const [problem, setProblem] = useState<string | null>(null);

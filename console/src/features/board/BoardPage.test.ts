@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardColumns, filterWorkItems, resolveDropCommand, sliceBoardLaneItems } from "./BoardPage";
+import { boardColumns, boardLaneSummaries, filterWorkItems, resolveDropCommand, sliceBoardLaneItems } from "./BoardPage";
 
 const item = {
   id: "delivery-1",
@@ -57,5 +57,12 @@ describe("高密度看板列", () => {
       visible: items,
       remaining: 0,
     });
+  });
+
+  it("为移动端首屏保留全部状态列与数量概览", () => {
+    const summaries = boardLaneSummaries([item]);
+    expect(summaries).toHaveLength(boardColumns.length);
+    expect(summaries.find((lane) => lane.id === "plan-approval")?.count).toBe(1);
+    expect(summaries.find((lane) => lane.id === "needs-attention")?.count).toBe(0);
   });
 });

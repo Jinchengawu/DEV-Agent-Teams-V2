@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { SettingsPage } from "./SettingsPage";
+import { releaseActionSummary, SettingsPage } from "./SettingsPage";
 
 const now = "2026-08-23T00:00:00Z";
 const settings = {
@@ -18,14 +18,14 @@ const settings = {
   updated_at: now,
 };
 const deterministic = {
-  kind: "deterministic", status: "passed", fail: 0, warn: 0, skipped: 0, created_at: now,
+  kind: "deterministic" as const, status: "passed" as const, fail: 0, warn: 0, skipped: 0, created_at: now,
   dev_revision: "a".repeat(40), acwm_revision: "b".repeat(40), planning_identity: "deterministic-test",
   execution_identity: "deterministic-model-boundary", candidate_revision: "c".repeat(40), diff_sha256: "d".repeat(64),
   verification_exit_code: 0, evidence_sha256: "e".repeat(64), browser_e2e: true, browser_restart_recovery: true,
   browser_multi_pipeline_e2e: true, browser_verified_evidence_count: 7, browser_candidate_matches_main: true, error: null,
 };
 const live = {
-  ...deterministic, kind: "live", planning_identity: "codex-simulated-hermes", execution_identity: "codex-cli",
+  ...deterministic, kind: "live" as const, planning_identity: "codex-simulated-hermes", execution_identity: "codex-cli",
   browser_e2e: false, browser_restart_recovery: false, browser_multi_pipeline_e2e: false,
   browser_verified_evidence_count: 0, browser_candidate_matches_main: false,
 };
@@ -70,10 +70,21 @@ describe("设置页发布双门禁", () => {
 
     await screen.findByRole("heading", { name: "禁止发布" });
     expect(screen.getByText("RELEASE_GATE_REVISION_MISMATCH")).toBeTruthy();
+    expect(screen.getByText("影响范围")).toBeTruthy();
+    expect(screen.getByText("下一步")).toBeTruthy();
+    expect(screen.getByText("所需权限")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "查看验收历史" })).toBeTruthy();
     expect(screen.getByText("deterministic-model-boundary")).toBeTruthy();
     expect(screen.getAllByText("codex-cli").length).toBeGreaterThan(0);
     expect(screen.getByText("浏览器闭环 已执行 · 进程重启恢复 已验证")).toBeTruthy();
     expect(screen.getByText("多流水线闭环 已验证 · 已验证证据 7 条 · Main 精确等于 Candidate")).toBeTruthy();
+  });
+
+  test("将未运行、受阻、失败与未知结论分开", () => {
+    expect(releaseActionSummary({ deterministic: null, live: null, combined: { status: "unknown", code: "RELEASE_GATE_REPORT_MISSING", reason: "缺少报告" } }).state).toBe("not-run");
+    expect(releaseActionSummary({ deterministic, live: null, combined: { status: "unknown", code: "LIVE_GATE_BLOCKED", reason: "缺少外部凭据" } }).state).toBe("blocked");
+    expect(releaseActionSummary({ deterministic, live, combined: { status: "failed", code: "RELEASE_GATE_FAILED", reason: "验收失败" } }).state).toBe("failed");
+    expect(releaseActionSummary({ deterministic, live: null, combined: { status: "unknown", code: "RELEASE_GATE_UNKNOWN", reason: "暂无结论" } }).state).toBe("unknown");
   });
 
   test("刷新报告按钮重新请求真实只读接口", async () => {

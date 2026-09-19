@@ -51,6 +51,73 @@ describe("交付黄金纵切", () => {
     expect(screen.getByRole("button", { name: "收起目标" })).toBeTruthy();
   });
 
+  it("默认只展示证据与事件摘要，详情由用户按需展开", async () => {
+    render(
+      <MemoryRouter>
+        <DeliveryDetail
+          delivery={delivery()}
+          evidence={[{
+            id: "evidence-1",
+            project_id: "pj1",
+            delivery_id: "delivery-1",
+            kind: "verification",
+            source_kind: "verification",
+            source_id: "verification-source-1",
+            producer_identity: "deterministic-test",
+            status: "verified",
+            content_sha256: hash,
+          }]}
+          events={[{
+            id: "event-1",
+            event_type: "delivery.plan.generated",
+            aggregate_type: "delivery",
+            aggregate_id: "delivery-1",
+            aggregate_version: 3,
+            occurred_at: "2026-09-20T00:00:00Z",
+          }]}
+          decisionPending={false}
+          onDecision={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("verification-source-1")).toBeNull();
+    expect(screen.queryByText("delivery.plan.generated")).toBeNull();
+    await userEvent.click(screen.getByText("1/1 条证据已验证"));
+    expect(screen.getByText(/verification-source-1/)).toBeTruthy();
+    await userEvent.click(screen.getByText("1 条已提交事件"));
+    expect(screen.getByText("delivery.plan.generated")).toBeTruthy();
+  });
+
+  it("候选摘要默认可见，完整 Diff 和机器日志按需展开", async () => {
+    const candidateDelivery = delivery();
+    candidateDelivery.repository_candidates = [{
+      role: "backend",
+      workspace_ref: "workspace-backend",
+      repository_ref: "backend-repository",
+      candidate: {
+        base_revision: "b".repeat(40),
+        candidate_revision: "c".repeat(40),
+        diff_sha256: hash,
+        changed_files: ["src/health.py"],
+        candidate_ref: "refs/heads/candidate",
+        unified_diff: "+secret-diff-line",
+        knowledge_citation_ids: [],
+      },
+      verification: { status: "passed", commands: ["pytest"], exit_code: 0, log_sha256: hash, redacted_log: "passed", acceptance_ids: ["AC-001"] },
+      producer_identity: "codex-cli",
+    }];
+    render(<MemoryRouter><DeliveryDetail delivery={candidateDelivery} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
+
+    expect(screen.getByText("backend-repository")).toBeTruthy();
+    expect(screen.queryByText("+secret-diff-line")).toBeNull();
+    await userEvent.click(screen.getByText("查看完整 Diff · 1 个文件"));
+    expect(screen.getByText("+secret-diff-line")).toBeTruthy();
+    expect(screen.queryByText(/pytest/)).toBeNull();
+    await userEvent.click(screen.getByText("查看机器验证 · 通过"));
+    expect(screen.getByText("pytest")).toBeTruthy();
+  });
+
   it("计划审批前展示每仓验收责任和原始验收正文", async () => {
     const planned = delivery();
     planned.task!.workcell_acceptance = [{ workcell_key: "frontend", acceptance: [{ acceptance_id: "AC-001", responsibility: "展示健康状态和请求失败状态" }] }];

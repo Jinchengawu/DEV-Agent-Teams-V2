@@ -59,6 +59,13 @@ export function sliceBoardLaneItems(
   return { visible, remaining: Math.max(0, items.length - visible.length) };
 }
 
+export function boardLaneSummaries(items: WorkItem[]) {
+  return boardColumns.map((column) => ({
+    ...column,
+    count: items.filter((item) => item.column === column.id).length,
+  }));
+}
+
 export function BoardPage() {
   const projectId = useProjectId();
   const client = useQueryClient();
@@ -75,6 +82,7 @@ export function BoardPage() {
     onSuccess: async () => { setPending(undefined); await Promise.all([client.invalidateQueries({ queryKey: ["board", projectId] }), client.invalidateQueries({ queryKey: ["deliveries", projectId] })]); },
   });
   const visibleItems = useMemo(() => filterWorkItems(board.data ?? [], query, columnFilter), [board.data, columnFilter, query]);
+  const laneSummaries = useMemo(() => boardLaneSummaries(filterWorkItems(board.data ?? [], query, "all")), [board.data, query]);
   const grouped = useMemo(() => Object.fromEntries(boardColumns.map((column) => [column.id, visibleItems.filter((item) => item.column === column.id)])) as Record<BoardColumn, WorkItem[]>, [visibleItems]);
 
   if (board.isLoading) return <LoadingState label="正在从交付事件重建看板投影…"/>;
@@ -96,6 +104,9 @@ export function BoardPage() {
 
   return <>
     <div className="board-toolbar"><div><span className="eyebrow">项目事件投影 · {projectId}</span><b>拖动卡片只发出合法命令</b></div><div className="board-filters"><Input aria-label="搜索看板任务" prefix={<Search size={15}/>} placeholder="搜索任务、交付或验收 ID" value={query} onChange={(event) => setQuery(event.target.value)}/><label>状态列<Select aria-label="筛选状态列" value={columnFilter} onChange={setColumnFilter} options={[{ value: "all", label: "全部状态" }, ...boardColumns.map((column) => ({ value: column.id, label: column.label }))]}/></label><span>{visibleItems.length}/{board.data?.length ?? 0} 个任务</span></div></div>
+    <nav className="board-lane-index" aria-label="看板状态概览">
+      {laneSummaries.map((lane) => <Button key={lane.id} type="text" className={columnFilter === lane.id ? "active" : ""} aria-pressed={columnFilter === lane.id} onClick={() => setColumnFilter((current) => current === lane.id ? "all" : lane.id)}><span>{lane.label}</span><b>{lane.count}</b></Button>)}
+    </nav>
     {notice && <div className="conflict-banner"><b>非法状态跳转已回弹</b><span>{notice}</span><Button type="text" aria-label="关闭提示" icon={<X size={15}/>} onClick={() => setNotice(undefined)}/></div>}
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={({ active: drag }: DragStartEvent) => setActive(board.data?.find((item) => item.id === drag.id))} onDragEnd={onDragEnd} onDragCancel={() => setActive(undefined)}>
       <section className="board interactive-board">{boardColumns.map((column) => <BoardLane key={column.id} {...column} items={grouped[column.id]} onOpen={setSelected}/>)}</section>

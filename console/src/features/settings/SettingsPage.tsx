@@ -68,7 +68,7 @@ function KnowledgeFeatureGatePanel({ flags, loading, error, onRefresh }: { flags
 }
 
 function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?: GateReport[]; loading: boolean; error: Error | null; onRefresh: () => void }) {
-  return <section className="panel release-history-panel">
+  return <section id="release-history" className="panel release-history-panel">
     <div className="panel-head"><span>版本验收历史</span><small><Clock3 size={13}/>{reports?.length ?? 0} 份不可变报告</small></div>
     {loading && <LoadingState label="正在读取版本验收历史…"/>}
     {error && <ErrorState error={error} retry={onRefresh}/>}
@@ -78,13 +78,14 @@ function ReleaseHistoryPanel({ reports, loading, error, onRefresh }: { reports?:
 }
 
 function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: LatestGateReports; loading: boolean; error: Error | null; onRefresh: () => void }) {
+  const summary = reports ? releaseActionSummary(reports) : undefined;
   return <section className="panel release-gates-panel">
     <div className="panel-head"><span>发布双门禁</span><Button type="text" icon={<RefreshCw size={13}/>} onClick={onRefresh}>刷新报告</Button></div>
     {loading && <LoadingState label="正在核验最新确定性与真实 Codex 报告…"/>}
     {error && <ErrorState error={error} retry={onRefresh}/>}
     {reports && <>
-      <div className={`release-verdict verdict-${reports.combined.status}`}>
-        <ShieldCheck size={24}/><div><span>当前代码发布结论</span><h2>{releaseVerdictLabel(reports.combined.status)}</h2><p>{reports.combined.reason}</p><code>{reports.combined.code}</code></div>
+      <div className={`release-verdict verdict-${reports.combined.status}`} data-release-state={summary?.state}>
+        <ShieldCheck size={24}/><div><span>当前代码发布结论</span><h2>{summary?.label}</h2><p>{reports.combined.reason}</p><code>{reports.combined.code}</code><dl className="release-action-details"><dt>影响范围</dt><dd>{summary?.impact}</dd><dt>证据时间</dt><dd>{summary?.evidenceTime}</dd><dt>下一步</dt><dd>{summary?.nextAction}</dd><dt>所需权限</dt><dd>{summary?.permission}</dd></dl><a href="#release-history">查看验收历史</a></div>
       </div>
       <div className="release-lock" aria-label="双门禁 Revision 锁">
         <GateReportCard title="确定性门禁" report={reports.deterministic}/>
@@ -97,7 +98,7 @@ function ReleaseGatePanel({ reports, loading, error, onRefresh }: { reports?: La
 }
 
 function GateReportCard({ title, report }: { title: string; report: GateReport | null }) {
-  if (!report) return <article className="gate-report missing"><div><span className="eyebrow">{title}</span><StatusBadge value="unknown"/></div><h3>缺少可解析报告</h3><p>运行发布命令生成新的 JSON 与 Markdown 证据。</p></article>;
+  if (!report) return <article className="gate-report missing"><div><span className="eyebrow">{title}</span><StatusBadge value="not_run"/></div><h3>尚未生成</h3><p>详细恢复动作见上方发布摘要。</p></article>;
   const browserEvidenceVerified = report.browser_e2e
     && report.browser_restart_recovery
     && report.browser_multi_pipeline_e2e
@@ -122,10 +123,35 @@ function GateReportCard({ title, report }: { title: string; report: GateReport |
   </article>;
 }
 
-function releaseVerdictLabel(status: LatestGateReports["combined"]["status"]) {
-  if (status === "passed") return "可以发布";
-  if (status === "failed") return "禁止发布";
-  return "发布状态未知";
+export function releaseActionSummary(reports: LatestGateReports) {
+  const code = reports.combined.code.toUpperCase();
+  const state = reports.combined.status === "passed"
+    ? "ready"
+    : reports.combined.status === "failed"
+      ? "failed"
+      : code.includes("BLOCKED") || code.includes("NOT_ALLOWED") || code.includes("PERMISSION")
+        ? "blocked"
+        : (!reports.deterministic && !reports.live) || code.includes("MISSING") || code.includes("NOT_RUN")
+          ? "not-run"
+          : "unknown";
+  const labels = { ready: "可以发布", failed: "禁止发布", blocked: "发布受阻", "not-run": "门禁未运行", unknown: "发布状态未知" } as const;
+  const evidenceDates = [reports.deterministic?.created_at, reports.live?.created_at].filter((value): value is string => Boolean(value));
+  const evidenceTime = evidenceDates.length ? formatReportTime(evidenceDates.sort().at(-1)!) : "尚无门禁证据";
+  const nextActions = {
+    ready: "由授权人复核同 Revision 证据后，再独立确认 Release Apply。",
+    failed: "修复报告中的失败项，在同一 Git Revision 重新执行门禁。",
+    blocked: "补齐报告指明的凭据、权限或外部依赖，不得将受阻视为通过。",
+    "not-run": "先执行 Deterministic 与 Live Release Gate，生成可读取的不可变报告。",
+    unknown: "刷新并核对报告路径、格式与 Revision，在结论可解析前停止发布。",
+  } as const;
+  return {
+    state,
+    label: labels[state],
+    impact: state === "ready" ? "可进入人工 Apply 决策，不代表已发布" : "当前 Revision 不得进入 Release Apply",
+    evidenceTime,
+    nextAction: nextActions[state],
+    permission: state === "ready" ? "Administrator 与显式 Apply 确认" : "本机运行权限；若涉及 Live 再需对应外部授权",
+  };
 }
 
 function formatReportTime(value: string) {

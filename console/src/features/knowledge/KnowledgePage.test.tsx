@@ -154,6 +154,33 @@ describe("知识空间三栏页", () => {
     expect(screen.getByText(/不可变证据/)).toBeTruthy();
   });
 
+  test("知识动态分批加载，并向后端传递来源、Delivery 与项目范围", async () => {
+    const original = [...activity];
+    activity.splice(0, activity.length, ...Array.from({ length: 20 }, (_, index) => ({
+      ...original[0],
+      source_id: `evidence-${index + 1}`,
+      title: `候选变更 ${index + 1}`,
+    })));
+    try {
+      renderKnowledge();
+      const region = await screen.findByRole("region", { name: "项目知识动态" });
+      await waitFor(() => expect(within(region).getAllByRole("listitem")).toHaveLength(12));
+      expect(fetchCalls.some((call) => call.url.includes("limit=13"))).toBe(true);
+      await userEvent.click(within(region).getByRole("button", { name: "加载更多（当前 12 条）" }));
+      await waitFor(() => expect(within(region).getAllByRole("listitem")).toHaveLength(20));
+      expect(within(region).getByText("已显示全部 20 条。")).toBeTruthy();
+
+      await userEvent.click(within(region).getByText("全部来源"));
+      await userEvent.click(await screen.findByText("不可变证据", { selector: ".ant-select-item-option-content" }));
+      await userEvent.type(within(region).getByLabelText("知识动态 Delivery"), "delivery-1");
+      await userEvent.click(within(region).getByText("当前项目 + 已授权全局"));
+      await userEvent.click(await screen.findByText("仅当前项目", { selector: ".ant-select-item-option-content" }));
+      await waitFor(() => expect(fetchCalls.some((call) => call.url.includes("source_kind=evidence") && call.url.includes("delivery_id=delivery-1") && call.url.includes("include_global=false"))).toBe(true));
+    } finally {
+      activity.splice(0, activity.length, ...original);
+    }
+  });
+
   test("长知识摘要默认收敛并保留可展开的完整内容", async () => {
     const originalTitle = activity[0].title;
     const originalSummary = activity[0].summary;
