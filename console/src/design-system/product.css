@@ -398,7 +398,14 @@ label { color: var(--role-text-secondary); font-size: 12px; }
 .delivery-section-nav { position: sticky; top: 0; z-index: 10; display: flex; gap: 7px; padding: 8px; overflow-x: auto; background: color-mix(in oklab, var(--role-surface), transparent 4%); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); box-shadow: 0 6px 20px color-mix(in oklab, var(--fg), transparent 94%); scrollbar-width: thin; }
 .delivery-section-nav a { flex: 0 0 auto; min-height: 36px; display: inline-flex; align-items: center; padding: 7px 10px; color: var(--role-text-secondary); background: var(--role-surface-subtle); border-radius: var(--radius-sm); text-decoration: none; }
 .delivery-section-nav a:hover { color: var(--role-text-primary); background: var(--role-surface-selected); }
-.delivery-detail :is(#delivery-runtime, #delivery-plan, #delivery-release, #delivery-evidence) { scroll-margin-top: 68px; }
+.delivery-detail :is(#delivery-runtime, #delivery-plan, #delivery-release, #delivery-evidence), .delivery-secondary-details { scroll-margin-top: 68px; }
+.delivery-on-demand { margin-top: 6px; color: var(--role-text-primary); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); background: var(--role-surface-subtle); }
+.delivery-on-demand .ant-collapse-header { min-height: 42px; align-items: center !important; font-weight: 650; }
+.delivery-on-demand .ant-collapse-content-box { padding-top: 2px !important; }
+.candidate-details { margin-top: 12px; }
+.delivery-secondary-details { margin-top: var(--space-4); }
+.delivery-secondary-details > .ant-collapse { color: var(--role-text-primary); border-color: var(--role-border); background: var(--role-surface); border-radius: var(--radius-md); }
+.delivery-secondary-details > .ant-collapse .ant-collapse-header { min-height: 52px; align-items: center !important; font-weight: 700; }
 .delivery-detail :is(input, textarea, .ant-input, .ant-select, .ant-input-number) { max-width: 100%; }
 .knowledge-context-panel { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .knowledge-context-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
@@ -591,6 +598,7 @@ html.inspector-open .screen-primary { visibility: hidden; }
 .board-toolbar { margin-bottom: var(--space-4); }
 .board-toolbar b { font-size: 18px; }
 .board-toolbar > span { color: var(--role-text-muted); font: 10px var(--font-mono); }
+.board-lane-index { display: none; }
 .board {
   grid-template-columns: none;
   grid-auto-flow: column;
@@ -643,6 +651,11 @@ html.inspector-open .screen-primary { visibility: hidden; }
 .policy-note { color: var(--role-text-muted); border-color: var(--status-warning-dot); }
 .release-verdict, .gate-report { color: var(--role-text-primary); background: var(--role-surface-subtle); border-color: var(--role-border); border-radius: var(--radius-md); }
 .release-verdict p, .gate-report p, .release-command { color: var(--role-text-muted); }
+.release-verdict > div { min-width: 0; }
+.release-verdict a { display: inline-flex; margin-top: 10px; color: var(--role-focus); font-weight: 650; }
+.release-action-details { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 10px; margin: 12px 0 0; font-size: 10px; }
+.release-action-details dt { color: var(--role-text-muted); }
+.release-action-details dd { margin: 0; overflow-wrap: anywhere; }
 .release-verdict.verdict-passed { border-left-color: var(--status-success-dot); }
 .release-verdict.verdict-failed { border-left-color: var(--status-danger-dot); }
 .revision-coupler { color: var(--role-focus); border-color: var(--role-focus); }
@@ -650,6 +663,9 @@ html.inspector-open .screen-primary { visibility: hidden; }
 .knowledge-layout { gap: var(--space-4); }
 .knowledge-layout > * { min-width: 0; }
 .knowledge-activity-list { align-items: start; }
+.knowledge-activity-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin: 12px 0; padding: 12px; background: var(--role-surface-subtle); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); }
+.knowledge-activity-filters label { min-width: 0; display: grid; gap: 5px; color: var(--role-text-muted); font-size: 10px; }
+.knowledge-activity-pagination { display: flex; justify-content: center; margin-top: 12px; color: var(--role-text-muted); font-size: 10px; }
 .knowledge-activity-item { grid-template-columns: minmax(0, 1fr); align-self: start; }
 .knowledge-activity-link { min-width: 0; max-width: 100%; }
 .knowledge-activity-link b { display: block; overflow-wrap: anywhere; word-break: break-word; }
@@ -803,11 +819,21 @@ html.inspector-open .screen-primary { visibility: hidden; }
   .evidence-hash { grid-column: auto; }
   .evidence-summary { grid-template-columns: repeat(2, 1fr); }
   .detail-inspector { inset: auto 0 0; width: 100%; height: min(78vh, 720px); border: 1px solid var(--inspector-border); border-bottom: 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .board-lane-index { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-bottom: 12px; }
+  .board-lane-index button { min-width: 0; min-height: 44px; display: flex; justify-content: space-between; color: var(--role-text-secondary); background: var(--role-surface-subtle); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); }
+  .board-lane-index button.active { color: var(--role-text-primary); background: var(--role-surface-selected); border-color: var(--role-focus); }
+  .board-lane-index button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-lane-index button b { font: 700 13px var(--font-mono); }
   .board { grid-template-columns: 1fr; grid-auto-flow: row; grid-auto-columns: auto; overflow: visible; }
-  .board-column { height: min(560px, calc(100dvh - 160px)); min-height: 280px; }
+  .board-column { height: auto; min-height: 0; }
+  .board-lane-items { max-height: min(480px, 62dvh); }
+  .board-column:has(.lane-empty) .board-lane-items { max-height: none; }
+  .board-column .lane-empty { min-height: 72px; }
+  .knowledge-activity-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
+  .knowledge-activity-filters { grid-template-columns: 1fr; }
   .context-actions .theme-toggle span { display: none; }
   .route-context > span { display: none; }
   .page-heading h2 { font-size: 32px; }

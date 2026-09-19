@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Tabs } from "antd";
+import { Button, Collapse, Tabs } from "antd";
 import { CheckCircle2, CircleAlert, GitCommitHorizontal, PackageCheck, Palette, RefreshCw, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { artifactTypeLabel, identityLabel, repositoryRoleLabel, statusLabel } from "../../i18n";
@@ -93,7 +93,7 @@ export function DeliveryDetail({
       <div><span>下一步</span><b>{nextAction.label}</b><small>{nextAction.permission}</small></div>
     </section>
     <nav className="delivery-section-nav" aria-label="交付详情章节">
-      <a href="#delivery-runtime">运行账本</a><a href="#delivery-plan">规划与设计</a><a href="#delivery-release">候选与发布</a><a href="#delivery-evidence">证据与事件</a>
+      <a href="#delivery-runtime">运行账本</a><a href="#delivery-plan">规划与设计</a><a href="#delivery-release">候选与发布</a><a href="#delivery-evidence">证据与事件</a><a href="#delivery-knowledge">知识上下文</a><a href="#delivery-workcells">Workcell 明细</a>
     </nav>
 
     <DeliveryStageRail delivery={delivery}/>
@@ -163,12 +163,12 @@ export function DeliveryDetail({
 
     <div id="delivery-evidence" className="detail-grid evidence-rail">
       <section className="panel surface-card"><div className="panel-head"><span>可信证据轨</span><small>{verified.length}/{evidence.length} 已验证</small></div>
-        {evidence.length === 0 ? <p className="muted">当前阶段尚无证据。只有真实产物生成后才会出现记录。</p> : <div className="evidence-list">{evidence.map((item) => <Button type="text" key={item.id} onClick={() => setInspectorSelection({ kind: "evidence", record: item })}><StatusBadge value={item.status}/><span><b>{artifactTypeLabel(item.kind)}</b><small>{item.producer_identity} · {item.source_id}</small></span><code>{item.content_sha256 ?? "无可验证内容哈希"}</code></Button>)}</div>}
+        {evidence.length === 0 ? <p className="muted">当前阶段尚无证据。只有真实产物生成后才会出现记录。</p> : <Collapse className="delivery-on-demand" ghost items={[{ key: "evidence", label: `${verified.length}/${evidence.length} 条证据已验证`, children: <div className="evidence-list">{evidence.map((item) => <Button type="text" key={item.id} onClick={() => setInspectorSelection({ kind: "evidence", record: item })}><StatusBadge value={item.status}/><span><b>{artifactTypeLabel(item.kind)}</b><small>{item.producer_identity} · {item.source_id}</small></span><code>{item.content_sha256 ?? "无可验证内容哈希"}</code></Button>)}</div> }]}/>}
         <Link className="secondary evidence-ledger-link" to={`${projectPath(delivery.project_id, "evidence")}?delivery_id=${encodeURIComponent(delivery.id)}`}>在项目证据账本中查看</Link>
       </section>
       <section className="panel surface-card"><div className="panel-head"><span>产品事件</span><small>仅显示已提交事件</small></div>
         {eventsError && <ErrorState error={eventsError}/>}
-        {events.length === 0 && !eventsError ? <p className="muted">尚无已提交事件。</p> : <ol className="event-stream">{events.map((event) => <li key={event.id}><i/><div><b>{event.event_type}</b><small>{formatDateTime(event.occurred_at)} · v{event.aggregate_version}</small></div></li>)}</ol>}
+        {events.length === 0 && !eventsError ? <p className="muted">尚无已提交事件。</p> : <Collapse className="delivery-on-demand" ghost items={[{ key: "events", label: `${events.length} 条已提交事件`, children: <ol className="event-stream">{events.map((event) => <li key={event.id}><i/><div><b>{event.event_type}</b><small>{formatDateTime(event.occurred_at)} · v{event.aggregate_version}</small></div></li>)}</ol> }]}/>}
       </section>
     </div>
     {inspector && <Inspector open kicker={inspector.kicker} title={inspector.title} tabs={inspector.tabs} onClose={() => setInspectorSelection(undefined)}/>}
@@ -230,8 +230,10 @@ function CandidateArtifact({ item }: { item: RepositoryCandidate }) {
     <div className="candidate-heading"><div><span className="eyebrow">{repositoryRoleLabel(item.role)}仓库</span><b>{item.repository_ref}</b></div><StatusBadge value={item.verification.status}/></div>
     <div className="revision-pair"><Revision label="基线" value={item.candidate.base_revision}/><GitCommitHorizontal size={19}/><Revision label="候选" value={item.candidate.candidate_revision}/></div>
     <div className="diff-meta"><span>变更 {item.candidate.changed_files.length} 个文件 · {item.producer_identity}</span><code>{item.candidate.diff_sha256}</code></div>
-    <pre className="unified-diff">{item.candidate.unified_diff}</pre>
-    <Verification status={item.verification.status} commands={item.verification.commands} exitCode={item.verification.exit_code} logSha={item.verification.log_sha256}/>
+    <Collapse className="delivery-on-demand candidate-details" ghost items={[
+      { key: "diff", label: `查看完整 Diff · ${item.candidate.changed_files.length} 个文件`, children: <pre className="unified-diff">{item.candidate.unified_diff}</pre> },
+      { key: "verification", label: `查看机器验证 · ${statusLabel(item.verification.status)}`, children: <Verification status={item.verification.status} commands={item.verification.commands} exitCode={item.verification.exit_code} logSha={item.verification.log_sha256}/> },
+    ]}/>
   </div>;
 }
 
@@ -240,8 +242,10 @@ function LegacyCandidate({ delivery }: { delivery: Delivery }) {
   return <div className="repository-candidate">
     <div className="revision-pair"><Revision label="基线" value={delivery.candidate.base_revision}/><GitCommitHorizontal size={19}/><Revision label="候选" value={delivery.candidate.candidate_revision}/></div>
     <div className="diff-meta"><span>变更 {delivery.candidate.changed_files.length} 个文件</span><code>{delivery.candidate.diff_sha256}</code></div>
-    <pre className="unified-diff">{delivery.candidate.unified_diff}</pre>
-    {delivery.verification && <Verification status={delivery.verification.status} commands={delivery.verification.commands} exitCode={delivery.verification.exit_code} logSha={delivery.verification.log_sha256}/>}
+    <Collapse className="delivery-on-demand candidate-details" ghost items={[
+      { key: "diff", label: `查看完整 Diff · ${delivery.candidate.changed_files.length} 个文件`, children: <pre className="unified-diff">{delivery.candidate.unified_diff}</pre> },
+      ...(delivery.verification ? [{ key: "verification", label: `查看机器验证 · ${statusLabel(delivery.verification.status)}`, children: <Verification status={delivery.verification.status} commands={delivery.verification.commands} exitCode={delivery.verification.exit_code} logSha={delivery.verification.log_sha256}/> }] : []),
+    ]}/>
   </div>;
 }
 

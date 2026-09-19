@@ -1,4 +1,5 @@
 import { ArrowLeft } from "lucide-react";
+import { Collapse } from "antd";
 import { Link, useParams } from "react-router-dom";
 import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { DeliveryDetail } from "./DeliveryDetail";
@@ -54,9 +55,19 @@ export function DeliveryRunPage() {
       decisionError={decision.error}
       onDecision={(value) => decision.mutate({ delivery: delivery.data!, decision: value })}
     />
-    <KnowledgeContextPanel projectId={projectId} deliveryId={delivery.data.id}/>
-    {delivery.data.delivery_execution_snapshot && (
-      <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId}/>
-    )}
+    <section id="delivery-knowledge" className="delivery-secondary-details" aria-label="知识上下文详情">
+      <Collapse destroyOnHidden items={[{
+        key: "knowledge-context",
+        label: "按需查看：冻结知识上下文与 Citation",
+        children: <KnowledgeContextPanel projectId={projectId} deliveryId={delivery.data.id}/>,
+      }]}/>
+    </section>
+    {delivery.data.delivery_execution_snapshot && <section id="delivery-workcells" className="delivery-secondary-details" aria-label="Workcell 运行详情">
+      <Collapse destroyOnHidden items={[{
+        key: "workcell-execution",
+        label: "按需查看：Workcell、AgentAttempt 与 Release 运行明细",
+        children: <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId}/>,
+      }]}/>
+    </section>}
   </div>;
 }
