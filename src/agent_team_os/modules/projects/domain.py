@@ -17,6 +17,8 @@ def utc_now() -> datetime:
 ProjectLifecycle = Literal["provisioning", "active", "provision_failed", "archived"]
 WorkspaceStatus = Literal["provisioning", "ready", "failed"]
 ProjectRole = Literal["owner", "editor", "viewer"]
+ProjectOnboardingMode = Literal["guided_evaluation", "standard"]
+ProjectOnboardingStatus = Literal["setup", "in_evaluation", "ready"]
 
 
 class ProjectCapability(StrEnum):
@@ -59,6 +61,25 @@ class Project(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ProjectOnboarding(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    project_id: str
+    mode: ProjectOnboardingMode
+    status: ProjectOnboardingStatus
+    evaluation_delivery_id: str | None = None
+    version: int = Field(ge=1)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+    completed_at: datetime | None = None
+
+
+class ProjectOnboardingComplete(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int = Field(ge=1)
+    evaluation_delivery_id: str = Field(min_length=1)
+    expected_candidate_gate_subject_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProjectMembership(BaseModel):
@@ -124,6 +145,7 @@ class ProjectCreate(BaseModel):
         default="backend",
         json_schema_extra={"deprecated": True},
     )
+    onboarding_mode: ProjectOnboardingMode = "standard"
 
     @model_validator(mode="after")
     def legacy_repository_mode_is_not_mixed_with_workcells(self) -> ProjectCreate:
@@ -238,3 +260,4 @@ class ProjectDetail(BaseModel):
     knowledge_source_approvals: tuple[ProjectKnowledgeSourceApproval, ...] = ()
     repositories: tuple[ProjectRepository, ...] = ()
     active_delivery_id: str | None = None
+    onboarding: ProjectOnboarding

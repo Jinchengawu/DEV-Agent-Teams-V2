@@ -146,7 +146,9 @@ from .modules.workcells import (
     WorkcellStageDriver,
     builtin_release_contract,
     builtin_workcell_stage_map,
+    ensure_builtin_software_delivery_team,
 )
+from .product_root import resolve_product_root
 from .readiness import (
     DependencyCheck,
     ReadinessReport,
@@ -169,7 +171,7 @@ class CodexPreviewReadiness:
         project_root: Path | None = None,
         data_dir: Path | None = None,
     ) -> None:
-        self.project_root = (project_root or Path(__file__).parents[2]).resolve()
+        self.project_root = resolve_product_root(project_root)
         self.data_dir = (
             data_dir
             or Path(
@@ -256,7 +258,7 @@ def _ensure_builtin_pipeline_for_preview(
 
 
 def build_preview_app() -> FastAPI:
-    project_root = Path(__file__).parents[2]
+    project_root = resolve_product_root()
     data_dir = Path(os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(project_root / ".agent-team-os")))
     database = data_dir / "agent-team-os.sqlite"
     migrations = MigrationRunner(database, project_root / "migrations")
@@ -280,6 +282,7 @@ def build_preview_app() -> FastAPI:
     sandbox.ensure_initialized()
     project_repository = SQLiteProjectRepository(database)
     team_templates = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database))
+    ensure_builtin_software_delivery_team(team_templates)
     project_workcell_repository = SQLiteProjectWorkcellRepository(database)
     project_workcells = ProjectWorkcellGovernance(
         project_workcell_repository,
@@ -635,6 +638,8 @@ def build_preview_app() -> FastAPI:
 
 def ensure_console_built(project_root: Path) -> None:
     console = project_root / "console"
+    if (console / "dist" / "index.html").is_file():
+        return
     pnpm = shutil.which("pnpm")
     if pnpm is None:
         raise RuntimeError("pnpm is required to build the V0.3 console; install pnpm and retry")
@@ -668,7 +673,7 @@ def main() -> None:
     knowledge_gate.add_argument("--delivery-id", required=True)
     arguments = parser.parse_args()
     command = arguments.command or "demo"
-    project_root = Path(__file__).parents[2]
+    project_root = resolve_product_root()
     data_dir = Path(os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(project_root / ".agent-team-os")))
     if command in {"knowledge-live-readiness", "knowledge-live-gate"}:
         report = inspect_knowledge_live_readiness(

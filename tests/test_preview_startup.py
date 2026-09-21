@@ -9,8 +9,10 @@ from agent_team_os.preview import (
     CodexPreviewReadiness,
     _ensure_builtin_pipeline_for_preview,
     _inspect_method_pack_store,
+    ensure_console_built,
     main,
 )
+from agent_team_os.product_root import ProductRootError
 from agent_team_os.readiness import DependencyCheck, ReadinessReport
 
 
@@ -101,3 +103,18 @@ def test_preview_readiness_preserves_codex_model_compatibility_failure(
     check = next(item for item in report.checks if item.name == "codex-cli-version")
     assert check.status == "failed"
     assert report.status == "not_ready"
+
+
+def test_preview_readiness_validates_explicit_product_root(tmp_path: Path) -> None:
+    with pytest.raises(ProductRootError):
+        CodexPreviewReadiness(project_root=tmp_path)
+
+
+def test_prebuilt_bundle_console_does_not_require_node_or_pnpm(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    (tmp_path / "console" / "dist").mkdir(parents=True)
+    (tmp_path / "console" / "dist" / "index.html").write_text("ok", encoding="utf-8")
+    monkeypatch.setattr("agent_team_os.preview.shutil.which", lambda _name: None)
+
+    ensure_console_built(tmp_path)

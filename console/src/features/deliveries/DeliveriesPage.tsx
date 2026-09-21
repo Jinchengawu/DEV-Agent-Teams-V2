@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { Button, Input, Select } from "antd";
+import { Button, Collapse, Input, Select } from "antd";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { statusLabel } from "../../i18n";
@@ -7,15 +7,20 @@ import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/Asyn
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { projectPath, useProject, useProjectId } from "../../entities/project/api";
 import { useCreateDelivery, useDeliveries, useDeliveryPipelines } from "./api";
+import { useSetupReadiness } from "../setup/api";
+import { useDeliveryDraft } from "./draft";
+import { useIdentity } from "../identity/AuthGate";
 
 const defaultRequest = "增加一个 GET /health 接口，返回服务状态和版本号，并补充机器测试。";
 
 export function DeliveriesPage() {
+  const { user } = useIdentity();
   const navigate = useNavigate();
   const projectId = useProjectId();
   const project = useProject(projectId);
   const deliveries = useDeliveries(projectId);
   const pipelines = useDeliveryPipelines();
+  const readiness = useSetupReadiness(projectId);
   const activePipelines = useMemo(
     () => project.data?.pipeline_bindings
       .filter((binding) => binding.enabled)
@@ -27,7 +32,7 @@ export function DeliveriesPage() {
       })) ?? [],
     [pipelines.data, project.data?.pipeline_bindings],
   );
-  const [requestText, setRequestText] = useState(defaultRequest);
+  const [requestText, setRequestText] = useDeliveryDraft(projectId, defaultRequest);
   const [pipelineRevisionId, setPipelineRevisionId] = useState("");
   const [reviewing, setReviewing] = useState(false);
   const [problem, setProblem] = useState("");
@@ -50,6 +55,8 @@ export function DeliveriesPage() {
     (pipeline) => `${pipeline.id}:${pipeline.active_revision}` === pipelineRevisionId,
   );
   const workcellProject = project.data?.workspace.repository_ref?.startsWith("workspace-set/") ?? false;
+  const deliveryPurpose = project.data?.onboarding?.status === "setup" ? "onboarding_evaluation" : "product";
+  const startBlocked = readiness.isPending || Boolean(readiness.error) || readiness.data?.status !== "ready";
 
   const review = (event: FormEvent) => {
     event.preventDefault();
@@ -76,21 +83,14 @@ export function DeliveriesPage() {
 
   return <div className="delivery-home">
     <section className="page-heading delivery-home-heading">
-      <p className="eyebrow">{project.data?.project.name ?? projectId} · 真实控制面</p>
-      <h2>从一句交付目标，进入可审批的工程流程。</h2>
-      <p>描述边界、选择已发布 Pipeline，然后在同一工作面跟进计划、验证、候选与不可变证据。</p>
+      <p className="eyebrow">{project.data?.project.name ?? projectId} · {project.data?.onboarding?.status ?? "unknown"}</p>
+      <h2>{startBlocked ? "可以编辑目标，但准备度通过前不会启动。" : "准备度已通过，请确认本次交付边界。"}</h2>
+      <p>{readiness.error ? "准备度请求失败；系统已 fail-closed。" : readiness.data?.global_checks.concat(readiness.data.project_checks, readiness.data.optional_checks).find((item) => item.status !== "ready")?.summary ?? "Runtime、项目与执行契约已就绪。"}</p>
+      {startBlocked && <Button onClick={() => navigate(`/setup?project_id=${encodeURIComponent(projectId)}`)}>打开准备中心</Button>}
     </section>
 
     <div className="workbench-grid">
-      <article className="delivery-thesis">
-        <div><p className="eyebrow">交付，而不是聊天</p><h2>每一步都有<br/>责任主体、证据<br/>与人工闸门。</h2><p>多 Agent 协作被压缩成可解释的交付运行：负责人始终知道现在在哪、发生了什么、下一步由谁决定。</p></div>
-        <ol>
-          <li><b>01</b><span>定义边界<small>需求与验收</small></span></li>
-          <li><b>02</b><span>人工审批<small>计划与候选</small></span></li>
-          <li><b>03</b><span>验证证据<small>不可变标识</small></span></li>
-        </ol>
-      </article>
-
+      {user.role === "viewer" ? <section className="surface-card inline-guidance" aria-label="只读交付权限"><b>当前为 Viewer 只读访问</b><span>可查看最近运行与证据；创建交付需要 Editor 或 Administrator 权限。</span></section> :
       <form className="delivery-composer surface-card" onSubmit={review} noValidate>
         <div className="composer-head"><div><p className="eyebrow">新建交付</p><h2>发起一次交付</h2></div><span className="source-badge">真实 API</span></div>
         <label className="field"><span>交付目标</span><Input.TextArea id="delivery-goal" aria-label="交付目标" value={requestText} aria-invalid={Boolean(problem && !requestText.trim())} onChange={(event) => { setRequestText(event.target.value); setReviewing(false); setProblem(""); }} placeholder="描述要交付的结果、边界与验收要求" autoSize={{ minRows: 5, maxRows: 10 }}/></label>
@@ -109,11 +109,13 @@ export function DeliveriesPage() {
           <section className="delivery-confirmation" aria-label="确认交付边界">
             <div><span className="eyebrow">提交前确认</span><h3>目标与执行边界</h3></div>
             <dl><dt>目标</dt><dd>{requestText.trim()}</dd><dt>Pipeline</dt><dd>{selectedPipeline?.name} · R{selectedPipeline?.active_revision}</dd><dt>执行方式</dt><dd>{workcellProject ? "四个隔离 Repository Workcell · 计划 / 设计 / 发布 Gate" : "隔离工作区 · 计划与候选双审批"}</dd></dl>
-            <div className="confirm-actions"><Button className="secondary" onClick={() => { setReviewing(false); document.getElementById("delivery-goal")?.focus(); }}>继续编辑</Button><Button className="primary" loading={create.isPending} onClick={() => create.mutate({ userRequest: requestText.trim(), pipelineRevisionId })}>{create.isPending ? "正在创建交付…" : "确认并启动"}</Button></div>
+            <div className="confirm-actions"><Button className="secondary" onClick={() => { setReviewing(false); document.getElementById("delivery-goal")?.focus(); }}>继续编辑</Button><Button className="primary" loading={create.isPending} disabled={startBlocked} onClick={() => create.mutate({ userRequest: requestText.trim(), pipelineRevisionId, purpose: deliveryPurpose })}>{create.isPending ? "正在创建交付…" : deliveryPurpose === "onboarding_evaluation" ? "启动评测交付" : "确认并启动"}</Button></div>
           </section>}
         {create.error && <ErrorState error={create.error}/>}
-      </form>
+      </form>}
     </div>
+
+    <Collapse className="delivery-help" items={[{ key: "delivery-model", label: "帮助：了解交付控制面", children: <article><p>每一步都有责任主体、证据与人工闸门。路径为：定义边界 → 计划/设计审批 → Workcell → Verification → Candidate → Evidence。评测引导在 Apply 前停止。</p></article> }]}/>
 
     <section className="recent-runs">
       <div className="section-head"><div><p className="eyebrow">运行上下文</p><h2>最近运行</h2><p>继续最近一次交付，不重新寻找分散页面。</p></div><Button className="quiet-button" icon={<RefreshCw size={15}/>} onClick={() => deliveries.refetch()}>刷新</Button></div>

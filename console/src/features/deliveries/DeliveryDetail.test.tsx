@@ -14,6 +14,7 @@ function delivery(): Delivery {
     project_id: "pj1",
     workspace_id: "backend-demo",
     user_request: "增加健康检查接口",
+    purpose: "product",
     status: "awaiting_plan_decision",
     version: 3,
     requirements: { summary: "实现健康检查", non_goals: [], risks: [], acceptance_criteria: [{ id: "AC-001", statement: "返回健康状态" }], knowledge_citation_ids: [] },
@@ -28,6 +29,17 @@ function delivery(): Delivery {
 }
 
 describe("交付黄金纵切", () => {
+  it("评测 Candidate 点只提供 onboarding complete，不提供 Apply 主动作", () => {
+    const evaluation = delivery();
+    evaluation.purpose = "onboarding_evaluation";
+    evaluation.status = "awaiting_candidate_decision";
+    evaluation.candidate_gate = { gate_id: "candidate", subject_kind: "candidate", artifact_id: "candidate", subject_sha256: hash, revision: 3 };
+    render(<MemoryRouter><DeliveryDetail delivery={evaluation} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()} onboarding={{ status: "in_evaluation", evaluation_delivery_id: evaluation.id, version: 2 }} canCompleteOnboarding onCompleteOnboarding={vi.fn()}/></MemoryRouter>);
+
+    expect(screen.getByRole("button", { name: "完成评测并转为正式项目" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /接受候选|批准四仓/ })).toBeNull();
+    expect(screen.getByText(/Candidate 仍未 Apply/)).toBeTruthy();
+  });
   it("首屏提供当前状态、下一动作和可键盘访问的章节导航", () => {
     render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()}/></MemoryRouter>);
 
@@ -36,6 +48,22 @@ describe("交付黄金纵切", () => {
     expect(screen.getByText("下一步")).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "交付详情章节" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "候选与发布" })).toBeTruthy();
+  });
+
+  it("Viewer 不显示 Gate 决策动作", () => {
+    render(<MemoryRouter><DeliveryDetail delivery={delivery()} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()} canDecidePlan={false} canApplyCandidate={false}/></MemoryRouter>);
+    expect(screen.queryByRole("button", { name: "批准计划并开始设计" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝计划" })).toBeNull();
+    expect(screen.getByText("需要 Editor 或 Administrator")).toBeTruthy();
+  });
+
+  it("Editor 不显示会触发 Apply 的 Candidate 决策", () => {
+    const candidate = delivery();
+    candidate.status = "awaiting_candidate_decision";
+    candidate.candidate_gate = { gate_id: "candidate", subject_kind: "candidate", artifact_id: "candidate", subject_sha256: hash, revision: 2 };
+    render(<MemoryRouter><DeliveryDetail delivery={candidate} events={[]} evidence={[]} decisionPending={false} onDecision={vi.fn()} canDecidePlan canApplyCandidate={false}/></MemoryRouter>);
+    expect(screen.queryByRole("button", { name: "接受候选并原子应用" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "拒绝候选" })).toBeNull();
   });
 
   it("长交付目标默认收起，并允许用户显式展开完整正文", async () => {

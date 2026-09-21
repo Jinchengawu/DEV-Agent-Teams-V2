@@ -4,7 +4,7 @@
 
 **An evidence-gated delivery control plane for local AI software teams**
 
-`v0.5.0` · `local alpha` · `Python + FastAPI + React`
+`v0.5.1` · `local evaluation delivery candidate` · `Python + FastAPI + React`
 
 [中文](README.md) · [Current architecture](docs/architecture/ARCHITECTURE.md) · [Quickstart](#five-minute-local-start) · [Delivery model](#the-delivery-loop) · [Architecture](#architecture-and-ownership) · [Limits](#current-limitations)
 

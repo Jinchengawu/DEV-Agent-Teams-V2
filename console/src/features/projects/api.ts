@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { request } from "../../shared/api/client";
+import type { components } from "../../shared/api/generated/schema";
 import { projectKeys, type Project, type ProjectCreate, type ProjectDetail } from "../../entities/project/api";
 export { LEGACY_PROJECT_ID, projectKeys, projectPath, useProject, useProjectId, useProjects, type Project, type ProjectCreate, type ProjectDetail } from "../../entities/project/api";
 
@@ -47,6 +48,19 @@ export function useArchiveProject(projectId: string, expectedVersion: number) {
     mutationFn: () => request<Project>(`/v1/projects/${encodeURIComponent(projectId)}/archive`, { method: "POST", body: JSON.stringify({ expected_version: expectedVersion }) }),
     onSuccess: async () => {
       await Promise.all([client.invalidateQueries({ queryKey: projectKeys.all }), client.invalidateQueries({ queryKey: projectKeys.detail(projectId) })]);
+    },
+  });
+}
+
+export function useCompleteProjectOnboarding(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { expected_version: number; evaluation_delivery_id: string; expected_candidate_gate_subject_sha256: string }) => request<components["schemas"]["ProjectOnboarding"]>(`/v1/projects/${encodeURIComponent(projectId)}/onboarding/complete`, { method: "POST", body: JSON.stringify(payload) }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: projectKeys.detail(projectId) }),
+        client.invalidateQueries({ queryKey: ["setup-readiness", projectId] }),
+      ]);
     },
   });
 }

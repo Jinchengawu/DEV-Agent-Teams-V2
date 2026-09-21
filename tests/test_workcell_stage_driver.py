@@ -44,6 +44,7 @@ from agent_team_os.modules.workcells import (
     WorkcellMethodContext,
     WorkcellStageDriver,
 )
+from agent_team_os.modules.workcells.domain import DelegationPolicy
 from agent_team_os.modules.workcells.verification_application import VerificationProfileCatalog
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
@@ -89,11 +90,23 @@ def test_qa_live_verification_capability_freezes_product_fault_and_evidence_boun
     assert workcell_stage_driver._qa_live_verification_contract("frontend") == ""
 
 
+def test_legacy_profile_does_not_claim_unqualified_frontend_node_capabilities() -> None:
+    profile = VerificationProfileCatalog().qualify(
+        "python-unittest-v1", LocalVerificationToolchain()
+    )
+
+    assert (
+        workcell_stage_driver._verification_capability_contract("frontend", profile) == ""
+    )
+
+
 def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     auth_file = tmp_path / "operator-auth.json"
+    credential = "runtime-only-credential-value"
+    auth_file.write_text(credential, encoding="utf-8")
     monkeypatch.setenv("AGENT_TEAM_OS_CODEX_AUTH_FILE", str(auth_file))
 
     runtime = ContentAddressedMethodRuntime.from_environment(
@@ -101,6 +114,7 @@ def test_content_addressed_method_runtime_discovers_explicit_codex_auth_referenc
     )
 
     assert runtime.codex_auth_file == auth_file
+    assert credential not in repr(runtime.__dict__)
 
 
 def test_machine_verifier_disables_python_bytecode_writes(
@@ -305,6 +319,100 @@ class PassedVerifier:
             status="passed",
             report={"commands": [{"command": ["fixture"], "exit_code": 0}]},
         )
+
+
+def test_readonly_transient_retry_waits_for_cleanup_and_reuses_frozen_invocation(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    class TransientAgent:
+        calls = 0
+
+        async def run(self, invocation: WorkcellAgentInvocation) -> WorkcellAgentOutput:
+            self.calls += 1
+            events.append(f"run:{self.calls}:{invocation.workspace_access}")
+            if self.calls == 1:
+                events.append("cleanup")
+                raise ProductError(
+                    code="CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+                    title="timeout",
+                    detail="timeout",
+                    repair="retry",
+                )
+            return WorkcellAgentOutput(runtime_identity="deterministic", content={"ok": True})
+
+    policy = DelegationPolicy(
+        wall_clock_budget_seconds=3600,
+        max_transient_attempts=2,
+        transient_retry_backoff_seconds=0,
+    )
+
+    class Kernel:
+        def tree(self, _run_id: str) -> object:
+            return SimpleNamespace(
+                workcell_run=SimpleNamespace(
+                    workcell_snapshot=SimpleNamespace(delegation_policy=policy)
+                )
+            )
+
+        def remaining_budget_seconds(self, _run_id: str) -> float:
+            return 3600
+
+        def retry_transient_attempt(self, _agent_id: str, **kwargs: object) -> object:
+            assert kwargs["phase"] == "synthesis"
+            assert kwargs["minimum_remaining_seconds"] == 960
+            events.append("attempt-persisted")
+            return object()
+
+    agent = TransientAgent()
+    driver = WorkcellStageDriver(
+        kernel=Kernel(),  # type: ignore[arg-type]
+        artifacts=ContentAddressedArtifactStorage(tmp_path / "artifacts"),
+        methods=object(),  # type: ignore[arg-type]
+        agent=agent,
+        workspaces=object(),  # type: ignore[arg-type]
+        binding_resolver=lambda _workspace_id: ExternalGitBinding(remote_uri="unused"),
+        verifier=object(),  # type: ignore[arg-type]
+        releases=object(),  # type: ignore[arg-type]
+        pull_requests=object(),  # type: ignore[arg-type]
+    )
+    invocation = WorkcellAgentInvocation(
+        delivery_id="delivery",
+        workcell_run_id="workcell",
+        agent_run_id="main",
+        phase="synthesis",
+        workcell_key="design",
+        stage_path="design-repair/design",
+        instruction="same frozen prompt",
+        workspace=tmp_path,
+        workspace_access="none",
+    )
+
+    output = asyncio.run(
+        driver._run_readonly_agent_with_retry(  # noqa: SLF001
+            DeliveryRun(
+                id="delivery",
+                workspace_id="project:test",
+                user_request="test",
+                status="executing",
+                version=1,
+                resolved_journey_sha256="1" * 64,
+                evidence_identity="deterministic",
+                planning_identity="deterministic",
+            ),
+            invocation,
+        )
+    )
+
+    assert output.content == {"ok": True}
+    assert events == [
+        "run:1:none",
+        "cleanup",
+        "attempt-persisted",
+        "run:2:none",
+    ]
+    assert agent.calls == 2
 
 
 def test_next_bounded_loop_receives_cumulative_failed_workcell_evidence(tmp_path: Path) -> None:

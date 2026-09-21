@@ -65,6 +65,26 @@ class TeamTemplateCatalog:
         self.repository.get_template(template_id)
         return self.repository.list_drafts(template_id)
 
+    def create_draft_from_revision(
+        self,
+        template_id: str,
+        revision: int,
+        *,
+        actor_id: str,
+    ) -> TeamTemplateDraft:
+        source = self.get_revision(template_id, revision)
+        return self.repository.create_draft(
+            TeamTemplateDraft(
+                id=new_id(),
+                template_id=template_id,
+                name=source.name,
+                description=source.description,
+                workcells=source.workcells,
+                topology=source.topology,
+                created_by=actor_id,
+            )
+        )
+
     def patch(
         self,
         draft_id: str,
@@ -72,7 +92,11 @@ class TeamTemplateCatalog:
     ) -> TeamTemplateDraft:
         current = self.repository.get_draft(draft_id)
         self._require_version(current, request.expected_version)
-        changes = request.model_dump(exclude_none=True, exclude={"expected_version"})
+        changes = {
+            field: getattr(request, field)
+            for field in request.model_fields_set - {"expected_version"}
+            if getattr(request, field) is not None
+        }
         updated = current.model_copy(
             update={
                 **changes,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, Select } from "antd";
+import { Button, Drawer, Input, Select } from "antd";
 import { CheckCircle2, Plus, Save, Upload } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";
@@ -26,6 +26,7 @@ export function AgentProfilesPanel() {
   const profiles = useQuery({ queryKey: ["agent-profiles"], queryFn: () => request<Profile[]>("/v1/agent-profiles") });
   const [selectedId, setSelectedId] = useState<string>();
   const [spec, setSpec] = useState<Spec>(defaultSpec);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [publishConfirmation, setPublishConfirmation] = useState(false);
   const selectedDraft = useQuery({ queryKey: ["agent-profile-draft", selectedId], queryFn: () => request<Draft>(`/v1/agent-profiles/${selectedId}/draft`), enabled: Boolean(selectedId) });
   useEffect(() => { if (selectedDraft.data) setSpec(selectedDraft.data.spec); }, [selectedDraft.data]);
@@ -41,18 +42,19 @@ export function AgentProfilesPanel() {
   const draftError = selectedDraft.error;
   const isDirty = Boolean(selectedId && selectedDraft.data && JSON.stringify(spec) !== JSON.stringify(selectedDraft.data.spec));
   const clearMutationErrors = () => { create.reset(); save.reset(); validate.reset(); publish.reset(); };
-  const selectProfile = (profileId: string) => { clearMutationErrors(); setSelectedId(profileId); };
-  const startNewProfile = () => { clearMutationErrors(); setSelectedId(undefined); setSpec(defaultSpec()); };
+  const selectProfile = (profileId: string) => { clearMutationErrors(); setSelectedId(profileId); setEditorOpen(true); };
+  const startNewProfile = () => { clearMutationErrors(); setSelectedId(undefined); setSpec(defaultSpec()); setEditorOpen(true); };
   if (profiles.isLoading) return <section className="panel profiles-panel"><LoadingState label="正在读取智能体角色…"/></section>;
   if (profiles.error) return <section className="panel profiles-panel"><ErrorState error={profiles.error} retry={() => void profiles.refetch()}/></section>;
   const items = profiles.data ?? [];
   return <section className="panel profiles-panel">
-    <div className="panel-head"><span>智能体角色</span><small>可复用 AgentProfileSpec · 不包含凭据与运行端点</small></div>
-    <div className="profile-workbench"><div className="profile-list">
+    <div className="panel-head"><span>智能体角色</span><small>可复用 AgentProfileSpec · 不包含凭据与运行端点</small><Button type="primary" icon={<Plus size={15}/>} onClick={startNewProfile}>创建角色</Button></div>
+    <div className="profile-list">
       {items.map((profile) => <Button type="text" block key={profile.id} className={selectedId === profile.id ? "selected" : ""} onClick={() => selectProfile(profile.id)}><b>{profile.name}</b><small>{profile.id} · 已发布 Revision {profile.latest_revision ?? "无"}</small></Button>)}
-      {items.length === 0 && <EmptyState title="尚未创建角色" detail="使用右侧中文表单创建前端、测试、PM 或其他逻辑角色。"/>}
-    </div><div className="compact-form profile-editor">
-      <h3>{selectedId ? "编辑智能体角色" : "创建智能体角色"}</h3>
+      {items.length === 0 && <EmptyState title="尚未创建角色" detail="使用“创建角色”按需打开编辑器。"/>}
+    </div>
+    <Drawer title={selectedId ? "编辑智能体角色" : "创建智能体角色"} placement="right" size="large" open={editorOpen} onClose={() => setEditorOpen(false)} destroyOnHidden>
+    <div className="compact-form profile-editor">
       <div className="field-grid"><label>角色 ID<Input value={spec.id} disabled={Boolean(selectedId)} placeholder="例如：frontend-engineer" onChange={(event) => setSpec({ ...spec, id: event.target.value })}/></label><label>角色名称<Input value={spec.name} placeholder="例如：前端开发工程师" onChange={(event) => setSpec({ ...spec, name: event.target.value })}/></label></div>
       <label>角色职责<Input.TextArea value={spec.description} onChange={(event) => setSpec({ ...spec, description: event.target.value })}/></label>
       <label>执行指令<Input.TextArea value={spec.instructions.custom_text} onChange={(event) => setSpec({ ...spec, instructions: { ...spec.instructions, custom_text: event.target.value } })}/></label>
@@ -64,7 +66,8 @@ export function AgentProfilesPanel() {
       {draftError && <ErrorState error={draftError} retry={() => void selectedDraft.refetch()}/>}
       {selectedDraft.data && <small className="field-help">草稿版本 {selectedDraft.data.version} · 校验状态 {validationLabel(selectedDraft.data.validation_status)}{isDirty ? " · 有未保存修改" : ""}</small>}
       {mutationError && <ErrorState error={mutationError}/>}
-    </div></div>
+    </div>
+    </Drawer>
     <ConfirmDialog open={publishConfirmation} title={`发布角色“${spec.name || selectedId || ""}”`} detail="发布后会生成不可变 Agent Profile Revision，并可被 Agent Deployment 和流水线执行快照引用；修改职责或 Capability 必须创建后续 Revision。" confirmLabel="确认发布角色 Revision" pending={publish.isPending} onCancel={() => setPublishConfirmation(false)} onConfirm={() => publish.mutate(undefined, { onSuccess: () => setPublishConfirmation(false) })}/>
   </section>;
 }

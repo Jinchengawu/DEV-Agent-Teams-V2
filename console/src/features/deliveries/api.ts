@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { request, type Delivery, type EvidenceRecord, type ProductEvent } from "../../shared/api/client";
 import type { components } from "../../shared/api/generated/schema";
 import { assertProjectScope } from "../../entities/project/api";
+import { setupReadinessKeys } from "../setup/api";
 
 type Pipeline = components["schemas"]["Pipeline"];
 export type PipelineRun = components["schemas"]["PipelineRunRecord"];
@@ -71,8 +72,9 @@ export function useDeliveryPipelines() {
 export function useCreateDelivery(projectId: string, onCreated: (id: string) => void) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userRequest, pipelineRevisionId }: { userRequest: string; pipelineRevisionId?: string }) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ project_id: projectId, user_request: userRequest, pipeline_revision_id: pipelineRevisionId }) }),
+    mutationFn: ({ userRequest, pipelineRevisionId, purpose = "product" }: { userRequest: string; pipelineRevisionId?: string; purpose?: "product" | "onboarding_evaluation" }) => request<Delivery>("/v1/deliveries", { method: "POST", body: JSON.stringify({ project_id: projectId, user_request: userRequest, pipeline_revision_id: pipelineRevisionId, purpose }) }),
     onSuccess: async (delivery) => { await client.invalidateQueries({ queryKey: deliveryKeys.all(projectId) }); onCreated(delivery.id); },
+    onError: async () => { await client.invalidateQueries({ queryKey: setupReadinessKeys.detail(projectId) }); },
   });
 }
 

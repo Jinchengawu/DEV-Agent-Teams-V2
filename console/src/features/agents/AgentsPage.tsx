@@ -21,8 +21,8 @@ type Provider = components["schemas"]["ProviderManifestView"];
 type Adapter = components["schemas"]["RuntimeAdapterDescriptor"];
 type AgentWorkspace = "profiles" | "deployments" | "instances" | "providers" | "adapters";
 const workspaceTabs: Array<{ key: AgentWorkspace; label: string }> = [
-  { key: "profiles", label: "Agent 角色" },
   { key: "deployments", label: "Agent 部署" },
+  { key: "profiles", label: "Agent 角色" },
   { key: "instances", label: "运行实例" },
   { key: "providers", label: "Provider 能力" },
   { key: "adapters", label: "Runtime Adapter" },
@@ -39,7 +39,7 @@ export function AgentsPage() {
   const [connectionTarget, setConnectionTarget] = useState("codex");
   const [credentialRef, setCredentialRef] = useState("");
   const [pendingDisable, setPendingDisable] = useState<Instance>();
-  const [workspace, setWorkspace] = useState<AgentWorkspace>("profiles");
+  const [workspace, setWorkspace] = useState<AgentWorkspace>("deployments");
   const create = useMutation({
     mutationFn: () =>
       request<Instance>("/v1/agent-instances", {

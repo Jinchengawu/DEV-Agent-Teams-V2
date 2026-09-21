@@ -16,7 +16,7 @@ from typing import Any, Protocol, TypeVar
 from uuid import uuid4
 
 from acwm.adapters.agentscope_role_turn import AgentScopeRoleTurnAdapter
-from acwm.adapters.codex_cli import CodexCLICapabilityAdapter
+from acwm.adapters.codex_cli import CodexCLICapabilityAdapter, CodexCLIError
 from acwm.config import CodexCLIConfig
 from acwm.domain import (
     ResolvedCapability,
@@ -56,6 +56,16 @@ class _TaskSemantics(BaseModel):
     workcell_acceptance: tuple[WorkcellAcceptanceAssignment, ...] | None = None
 
 
+class _TaskCoreSemantics(BaseModel):
+    """Model-owned Task fields when product can compile Workcell ownership."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    title: str
+    instructions: str
+    acceptance_ids: tuple[str, ...]
+
+
 StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
@@ -88,16 +98,23 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        prefixed_owners = _prefixed_acceptance_owner_map(requirements, required_workcells)
         output_fields = "title, instructions, acceptance_ids"
         exclusions = (
             "Do not include permissions, commands, paths, system_policy, "
             "markdown or commentary."
         )
-        if required_workcells:
+        if required_workcells and prefixed_owners is None:
             output_fields += ", workcell_acceptance"
             exclusions = (
                 "Do not invent permissions, executable commands or system_policy. "
                 "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
+        elif prefixed_owners is not None:
+            exclusions = (
+                "Do not invent permissions, executable commands, system_policy or Workcell "
+                "responsibility objects. Preserve approved repository scope paths. "
+                "Do not include markdown or commentary."
             )
         prompt = f"""You are temporarily simulating the Hermes Project Admin role.
 Return raw JSON only with: {output_fields}.
@@ -114,22 +131,39 @@ corresponding machine-verifiable tests in every repository role selected by the 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells, requirements)
-        semantics = await self._structured(
-            "hermes-admin-simulator",
-            prompt,
-            _TaskSemantics,
-            validate=lambda value: _validate_task_semantics(
+        if prefixed_owners is not None:
+            prompt += _compiled_workcell_planning_instruction(
+                required_workcells, prefixed_owners
+            )
+            core = await self._structured(
+                "hermes-admin-simulator",
+                prompt,
+                _TaskCoreSemantics,
+                validate=lambda value: _validate_task_semantics(
+                    requirements,
+                    _compile_prefixed_workcell_acceptance(
+                        requirements,
+                        _full_task_semantics(value),
+                        required_workcells,
+                    ),
+                    required_workcells,
+                ),
+            )
+            semantics = _compile_prefixed_workcell_acceptance(
                 requirements,
-                _compile_prefixed_workcell_acceptance(
+                _full_task_semantics(core),
+                required_workcells,
+            )
+        else:
+            prompt += _workcell_planning_instruction(required_workcells, requirements)
+            semantics = await self._structured(
+                "hermes-admin-simulator",
+                prompt,
+                _TaskSemantics,
+                validate=lambda value: _validate_task_semantics(
                     requirements, value, required_workcells
                 ),
-                required_workcells,
-            ),
-        )
-        semantics = _compile_prefixed_workcell_acceptance(
-            requirements, semantics, required_workcells
-        )
+            )
         return _task_from_semantics(semantics)
 
     async def _structured(
@@ -233,16 +267,23 @@ User request:
     async def plan(
         self, requirements: RequirementArtifact, *, required_workcells: tuple[str, ...] = ()
     ) -> TaskContract:
+        prefixed_owners = _prefixed_acceptance_owner_map(requirements, required_workcells)
         output_fields = "title, instructions, acceptance_ids"
         exclusions = (
             "Do not include permissions, commands, paths, system_policy, "
             "markdown or commentary."
         )
-        if required_workcells:
+        if required_workcells and prefixed_owners is None:
             output_fields += ", workcell_acceptance"
             exclusions = (
                 "Do not invent permissions, executable commands or system_policy. "
                 "Preserve approved repository scope paths. Do not include markdown or commentary."
+            )
+        elif prefixed_owners is not None:
+            exclusions = (
+                "Do not invent permissions, executable commands, system_policy or Workcell "
+                "responsibility objects. Preserve approved repository scope paths. "
+                "Do not include markdown or commentary."
             )
         prompt = f"""You are the task planning role in Agent-Team-OS.
 Return raw JSON only with: {output_fields}.
@@ -259,22 +300,39 @@ corresponding machine-verifiable tests in every repository role selected by the 
 Approved requirements:
 {requirements.model_dump_json(indent=2)}
 """
-        prompt += _workcell_planning_instruction(required_workcells, requirements)
-        semantics = await self._structured(
-            "task-planning",
-            prompt,
-            _TaskSemantics,
-            validate=lambda value: _validate_task_semantics(
+        if prefixed_owners is not None:
+            prompt += _compiled_workcell_planning_instruction(
+                required_workcells, prefixed_owners
+            )
+            core = await self._structured(
+                "task-planning",
+                prompt,
+                _TaskCoreSemantics,
+                validate=lambda value: _validate_task_semantics(
+                    requirements,
+                    _compile_prefixed_workcell_acceptance(
+                        requirements,
+                        _full_task_semantics(value),
+                        required_workcells,
+                    ),
+                    required_workcells,
+                ),
+            )
+            semantics = _compile_prefixed_workcell_acceptance(
                 requirements,
-                _compile_prefixed_workcell_acceptance(
+                _full_task_semantics(core),
+                required_workcells,
+            )
+        else:
+            prompt += _workcell_planning_instruction(required_workcells, requirements)
+            semantics = await self._structured(
+                "task-planning",
+                prompt,
+                _TaskSemantics,
+                validate=lambda value: _validate_task_semantics(
                     requirements, value, required_workcells
                 ),
-                required_workcells,
-            ),
-        )
-        semantics = _compile_prefixed_workcell_acceptance(
-            requirements, semantics, required_workcells
-        )
+            )
         return _task_from_semantics(semantics)
 
 
@@ -311,6 +369,25 @@ def _workcell_planning_instruction(
             + "。"
         )
     return instruction
+
+
+def _compiled_workcell_planning_instruction(
+    required_workcells: tuple[str, ...], owners: dict[str, str]
+) -> str:
+    return (
+        "\n\n产品将根据 Canonical ID 前缀确定性编译 Workcell 验收责任；"
+        "不要输出 workcell_acceptance。instructions 必须覆盖所有验收项，且每仓只操作"
+        "当前 Workcell Repository 并只消费内容寻址 ArtifactAttachment。"
+        "Design 仅验证本仓规格、Schema 或测试向量；实际运行时行为由对应实现 "
+        "Workcell 和 QA E2E 验证。QA 只能在自有 Repository 中验证可观察行为。"
+        "Plan/Design/Release Gate、Review 阻断、ReleaseBundle、PR 状态、Apply、"
+        "resume-forward 和 ReleaseManifest 属于 Agent-Team-OS 产品控制面，不得成为"
+        "Workcell 交付责任。冻结 Workcell 列表："
+        + json.dumps(required_workcells, ensure_ascii=False, separators=(",", ":"))
+        + "。冻结 Acceptance owner map："
+        + json.dumps(owners, ensure_ascii=False, separators=(",", ":"))
+        + "。"
+    )
 
 
 def _prefixed_acceptance_owner_map(
@@ -404,6 +481,14 @@ def _task_from_semantics(semantics: _TaskSemantics) -> TaskContract:
         instructions=semantics.instructions,
         acceptance_ids=semantics.acceptance_ids,
         workcell_acceptance=semantics.workcell_acceptance,
+    )
+
+
+def _full_task_semantics(core: _TaskCoreSemantics) -> _TaskSemantics:
+    return _TaskSemantics(
+        title=core.title,
+        instructions=core.instructions,
+        acceptance_ids=core.acceptance_ids,
     )
 
 
@@ -501,6 +586,26 @@ class ACWMCodexRoleRunner:
         try:
             result = await self._role_turn.execute(spec, stage, CapabilityBoundary())
             return result.output
+        except CodexCLIError as error:
+            timed_out = str(error) == "Codex CLI invocation timed out"
+            raise ProductError(
+                code=(
+                    "CODEX_PLANNING_ATTEMPT_TIMED_OUT"
+                    if timed_out
+                    else "CODEX_PLANNING_ATTEMPT_FAILED"
+                ),
+                title="Codex 规划 AgentAttempt 失败",
+                detail=(
+                    "Codex 规划调用超过当前产品冻结的单次超时。"
+                    if timed_out
+                    else "Codex 规划调用未成功返回可消费结果。"
+                ),
+                repair=(
+                    "检查 Codex 登录与 Provider 可用性；如需调整超时，"
+                    "使用 Settings 的受控范围。"
+                ),
+                status_code=503,
+            ) from error
         finally:
             self._active_adapters.discard(adapter)
             await adapter.close()

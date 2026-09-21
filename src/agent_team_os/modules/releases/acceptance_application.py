@@ -754,13 +754,19 @@ class ReleaseAcceptanceVerifierV2:
                 main_attempts = sorted(
                     attempts_by_run.get(main.id, []), key=lambda item: item.ordinal
                 )
-                main_phases = [(item.phase, item.ordinal) for item in main_attempts]
+                main_phases = [item.phase for item in main_attempts]
+                planning_count = main_phases.count("planning")
+                synthesis_count = main_phases.count("synthesis")
+                main_sequence_ok = (
+                    planning_count in {1, 2}
+                    and synthesis_count in {1, 2}
+                    and main_phases
+                    == ["planning"] * planning_count + ["synthesis"] * synthesis_count
+                    and [item.ordinal for item in main_attempts]
+                    == list(range(1, len(main_attempts) + 1))
+                )
                 if (
-                    main_phases
-                    not in (
-                        [("planning", 1), ("synthesis", 2)],
-                        [("planning", 1), ("synthesis", 2), ("synthesis", 3)],
-                    )
+                    not main_sequence_ok
                     or main.attempt_id != main_attempts[0].id
                     or not self._main_and_attempts_match_binding(
                         main,
@@ -836,7 +842,14 @@ class ReleaseAcceptanceVerifierV2:
                 len(attempts) == 2
                 and index == 0
                 and attempt.status == "failed"
-                and attempt.error_code in INVALID_REVIEW_CODES
+                and attempt.error_code
+                in INVALID_REVIEW_CODES
+                | {
+                    "CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+                    "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE",
+                    "CODEX_WORKCELL_TRANSPORT_TIMED_OUT",
+                    "CODEX_WORKCELL_CAPACITY_EXHAUSTED",
+                }
             )
             if (
                 not _run_and_attempt_identity_matches(
@@ -867,12 +880,26 @@ class ReleaseAcceptanceVerifierV2:
             binding.resolved_provider_binding_hash
         ):
             return False
+        phase_counts = {
+            phase: sum(item.phase == phase for item in attempts)
+            for phase in ("planning", "synthesis")
+        }
         for index, attempt in enumerate(attempts):
+            is_last_phase_attempt = not any(
+                later.phase == attempt.phase for later in attempts[index + 1 :]
+            )
             retried_failure = (
-                len(attempts) == 3
-                and index == 1
+                phase_counts.get(attempt.phase) == 2
+                and not is_last_phase_attempt
                 and attempt.status == "failed"
-                and attempt.error_code == "CODEX_WORKCELL_OUTPUT_INVALID"
+                and attempt.error_code
+                in {
+                    "CODEX_WORKCELL_OUTPUT_INVALID",
+                    "CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+                    "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE",
+                    "CODEX_WORKCELL_TRANSPORT_TIMED_OUT",
+                    "CODEX_WORKCELL_CAPACITY_EXHAUSTED",
+                }
             )
             if (
                 not _run_and_attempt_identity_matches(

@@ -1,0 +1,23 @@
+{
+  "skill_name": "product-manager",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我想做一个帮独立开发者自动整理用户反馈的功能，请先判断值不值得做，不要直接写 PRD。",
+      "expected_output": "Uses Discovery, separates evidence from assumptions, frames the decision and proposes a minimal validation experiment instead of inventing demand or jumping to a PRD.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "根据仓库里的用户反馈和现有代码，给我写一份给工程团队评审的 PRD，不确定的地方要明确标出。",
+      "expected_output": "Inspects project sources, creates a scoped PRD with facts, assumptions, non-goals, observable acceptance criteria, risks, and a next review event.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "这个功能测试都过了，帮我确认是不是已经完整交付。",
+      "expected_output": "Runs an Acceptance review that distinguishes test evidence from release and user-outcome evidence, maps criteria to proof, and does not declare completion without required evidence.",
+      "files": []
+    }
+  ]
+}

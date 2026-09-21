@@ -107,6 +107,11 @@ from .modules.projects import (
     ProjectCapability,
     ProjectCatalog,
     ProjectDetail,
+    ProjectOnboarding,
+    ProjectOnboardingComplete,
+    SetupReadinessCheck,
+    SetupReadinessReport,
+    SetupReadinessService,
     create_project_router,
 )
 from .modules.releases import (
@@ -132,6 +137,7 @@ from .shared.events import ProductEvent
 from .shared.features import FeatureFlags
 from .shared.ids import new_id
 from .shared.permissions import Permission, Role, permits
+from .version import __version__
 
 
 class DeliveryRequest(BaseModel):
@@ -142,6 +148,7 @@ class DeliveryRequest(BaseModel):
     user_request: str = Field(min_length=1, max_length=20_000)
     journey_revision_id: str | None = None
     pipeline_revision_id: str | None = None
+    purpose: Literal["product", "onboarding_evaluation"] = "product"
 
     @model_validator(mode="after")
     def project_or_legacy_workspace(self) -> "DeliveryRequest":
@@ -311,7 +318,7 @@ def create_app(
         )
     app = FastAPI(
         title="Agent-Team-OS",
-        version="0.5.0",
+        version=__version__,
         responses={
             404: {"model": ProblemDetail, "description": "目标资源不存在"},
             409: {"model": ProblemDetail, "description": "状态或版本冲突"},
@@ -321,6 +328,90 @@ def create_app(
     )
     readiness_probe = readiness or RuntimeReadiness()
     reports = report_dir
+
+    def inspect_project_execution(
+        project_id: str, pipeline_revision_id: str
+    ) -> tuple[tuple[SetupReadinessCheck, ...], tuple[SetupReadinessCheck, ...]]:
+        if projects is None:
+            return (), ()
+        projects.prepare_delivery(project_id, f"readiness:{project_id}", pipeline_revision_id)
+        optional: tuple[SetupReadinessCheck, ...] = ()
+        execution: tuple[SetupReadinessCheck, ...] = ()
+        if pipeline_catalog is not None:
+            revision = pipeline_catalog.resolve_active_revision(pipeline_revision_id)
+            if revision.workcell_stage_map:
+                if delivery_snapshot_compiler is None:
+                    raise ProductError(
+                        code="DELIVERY_EXECUTION_SNAPSHOT_COMPILER_UNAVAILABLE",
+                        title="Workcell 执行契约未接线",
+                        detail="无法验证 Team、Workspace、Deployment 和 Verification。",
+                        repair="配置 DeliveryExecutionSnapshotCompiler 后重试。",
+                        status_code=503,
+                    )
+                delivery_snapshot_compiler.compile(project_id, pipeline_revision_id)
+                execution = (
+                    SetupReadinessCheck(
+                        id="project.repositories",
+                        status="ready",
+                        summary="Workcell 仓库已就绪",
+                        repair="无需修复。",
+                        navigation_target=f"/projects/{project_id}/overview",
+                        blocking_scope="start_delivery",
+                    ),
+                    SetupReadinessCheck(
+                        id="project.deployments",
+                        status="ready",
+                        summary="Workcell Deployment 授权已就绪",
+                        repair="无需修复。",
+                        navigation_target="/agents",
+                        blocking_scope="start_delivery",
+                    ),
+                )
+            else:
+                execution = ()
+            if revision.knowledge_context_bindings:
+                knowledge_ready = (
+                    knowledge_preparation_compiler is not None
+                    and knowledge_runtime_guard is not None
+                )
+                optional = (
+                    SetupReadinessCheck(
+                        id="optional.knowledge-context",
+                        status="ready" if knowledge_ready else "blocked",
+                        summary=(
+                            "Knowledge Context Runtime 已就绪"
+                            if knowledge_ready
+                            else "Pipeline 需要 Knowledge Context，但 Runtime 未就绪"
+                        ),
+                        repair="启用并验证 Pipeline 绑定的 Knowledge Context Runtime。",
+                        navigation_target=f"/projects/{project_id}/knowledge",
+                        blocking_scope="start_delivery",
+                    ),
+                )
+        return (
+            (
+                *execution,
+                SetupReadinessCheck(
+                    id="project.execution-contract",
+                    status="ready",
+                    summary="Pipeline、Team、Deployment 与 Verification 契约已就绪",
+                    repair="无需修复。",
+                    navigation_target=f"/projects/{project_id}/overview",
+                    blocking_scope="start_delivery",
+                ),
+            ),
+            optional,
+        )
+
+    setup_readiness = (
+        None
+        if projects is None
+        else SetupReadinessService(
+            readiness_probe,
+            projects,
+            inspect_execution=inspect_project_execution,
+        )
+    )
 
     @app.get("/v1/features", response_model=FeatureFlags)
     def get_feature_flags() -> FeatureFlags:
@@ -801,6 +892,140 @@ def create_app(
             content=report.model_dump(mode="json"),
         )
 
+    def sync_delivery_evidence(delivery: DeliveryRun) -> None:
+        if evidence is None:
+            return
+        evidence_snapshot = delivery.model_dump(mode="json")
+        if external_release is not None:
+            release_view = external_release.details(delivery.id)
+            if release_view.candidates:
+                evidence_snapshot["repository_candidates"] = [
+                    {
+                        "role": candidate.workcell_key,
+                        "candidate": candidate.model_dump(mode="json"),
+                        "verification": {
+                            "log_sha256": candidate.verification_sha256,
+                            "workspace_candidate_id": candidate.id,
+                            "status": candidate.status,
+                        },
+                    }
+                    for candidate in release_view.candidates
+                ]
+        evidence.sync_delivery(evidence_snapshot)
+
+    if setup_readiness is not None:
+        if projects is None:
+            raise ValueError("setup_readiness requires a project catalog")
+        project_catalog = projects
+
+        @app.get("/v1/setup-readiness", response_model=SetupReadinessReport)
+        def get_setup_readiness(
+            request: Request, project_id: str | None = Query(default=None)
+        ) -> SetupReadinessReport:
+            if project_id is not None:
+                require_project_capability(
+                    request,
+                    project_id,
+                    ProjectCapability.READ,
+                    resource=f"project:{project_id}:setup-readiness",
+                    reason="read setup readiness",
+                )
+            return setup_readiness.inspect(project_id)
+
+        @app.post(
+            "/v1/projects/{project_id}/onboarding/complete",
+            response_model=ProjectOnboarding,
+        )
+        def complete_project_onboarding(
+            project_id: str,
+            body: ProjectOnboardingComplete,
+            request: Request,
+        ) -> ProjectOnboarding:
+            require_permission(request, Permission.PROJECT_MANAGE)
+            require_project_capability(
+                request,
+                project_id,
+                ProjectCapability.READ,
+                resource=f"project:{project_id}:onboarding",
+                reason="complete project onboarding",
+            )
+
+            def validate_evidence(
+                expected_project_id: str,
+                delivery_id: str,
+                expected_subject_sha256: str,
+            ) -> None:
+                try:
+                    delivery = coordinator.get(delivery_id)
+                except DeliveryNotFoundError as error:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_DELIVERY_NOT_FOUND",
+                        title="评测交付不存在",
+                        detail="当前 onboarding 引用的 Delivery 已不可读。",
+                        repair="刷新项目状态并核对运行库。",
+                        status_code=404,
+                    ) from error
+                if delivery.project_id != expected_project_id:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_PROJECT_MISMATCH",
+                        title="评测交付不属于当前项目",
+                        detail="禁止使用跨项目 Delivery 完成 onboarding。",
+                        repair="使用当前项目绑定的评测交付。",
+                        status_code=409,
+                    )
+                gate = delivery.candidate_gate
+                if delivery.status != "awaiting_candidate_decision" or gate is None:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_CANDIDATE_NOT_READY",
+                        title="评测交付尚未到达 Candidate 决策点",
+                        detail="onboarding 只能在 Verification 和 Candidate Evidence 可读后完成。",
+                        repair="继续交付至 Candidate 决策点，不要执行 Apply。",
+                        status_code=409,
+                    )
+                if gate.subject_sha256 != expected_subject_sha256:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_GATE_SUBJECT_MISMATCH",
+                        title="Candidate Gate 主题已变更",
+                        detail="请求中的 SHA 不是当前 Candidate Gate subject。",
+                        repair="刷新 Delivery 和 Evidence 后重新确认。",
+                        status_code=409,
+                    )
+                if evidence is None:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_EVIDENCE_UNAVAILABLE",
+                        title="Evidence Ledger 未配置",
+                        detail="无法验证 Candidate 和 Verification Evidence。",
+                        repair="配置 Evidence Ledger 后重试。",
+                        status_code=503,
+                    )
+                sync_delivery_evidence(delivery)
+                records = evidence.list(delivery_id=delivery_id, project_id=expected_project_id)
+                required = {
+                    EvidenceKind.CANDIDATE,
+                    EvidenceKind.VERIFICATION,
+                    EvidenceKind.CANDIDATE_GATE,
+                }
+                verified = {
+                    record.kind
+                    for record in records
+                    if record.status == EvidenceStatus.VERIFIED
+                }
+                if not required.issubset(verified):
+                    missing = sorted(kind.value for kind in required - verified)
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_EVIDENCE_INCOMPLETE",
+                        title="评测 Evidence 不完整",
+                        detail="缺少有效 Evidence：" + "、".join(missing),
+                        repair="重试 Verification 并刷新 Evidence 后再完成引导。",
+                        status_code=409,
+                    )
+
+            return project_catalog.complete_onboarding(
+                project_id,
+                body,
+                validate_evidence=validate_evidence,
+            )
+
     if settings is not None:
         app.include_router(
             create_settings_router(
@@ -1018,7 +1243,7 @@ def create_app(
             for delivery in coordinator.list():
                 if visible is not None and delivery.project_id not in visible:
                     continue
-                evidence.sync_delivery(delivery.model_dump(mode="json"))
+                sync_delivery_evidence(delivery)
             records = evidence.list(delivery_id, project_id)
             return tuple(
                 item
@@ -1037,7 +1262,7 @@ def create_app(
                 resource_suffix=":evidence",
                 reason="read delivery evidence",
             )
-            evidence.sync_delivery(delivery.model_dump(mode="json"))
+            sync_delivery_evidence(delivery)
             return evidence.list(delivery_id)
 
         @app.post("/v1/evidence/{evidence_id}/verify", response_model=EvidenceRecord)
@@ -1585,6 +1810,11 @@ def create_app(
                 resource=f"project:{effective_project_id}:deliveries",
                 reason="create delivery",
             )
+            if setup_readiness is not None and readiness is not None:
+                setup_readiness.require_delivery_ready(
+                    effective_project_id,
+                    request_body.purpose,
+                )
             effective_pipeline_revision_id = request_body.pipeline_revision_id
             if projects is not None:
                 project_context = projects.prepare_delivery(
@@ -1741,6 +1971,7 @@ def create_app(
                     None if pipeline_revision is None else pipeline_revision.fingerprint
                 ),
                 knowledge_preparation_input=knowledge_preparation_input,
+                purpose=request_body.purpose,
             )
             return delivery
         except PlanningServiceError as error:

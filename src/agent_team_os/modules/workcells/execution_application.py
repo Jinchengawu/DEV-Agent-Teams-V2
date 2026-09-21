@@ -14,6 +14,7 @@ from ..agents import ArtifactEnvelope
 from ..artifacts import ContentAddressedArtifactStorage
 from .execution_domain import (
     AgentAttempt,
+    AttemptPhase,
     CandidateVerification,
     CandidateVerificationCreate,
     DelegationAssignment,
@@ -340,7 +341,7 @@ class WorkcellExecutionModule:
         *,
         error_code: str,
         result_artifact_sha256: Sha256,
-        max_attempts: int = 3,
+        max_attempts: int = 2,
     ) -> WorkcellRunTree:
         """Retry one malformed Main synthesis as a new observable AgentAttempt."""
         try:
@@ -377,6 +378,86 @@ class WorkcellExecutionModule:
         except RuntimeError as error:
             raise _repository_error(error) from error
         return self.tree(main.workcell_run_id)
+
+    def retry_transient_attempt(
+        self,
+        agent_run_id: str,
+        *,
+        phase: AttemptPhase,
+        error_code: str,
+        result_artifact_sha256: Sha256,
+        minimum_remaining_seconds: float = 961,
+    ) -> WorkcellRunTree:
+        """Retry a safe read-only transient failure within the frozen phase budget."""
+        allowed = {
+            "CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+            "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE",
+            "CODEX_WORKCELL_TRANSPORT_TIMED_OUT",
+            "CODEX_WORKCELL_CAPACITY_EXHAUSTED",
+        }
+        if error_code not in allowed:
+            raise _error(
+                "AGENT_ATTEMPT_RETRY_REASON_INVALID",
+                "该错误不属于只读 transient retry allow-list",
+                "保持失败关闭并由 ACWM bounded Loop 决定恢复。",
+            )
+        try:
+            agent = self.repository.get_agent(agent_run_id)
+        except KeyError as error:
+            raise _error(
+                "AGENT_RUN_NOT_FOUND",
+                "AgentRun 不存在",
+                "刷新 WorkcellRun Tree。",
+                404,
+            ) from error
+        if agent.workcell_run_id is None or agent.workspace_access not in {
+            "none",
+            "candidate_read",
+        }:
+            raise _error(
+                "AGENT_ATTEMPT_TRANSIENT_RETRY_ACCESS_DENIED",
+                "只有无候选副作用的 Main/Reviewer Attempt 可 transient retry",
+                "Writer 与 artifact-only 失败由 ACWM 创建新 WorkcellRun。",
+            )
+        if (agent.run_role == "main" and phase not in {"planning", "synthesis"}) or (
+            agent.run_role == "child"
+            and (agent.delegate_purpose != "review" or phase != "delegate")
+        ):
+            raise _error(
+                "AGENT_ATTEMPT_PHASE_INVALID",
+                "transient retry 与冻结 AgentRun phase 不匹配",
+                "刷新 WorkcellRun Tree 并保持失败关闭。",
+            )
+        if phase not in {"planning", "delegate", "synthesis"}:
+            raise _error(
+                "AGENT_ATTEMPT_PHASE_INVALID",
+                "AgentAttempt phase 无效",
+                "刷新 WorkcellRun Tree。",
+            )
+        tree = self.tree(agent.workcell_run_id)
+        policy = tree.workcell_run.workcell_snapshot.delegation_policy
+        if policy.max_transient_attempts == 1:
+            raise _error(
+                "AGENT_ATTEMPT_RETRY_LIMIT_EXCEEDED",
+                "历史 Snapshot 未授权 transient retry",
+                "由 ACWM bounded Loop 创建新的 WorkcellRun。",
+            )
+        try:
+            self.repository.retry_attempt_phase(
+                agent,
+                phase=phase,
+                error_code=error_code,
+                result_artifact_sha256=result_artifact_sha256,
+                max_phase_attempts=policy.max_transient_attempts,
+                minimum_remaining_seconds=minimum_remaining_seconds,
+            )
+        except RuntimeError as error:
+            raise _repository_error(error) from error
+        return self.tree(agent.workcell_run_id)
+
+    def remaining_budget_seconds(self, run_id: str) -> float:
+        run = self.repository.get(run_id)
+        return max(0.0, (run.deadline_at - datetime.now(UTC)).total_seconds())
 
     def record_candidate_verification(
         self,
@@ -694,7 +775,13 @@ class WorkcellExecutionModule:
             raise _repository_error(error) from error
         return self.tree(run_id)
 
-    def fail(self, run_id: str, *, error_code: str) -> WorkcellRunTree:
+    def fail(
+        self,
+        run_id: str,
+        *,
+        error_code: str,
+        result_artifact_sha256: Sha256 | None = None,
+    ) -> WorkcellRunTree:
         """Persist an unexpected execution failure without leaving phantom running Attempts."""
 
         tree = self.tree(run_id)
@@ -706,6 +793,7 @@ class WorkcellExecutionModule:
                 run,
                 expected_version=run.version,
                 error_code=error_code,
+                result_artifact_sha256=result_artifact_sha256,
             )
         except RuntimeError as error:
             raise _repository_error(error) from error

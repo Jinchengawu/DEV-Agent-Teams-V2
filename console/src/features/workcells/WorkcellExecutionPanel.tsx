@@ -13,7 +13,7 @@ import {
   useWorkcellArtifact,
 } from "./api";
 
-export function WorkcellExecutionPanel({ deliveryId, projectId }: { deliveryId: string; projectId: string }) {
+export function WorkcellExecutionPanel({ deliveryId, projectId, canOperate = true }: { deliveryId: string; projectId: string; canOperate?: boolean }) {
   const runs = useDeliveryWorkcellRuns(deliveryId);
   const release = useExternalRelease(deliveryId);
   const health = useReleaseHealth(projectId);
@@ -26,7 +26,7 @@ export function WorkcellExecutionPanel({ deliveryId, projectId }: { deliveryId: 
   return <div className="workcell-observability">
     <section className="panel workcell-run-panel">
       <div className="panel-head"><span>Main / Child / Attempt Tree</span><small>所有 Child 均来自 Published Pipeline 的冻结 Slot，深度最多 1</small></div>
-      {trees.length === 0 ? <p className="workcell-empty">Stage 尚未创建 WorkcellRun。只有真实 Pipeline Attempt 启动后才会出现节点。</p> : <div className="workcell-run-list">{trees.map((tree) => <WorkcellTree key={tree.workcell_run.id} tree={tree} cancel={() => cancel.mutate({ runId: tree.workcell_run.id!, expectedVersion: tree.workcell_run.version })} cancelPending={cancel.isPending} cancellable={activeStatuses.has(tree.workcell_run.status)}/>)}</div>}
+      {trees.length === 0 ? <p className="workcell-empty">Stage 尚未创建 WorkcellRun。只有真实 Pipeline Attempt 启动后才会出现节点。</p> : <div className="workcell-run-list">{trees.map((tree) => <WorkcellTree key={tree.workcell_run.id} tree={tree} cancel={() => cancel.mutate({ runId: tree.workcell_run.id!, expectedVersion: tree.workcell_run.version })} cancelPending={cancel.isPending} cancellable={canOperate && activeStatuses.has(tree.workcell_run.status)}/>)}</div>}
       {cancel.error && (
         <ErrorState error={cancel.error}/>
       )}
@@ -40,7 +40,7 @@ export function WorkcellExecutionPanel({ deliveryId, projectId }: { deliveryId: 
       }) : <p className="workcell-empty">尚未形成完整 Candidate 集合。Release Gate 不会提前出现。</p>}</div>}
       {release.data?.bundle && <div className="release-hash-strip"><span>ReleaseBundleV2</span><code>{release.data.bundle.bundle_sha256}</code></div>}
       {release.data?.manifest && <div className="release-hash-strip verified"><ShieldCheck size={15}/><span>ReleaseManifestV2</span><code>{release.data.manifest.manifest_sha256}</code></div>}
-      {health.data?.status === "release_drifted" && <div className="release-drift-alert" role="alert"><div><b>Partial Apply 需要人工继续</b><p>{health.data.error_code}。已成功仓库不会回滚；仅在已应用仓库仍为 Candidate、未应用仓库仍为 Base 时允许继续。</p></div><Button danger icon={<RotateCw size={14}/>} disabled={release.data?.apply_attempt?.status !== "needs_attention"} loading={resume.isPending} onClick={() => resume.mutate()}>Resume forward</Button></div>}
+      {health.data?.status === "release_drifted" && <div className="release-drift-alert" role="alert"><div><b>Partial Apply 需要人工继续</b><p>{health.data.error_code}。已成功仓库不会回滚；仅在已应用仓库仍为 Candidate、未应用仓库仍为 Base 时允许继续。</p></div>{canOperate && <Button danger icon={<RotateCw size={14}/>} disabled={release.data?.apply_attempt?.status !== "needs_attention"} loading={resume.isPending} onClick={() => resume.mutate()}>Resume forward</Button>}</div>}
       {(health.error || resume.error) && (
         <ErrorState error={health.error ?? resume.error!}/>
       )}

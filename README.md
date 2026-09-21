@@ -4,7 +4,7 @@
 
 **面向本地 AI 软件团队的可信交付控制平面**
 
-`v0.5.0` · `本地 Alpha` · `Python + FastAPI + React`
+`v0.5.1` · `本地评测交付候选` · `Python + FastAPI + React`
 
 [完整产品文档](docs/product/AGENT-TEAM-OS-PRODUCT.md) · [架构事实总览](docs/architecture/ARCHITECTURE.md) · [English](README.en.md) · [快速开始](#五分钟本地启动) · [交付模型](#交付闭环) · [架构](#架构与职责边界) · [当前限制](#当前限制)
 
@@ -23,6 +23,24 @@ Git Workspace，跨 Workcell 只传递内容寻址 Artifact。产品在 Agent Ru
 > 登录、四个私有 GitHub HTTPS 仓库和可直推 `main` 的服务身份；任一缺失都必须标记为
 > `blocked/not_run`。当前默认规划身份为 `codex-cli`；验收跟随冻结 Provider Binding，
 > Codex Planning 通过不能作为真实 Hermes 证据。
+
+### v0.5.1 本地评测交付包
+
+`v0.5.1` 可将后端 wheel、`console/dist`、Migration 和锁定配置组合为带
+SHA-256 Manifest 的 Delivery Bundle。构建前先执行 `uv build` 和 Console 生产构建，然后：
+
+```sh
+.venv/bin/python scripts/build_delivery_bundle.py \
+  --output-root /tmp/agent-team-os-delivery \
+  --wheel dist/dev_agent_teams_v2-0.5.1-py3-none-any.whl
+.venv/bin/python scripts/verify_delivery_bundle.py \
+  /tmp/agent-team-os-delivery/agent-team-os-0.5.1
+```
+
+从 Bundle 启动时设置 `AGENT_TEAM_OS_PRODUCT_ROOT=<Bundle根目录>`；显式 Root 不完整时会
+fail-closed，不会回退到源码仓。该验证只是 Local evidence，不代表 Deterministic/Live
+Gate、Release Approval 或 Apply。完整边界见
+[交付 Runbook](docs/runbooks/DELIVERY-HANDOFF-EVIDENCE.md)。
 
 ## 当前架构
 

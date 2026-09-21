@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dev-agent-teams-v2"
-version = "0.5.0"
+version = "0.5.1"
 description = "Agent-Team-OS delivery service built on ACWM, AgentScope, Hermes and Codex."
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -39,6 +39,7 @@ dev = [
 [project.scripts]
 agent-team-os = "agent_team_os.preview:main"
 agent-team-os-dev = "agent_team_os.dev_cli:main"
+agent-team-os-method-packs = "agent_team_os.method_pack_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_team_os"]

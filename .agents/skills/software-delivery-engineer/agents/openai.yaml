@@ -1,0 +1,7 @@
+interface:
+  display_name: "Software Delivery Engineer"
+  short_description: "Architecture-reviewed implementation with delivery evidence"
+  default_prompt: "Use $software-delivery-engineer to implement this bounded change and verify it against the repository's delivery gates."
+
+policy:
+  allow_implicit_invocation: true

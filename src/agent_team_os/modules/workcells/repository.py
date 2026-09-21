@@ -82,6 +82,12 @@ class SQLiteTeamTemplateRepository:
             ).fetchall()
         return tuple(_draft(row) for row in rows)
 
+    def create_draft(self, draft: TeamTemplateDraft) -> TeamTemplateDraft:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._insert_draft(connection, draft)
+        return draft
+
     def compare_and_swap_draft(
         self,
         expected_version: int,

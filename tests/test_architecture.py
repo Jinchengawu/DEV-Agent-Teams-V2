@@ -47,3 +47,32 @@ def test_web_features_do_not_import_other_feature_implementations() -> None:
                 assert f"features/{other}" not in source, (
                     f"{path.relative_to(ROOT)} imports feature implementation {other}"
                 )
+
+
+def test_gate_composition_propagates_explicit_codex_auth_reference() -> None:
+    """Gate and Preview must compose the same path-only Method auth boundary."""
+    path = ROOT / "src" / "agent_team_os" / "gate_app.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    method_arguments = [
+        keyword.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "WorkcellStageDriver"
+        for keyword in node.keywords
+        if keyword.arg == "methods"
+    ]
+
+    assert len(method_arguments) == 1
+    method_factory = method_arguments[0]
+    assert isinstance(method_factory, ast.Call)
+    assert isinstance(method_factory.func, ast.Attribute)
+    assert method_factory.func.attr == "from_environment"
+    assert isinstance(method_factory.func.value, ast.Name)
+    assert method_factory.func.value.id == "ContentAddressedMethodRuntime"
+
+
+def test_preview_and_gate_bootstrap_current_builtin_team_revision() -> None:
+    for relative in ("src/agent_team_os/preview.py", "src/agent_team_os/gate_app.py"):
+        source = (ROOT / relative).read_text(encoding="utf-8")
+        assert "ensure_builtin_software_delivery_team(team_templates)" in source

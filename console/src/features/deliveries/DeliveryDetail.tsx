@@ -28,6 +28,14 @@ type Props = {
   decisionPending: boolean;
   decisionError?: Error | null;
   onDecision: (decision: DeliveryDecision) => void;
+  canDecidePlan?: boolean;
+  canApplyCandidate?: boolean;
+  canRetryPublication?: boolean;
+  onboarding?: { status: "setup" | "in_evaluation" | "ready"; evaluation_delivery_id?: string | null; version: number };
+  canCompleteOnboarding?: boolean;
+  onboardingPending?: boolean;
+  onboardingError?: Error | null;
+  onCompleteOnboarding?: () => void;
 };
 
 type RepositoryCandidate = Delivery["repository_candidates"][number];
@@ -60,6 +68,14 @@ export function DeliveryDetail({
   decisionPending,
   decisionError,
   onDecision,
+  canDecidePlan = true,
+  canApplyCandidate = true,
+  canRetryPublication = true,
+  onboarding,
+  canCompleteOnboarding = false,
+  onboardingPending = false,
+  onboardingError,
+  onCompleteOnboarding,
 }: Props) {
   const [pendingDecision, setPendingDecision] = useState<DeliveryDecision>();
   const [inspectorSelection, setInspectorSelection] = useState<InspectorSelection>();
@@ -80,6 +96,7 @@ export function DeliveryDetail({
   const inspector = inspectorModel(inspectorSelection, delivery);
   const blocker = delivery.error_code ?? (blockingPublications.length ? "知识产物尚未发布完成" : "当前没有已记录阻塞");
   const nextAction = deliveryNextAction(delivery.status);
+  const evaluationCandidate = delivery.purpose === "onboarding_evaluation" && delivery.status === "awaiting_candidate_decision";
 
   return <div className="delivery-detail">
     <section className="run-hero surface-card">
@@ -98,6 +115,7 @@ export function DeliveryDetail({
 
     <DeliveryStageRail delivery={delivery}/>
     <ConflictState error={decisionError}/>
+    <ConflictState error={onboardingError}/>
     {delivery.error_code && <div className="repair-callout"><CircleAlert size={18}/><div><b>交付未能继续：{delivery.error_code}</b><span>{delivery.status === "needs_attention"
       ? "部分仓库可能已经推进：已成功推进的仓库不会回滚。请确认远端状态后，使用下方四仓发布面板的 Resume forward 继续同一个 ReleaseBundle。"
       : "请查看失败代码、Attempt 与验证证据，修正需求或运行依赖后按当前状态允许的方式恢复。"}</span></div></div>}
@@ -109,7 +127,7 @@ export function DeliveryDetail({
       <div className="knowledge-publication-list">{blockingPublications.map((publication) => <article key={publication.id}>
         <span><b>{publication.contract_id}</b><small>Artifact {publication.artifact_key} · 尝试 {publication.attempt_count} · {publication.error_code ?? publication.status}</small></span>
         <StatusBadge value={publication.status}/>
-        {publication.status === "failed" && <Button className="button-icon" disabled={publicationRetryPending || !onRetryPublication} onClick={() => onRetryPublication?.(publication.id, publication.version)}><RefreshCw size={14}/>{publicationRetryPending ? "正在重试发布…" : "只重试发布"}</Button>}
+        {publication.status === "failed" && canRetryPublication && <Button className="button-icon" disabled={publicationRetryPending || !onRetryPublication} onClick={() => onRetryPublication?.(publication.id, publication.version)}><RefreshCw size={14}/>{publicationRetryPending ? "正在重试发布…" : "只重试发布"}</Button>}
       </article>)}</div>
     </section>}
 
@@ -122,8 +140,8 @@ export function DeliveryDetail({
         {delivery.requirements ? <><h3>{delivery.requirements.summary}</h3><ul>{delivery.requirements.acceptance_criteria.map((item) => <li key={item.id}><code>{item.id}</code>{item.statement}</li>)}</ul></> : <p className="muted">需求产物尚未生成。</p>}
         {delivery.task && <div className="task-contract"><span>单一任务合同</span><b>{delivery.task.title}</b><small>{delivery.task.acceptance_ids.join(" · ")}</small></div>}
         <WorkcellAcceptance delivery={delivery}/>
-        {delivery.plan_gate && <GateSubject label="计划审批主题" sha={delivery.plan_gate.subject_sha256} revision={delivery.plan_gate.revision}/>} 
-        {delivery.status === "awaiting_plan_decision" && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始设计</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</Button></div>}
+        {delivery.plan_gate && <GateSubject label="计划审批主题" sha={delivery.plan_gate.subject_sha256} revision={delivery.plan_gate.revision}/>}
+        {delivery.status === "awaiting_plan_decision" && canDecidePlan && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-plan")}>批准计划并开始设计</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-plan")}>拒绝计划</Button></div>}
       </section>
 
       <section className="panel surface-card artifact-panel design-review-panel">
@@ -134,7 +152,7 @@ export function DeliveryDetail({
             ? <WorkcellCandidateArtifact item={designWorkcellCandidate}/>
             : <p className="muted">Workcell 流水线会先生成独立设计候选；后端流水线不需要此审批。</p>}
         {delivery.design_gate && <GateSubject label="设计审批主题" sha={delivery.design_gate.subject_sha256} revision={delivery.design_gate.revision}/>}
-        {delivery.status === "awaiting_design_decision" && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-design")}>批准设计并开始前后端实现</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-design")}>拒绝设计</Button></div>}
+        {delivery.status === "awaiting_design_decision" && canDecidePlan && <div className="decision-row"><Button type="primary" disabled={decisionPending} onClick={() => setPendingDecision("approve-design")}>批准设计并开始前后端实现</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-design")}>拒绝设计</Button></div>}
       </section>
     </div>
 
@@ -155,7 +173,8 @@ export function DeliveryDetail({
           revision={delivery.candidate_gate.revision}
         />
       )}
-      {delivery.status === "awaiting_candidate_decision" && <div className="decision-row"><Button type="primary" danger disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>{releaseMode === "external-v2" ? "批准四仓 Forward-only 发布" : releaseMode === "managed-v1" ? "批准四仓发布并执行 CAS" : "接受候选并原子应用"}</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>{releaseMode ? "拒绝发布包" : "拒绝候选"}</Button></div>}
+      {evaluationCandidate && <div className="onboarding-completion surface-card"><b>评测已到达 Evidence 回读点</b><p>完成引导只会把项目标记为 ready；Candidate 仍未 Apply，也不会写入远端仓库。</p>{onboarding?.status === "ready" ? <StatusBadge value="ready"/> : <Button type="primary" disabled={!canCompleteOnboarding || onboardingPending || !onCompleteOnboarding} onClick={onCompleteOnboarding}>{onboardingPending ? "正在核验 Evidence…" : "完成评测并转为正式项目"}</Button>} {!canCompleteOnboarding && <small>仅 Administrator 可完成引导。</small>}</div>}
+      {delivery.status === "awaiting_candidate_decision" && !evaluationCandidate && canApplyCandidate && <div className="decision-row"><Button type="primary" danger disabled={decisionPending} onClick={() => setPendingDecision("accept-candidate")}>{releaseMode === "external-v2" ? "批准四仓 Forward-only 发布" : releaseMode === "managed-v1" ? "批准四仓发布并执行 CAS" : "接受候选并原子应用"}</Button><Button danger disabled={decisionPending} onClick={() => setPendingDecision("reject-candidate")}>{releaseMode ? "拒绝发布包" : "拒绝候选"}</Button></div>}
       {delivery.apply_receipt && <div className="apply-receipt"><CheckCircle2 size={20}/><div><b>单仓应用回执已核验</b><small>应用前 {delivery.apply_receipt.before_revision}<br/>候选 {delivery.apply_receipt.candidate_revision}<br/>应用后 {delivery.apply_receipt.after_revision}</small></div></div>}
       {delivery.release_manifest && <ReleaseManifest delivery={delivery}/>}
       {delivery.release_manifest_v2_sha256 && <div className="release-manifest"><div className="release-manifest-head"><CheckCircle2 size={22}/><div><b>ReleaseManifestV2 已激活</b><span>四仓远端 main 已回读为获批 Candidate；详细 RemoteApplyReceipt 见下方 Workcell Release Surface。</span><code>{delivery.release_manifest_v2_sha256}</code></div></div></div>}

@@ -1,3 +1,9 @@
+import asyncio
+import sys
+
+import pytest
+from acwm.config import CodexCLIConfig
+
 from agent_team_os.codex_runtime import (
     APPROVED_CODEX_REASONING_EFFORT,
     APPROVED_PLANNING_CODEX_MODEL,
@@ -11,6 +17,7 @@ from agent_team_os.codex_runtime import (
 from agent_team_os.codex_simulation import ACWMCodexRoleRunner
 from agent_team_os.git_delivery import ACWMCodexWorkspaceAgent
 from agent_team_os.infrastructure.acwm import CodexWorkcellAgent
+from agent_team_os.shared.errors import ProductError
 
 
 def test_approved_codex_commands_do_not_inherit_operator_model_policy() -> None:
@@ -67,3 +74,20 @@ def test_product_owned_codex_adapters_use_the_role_specific_command(tmp_path) ->
     assert workcell.writer_command == approved_writer_codex_command()
     assert workcell._command_for("workspace_write") == approved_writer_codex_command()
     assert workcell._command_for("candidate_read") == approved_workcell_codex_command()
+
+
+def test_planning_runner_exposes_stable_timeout_error_code(tmp_path) -> None:
+    runner = ACWMCodexRoleRunner(
+        workspace=tmp_path,
+        config=CodexCLIConfig(
+            command=(sys.executable, "-c", "import time; time.sleep(5)"),
+            sandbox="read-only",
+            timeout_seconds=1,
+        ),
+    )
+
+    with pytest.raises(ProductError) as captured:
+        asyncio.run(runner.run("product-analysis", "analyze"))
+
+    assert captured.value.code == "CODEX_PLANNING_ATTEMPT_TIMED_OUT"
+    assert "超过当前产品冻结的单次超时" in captured.value.detail

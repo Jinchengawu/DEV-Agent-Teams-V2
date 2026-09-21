@@ -15,6 +15,7 @@ from agent_team_os.modules.workcells import (
     BlockingFinding,
     CandidateVerificationCreate,
     DelegationAssignment,
+    DelegationPolicy,
     FrozenSlotBinding,
     ReviewArtifactCreate,
     SQLiteWorkcellExecutionRepository,
@@ -29,6 +30,90 @@ from agent_team_os.modules.workcells import (
 )
 from agent_team_os.shared.errors import ProductError
 from agent_team_os.shared.hashes import sha256_json
+
+
+def test_readonly_transient_retry_is_observable_and_legacy_snapshot_is_fail_closed(
+    tmp_path: Path,
+) -> None:
+    kernel, artifacts = _kernel(tmp_path)
+    legacy = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-legacy-retry",
+            stage_attempt_id="legacy-retry",
+            snapshot=_snapshot(),
+        )
+    )
+    diagnostic = artifacts.put_json({"error_code": "CODEX_WORKCELL_ATTEMPT_TIMED_OUT"})
+    with pytest.raises(ProductError) as denied:
+        kernel.retry_transient_attempt(
+            legacy.workcell_run.main_agent_run_id or "",
+            phase="planning",
+            error_code="CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+            result_artifact_sha256=diagnostic.sha256,
+        )
+    assert denied.value.code == "AGENT_ATTEMPT_RETRY_LIMIT_EXCEEDED"
+
+    policy = DelegationPolicy(
+        wall_clock_budget_seconds=3600,
+        max_transient_attempts=2,
+        transient_retry_backoff_seconds=1,
+    )
+    current = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-current-retry",
+            stage_attempt_id="current-retry",
+            snapshot=_snapshot().model_copy(update={"delegation_policy": policy}),
+        )
+    )
+    main_id = current.workcell_run.main_agent_run_id or ""
+    retried = kernel.retry_transient_attempt(
+        main_id,
+        phase="planning",
+        error_code="CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+        result_artifact_sha256=diagnostic.sha256,
+    )
+    attempts = [item for item in retried.attempts if item.agent_run_id == main_id]
+    assert [(item.phase, item.ordinal, item.status) for item in attempts] == [
+        ("planning", 1, "failed"),
+        ("planning", 2, "running"),
+    ]
+    assert attempts[0].result_artifact_sha256 == diagnostic.sha256
+
+    planned = kernel.submit_delegation_plan(current.workcell_run.id, ())
+    synthesizing = kernel.start_synthesis(planned.workcell_run.id)
+    main_attempts = [item for item in synthesizing.attempts if item.agent_run_id == main_id]
+    assert [(item.phase, item.ordinal) for item in main_attempts] == [
+        ("planning", 1),
+        ("planning", 2),
+        ("synthesis", 3),
+    ]
+
+    budget_limited = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-budget-retry",
+            stage_attempt_id="budget-retry",
+            snapshot=_snapshot().model_copy(update={"delegation_policy": policy}),
+        )
+    )
+    budget_main = budget_limited.workcell_run.main_agent_run_id or ""
+    with pytest.raises(ProductError) as exhausted:
+        kernel.retry_transient_attempt(
+            budget_main,
+            phase="planning",
+            error_code="CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+            result_artifact_sha256=diagnostic.sha256,
+            minimum_remaining_seconds=4_000,
+        )
+    assert exhausted.value.code == "WORKCELL_TRANSIENT_RETRY_BUDGET_EXHAUSTED"
+    budget_attempts = [
+        item
+        for item in kernel.tree(budget_limited.workcell_run.id).attempts
+        if item.agent_run_id == budget_main
+    ]
+    assert [(item.ordinal, item.status) for item in budget_attempts] == [(1, "running")]
 
 
 def _kernel(tmp_path: Path) -> tuple[WorkcellExecutionModule, ContentAddressedArtifactStorage]:
@@ -115,6 +200,38 @@ def test_new_workcell_without_frozen_review_scope_fails_closed(tmp_path: Path) -
         )
     assert missing.value.code == "WORKCELL_REVIEW_SCOPE_REQUIRED"
     assert kernel.list_delivery("delivery-workcell") == ()
+
+
+def test_failed_main_attempt_keeps_safe_diagnostic_artifact(tmp_path: Path) -> None:
+    kernel, artifacts = _kernel(tmp_path)
+    tree = kernel.create(
+        WorkcellRunCreate(
+            delivery_id="delivery-workcell",
+            pipeline_run_id="pipeline-diagnostic",
+            stage_attempt_id="attempt-diagnostic",
+            snapshot=_snapshot(),
+        )
+    )
+    diagnostic = artifacts.put_json(
+        {
+            "contract_version": "codex-cli-exit-diagnostic-v1",
+            "exit_code": 1,
+            "stderr_bytes": 17,
+            "stderr_sha256": "d" * 64,
+            "stable_category": "CODEX_WORKCELL_ATTEMPT_FAILED",
+        }
+    )
+
+    failed = kernel.fail(
+        tree.workcell_run.id,
+        error_code="CODEX_WORKCELL_ATTEMPT_FAILED",
+        result_artifact_sha256=diagnostic.sha256,
+    )
+
+    assert failed.workcell_run.status == "failed"
+    running_attempt = next(item for item in failed.attempts if item.phase == "planning")
+    assert running_attempt.status == "failed"
+    assert running_attempt.result_artifact_sha256 == diagnostic.sha256
 
 
 def test_main_writer_machine_verification_parallel_reviews_and_synthesis(

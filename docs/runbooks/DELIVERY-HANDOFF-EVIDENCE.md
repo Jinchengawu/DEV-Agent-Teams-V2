@@ -1,5 +1,52 @@
 # 四仓 R2 交接证据索引
 
+## v0.5.1 Local Evaluation Delivery Candidate
+
+交接前先在已构建 Console 的同一 Revision 上构建 Python 制品与 Delivery Bundle：
+
+```sh
+uv build
+pnpm --dir console build
+.venv/bin/python scripts/build_delivery_bundle.py \
+  --output-root <空的输出父目录> \
+  --wheel dist/dev_agent_teams_v2-0.5.1-py3-none-any.whl
+.venv/bin/python scripts/verify_delivery_bundle.py \
+  <输出父目录>/agent-team-os-0.5.1
+```
+
+Builder 仅收集 allow-list 内的 wheel、`console/dist`、`migrations/*.sql`、四个锁定
+config 和默认 `agent-team-os-mvp/1.3.0` Evaluation Dataset，并生成
+`delivery-manifest.json`。缺失资源、版本不一致、符号链接、数据库、日志、
+`.env`、密钥或凭据文件均 fail-closed。Manifest 的 `evidence_scope` 固定将 Deterministic/
+Live 标为 `not_run`，将 Approval/Apply 标为 `not_authorized`。
+正式 Bundle 构建会拒绝 dirty worktree；`--allow-dirty` 仅用于开发验证，Manifest 必然标记
+`source_worktree_clean=false` 与 `local_bundle=development_only`，不得作为交付候选。
+
+解压或复制 Bundle 后，启动命令必须显式设置：
+
+```sh
+AGENT_TEAM_OS_PRODUCT_ROOT=<Bundle根目录> \
+AGENT_TEAM_OS_DATA_DIR=<独立临时数据目录> \
+agent-team-os demo
+```
+
+Product Root 会严格校验 config、Migration、`console/dist/index.html` 和默认 Evaluation Dataset；显式 Root 非法时
+不回退到 checkout。评测账号必须为本次交接独立生成，密码不得进入 Git、日志、
+Fixture、Report、截图或文档。Bundle 校验成功仅支持 `locally_verified` 判定，不得换算为
+下文的四仓正式交接。
+
+Bundle 不携带从 Registry 下载的 Method Pack 对象。首次启动前，在有网络且明确授权
+下运行已安装 wheel 提供的入口；它会使用 Bundle 中锁定的 URL、Registry Integrity 和
+SHA-256 验证内容，不会把归档写回 Bundle：
+
+```sh
+AGENT_TEAM_OS_PRODUCT_ROOT=<Bundle根目录> \
+AGENT_TEAM_OS_DATA_DIR=<独立临时数据目录> \
+agent-team-os-method-packs
+```
+
+## Formal Live 交接
+
 `scripts/check_delivery_handoff.py` 只关联已有原生报告。`reference_check=consistent` 表示三轨引用
 与目标相容，不能代替 Release Report、业务 Gate 或当前远端状态。工具不会运行 Agent、访问业务服务、
 批准 Gate 或修改产品数据库。

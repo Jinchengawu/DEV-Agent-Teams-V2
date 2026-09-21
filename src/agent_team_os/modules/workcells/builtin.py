@@ -11,6 +11,7 @@ from .application import TeamTemplateCatalog
 from .domain import (
     DelegationPolicy,
     TeamTemplateCreate,
+    TeamTemplateDraftPatch,
     TeamTemplateRevision,
     TeamTopology,
     TopologyLink,
@@ -28,10 +29,54 @@ def ensure_builtin_software_delivery_team(
     """Seed the immutable four-repository organization used by the v0.5 pipeline."""
 
     try:
-        return catalog.get_revision("software-delivery-team", 1)
+        return catalog.get_revision("software-delivery-team", 2)
     except KeyError:
         pass
-    definition = TeamTemplateCreate(
+    definition = _team_definition(transient_retry=False)
+    try:
+        catalog.get_revision("software-delivery-team", 1)
+    except KeyError:
+        created = catalog.create(definition, actor_id=actor_id)
+        validated = catalog.validate(created.draft.id, expected_version=created.draft.version)
+        catalog.publish(
+            created.draft.id,
+            expected_version=validated.version,
+            actor_id=actor_id,
+        )
+    drafts = tuple(
+        draft
+        for draft in catalog.list_drafts("software-delivery-team")
+        if draft.created_by == actor_id
+    )
+    if not drafts:
+        draft = catalog.create_draft_from_revision(
+            "software-delivery-team",
+            1,
+            actor_id=actor_id,
+        )
+    else:
+        draft = drafts[0]
+    current = _team_definition(transient_retry=True)
+    patched = catalog.patch(
+        draft.id,
+        TeamTemplateDraftPatch(
+            expected_version=draft.version,
+            name=current.name,
+            description=current.description,
+            workcells=current.workcells,
+            topology=current.topology,
+        ),
+    )
+    validated = catalog.validate(patched.id, expected_version=patched.version)
+    return catalog.publish(
+        patched.id,
+        expected_version=validated.version,
+        actor_id=actor_id,
+    )
+
+
+def _team_definition(*, transient_retry: bool) -> TeamTemplateCreate:
+    return TeamTemplateCreate(
         id="software-delivery-team",
         name="四仓软件交付团队",
         description=(
@@ -39,22 +84,30 @@ def ensure_builtin_software_delivery_team(
             "组织拓扑只表达责任与 Artifact 传递，不定义 Stage 顺序。"
         ),
         workcells=(
-            _workcell("design", "Design", "生成交互与视觉契约并完成设计边界审查。"),
+            _workcell(
+                "design",
+                "Design",
+                "生成交互与视觉契约并完成设计边界审查。",
+                transient_retry=transient_retry,
+            ),
             _workcell(
                 "frontend",
                 "Frontend",
                 "实现前端 Candidate，完成机器验证、代码审查与 UX Edge Review。",
+                transient_retry=transient_retry,
             ),
             _workcell(
                 "backend",
                 "Backend",
                 "实现后端 Candidate，完成机器验证、代码审查与 Security Edge Review。",
+                transient_retry=transient_retry,
             ),
             _workcell(
                 "qa",
                 "QA",
                 "先生成 Test Design/ATDD Artifact，再交付独立 QA Candidate 与 Trace Evidence。",
                 purposes=("workspace_write", "artifact", "review"),
+                transient_retry=transient_retry,
             ),
         ),
         topology=TeamTopology(
@@ -72,13 +125,6 @@ def ensure_builtin_software_delivery_team(
             ),
         ),
     )
-    created = catalog.create(definition, actor_id=actor_id)
-    validated = catalog.validate(created.draft.id, expected_version=created.draft.version)
-    return catalog.publish(
-        created.draft.id,
-        expected_version=validated.version,
-        actor_id=actor_id,
-    )
 
 
 def _workcell(
@@ -87,6 +133,7 @@ def _workcell(
     responsibility: str,
     *,
     purposes: tuple[str, ...] = ("workspace_write", "review"),
+    transient_retry: bool,
 ) -> WorkcellDefinition:
     return WorkcellDefinition.model_validate(
         {
@@ -100,7 +147,9 @@ def _workcell(
                 max_concurrency=2,
                 max_writers=1,
                 max_depth=1,
-                wall_clock_budget_seconds=900,
+                wall_clock_budget_seconds=3600 if transient_retry else 900,
+                max_transient_attempts=2 if transient_retry else 1,
+                transient_retry_backoff_seconds=1 if transient_retry else 0,
             ),
         }
     )
@@ -143,8 +192,8 @@ def builtin_workcell_stage_map() -> dict[str, WorkcellStageBinding]:
             "qa",
             {
                 "delegate_1": ("bmad-testarch-automate", "workspace_write"),
-                "delegate_2": ("bmad-testarch-test-review", "review"),
-                "delegate_3": ("bmad-testarch-trace", "review"),
+                "delegate_2": ("bmad-code-review", "review"),
+                "delegate_3": ("bmad-review", "review"),
             },
         ),
     }
