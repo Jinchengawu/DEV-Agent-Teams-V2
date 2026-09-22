@@ -5,6 +5,7 @@ import { ErrorState, LoadingState } from "../../shared/feedback/AsyncState";
 import { DeliveryDetail } from "./DeliveryDetail";
 import {
   useDelivery,
+  useCancelEvaluation,
   useDeliveryDecision,
   useDeliveryEvents,
   useDeliveryEvidence,
@@ -17,6 +18,7 @@ import { useCompleteProjectOnboarding } from "../projects/api";
 import { useIdentity } from "../identity/AuthGate";
 import { WorkcellExecutionPanel } from "../workcells/WorkcellExecutionPanel";
 import { KnowledgeContextPanel } from "./KnowledgeContextPanel";
+import { EvaluationExit } from "./EvaluationExit";
 
 export function DeliveryRunPage() {
   const { deliveryId } = useParams<{ deliveryId: string }>();
@@ -35,6 +37,7 @@ export function DeliveryRunPage() {
   const decision = useDeliveryDecision();
   const retryPublication = useRetryKnowledgePublication(deliveryId);
   const completeOnboarding = useCompleteProjectOnboarding(projectId);
+  const cancelEvaluation = useCancelEvaluation();
 
   if (!deliveryId) return <ErrorState error={new Error("路由缺少交付 ID，请从交付工作台重新进入。")}/>;
   if (delivery.isLoading) return <LoadingState label="正在读取交付聚合、运行账本与证据…"/>;
@@ -73,6 +76,11 @@ export function DeliveryRunPage() {
         completeOnboarding.mutate({ expected_version: onboarding.version, evaluation_delivery_id: delivery.data.id, expected_candidate_gate_subject_sha256: gate.subject_sha256 });
       }}
     />
+    <EvaluationExit projectId={projectId} purpose={delivery.data.purpose} status={delivery.data.status}
+      ready={project.data?.onboarding.status === "ready"}
+      boundEvaluation={project.data?.onboarding.evaluation_delivery_id === delivery.data.id}
+      canCancel={user.role !== "viewer"} pending={cancelEvaluation.isPending} error={cancelEvaluation.error}
+      onCancel={() => cancelEvaluation.mutate(delivery.data!)}/>
     <section id="delivery-knowledge" className="delivery-secondary-details" aria-label="知识上下文详情">
       <Collapse destroyOnHidden items={[{
         key: "knowledge-context",

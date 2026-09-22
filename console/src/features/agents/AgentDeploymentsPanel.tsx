@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Drawer, Input, Select } from "antd";
+import { Button, Input, Select } from "antd";
+import { FocusDrawer as Drawer } from "../../shared/ui/DrawerFocusTrap";
 import { CheckCircle2, Link2, Play, Power, RefreshCw } from "lucide-react";
 import type { components } from "../../shared/api/generated/schema";
 import { request } from "../../shared/api/client";

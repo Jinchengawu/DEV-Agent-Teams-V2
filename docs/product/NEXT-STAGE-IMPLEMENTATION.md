@@ -70,3 +70,24 @@ Deterministic runner 首次在沙箱生成 `fail=1/warn=0/skipped=0`（Permissio
 
 复现：严格 R2 浏览器在组织模板页面遇到正确提示“执行顺序由 Published Pipeline Revision 管理。”，旧脚本用子串不存在断言而失败，未产生成功 Receipt。
 Architecture Impact：Local；Findings：仅测试选择器与当前文案失配，不改变角色/流程；Required Revisions：改为正向验证完整权威提示；ADR Required：No；Architecture Document Delta：无；Outcome：Approved。以实际 Browser 复测验证，不删除产品证据断言。
+
+## 修复切片 C：评测完成后的可见退出入口
+
+Draft：R2 实测完成引导后评测仍 `awaiting_candidate_decision`，Lease 正确保留；运行室没有 Delivery 取消入口。Board 存在拖动拒绝路径但运行室没有指引，主流程无法直接继续正式交付。增加明确的评测结束动作。
+Architecture Review：Architecture Impact `Local`；Findings：使用已有取消 API/CAS 与服务端权限，保持 onboarding、Delivery、Lease 权威及不自动 Apply；Required Revisions：只向获权用户在 ready 的评测候选显示结束入口，确认后取消，错误可见，取消终态后再给正式交付入口；ADR Required `No`；Architecture Document Delta 无；Outcome `Approved`。
+Revise/Final：采用独立 EvaluationExit 视图与现有 Query Mutation 模式，不增加后台状态或接口。先测试角色/状态/显式确认边界，再走浏览器“完成引导→结束评测→新正式交付”，不以API代操作补齐用户流程。
+
+Implementation/Reconciliation：新增组件与既有 cancel/CAS API 的 Query Mutation；取消错误保留重试上下文，cancelling 不开放正式交付入口，终态由后台确认。组件 9 项测试通过，Console 全量 33 文件、131 tests 通过，Typecheck 与直接 Vite build 通过。Browser 开发复测已实际完成评测→显式取消→新正式 Delivery→四仓确定性 Manifest；后续知识断言发现需先展开现有知识 Collapse，已补真实导航，尚待最终干净 Revision 收据。
+
+## 后续核验（候选冻结前）
+
+修复切片 D（NR-08）：实际 Browser 双向 Tab 测试发现桌面 Deployment Drawer 焦点跳到 BODY。依赖焦点锁只在 focusin 时修正，无法阻止 Tab 跳出浏览器内容；移动导航已有端点键盘修复。Draft/Architecture Review：Impact Local；Findings 保持 Ant Drawer 的 Escape、portal 与关闭回焦，只复用现有端点键盘行为；Required Revisions 抽取移动导航已有 FocusTrap 为共享组件并用于两个 Agent 编辑 Drawer，覆盖双向端点/禁用项/普通按键；ADR Required No；Architecture Document Delta 无；Outcome Approved。Final：先公共组件测试，再抽取与应用，最后完整 Console 与真实 Browser 复验。
+
+切片 D Implementation/Reconciliation：共享 DrawerFocusTrap 应用于既有移动导航与两个 Agent 编辑 Drawer，保留关闭回焦，过滤 disabled/hidden/inert/负 tabIndex；空内容容器接管，React portal 不被强制抢焦点。测试先 RED（组件缺失），实现后2项专项通过；Typecheck通过，Console 34文件133 tests通过（19.53s），Vite3541 modules构建通过。实际 NR-08 Browser `nr08-debug11/result.json` passed，包含 Select 弹出层 Escape 后 Drawer仍开、双向24次Tab、Escape回焦、390px移动和限定角色动作；这仍是dirty开发回归，最终干净SHA证据另行生成。React检查清单未发现额外取数、全局事件监听或隐藏状态权威。
+
+- 全量 Python：690 passed、1 skipped，229.88s，原生 `full-suite.xml`。运行跨首次冻结提交但生产源码内容未改变；该结果不是零 skipped 的正式 Gate。
+- 相关 Browser receipt/harness 与恢复专项：59 passed，13.13s，`final-focused.xml`。三份修改后的 Browser 脚本 Ruff 通过。
+- S2：将已授权 GitHub keyring token 仅注入子进程内存后 Git reference 4/4 可解析，无需用户重新登录。Feishu 权限新鲜度、索引与 Ollama 资格匹配均为 1；原四仓 Qualification 仍因身份漂移被拒。
+- 在独立本地 clone 上重新 qualify 四仓全部通过：配置未变化；四仓依赖身份变化，QA/design/backend 工具身份变化，frontend 工具身份未变化。未更新原 live DB，没有把隔离资格成功宣称为原实例恢复。
+- 安装制品公开 API 已在无 checkout 的独立环境通过登录 200、创建 Delivery 202、冻结 `4c82bdd` clean identity；该临时 Delivery 已回读 cancelled。独立账号尚未安全交付，不宣称 NR-01 全部完成。
+- NR-08 扩展仅证明其实际覆盖范围：Viewer 发起入口隐藏与创建 API 403、Editor 发起入口可见、Admin 核心路径、Drawer 双向 Tab/Escape/关闭焦点回归与 390px 移动导航；不会外推三角色全生命周期权限覆盖。浏览器最终结果待冻结后记录。

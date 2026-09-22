@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import { DrawerFocusTrap } from "../../shared/ui/DrawerFocusTrap";
 import { Button, Drawer, Select } from "antd";
 import { Bot, Boxes, CircleGauge, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Menu, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -81,7 +81,7 @@ export function AppShell() {
     </aside>
     <main className="app-main">
       <header className="app-context-bar"><div className="route-context"><span>控制平面　／</span><h1>{current.label}</h1><small>{current.description}</small></div><div className="context-actions"><Button className="mobile-nav-trigger" aria-label="打开导航与账户" icon={<Menu size={17}/>} onClick={() => setMobileNavigationOpen(true)}>导航</Button><ThemeToggle/><div className="identity-strip"><span>规划身份<b>Codex 模拟 Hermes</b></span><span>执行身份<b>Codex CLI</b></span></div></div></header>
-      <Drawer className="mobile-navigation" title="导航与账户" aria-label="导航与账户" placement="right" open={mobileNavigationOpen} onClose={() => setMobileNavigationOpen(false)} focusable={{ trap: true, focusTriggerAfterClose: true }} drawerRender={(node) => <MobileNavigationFocusTrap>{node}</MobileNavigationFocusTrap>}>
+      <Drawer className="mobile-navigation" title="导航与账户" aria-label="导航与账户" placement="right" open={mobileNavigationOpen} onClose={() => setMobileNavigationOpen(false)} focusable={{ trap: true, focusTriggerAfterClose: true }} drawerRender={(node) => <DrawerFocusTrap className="mobile-navigation-focus-trap">{node}</DrawerFocusTrap>}>
         <section className="mobile-navigation-project"><label htmlFor="mobile-active-project">当前项目</label><Select id="mobile-active-project" aria-label="移动端当前项目" value={projectId} disabled={!projects.data?.length} onChange={(value) => { switchProject(value); setMobileNavigationOpen(false); }} options={projects.data?.map((project) => ({ value: project.id, label: project.name }))}/></section>
         <nav aria-label="移动端项目工作区导航">{scopedPaths.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path} onClick={() => setMobileNavigationOpen(false)}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
         <nav aria-label="移动端系统目录">{systemSections.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path} end={path === "/projects"} onClick={() => setMobileNavigationOpen(false)}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
@@ -90,35 +90,6 @@ export function AppShell() {
       <Outlet key={location.pathname.startsWith("/projects/") ? projectId : "global"}/>
     </main>
   </div>;
-}
-
-const drawerFocusableSelector = [
-  "button:not([disabled])",
-  "a[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
-].join(",");
-
-function MobileNavigationFocusTrap({ children }: { children: ReactNode }) {
-  const keepFocusInside = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(drawerFocusableSelector))
-      .filter((element) => element.getAttribute("aria-hidden") !== "true" && !element.closest('[aria-hidden="true"]'));
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable.at(-1)!;
-    const active = document.activeElement;
-    if (event.shiftKey && (active === first || !event.currentTarget.contains(active))) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && (active === last || !event.currentTarget.contains(active))) {
-      event.preventDefault();
-      first.focus();
-    }
-  };
-  return <div className="mobile-navigation-focus-trap" onKeyDown={keepFocusInside}>{children}</div>;
 }
 
 function roleLabel(role: string) {

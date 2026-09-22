@@ -118,6 +118,22 @@ export function useDeliveryDecision() {
   });
 }
 
+export function useCancelEvaluation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (delivery: Delivery) => request<Delivery>(`/v1/deliveries/${delivery.id}/cancel`, {
+      method: "POST", body: JSON.stringify({ expected_version: delivery.version }),
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["deliveries"] }),
+        client.invalidateQueries({ queryKey: ["projects"] }),
+        client.invalidateQueries({ queryKey: setupReadinessKeys.root }),
+      ]);
+    },
+  });
+}
+
 export function useRetryKnowledgePublication(deliveryId?: string) {
   const client = useQueryClient();
   return useMutation({

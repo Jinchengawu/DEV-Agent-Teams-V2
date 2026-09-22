@@ -549,6 +549,9 @@ def _run_browser(arguments: argparse.Namespace) -> tuple[dict[str, Any], dict[st
                     arguments.url,
                     knowledge_binding_id=str(binding["id"]),
                 )
+                page.get_by_role(
+                    "button", name="按需查看：冻结知识上下文与 Citation"
+                ).click()
                 knowledge_scope = _verify_gate_c_evidence(
                     context,
                     arguments.url,

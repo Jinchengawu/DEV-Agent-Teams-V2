@@ -217,7 +217,27 @@ def _execute_workcell_journey(
         assert approval["enabled"] is True, approval
         assert approval["rag_enabled"] is True, approval
 
-    page.get_by_role("link", name="交付工作台", exact=True).click()
+    evaluation_id = _run_workcell_delivery(page, url, project_id, evaluation=True)
+    with page.expect_response(
+        lambda response: response.request.method == "POST"
+        and response.url.endswith(f"/projects/{project_id}/onboarding/complete")
+    ) as completed_onboarding:
+        page.get_by_role("button", name="完成评测并转为正式项目", exact=True).click()
+    assert completed_onboarding.value.status == 200, completed_onboarding.value.text()
+    assert _get_json(request, f"{url}/v1/projects/{project_id}")["onboarding"]["status"] == "ready"
+    evaluation = _get_json(request, f"{url}/v1/deliveries/{evaluation_id}")
+    assert evaluation["release_manifest_v2_sha256"] is None
+    page.get_by_role("button", name="结束评测并释放项目", exact=True).click()
+    page.get_by_role("button", name="确认结束评测", exact=True).click()
+    page.get_by_role("link", name="发起正式交付", exact=True).wait_for(timeout=30_000)
+    assert _get_json(request, f"{url}/v1/deliveries/{evaluation_id}")["status"] == "cancelled"
+    page.get_by_role("link", name="发起正式交付", exact=True).click()
+    delivery_id = _run_workcell_delivery(page, url, project_id, evaluation=False)
+    return project_id, delivery_id
+
+
+def _run_workcell_delivery(page: Page, url: str, project_id: str, *, evaluation: bool) -> str:
+    page.goto(f"{url}/projects/{project_id}/deliveries")
     page.get_by_text("Repository Workcell Set", exact=True).wait_for()
     page.get_by_text("跨 Workcell 只传 Artifact", exact=False).wait_for()
     page.get_by_text("Pipeline 冻结 Slot", exact=True).wait_for()
@@ -231,7 +251,9 @@ def _execute_workcell_journey(
             response.request.method == "POST" and response.url.endswith("/v1/deliveries")
         )
     ) as delivery_response:
-        page.get_by_role("button", name="确认并启动").click()
+        page.get_by_role(
+            "button", name="启动评测交付" if evaluation else "确认并启动", exact=True,
+        ).click()
     assert delivery_response.value.status == 202, delivery_response.value.text()
     delivery_id = str(delivery_response.value.json()["id"])
 
@@ -242,10 +264,18 @@ def _execute_workcell_journey(
 
     page.get_by_role("button", name="批准设计并开始前后端实现").wait_for(timeout=STAGE_TIMEOUT_MS)
     page.get_by_text("Candidate ", exact=False).first.wait_for()
+    page.get_by_role(
+        "button", name="按需查看：Workcell、AgentAttempt 与 Release 运行明细", exact=True,
+    ).click()
     _assert_design_artifact_dialogs(page, url, delivery_id)
     page.get_by_role("button", name="批准设计并开始前后端实现").click()
     page.get_by_role("button", name="确认批准设计").click()
 
+    if evaluation:
+        page.get_by_role("button", name="完成评测并转为正式项目", exact=True).wait_for(
+            timeout=STAGE_TIMEOUT_MS,
+        )
+        return delivery_id
     release_button = page.get_by_role("button", name="批准四仓 Forward-only 发布")
     release_button.wait_for(timeout=STAGE_TIMEOUT_MS)
     page.get_by_text("External ReleaseBundleV2 已通过系统校验", exact=True).wait_for()
@@ -261,7 +291,7 @@ def _execute_workcell_journey(
 
     page.get_by_text("ReleaseManifestV2 已激活", exact=True).wait_for(timeout=STAGE_TIMEOUT_MS)
     page.locator(".run-hero").get_by_text("已完成", exact=True).wait_for()
-    return project_id, delivery_id
+    return delivery_id
 
 
 def _assert_plan_acceptance_ui(page: Page, url: str, delivery_id: str) -> None:

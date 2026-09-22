@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -38,12 +39,10 @@ def main() -> None:
             page, args.url, project_id, args.evidence_dir
         )
         _verify_agent_drawers(page, args.evidence_dir)
+        _verify_roles(browser, desktop, args.url, project_id)
         page.screenshot(path=str(args.evidence_dir / "desktop.png"), full_page=True)
-        storage = args.evidence_dir / "storage-state.json"
-        desktop.storage_state(path=str(storage))
-
         mobile = browser.new_context(
-            viewport={"width": 390, "height": 844}, storage_state=str(storage)
+            viewport={"width": 390, "height": 844}, storage_state=desktop.storage_state()
         )
         mobile_page = mobile.new_page()
         mobile_errors = _capture_errors(mobile_page)
@@ -57,6 +56,7 @@ def main() -> None:
         )
         mobile_navigation.wait_for()
         expect(mobile_navigation.get_by_role("link", name="准备中心")).to_be_visible()
+        _verify_tab_boundary(mobile_page, "导航与账户")
         mobile_page.wait_for_timeout(500)
         mobile_page.screenshot(path=str(args.evidence_dir / "mobile.png"), full_page=True)
 
@@ -68,6 +68,10 @@ def main() -> None:
             "project_id": project_id,
             "git_head": _git_head(),
             "working_tree_dirty": bool(_git_status()),
+            "roles": ["administrator", "editor", "viewer"],
+            "viewer_api_write_status": 403,
+            "keyboard": ["Tab", "Shift+Tab", "Escape", "focus-return"],
+            "credential_storage": "memory-only",
             "screenshots": [
                 "setup-desktop.png",
                 "agents-drawer.png",
@@ -156,13 +160,79 @@ def _verify_agent_drawers(page: Page, evidence_dir: Path) -> None:
     page.get_by_role("link", name="智能体实例", exact=True).click()
     page.get_by_role("button", name="创建 Deployment").click()
     page.get_by_role("dialog", name="创建 Deployment").wait_for()
+    role_select = page.get_by_role("combobox", name="已发布 Agent 角色", exact=True)
+    role_select.click()
+    role_select.press("Escape")
+    expect(page.get_by_role("dialog", name="创建 Deployment")).to_be_visible()
+    _verify_tab_boundary(page, "创建 Deployment")
     page.keyboard.press("Escape")
+    expect(page.get_by_role("button", name="创建 Deployment")).to_be_focused()
     page.get_by_role("tab", name="Agent 角色").click()
     page.get_by_role("button", name="创建角色").click()
     page.get_by_role("dialog", name="创建智能体角色").wait_for()
     page.wait_for_timeout(500)
     page.screenshot(path=str(evidence_dir / "agents-drawer.png"), full_page=True)
     page.keyboard.press("Escape")
+
+
+def _verify_tab_boundary(page: Page, name: str) -> None:
+    dialog = page.get_by_role("dialog", name=name, exact=True)
+    # 等待 Drawer 打开动画与 React focus-lock effect 完成后再测试按键循环。
+    page.wait_for_timeout(500)
+    for key in ("Tab", "Shift+Tab"):
+        for _ in range(24):
+            page.keyboard.press(key)
+            # Ant Drawer 的焦点锁容器包含 dialog，并可自身接收初始焦点。
+            assert dialog.evaluate(
+                "element => (element.closest('.ant-drawer') ?? element)"
+                ".contains(document.activeElement)"
+            ), (
+                "焦点逃出对话框", name, key,
+                page.evaluate("({tag: document.activeElement?.tagName, "
+                              "class: document.activeElement?.className})"),
+            )
+
+
+def _verify_roles(browser, administrator, url: str, project_id: str) -> None:
+    cookies = {item["name"]: item["value"] for item in administrator.cookies(url)}
+    headers = {"Origin": url, "X-CSRF-Token": cookies["agent_team_os_csrf"]}
+    for role in ("editor", "viewer"):
+        password = secrets.token_urlsafe(24)
+        username = f"nr08-{role}-{int(time.time())}"
+        created = administrator.request.post(
+            f"{url}/v1/users", headers=headers,
+            data={"username": username, "display_name": role, "role": role, "password": password},
+        )
+        assert created.status == 201
+        member = administrator.request.put(
+            f"{url}/v1/projects/{project_id}/memberships/{created.json()['id']}",
+            headers=headers, data={"role": role},
+        )
+        assert member.ok
+        context = browser.new_context(viewport={"width": 1440, "height": 1000})
+        login = context.request.post(
+            f"{url}/v1/auth/login", headers={"Origin": url},
+            data={"username": username, "password": password},
+        )
+        assert login.status == 200
+        page = context.new_page()
+        page.goto(f"{url}/projects/{project_id}/deliveries")
+        if role == "viewer":
+            expect(page.get_by_role("region", name="只读交付权限")).to_be_visible()
+            expect(page.get_by_role("button", name="生成交付计划")).to_have_count(0)
+            viewer_cookies = {item["name"]: item["value"] for item in context.cookies(url)}
+            response = context.request.post(
+                f"{url}/v1/deliveries",
+                headers={"Origin": url, "X-CSRF-Token": viewer_cookies["agent_team_os_csrf"]},
+                data={
+                    "project_id": project_id, "user_request": "拒绝越权",
+                    "purpose": "onboarding_evaluation",
+                },
+            )
+            assert response.status == 403
+        else:
+            expect(page.get_by_role("button", name="生成交付计划")).to_be_visible()
+        context.close()
 
 
 def _capture_errors(page: Page) -> list[str]:
