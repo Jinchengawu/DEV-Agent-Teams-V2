@@ -4,21 +4,28 @@ import json
 import secrets
 import sqlite3
 import subprocess
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from agent_team_os.modules.artifacts import ContentAddressedArtifactStorage
-from scripts import browser_interaction_closure_full_e2e as full_harness
-from scripts.browser_interaction_closure_full_e2e import (
-    EVALUATION_TARGET,
-    WORKCELL_KEYS,
-    _build_failure_artifact,
-    _read_attempt_summaries,
-    _repository_main_invariants,
-    _write_session_baseline,
+
+_spec = spec_from_file_location(
+    "browser_interaction_closure_full_e2e",
+    Path(__file__).parents[1] / "scripts/browser_interaction_closure_full_e2e.py",
 )
+assert _spec is not None and _spec.loader is not None
+full_harness = module_from_spec(_spec)
+_spec.loader.exec_module(full_harness)
+
+EVALUATION_TARGET = full_harness.EVALUATION_TARGET
+WORKCELL_KEYS = full_harness.WORKCELL_KEYS
+_build_failure_artifact = full_harness._build_failure_artifact
+_read_attempt_summaries = full_harness._read_attempt_summaries
+_repository_main_invariants = full_harness._repository_main_invariants
+_write_session_baseline = full_harness._write_session_baseline
 
 
 def test_evaluation_target_freezes_two_acceptance_ids_per_workcell() -> None:
