@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -31,17 +32,21 @@ class CodexWorkcellAgent:
         *,
         command: tuple[str, ...] | None = None,
         timeout_seconds: int = 900,
+        max_concurrency: int = 2,
         runtime_identity: str = "codex-cli",
     ) -> None:
         resolved_command = approved_workcell_codex_command() if command is None else command
         if not resolved_command:
             raise ValueError("Codex command cannot be empty")
+        if max_concurrency < 1:
+            raise ValueError("Codex max_concurrency must be positive")
         self.command = resolved_command
         self.writer_command = (
             approved_writer_codex_command() if command is None else resolved_command
         )
         self.timeout_seconds = timeout_seconds
         self.runtime_identity = runtime_identity
+        self._capacity = asyncio.Semaphore(max_concurrency)
         self._active: dict[str, asyncio.subprocess.Process] = {}
         self._overlay_lock = asyncio.Lock()
         self._overlay_leases: dict[Path, tuple[Path, int, int, bool]] = {}
@@ -77,13 +82,17 @@ class CodexWorkcellAgent:
             "exec",
             "--json",
             "--ephemeral",
+            "--skip-git-repo-check",
             "--sandbox",
             sandbox,
             "-C",
             str(invocation.workspace.resolve()),
             "-",
         )
-        async with self._method_project_overlay(invocation, environment) as runtime_env:
+        async with (
+            self._capacity,
+            self._method_project_overlay(invocation, environment) as runtime_env,
+        ):
             try:
                 process = await asyncio.create_subprocess_exec(
                     *command,
@@ -118,10 +127,23 @@ class CodexWorkcellAgent:
             finally:
                 self._active.pop(invocation.agent_run_id, None)
         if process.returncode != 0:
-            detail = _redact(stderr.decode(errors="replace")[-4_000:])
+            stderr_text = stderr.decode(errors="replace")
+            signals = _codex_failure_signals(stderr_text)
+            failure_code = _codex_failure_code(stderr_text)
+            diagnostic: dict[str, object] = {
+                "contract_version": "codex-cli-exit-diagnostic-v2",
+                "exit_code": process.returncode,
+                "signals": list(signals),
+                "stderr_bytes": len(stderr),
+                "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
+                "stable_category": failure_code,
+            }
             raise _error(
-                "CODEX_WORKCELL_ATTEMPT_FAILED",
-                f"Codex CLI 退出码 {process.returncode}：{detail}",
+                failure_code,
+                f"Codex CLI 退出码 {process.returncode}；"
+                f"错误分类 {failure_code}；"
+                f"stderr_sha256={diagnostic['stderr_sha256']}。",
+                context=diagnostic,
             )
         final = _final_messages(stdout.decode(errors="replace"))
         try:
@@ -274,6 +296,77 @@ def _codex_home_project_root_alias(environment: dict[str, str], workspace: Path)
             "Method Runtime CODEX_HOME 不得位于业务 Workspace 内。",
         )
     return codex_home / "_bmad"
+
+
+def _codex_failure_code(stderr: str) -> str:
+    """Map non-zero Codex exits to stable, non-secret operational classes."""
+
+    normalized = stderr.casefold()
+    signals = _codex_failure_signals(stderr)
+    if "capacity-exhausted" in signals or "http-429" in signals:
+        return "CODEX_WORKCELL_CAPACITY_EXHAUSTED"
+    if "access-denied" in signals or "http-403" in signals:
+        return "CODEX_WORKCELL_ACCESS_DENIED"
+    if "config-load-failed" in signals:
+        return "CODEX_WORKCELL_CONFIG_INVALID"
+    if "turn-failed" in signals or "invalid-request" in signals:
+        return "CODEX_WORKCELL_PROTOCOL_FAILED"
+    if "stream-disconnected" in signals:
+        return "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE"
+    if "not logged in" in normalized or "authentication required" in normalized:
+        return "CODEX_WORKCELL_AUTH_REQUIRED"
+    if (
+        "http/request failed" in normalized
+        or "error sending request" in normalized
+        or "connection refused" in normalized
+        or "connection reset" in normalized
+    ):
+        return "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE"
+    if "timed out" in normalized or "timeout" in normalized:
+        return "CODEX_WORKCELL_TRANSPORT_TIMED_OUT"
+    if "model" in normalized and (
+        "not found" in normalized
+        or "unsupported" in normalized
+        or "unavailable" in normalized
+    ):
+        return "CODEX_WORKCELL_MODEL_UNAVAILABLE"
+    return "CODEX_WORKCELL_ATTEMPT_FAILED"
+
+
+def _codex_failure_signals(stderr: str) -> tuple[str, ...]:
+    """Return only allow-listed operational markers; never persist stderr text."""
+
+    normalized = stderr.casefold()
+    markers = {
+        "access-denied": ("access denied", "permission denied", "not have access"),
+        "capacity-exhausted": ("usage limit", "rate limit", "quota exceeded"),
+        "config-load-failed": (
+            "failed to load config",
+            "invalid configuration",
+            "config parse error",
+        ),
+        "http-400": ("status 400", "http 400", "400 bad request"),
+        "http-401": ("status 401", "http 401", "401 unauthorized"),
+        "http-403": ("status 403", "http 403", "403 forbidden"),
+        "http-404": ("status 404", "http 404", "404 not found"),
+        "http-429": ("status 429", "http 429", "429 too many requests"),
+        "http-500": ("status 500", "http 500", "500 internal server error"),
+        "http-502": ("status 502", "http 502", "502 bad gateway"),
+        "http-503": ("status 503", "http 503", "503 service unavailable"),
+        "http-504": ("status 504", "http 504", "504 gateway timeout"),
+        "invalid-request": ("invalid request", "invalid_request_error"),
+        "stream-disconnected": (
+            "stream disconnected",
+            "connection closed before completion",
+        ),
+        "turn-failed": ('"type":"turn.failed"', '"type": "turn.failed"'),
+        "websocket-fallback": ("falling back from websockets",),
+    }
+    return tuple(
+        name
+        for name, phrases in markers.items()
+        if any(phrase in normalized for phrase in phrases)
+    )
 
 
 def _install_project_root_alias(alias: Path | None, overlay: Path) -> None:
@@ -652,11 +745,17 @@ def _is_utf8(value: str) -> bool:
     return True
 
 
-def _error(code: str, detail: str) -> ProductError:
+def _error(
+    code: str,
+    detail: str,
+    *,
+    context: dict[str, object] | None = None,
+) -> ProductError:
     return ProductError(
         code=code,
         title="Codex Workcell AgentAttempt 失败",
         detail=detail,
         repair="检查 Codex 登录、Method Overlay、Workspace 权限与冻结 Provider Binding。",
         status_code=409,
+        context=context,
     )

@@ -543,6 +543,7 @@ class WorkcellStageDriver:
             _terminalize_workcell_failure(
                 self.kernel,
                 tree.workcell_run.id,
+                artifacts=self.artifacts,
             ),
             self.methods.activate(delivery_snapshot.method_snapshot) as method_context,
         ):
@@ -937,7 +938,7 @@ class WorkcellStageDriver:
         methods: WorkcellMethodContext,
     ) -> tuple[ArtifactReference, tuple[str, ...]]:
         main = _main(tree)
-        output = await self._run_agent(
+        output = await self._run_readonly_agent_with_retry(
             delivery,
             WorkcellAgentInvocation(
                 delivery_id=delivery.id,
@@ -1422,7 +1423,7 @@ class WorkcellStageDriver:
         """Retry one invalid review contract as a second Attempt on the same Child Run."""
         current = invocation
         for attempt_index in range(2):
-            result = await self._run_agent(delivery, current)
+            result = await self._run_readonly_agent_with_retry(delivery, current)
             try:
                 tree = self.kernel.tree(invocation.workcell_run_id)
                 verification = tree.verification
@@ -1510,7 +1511,7 @@ class WorkcellStageDriver:
         )
         for attempt_index in range(2):
             try:
-                output = await self._run_agent(delivery, invocation)
+                output = await self._run_readonly_agent_with_retry(delivery, invocation)
                 _require_runtime_identity(main, output)
                 return output
             except ProductError as error:
@@ -1669,6 +1670,69 @@ class WorkcellStageDriver:
                 status_code=error.status_code,
             ) from error
         return output.model_copy(update={"knowledge_citation_ids": citations})
+
+    async def _run_readonly_agent_with_retry(
+        self,
+        delivery: DeliveryRun,
+        invocation: WorkcellAgentInvocation,
+    ) -> WorkcellAgentOutput:
+        """Run a side-effect-free phase with one policy-bounded transient retry."""
+        if invocation.workspace_access not in {"none", "candidate_read"}:
+            return await self._run_agent(delivery, invocation)
+        tree = self.kernel.tree(invocation.workcell_run_id)
+        policy = tree.workcell_run.workcell_snapshot.delegation_policy
+        while True:
+            remaining = self.kernel.remaining_budget_seconds(invocation.workcell_run_id)
+            if remaining <= 0:
+                raise _error(
+                    "WORKCELL_WALL_CLOCK_BUDGET_EXCEEDED",
+                    "WorkcellRun 已超过 Wall-clock Budget。",
+                )
+            try:
+                return await asyncio.wait_for(
+                    self._run_agent(delivery, invocation),
+                    timeout=remaining,
+                )
+            except TimeoutError as error:
+                raise _error(
+                    "WORKCELL_WALL_CLOCK_BUDGET_EXCEEDED",
+                    "WorkcellRun 已超过 Wall-clock Budget。",
+                ) from error
+            except ProductError as error:
+                if error.code not in {
+                    "CODEX_WORKCELL_ATTEMPT_TIMED_OUT",
+                    "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE",
+                    "CODEX_WORKCELL_TRANSPORT_TIMED_OUT",
+                    "CODEX_WORKCELL_CAPACITY_EXHAUSTED",
+                }:
+                    raise
+                diagnostic = self.artifacts.put_json(
+                    {
+                        "contract_version": "workcell-transient-retry-v1",
+                        "error_code": error.code,
+                        "phase": invocation.phase,
+                        "workspace_access": invocation.workspace_access,
+                    }
+                )
+                try:
+                    self.kernel.retry_transient_attempt(
+                        invocation.agent_run_id,
+                        phase=invocation.phase,
+                        error_code=error.code,
+                        result_artifact_sha256=diagnostic.sha256,
+                        minimum_remaining_seconds=(
+                            900 + 60 + policy.transient_retry_backoff_seconds
+                        ),
+                    )
+                except ProductError as retry_error:
+                    if retry_error.code in {
+                        "AGENT_ATTEMPT_RETRY_LIMIT_EXCEEDED",
+                        "WORKCELL_TRANSIENT_RETRY_BUDGET_EXHAUSTED",
+                    }:
+                        raise error from retry_error
+                    raise
+                if policy.transient_retry_backoff_seconds:
+                    await asyncio.sleep(policy.transient_retry_backoff_seconds)
 
     def _attachment_payload(self, tree: WorkcellRunTree) -> str:
         return json.dumps(
@@ -1891,7 +1955,9 @@ def _delegate_invocation(
             "不得自行安装或更新依赖，也不得为运行受限服务或端口测试而反复重试。"
             "可以运行不需要环境变更、不需要网络或端口权限的轻量检查；"
             "冻结命令的完整执行、exit code 和结果接纳唯一归属后续 Product Machine Verification。"
-            + _accessibility_verification_contract(tree.workcell_run.workcell_key)
+            + _verification_capability_contract(
+                tree.workcell_run.workcell_key, verification_profile
+            )
         )
     review_contract = ""
     repair_contract = ""
@@ -2023,6 +2089,22 @@ def _accessibility_verification_contract(workcell_key: str) -> str:
     return ""
 
 
+def _verification_capability_contract(
+    workcell_key: str,
+    profile: VerificationSnapshot | None,
+) -> str:
+    """Describe only capabilities frozen into the selected verification profile."""
+    if not isinstance(profile, VerificationQualificationV2):
+        return ""
+    expected_profile = {
+        "frontend": "frontend-ts-vite-vitest-v1",
+        "qa": "qa-playwright-artifacts-v1",
+    }.get(workcell_key)
+    if profile.profile.id != expected_profile:
+        return ""
+    return _accessibility_verification_contract(workcell_key)
+
+
 def _qa_live_verification_contract(workcell_key: str) -> str:
     if workcell_key != "qa":
         return ""
@@ -2096,6 +2178,8 @@ def _success_condition(stage_path: str) -> str:
 def _terminalize_workcell_failure(
     kernel: WorkcellExecutionModule,
     run_id: str,
+    *,
+    artifacts: ContentAddressedArtifactStorage | None = None,
 ) -> Iterator[None]:
     """Make every unexpected Driver error observable before it escapes to ACWM."""
 
@@ -2116,11 +2200,59 @@ def _terminalize_workcell_failure(
             )
         raise
     except Exception as error:
-        kernel.fail(
-            run_id,
-            error_code=str(getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED")),
-        )
+        diagnostic_sha256: Sha256 | None = None
+        context = getattr(error, "context", None)
+        if artifacts is not None and _is_safe_codex_exit_diagnostic(context):
+            diagnostic_sha256 = artifacts.put_json(context).sha256
+        error_code = str(getattr(error, "code", "WORKCELL_STAGE_EXECUTION_FAILED"))
+        if diagnostic_sha256 is None:
+            kernel.fail(run_id, error_code=error_code)
+        else:
+            kernel.fail(
+                run_id,
+                error_code=error_code,
+                result_artifact_sha256=diagnostic_sha256,
+            )
         raise
+
+
+def _is_safe_codex_exit_diagnostic(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    version = value.get("contract_version")
+    expected = {
+        "contract_version",
+        "exit_code",
+        "stderr_bytes",
+        "stderr_sha256",
+        "stable_category",
+    }
+    if version == "codex-cli-exit-diagnostic-v2":
+        expected.add("signals")
+    if set(value) != expected:
+        return False
+    return (
+        version in {
+            "codex-cli-exit-diagnostic-v1",
+            "codex-cli-exit-diagnostic-v2",
+        }
+        and isinstance(value.get("exit_code"), int)
+        and isinstance(value.get("stderr_bytes"), int)
+        and isinstance(value.get("stderr_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", str(value.get("stderr_sha256"))) is not None
+        and isinstance(value.get("stable_category"), str)
+        and str(value.get("stable_category")).startswith("CODEX_WORKCELL_")
+        and (
+            version == "codex-cli-exit-diagnostic-v1"
+            or (
+                isinstance(value.get("signals"), list)
+                and all(
+                    isinstance(item, str) and re.fullmatch(r"[a-z0-9-]+", item)
+                    for item in value["signals"]
+                )
+            )
+        )
+    )
 
 
 def _redact(value: str) -> str:

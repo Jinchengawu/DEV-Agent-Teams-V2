@@ -229,3 +229,26 @@ Writer 与 Reviewer 切换 Workspace 时先移除旧别名，再绑定新的隔�
 不得进入 Candidate Diff。
 
 状态见 `ARCH-20260911-03`；当前只有 Adapter 专项证据，四仓 Live 闭环需重跑。
+
+## 2026-09-22 已接受修订：只读 AgentAttempt transient retry
+
+对同一冻结输入的 Main planning/synthesis 和 Reviewer `candidate_read` Attempt，产品可对
+Provider timeout、transport unavailable/timeout 与 capacity exhausted 执行一次原位、可观测重试。
+这不是 ACWM bounded Loop：WorkcellRun、AgentRun、phase、Provider/Runtime、Candidate、Review
+Scope 和 Artifact Snapshot 必须保持不变，产品只追加新 ordinal 的 `AgentAttempt`。
+
+历史 Snapshot 缺省 `max_transient_attempts=1`，因此保持原 fail-closed 语义。新的内置
+Pipeline Revision 显式冻结 `max_transient_attempts=2`、`transient_retry_backoff_seconds=1`和
+`wall_clock_budget_seconds=3600`；单次 Codex 调用 timeout 仍为 `900s`。每次重试前必须执行
+Workcell deadline guard，且剩余总预算必须覆盖一次完整调用、固定 backoff 和取消/Overlay
+cleanup reserve。队列和 backoff 不消耗单次 Provider timeout，但消耗 Workcell 总预算。
+
+合同输出重试与 transient retry 共享每个 phase 最大两次 Attempt；Main planning 发生重试后，
+synthesis ordinal 必须从已有 Ledger 最大值递增，不得假定其为 2。只有子进程终止并等待完成、
+Attempt 失败事实持久化且 Method Overlay 已清理后，才能创建下一 Attempt。
+`workspace_write` Writer 与 `artifact_only` Delegate 不在本恢复范围，仍由 ACWM 新建
+bounded Loop WorkcellRun/全新 Candidate，避免不可判定的工作区或工件副作用。
+
+决策状态：`Implemented/Verified`（本地合同）。历史 Snapshot 兼容、新内置 Revision、
+phase 共享上限、非硬编码 ordinal、剩余预算准入与只读 Stage Driver retry 已有聚焦与
+全量本地回归。该状态不等于 Live 恢复轨道或 Release/Apply 验收通过。

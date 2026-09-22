@@ -12,7 +12,9 @@ import {
   useDeliveryPipelineRun,
   useRetryKnowledgePublication,
 } from "./api";
-import { projectPath, useProjectId } from "../../entities/project/api";
+import { projectPath, useProject, useProjectId } from "../../entities/project/api";
+import { useCompleteProjectOnboarding } from "../projects/api";
+import { useIdentity } from "../identity/AuthGate";
 import { WorkcellExecutionPanel } from "../workcells/WorkcellExecutionPanel";
 import { KnowledgeContextPanel } from "./KnowledgeContextPanel";
 
@@ -20,6 +22,8 @@ export function DeliveryRunPage() {
   const { deliveryId } = useParams<{ deliveryId: string }>();
   const projectId = useProjectId();
   const delivery = useDelivery(deliveryId, projectId);
+  const project = useProject(projectId);
+  const { user } = useIdentity();
   const events = useDeliveryEvents(deliveryId, projectId);
   const evidence = useDeliveryEvidence(deliveryId, projectId);
   const publications = useDeliveryKnowledgePublications(deliveryId, projectId);
@@ -30,6 +34,7 @@ export function DeliveryRunPage() {
   );
   const decision = useDeliveryDecision();
   const retryPublication = useRetryKnowledgePublication(deliveryId);
+  const completeOnboarding = useCompleteProjectOnboarding(projectId);
 
   if (!deliveryId) return <ErrorState error={new Error("路由缺少交付 ID，请从交付工作台重新进入。")}/>;
   if (delivery.isLoading) return <LoadingState label="正在读取交付聚合、运行账本与证据…"/>;
@@ -54,6 +59,19 @@ export function DeliveryRunPage() {
       decisionPending={decision.isPending}
       decisionError={decision.error}
       onDecision={(value) => decision.mutate({ delivery: delivery.data!, decision: value })}
+      canDecidePlan={user.role !== "viewer"}
+      canApplyCandidate={user.role === "administrator"}
+      canRetryPublication={user.role !== "viewer"}
+      onboarding={project.data?.onboarding}
+      canCompleteOnboarding={user.role === "administrator"}
+      onboardingPending={completeOnboarding.isPending}
+      onboardingError={completeOnboarding.error}
+      onCompleteOnboarding={() => {
+        const gate = delivery.data?.candidate_gate;
+        const onboarding = project.data?.onboarding;
+        if (!delivery.data || !gate || !onboarding) return;
+        completeOnboarding.mutate({ expected_version: onboarding.version, evaluation_delivery_id: delivery.data.id, expected_candidate_gate_subject_sha256: gate.subject_sha256 });
+      }}
     />
     <section id="delivery-knowledge" className="delivery-secondary-details" aria-label="知识上下文详情">
       <Collapse destroyOnHidden items={[{
@@ -66,7 +84,7 @@ export function DeliveryRunPage() {
       <Collapse destroyOnHidden items={[{
         key: "workcell-execution",
         label: "按需查看：Workcell、AgentAttempt 与 Release 运行明细",
-        children: <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId}/>,
+        children: <WorkcellExecutionPanel deliveryId={delivery.data.id} projectId={projectId} canOperate={user.role !== "viewer"}/>,
       }]}/>
     </section>}
   </div>;

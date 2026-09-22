@@ -17,6 +17,8 @@ describe("TeamTemplate 组织权威边界", () => {
     ]);
     expect(new Set(template.workcells.map((item) => item.workcell_key)).size).toBe(4);
     expect(template.workcells.every((item) => item.primary_workspace.kind === "git_repository_v1")).toBe(true);
+    expect(template.workcells.every((item) => item.delegation_policy?.max_transient_attempts === 1)).toBe(true);
+    expect(template.workcells.every((item) => item.delegation_policy?.transient_retry_backoff_seconds === 0)).toBe(true);
     expect(payload).not.toMatch(/stage|provider|release_member|credential/i);
   });
 

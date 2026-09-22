@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Agent-Team-OS",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "paths": {
     "/v1/features": {
@@ -4959,6 +4959,161 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/setup-readiness": {
+      "get": {
+        "summary": "Get Setup Readiness",
+        "operationId": "get_setup_readiness_v1_setup_readiness_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupReadinessReport"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "目标资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "输入校验失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "运行依赖未就绪",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/projects/{project_id}/onboarding/complete": {
+      "post": {
+        "summary": "Complete Project Onboarding",
+        "operationId": "complete_project_onboarding_v1_projects__project_id__onboarding_complete_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectOnboardingComplete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOnboarding"
+                }
               }
             }
           },
@@ -14866,6 +15021,20 @@
             "minimum": 30.0,
             "title": "Wall Clock Budget Seconds",
             "default": 900
+          },
+          "max_transient_attempts": {
+            "type": "integer",
+            "maximum": 2.0,
+            "minimum": 1.0,
+            "title": "Max Transient Attempts",
+            "default": 1
+          },
+          "transient_retry_backoff_seconds": {
+            "type": "number",
+            "maximum": 30.0,
+            "minimum": 0.0,
+            "title": "Transient Retry Backoff Seconds",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -15287,6 +15456,15 @@
               }
             ],
             "title": "Pipeline Revision Id"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "product",
+              "onboarding_evaluation"
+            ],
+            "title": "Purpose",
+            "default": "product"
           }
         },
         "additionalProperties": false,
@@ -15355,6 +15533,15 @@
           "user_request": {
             "type": "string",
             "title": "User Request"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "product",
+              "onboarding_evaluation"
+            ],
+            "title": "Purpose",
+            "default": "product"
           },
           "status": {
             "type": "string",
@@ -19540,6 +19727,18 @@
               }
             ],
             "title": "Actual Version"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
           }
         },
         "additionalProperties": false,
@@ -19814,6 +20013,15 @@
             "title": "Repository Mode",
             "default": "backend",
             "deprecated": true
+          },
+          "onboarding_mode": {
+            "type": "string",
+            "enum": [
+              "guided_evaluation",
+              "standard"
+            ],
+            "title": "Onboarding Mode",
+            "default": "standard"
           }
         },
         "additionalProperties": false,
@@ -19949,13 +20157,17 @@
               }
             ],
             "title": "Active Delivery Id"
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/ProjectOnboarding"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "project",
-          "workspace"
+          "workspace",
+          "onboarding"
         ],
         "title": "ProjectDetail"
       },
@@ -20307,6 +20519,105 @@
           "role"
         ],
         "title": "ProjectMembershipUpdate"
+      },
+      "ProjectOnboarding": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "title": "Project Id"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "guided_evaluation",
+              "standard"
+            ],
+            "title": "Mode"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "setup",
+              "in_evaluation",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "evaluation_delivery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Delivery Id"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_id",
+          "mode",
+          "status",
+          "version"
+        ],
+        "title": "ProjectOnboarding"
+      },
+      "ProjectOnboardingComplete": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Version"
+          },
+          "evaluation_delivery_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Evaluation Delivery Id"
+          },
+          "expected_candidate_gate_subject_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Candidate Gate Subject Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "evaluation_delivery_id",
+          "expected_candidate_gate_subject_sha256"
+        ],
+        "title": "ProjectOnboardingComplete"
       },
       "ProjectPatch": {
         "properties": {
@@ -22464,6 +22775,110 @@
           "available"
         ],
         "title": "RuntimeAdapterDescriptor"
+      },
+      "SetupReadinessCheck": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "blocked",
+              "failed",
+              "not_run"
+            ],
+            "title": "Status"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "repair": {
+            "type": "string",
+            "title": "Repair"
+          },
+          "navigation_target": {
+            "type": "string",
+            "title": "Navigation Target"
+          },
+          "blocking_scope": {
+            "type": "string",
+            "enum": [
+              "start_delivery",
+              "complete_onboarding",
+              "release_only"
+            ],
+            "title": "Blocking Scope"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "summary",
+          "repair",
+          "navigation_target",
+          "blocking_scope"
+        ],
+        "title": "SetupReadinessCheck"
+      },
+      "SetupReadinessReport": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "blocked",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "global_checks": {
+            "items": {
+              "$ref": "#/components/schemas/SetupReadinessCheck"
+            },
+            "type": "array",
+            "title": "Global Checks"
+          },
+          "project_checks": {
+            "items": {
+              "$ref": "#/components/schemas/SetupReadinessCheck"
+            },
+            "type": "array",
+            "title": "Project Checks",
+            "default": []
+          },
+          "optional_checks": {
+            "items": {
+              "$ref": "#/components/schemas/SetupReadinessCheck"
+            },
+            "type": "array",
+            "title": "Optional Checks",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "global_checks"
+        ],
+        "title": "SetupReadinessReport"
       },
       "Space": {
         "properties": {

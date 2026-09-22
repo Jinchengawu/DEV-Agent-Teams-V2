@@ -8,6 +8,7 @@ export type ProblemDetail = {
   trace_id?: string;
   expected_version?: number;
   actual_version?: number;
+  context?: { checks?: components["schemas"]["SetupReadinessCheck"][] } | null;
 };
 
 export class ApiProblem extends Error {

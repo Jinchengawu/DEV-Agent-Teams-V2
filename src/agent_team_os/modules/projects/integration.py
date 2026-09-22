@@ -147,4 +147,57 @@ class ProjectLeaseDeliveryRepository:
                     repair="等待活动交付进入终态后重新创建。",
                     status_code=409,
                 ) from error
+            onboarding: tuple[object, ...] | None = None
+            if delivery.purpose == "onboarding_evaluation":
+                onboarding = connection.execute(
+                    """SELECT mode,status,evaluation_delivery_id,version
+                    FROM project_onboarding WHERE project_id=?""",
+                    (delivery.project_id,),
+                ).fetchone()
+                if onboarding is None:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_NOT_FOUND",
+                        title="项目引导状态缺失",
+                        detail="不能绑定评测交付。",
+                        repair="运行最新数据库 Migration 后重试。",
+                        status_code=503,
+                    )
+                if str(onboarding[0]) != "guided_evaluation" or str(onboarding[1]) != "setup":
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_STATE_CONFLICT",
+                        title="项目不能启动评测交付",
+                        detail="只有 setup 状态的 guided_evaluation 项目可以绑定评测交付。",
+                        repair="刷新项目 onboarding 状态后重试。",
+                        status_code=409,
+                    )
+                onboarding_version = onboarding[3]
+                if not isinstance(onboarding_version, int):
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_VERSION_INVALID",
+                        title="项目引导版本无效",
+                        detail="onboarding version 不是有效整数。",
+                        repair="检查 Migration 和运行库完整性后重试。",
+                        status_code=503,
+                    )
             self.inner.save_on(connection, delivery)
+            if onboarding is not None:
+                cursor = connection.execute(
+                    """UPDATE project_onboarding SET status='in_evaluation',
+                    evaluation_delivery_id=?,version=version+1,updated_at=?
+                    WHERE project_id=? AND status='setup' AND evaluation_delivery_id IS NULL
+                    AND version=?""",
+                    (
+                        delivery.id,
+                        datetime.now(UTC).isoformat(),
+                        delivery.project_id,
+                        onboarding_version,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise ProductError(
+                        code="PROJECT_ONBOARDING_VERSION_CONFLICT",
+                        title="项目引导版本冲突",
+                        detail="onboarding 状态在交付创建期间发生变化。",
+                        repair="刷新准备中心后重试。",
+                        status_code=409,
+                    )

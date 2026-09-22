@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { Button, Drawer, Select } from "antd";
-import { Bot, Boxes, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Menu, Settings, Workflow } from "lucide-react";
+import { Bot, Boxes, CircleGauge, Database, FileCheck2, FolderGit2, GitBranch, LayoutDashboard, LogOut, Menu, Settings, Workflow } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import mark from "../../assets/agent-team-os-mark.svg";
 import inverseMark from "../../assets/agent-team-os-mark-inverse.svg";
 import { useIdentity } from "../../features/identity/AuthGate";
 import { LEGACY_PROJECT_ID, projectPath, readActiveProjectId, rememberActiveProjectId, useProjects, useRouteProjectId } from "../../entities/project/api";
 import { ThemeToggle } from "../../shared/ui/ThemeToggle";
+import { useSetupReadiness } from "../../features/setup/api";
 
 const projectSections = [
   { section: "deliveries", label: "交付工作台", icon: GitBranch, description: "从目标进入当前项目的可审批交付闭环" },
@@ -17,6 +18,7 @@ const projectSections = [
 ] as const;
 
 const systemSections = [
+  { path: "/setup", label: "准备中心", icon: CircleGauge, description: "Runtime、项目与执行契约准备度" },
   { path: "/projects", label: "项目", icon: FolderGit2, description: "项目治理、独立工作区与资源授权" },
   { path: "/agents", label: "智能体实例", icon: Bot, description: "角色、部署与运行实例" },
   { path: "/teams", label: "组织模板", icon: Boxes, description: "Workcell 身份、委派上限与 Workspace 要求" },
@@ -32,7 +34,13 @@ export function AppShell() {
   const [rememberedProjectId, setRememberedProjectId] = useState(readActiveProjectId);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const projects = useProjects();
-  const projectId = routeProjectId ?? rememberedProjectId ?? projects.data?.[0]?.id ?? LEGACY_PROJECT_ID;
+  const rememberedVisible = projects.data?.some((project) => project.id === rememberedProjectId);
+  const projectId = routeProjectId
+    ?? (rememberedVisible ? rememberedProjectId : undefined)
+    ?? projects.data?.find((project) => project.id !== LEGACY_PROJECT_ID)?.id
+    ?? projects.data?.[0]?.id
+    ?? LEGACY_PROJECT_ID;
+  const setupReadiness = useSetupReadiness(projectId, Boolean(projectId));
 
   useEffect(() => {
     if (!routeProjectId) return;
@@ -44,7 +52,7 @@ export function AppShell() {
 
   useEffect(() => {
     if (routeProjectId || !projects.data?.length || projects.data.some((project) => project.id === projectId)) return;
-    const fallback = projects.data[0].id;
+    const fallback = projects.data.find((project) => project.id !== LEGACY_PROJECT_ID)?.id ?? projects.data[0].id;
     setRememberedProjectId(fallback);
     rememberActiveProjectId(fallback);
   }, [projectId, projects.data, routeProjectId]);
@@ -63,10 +71,11 @@ export function AppShell() {
     <aside className="main-sidebar">
       <NavLink className="brand" to="/projects" end aria-label="Agent-Team-OS 项目目录">
         <span className="brand-mark"><img className="brand-mark-light" src={mark} alt=""/><img className="brand-mark-dark" src={inverseMark} alt=""/></span>
-        <span><b>Agent-Team-OS</b><small>交付控制平面 · V0.5.0</small></span>
+        <span><b>Agent-Team-OS</b><small>交付控制平面 · V0.5.1 · v0.5.2 交互闭环本地候选</small></span>
       </NavLink>
       <nav aria-label="项目工作区导航"><span className="nav-label">项目工作区</span>{scopedPaths.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
       <div className="workspace-card project-switcher"><label>当前项目</label><Select id="active-project" aria-label="当前项目" value={projectId} disabled={!projects.data?.length} onChange={switchProject} options={projects.data?.map((project) => ({ value: project.id, label: project.name }))}/><small>{projects.error ? "项目目录暂不可用" : "切换后同步隔离交付、看板、知识与证据"}</small></div>
+      <NavLink className="workspace-card readiness-summary" to={`/setup?project_id=${encodeURIComponent(projectId)}`}><span>交付准备度</span><b>{setupReadiness.error ? "检查失败" : setupReadiness.data?.status === "ready" ? "已就绪" : setupReadiness.isPending ? "检查中" : "已阻塞"}</b><small>查看原因与唯一修复入口</small></NavLink>
       <nav aria-label="系统目录"><span className="nav-label">系统目录</span>{systemSections.map(({ path, label, icon: Icon }) => <NavLink key={path} to={path} end={path === "/projects"}><Icon size={17}/><span>{label}</span></NavLink>)}</nav>
       <div className="system-state"><span className="identity-state"><i/>{user.display_name}</span><small>{roleLabel(user.role)} · {user.username}</small><Button type="text" className="text-button" onClick={logout} loading={loggingOut} icon={<LogOut size={14}/>}>{loggingOut ? "正在退出…" : "退出登录"}</Button></div>
     </aside>

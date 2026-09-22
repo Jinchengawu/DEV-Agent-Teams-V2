@@ -123,18 +123,6 @@ def test_codex_task_planning_includes_frozen_prefix_owner_map() -> None:
         "title": "four repositories",
         "instructions": "implement each owned behavior",
         "acceptance_ids": list(ids.values()),
-        "workcell_acceptance": [
-            {
-                "workcell_key": workcell,
-                "acceptance": [
-                    {
-                        "acceptance_id": acceptance_id,
-                        "responsibility": f"implement in the {workcell} repository only",
-                    }
-                ],
-            }
-            for workcell, acceptance_id in ids.items()
-        ],
     }
     runner = ScriptedCodexRoleRunner([json.dumps(task)])
 
@@ -169,7 +157,6 @@ def test_codex_task_planning_compiles_complete_prefix_owner_map_in_product() -> 
         "title": "health contract v2",
         "instructions": "implement the approved requirements",
         "acceptance_ids": [ids["qa"]],
-        "workcell_acceptance": None,
     }
     runner = ScriptedCodexRoleRunner([json.dumps(invalid_model_task)])
 
@@ -189,6 +176,58 @@ def test_codex_task_planning_compiles_complete_prefix_owner_map_in_product() -> 
     assert len(runner.prompts) == 1
     prompt = runner.prompts[0]
     assert "QA 只能在自有 Repository 中验证可观察行为" in prompt
+
+
+def test_codex_prefixed_task_planning_uses_compact_core_schema_once() -> None:
+    from agent_team_os.delivery import RequirementArtifact
+
+    requirements = RequirementArtifact.model_validate(
+        {
+            "summary": "四仓交互闭环",
+            "non_goals": ["不执行 Apply"],
+            "risks": ["不得跨仓修改"],
+            "acceptance_criteria": [
+                {
+                    "id": f"IC-{workcell.upper()}-{ordinal:03d}",
+                    "statement": f"{workcell} 仓验收行为 {ordinal}",
+                }
+                for workcell in WORKCELL_KEYS
+                for ordinal in (1, 2)
+            ],
+        }
+    )
+    response = {
+        "title": "完成四仓交互闭环",
+        "instructions": "实现并机器验证全部已批准验收行为",
+        "acceptance_ids": [item.id for item in requirements.acceptance_criteria],
+    }
+    runner = ScriptedCodexRoleRunner([json.dumps(response)])
+
+    result = asyncio.run(
+        CodexPlanningService(runner).plan(
+            requirements,
+            required_workcells=WORKCELL_KEYS,
+        )
+    )
+
+    assert len(runner.prompts) == 1
+    prompt = runner.prompts[0]
+    schema = prompt.split("Exact JSON Schema (authoritative data contract):\n", 1)[1]
+    assert "workcell_acceptance" not in schema
+    assert len(prompt.encode("utf-8")) <= 6_000
+    assert result.acceptance_ids == tuple(item.id for item in requirements.acceptance_criteria)
+    assert result.workcell_acceptance is not None
+    assert {
+        item.workcell_key: tuple(entry.acceptance_id for entry in item.acceptance)
+        for item in result.workcell_acceptance
+    } == {
+        workcell: tuple(
+            item.id
+            for item in requirements.acceptance_criteria
+            if f"-{workcell.upper()}-" in item.id
+        )
+        for workcell in WORKCELL_KEYS
+    }
 
 
 def test_codex_four_workcell_planning_does_not_invent_missing_responsibilities() -> None:

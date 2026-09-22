@@ -35,10 +35,33 @@ from agent_team_os.modules.orchestration import (
     SQLitePipelineRepository,
 )
 from agent_team_os.modules.workcells import (
+    DelegationPolicy,
     builtin_knowledge_context_bindings,
     builtin_release_contract,
     builtin_workcell_stage_map,
 )
+
+
+def test_delegation_policy_preserves_legacy_snapshot_and_freezes_new_retry_budget() -> None:
+    legacy = DelegationPolicy()
+    assert legacy.max_transient_attempts == 1
+    assert "max_transient_attempts" not in legacy.model_dump(mode="json")
+    assert "transient_retry_backoff_seconds" not in legacy.model_dump(mode="json")
+
+    current = DelegationPolicy(
+        wall_clock_budget_seconds=3600,
+        max_transient_attempts=2,
+        transient_retry_backoff_seconds=1,
+    )
+    assert current.model_dump(mode="json") == {
+        "max_children": 3,
+        "max_concurrency": 2,
+        "max_writers": 1,
+        "max_depth": 1,
+        "wall_clock_budget_seconds": 3600,
+        "max_transient_attempts": 2,
+        "transient_retry_backoff_seconds": 1.0,
+    }
 
 
 def test_workcell_git_repair_loops_allow_one_post_review_machine_correction() -> None:
@@ -242,9 +265,17 @@ def test_builtin_workcell_pipeline_publishes_all_frozen_provider_and_method_slot
         "delegate_1": "artifact",
         "delegate_2": "artifact",
     }
-    assert "bmad-testarch-trace" in revision.workcell_stage_map[
-        "qa-delivery-repair/qa-delivery"
-    ].delegate_methods.values()
+    qa_delivery = revision.workcell_stage_map["qa-delivery-repair/qa-delivery"]
+    assert qa_delivery.delegate_methods == {
+        "delegate_1": "bmad-testarch-automate",
+        "delegate_2": "bmad-code-review",
+        "delegate_3": "bmad-review",
+    }
+    assert qa_delivery.delegate_purposes == {
+        "delegate_1": "workspace_write",
+        "delegate_2": "review",
+        "delegate_3": "review",
+    }
     assert {
         method
         for stage in revision.workcell_stage_map.values()
@@ -257,8 +288,6 @@ def test_builtin_workcell_pipeline_publishes_all_frozen_provider_and_method_slot
         "bmad-testarch-test-design",
         "bmad-testarch-atdd",
         "bmad-testarch-automate",
-        "bmad-testarch-test-review",
-        "bmad-testarch-trace",
     }
 
 

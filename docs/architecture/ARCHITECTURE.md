@@ -1,10 +1,10 @@
 ---
 title: Agent-Team-OS 当前架构总览
-document_version: "1.4"
-product_version: "0.5.1-in-progress"
+document_version: "1.6"
+product_version: "0.5.2-in-progress"
 truth_scope: repository_revision_containing_this_file
 initial_audit_baseline: 7401fa281a201728fa3cc504daa05d3a724fa7c6
-last_reviewed: 2026-09-05
+last_reviewed: 2026-09-20
 language: zh-CN
 ---
 
@@ -13,7 +13,7 @@ language: zh-CN
 > 本文是后续 Agent 理解当前工程的第一入口，以及已接受架构变更的状态索引。
 > 它综合解释当前 Revision 中已经存在的边界，不替代代码、Migration、OpenAPI、测试证据或 ADR。
 
-当前实现分支以 `main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f` 为基线；本文所在 Revision
+当前交付候选实现以 `main@b384e83b701d58ffaaf97c2cad0bf8958387784c` 为起始基线；本文所在 Revision
 新增了受 Feature Flag 保护的 v0.5.1 Knowledge Gate A/B/C 执行原语与 Deterministic 浏览器
 闭环。代码存在、Deterministic 测试通过和正式 Live Release 验收是三种不同事实：
 真实 Feishu/Ollama、已发布并锁定的 ACWM Stage Input Artifact Contract Revision、四仓 GitHub
@@ -133,6 +133,11 @@ AgentScope 只承载单次 Attempt 内的 Stage-local Session、消息和 Runtim
 
 `src/agent_team_os/preview.py` 是本地产品运行时组合根：
 
+组合根先通过 `AGENT_TEAM_OS_PRODUCT_ROOT` 解析受校验的产品资源根。显式 Root 必须包含
+锁定 config、Migration、已构建 Console 与默认 Evaluation Dataset，无效时 Fail Closed；仅在没有显式配置时保留
+源码 checkout 默认根。Delivery Bundle 使用 allow-list 将 wheel 与这些资源绑定到同一
+Git Revision 和 SHA-256 Manifest；该 Manifest 不拥有 Gate 或 Apply 权威。
+
 1. 解析数据目录并执行 checksummed Migration；
 2. 导入可识别的 Legacy 数据库；
 3. 构建 Project Git Workspace、Repository 和领域服务；
@@ -141,8 +146,9 @@ AgentScope 只承载单次 Attempt 内的 Stage-local Session、消息和 Runtim
 6. 构建 Evidence、Wiki、Evaluation、Artifact、Workcell、Method Pack 与 Release 服务；
 7. 按 `Gate A → Gate B → Gate C` 依赖顺序，选择性构建 Tenant Knowledge、Hybrid Index、
    Context Preparation 与 Runtime Guard；
-8. 通过 `create_app()` 挂载有资格的 `/v1` Router 和身份中间件；
-9. 启动时恢复 provisioning Project、Delivery Lease、interrupted Attempt、过期 Knowledge Sync Lease
+8. 构建 Project Onboarding 与 Setup Readiness 只读组合，并将同源失败关闭检查注入 Delivery 创建；
+9. 通过 `create_app()` 挂载有资格的 `/v1` Router 和身份中间件；
+10. 启动时恢复 provisioning Project、Delivery Lease、interrupted Attempt、过期 Knowledge Sync Lease
    和非终态 Delivery；启用 Gate A 时再启动受监管的持久化 Scheduler/Worker Supervisor。
 
 内置 Pipeline 导入只是 bootstrap 默认值：启动时仅可自动迁移由同一 bootstrap
@@ -164,7 +170,7 @@ Gate A 的 `knowledge-sync-runtime-v1` 使用数据库 `KnowledgeSyncJob` 作为
 
 | 模块组 | Deep Module | 主要所有权 |
 |---|---|---|
-| 治理 | `identity`、`projects`、`agents`、`extensions`、`workcells` | 用户与权限、项目资源、Agent/Deployment、Method/Extension、Team/Workspace/Workcell |
+| 治理 | `identity`、`projects`、`agents`、`extensions`、`workcells` | 用户与权限、项目资源与独立 Onboarding、Setup Readiness 组合、Agent/Deployment、Method/Extension、Team/Workspace/Workcell |
 | 编排 | `orchestration`、`delivery` | Pipeline Revision、GraphRun 投影、Delivery 状态和 Gate 协调 |
 | 发布 | `releases`、`evidence`、`artifacts` | Bundle、Apply/Resume、Manifest、不可变证据和大 Artifact |
 | 协作 | `knowledge`、`board` | Wiki/Provider Snapshot、Search/Publication、可重建 WorkItem 投影 |
@@ -194,7 +200,9 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 
 - `agent-team-os.sqlite` 保存产品状态、Revision、Event、Reference 和 Receipt；
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
-- Migration `0001–0045` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- Migration `0001–0046` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- `project_onboarding` 独立持久化 `setup → in_evaluation → ready`，使用 version CAS；
+  既有 Project 幂等回填 `standard/ready`，不改变 Project lifecycle。
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
 - Board、SSE、Search 等投影只读取已提交事实，不拥有源状态。Board 将
   Delivery `needs_attention` 显式投影到无拖拽命令的独立恢复列，不用 UI 投影改写 Release 语义。
@@ -329,7 +337,10 @@ Main planning
   Workcell Execution 将同 Stage 最近一轮的失败代码、机器 case 与日志正文、已校验 Blocking
   Finding 与 Delegate 诊断冻结为 `workcell-repair-context-v1` 传入新 Run，避免
   无失败证据的盲目重试；不传 Session、Memory 或其他仓库挂载。
-- Child 深度固定为 1；Main 最多三个 Child、并发最多两个、Writer 最多一个。
+- Child 深度固定为 1；Main 最多三个 Child、单 Workcell 并发最多两个、Writer 最多一个。
+  同一 Gate App 内的 `CodexWorkcellAgent` 还以共享信号量把 Provider 级别的
+  同时 subprocess 限制为 2；排队在 subprocess 启动前发生，不改变单调用 900 秒
+  timeout。该本地资源治理不改变 ACWM Stage 顺序或 Workcell 权威。
 - Main planning 与 synthesis 是同一 Main Run 下的不同 AgentAttempt。
 - 每个 Main/Child 都必须先有产品创建的 AgentRun/AgentAttempt；Runtime Adapter 不得隐藏派生。
 - Writer 使用本 Workcell 的隔离可写 Worktree；Reviewer 只读取同一 SHA 的 detached Candidate。
@@ -411,6 +422,8 @@ Python 使用隔离启动并禁用字节码，先载入标准库测试 Runner �
 - Reviewer 的只读语义由 detached Candidate View 和 `candidate_read` Workspace Access 表达，
   不使用 Codex `--add-dir` 模拟权限。
 - PR 状态、UI “Ready” 标签、Agent 自报能力和未验证 Hash 都不能成为 Apply 依据。
+- Delivery Bundle 只纳入 allow-list 内的静态产品资源；符号链接、数据库、日志、缓存、
+  `.env`、密钥和凭据文件 Fail Closed。运行数据始终位于独立 Data Root。
 
 ## 11. Knowledge、Evidence 与当前成熟度
 
@@ -469,6 +482,8 @@ Python 使用隔离启动并禁用字节码，先载入标准库测试 Runner �
 | Delivery Knowledge Context（Gate C） | 可重放闭环 `Implemented`、`Deterministic Verified`；Live `Accepted/Not Implemented` | ACWM `0.5.1` Contract 已发布回锁并被 R2 消费；当前 Revision 真实 Tenant/Ollama 整链验收待完成。 |
 | Release Acceptance V2 | `Implemented`、`Deterministic Verified`、`Live Blocked/Not Run` | 只读组合 Build Identity、Pipeline/Attempt、Knowledge、四仓 Candidate/PR/Receipt/Manifest；尚无真实同 Revision Live Report。 |
 | Evaluation | API/CLI/Dataset `Implemented` | 当前没有独立 `/evaluation` Console 页面。 |
+| v0.5.1 Delivery Bundle / Product Root | `Implemented`、`Local Contract Verified` | 版本、allow-list Manifest、篡改拒绝与显式 Root 失败关闭；不是 Deterministic/Live Gate 或 Apply 证据。 |
+| v0.5.2 Project Onboarding / Setup Readiness | `Implemented`、`Local Contract Verified`、`Deterministic Browser Verified`、`Real-Codex Local Browser Verified` | 独立 onboarding CAS、只读准备度组合、Delivery 创建 409、Console 主路由和 Agent Drawer 已通过本地合同测试；Deterministic 与真实 Codex local-PR 浏览器路径均已到达 Candidate/Evidence/onboarding ready 且无 Apply/远端写。当前仍是 dirty worktree 上的 local deterministic PR surface，正式同 Revision Live Release Gate 未运行。 |
 
 已知后移能力包括 Workspace-Set 跨 Delivery Lease、Delta Release、Manifest Version CAS、
 并行 Manifest 合成、非 Git Workspace Adapter、二级子 Agent 和 Provider-native PR Merge。
@@ -791,6 +806,46 @@ Plan/ADR reference: ADR-0015 修订。
 Implemented evidence: Push 成功但回读失败的回归先红后绿；同 Bundle 恢复四份 Receipt，首份 `recovered=true`，Manifest/Health/Lease 正常终结。
 ```
 
+#### 12.2.8 `ARCH-20260920-01` Delivery Bundle 与 Product Root
+
+```text
+State: Implemented/Verified
+Maturity: Local Contract Verified; Formal Live Blocked/Not Run
+Accepted at: 2026-09-20
+Architecture Impact: Cross-boundary
+Decision: 用 allow-list Delivery Bundle 绑定 backend wheel、Console dist、Migration 与锁定 config；
+          Runtime 优先使用受校验的显式 Product Root，非法时不回退 checkout。
+Affected authorities/modules/data/states: Preview 组合根、Build/Distribution、Console Static、Migration/Config；
+                                         不新增 Gate、Approval 或 Apply 权威。
+Compatibility and migration: 无数据库/API Migration；未设 Product Root 时保留源码 checkout 开发兼容。
+Plan/ADR reference: ADR-0020；docs/plans/2026-09-20-V0.5.1-DELIVERY-IMPLEMENTATION-PLAN.md
+Implemented evidence: 版本一致性、Bundle allow-list/Manifest、缺失与敏感资源拒绝、篡改拒绝、
+                      真实 Evaluation Dataset 可从 Bundle 加载、
+                      显式 Product Root 无静默回退的自动化合同验证。
+Remaining evidence: 同 Revision 的 clean-room 安装/启动与核心浏览器由主任务独立复验；
+                    Deterministic/Live/Approval/Apply 仍保持独立边界。
+```
+
+#### 12.2.9 `ARCH-20260920-02` Project Onboarding 与 Setup Readiness
+
+```text
+State: Implemented/Verified
+Maturity: Local Contract Verified; Deterministic Browser Verified; Real-Codex Local Browser Verified; Formal Live Gate Not Run
+Accepted at: 2026-09-20
+Architecture Impact: Cross-boundary
+Decision: Project Governance 持久化独立 onboarding CAS；Setup Readiness 即时组合现有权威；
+          Delivery 创建在服务端使用同源检查失败关闭。
+Affected authorities/modules/data/states: Project Governance、Delivery Application、Preview 组合根、Console；
+                                         `project_onboarding`、Delivery `purpose`、Setup Readiness 投影。
+Compatibility and migration: Migration 0046 幂等回填既有项目为 `standard/ready`；
+                             新 API 字段保持默认值，不改变 Project lifecycle 或历史 Delivery。
+Plan/ADR reference: ADR-0021；docs/plans/2026-09-20-V0.5.2-INTERACTION-CLOSURE-PLAN.md
+Implemented evidence: onboarding/Migration/CAS、Readiness API、Delivery 409/原子绑定、权限、OpenAPI 和
+                      Setup/Landing/Delivery/AppShell 组件合同测试。
+Remaining evidence: 冻结同一 Revision 后的正式 Browser/Deterministic/Live Release Report。
+                    Candidate/Release Gate 决策与 Apply 未授权且未执行。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -832,6 +887,9 @@ Acceptance evidence required:
 | `ARCH-20260911-05` | 2026-09-11 | `Implemented/Verified` | 同一 Main Run 对 synthesis 单一 JSON object 输出合同错误进行一次可观察 Attempt 重试 | ADR-0014 修订 | Kernel/Stage Driver 专项、Ruff 与 Mypy 通过；四仓 Live Gate 待本 Revision 重跑 |
 | `ARCH-20260911-06` | 2026-09-11 | `Implemented/Verified` | Push 成功但 SHA 回读/Receipt 丢失时，同 Bundle Candidate 可恢复 Receipt 且不重复 Push | ADR-0015 修订 | 丢失回读回归先红后绿；四仓 Receipt、Manifest、Health 与 Lease 终结通过 |
 | `ARCH-20260911-07` | 2026-09-11 | `Implemented/Verified` | Release Acceptance 接纳 Workcell Kernel 已允许的同 Reviewer Child 有界契约重试，不把合法重试误判为隐藏或失败 Attempt | ADR-0019 修订 | 单次成功与 `failed(INVALID_REVIEW_CODES) → succeeded` 正例、其他错误与越界序列反例；真实 QA Reviewer 重试差异已定位 |
+| `ARCH-20260920-01` | 2026-09-20 | `Implemented/Verified` | allow-list Delivery Bundle、稳定 Manifest 与 fail-closed Product Root | ADR-0020 | 版本、Bundle 正反合同、Manifest 篡改、真实 Evaluation Dataset 加载与 Root 回退拒绝测试通过；clean-room/browser 由主任务独立复验，Live `blocked/not_run` |
+| `ARCH-20260920-02` | 2026-09-20 | `Implemented/Verified` | 独立 Project onboarding CAS、只读 Setup Readiness 组合与 Delivery 创建失败关闭 | ADR-0021 | Migration/onboarding/409/原子绑定/权限/OpenAPI/Console 本地合同验证；Deterministic 与真实 Codex local-PR Browser 均到 Candidate/Evidence/onboarding ready 且无 Apply/远端写；正式同 Revision Live Release Gate 未运行 |
+| `ARCH-20260922-01` | 2026-09-22 | `Implemented/Verified` | 对无候选副作用的 Main/Reviewer transient Provider 失败追加一次可观测 Attempt；合同 retry 共享 phase 上限，并以 Workcell 总 deadline 准入 | ADR-0014 修订 | 历史 Snapshot max=1 兼容、新内置 Revision max=2/backoff=1/wall=3600、非硬编码 ordinal、只读 retry、预算不足不产生新 Attempt 与 Release Acceptance 回归已验证；Python 3.12 全量 677 passed/1 skipped；Live fresh 闭环仍单独验收 |
 
 ## 14. Plan Architecture Review 与文档对账
 

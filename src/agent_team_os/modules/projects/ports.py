@@ -9,6 +9,7 @@ from .domain import (
     ProjectKnowledgeSource,
     ProjectKnowledgeSourceApproval,
     ProjectMembership,
+    ProjectOnboarding,
     ProjectPipelineBinding,
     ProjectWorkspace,
 )
@@ -36,6 +37,7 @@ class ProjectRepository(Protocol):
         workspace: ProjectWorkspace,
         *,
         legacy_repository: bool = True,
+        onboarding: ProjectOnboarding | None = None,
     ) -> None: ...
     def get(self, project_id: str) -> Project | None: ...
     def list(self) -> tuple[Project, ...]: ...
@@ -80,3 +82,10 @@ class ProjectRepository(Protocol):
     def delete_membership(self, project_id: str, user_id: str, expected_version: int) -> None: ...
     def append_access_audit(self, audit: ProjectAccessAudit) -> None: ...
     def list_access_audits(self, project_id: str) -> tuple[ProjectAccessAudit, ...]: ...
+    def get_onboarding(self, project_id: str) -> ProjectOnboarding | None: ...
+    def complete_onboarding(
+        self,
+        project_id: str,
+        delivery_id: str,
+        expected_version: int,
+    ) -> ProjectOnboarding: ...

@@ -13,6 +13,7 @@ const detail = {
   project: { id: "project-1", slug: "project-1", name: "项目一", description: "", lifecycle_status: "active", version: 1, created_by: "admin", created_at: now, updated_at: now },
   workspace: { project_id: "project-1", workspace_id: "project:project-1", repository_ref: "projects/project-1", status: "ready", provision_attempt: 1, created_at: now, updated_at: now },
   pipeline_bindings: [], deployment_access: [], knowledge_sources: [], knowledge_source_approvals: [], repositories: [], active_delivery_id: null,
+  onboarding: { project_id: "project-1", mode: "standard", status: "ready", evaluation_delivery_id: null, version: 1, created_at: now, updated_at: now, completed_at: now },
 } satisfies ProjectDetail;
 const binding = { id: "binding-1", connection_id: "connection-1", display_name: "研发 Wiki", external_space_id: "space-1", root_node_token: null, status: "ready", authorization_version: 1, version: 1, replaces_binding_id: null, created_by: "admin", created_at: now, updated_at: now, last_permission_probe_at: now, last_error_code: null };
 

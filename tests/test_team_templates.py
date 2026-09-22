@@ -24,7 +24,7 @@ def test_builtin_software_delivery_team_is_idempotent_and_has_four_workcells(
     second = ensure_builtin_software_delivery_team(catalog)
 
     assert first == second
-    assert first.revision_id == "software-delivery-team:1"
+    assert first.revision_id == "software-delivery-team:2"
     assert [item.workcell_key for item in first.workcells] == [
         "design",
         "frontend",
@@ -32,6 +32,8 @@ def test_builtin_software_delivery_team_is_idempotent_and_has_four_workcells(
         "qa",
     ]
     assert all(item.primary_workspace.kind == "git_repository_v1" for item in first.workcells)
+    assert all(item.delegation_policy.max_transient_attempts == 2 for item in first.workcells)
+    assert all(item.delegation_policy.wall_clock_budget_seconds == 3600 for item in first.workcells)
     assert first.topology.links
 
 

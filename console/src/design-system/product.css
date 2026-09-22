@@ -320,6 +320,13 @@ label { color: var(--role-text-secondary); font-size: 12px; }
 /* 交付工作台 */
 .delivery-home-heading h2 { max-width: 18ch; }
 .workbench-grid { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(440px, 1.18fr); gap: var(--space-6); }
+.workbench-grid > .delivery-composer:only-child { grid-column: 1 / -1; }
+.setup-center, .readiness-checks { display: grid; gap: var(--space-4); }
+.readiness-check { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--space-4); align-items: start; padding: var(--space-4); border-bottom: 1px solid var(--role-border-subtle); }
+.readiness-check small, .readiness-check p { display: block; margin-top: var(--space-2); color: var(--role-text-muted); }
+.readiness-summary { text-decoration: none; }
+.delivery-help { margin-top: var(--space-4); }
+.legacy-projects { margin-top: var(--space-4); color: var(--role-text-muted); }
 .delivery-thesis {
   min-height: 470px;
   display: flex;

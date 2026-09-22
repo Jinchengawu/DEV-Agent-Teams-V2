@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -13,6 +15,7 @@ class ProblemDetail(BaseModel):
     trace_id: str
     expected_version: int | None = None
     actual_version: int | None = None
+    context: dict[str, Any] | None = None
 
 
 class ProductError(RuntimeError):
@@ -26,6 +29,7 @@ class ProductError(RuntimeError):
         status_code: int = 409,
         expected_version: int | None = None,
         actual_version: int | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(detail)
         self.code = code
@@ -35,6 +39,7 @@ class ProductError(RuntimeError):
         self.status_code = status_code
         self.expected_version = expected_version
         self.actual_version = actual_version
+        self.context = context
 
     def problem(self, trace_id: str) -> ProblemDetail:
         return ProblemDetail(
@@ -45,4 +50,5 @@ class ProductError(RuntimeError):
             trace_id=trace_id,
             expected_version=self.expected_version,
             actual_version=self.actual_version,
+            context=self.context,
         )

@@ -968,6 +968,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/setup-readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Setup Readiness */
+        get: operations["get_setup_readiness_v1_setup_readiness_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/onboarding/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Project Onboarding */
+        post: operations["complete_project_onboarding_v1_projects__project_id__onboarding_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/settings": {
         parameters: {
             query?: never;
@@ -3354,6 +3388,16 @@ export interface components {
              * @default 900
              */
             wall_clock_budget_seconds: number;
+            /**
+             * Max Transient Attempts
+             * @default 1
+             */
+            max_transient_attempts: number;
+            /**
+             * Transient Retry Backoff Seconds
+             * @default 0
+             */
+            transient_retry_backoff_seconds: number;
         };
         /** DeliveryBuildIdentitySnapshot */
         DeliveryBuildIdentitySnapshot: {
@@ -3518,6 +3562,12 @@ export interface components {
             journey_revision_id?: string | null;
             /** Pipeline Revision Id */
             pipeline_revision_id?: string | null;
+            /**
+             * Purpose
+             * @default product
+             * @enum {string}
+             */
+            purpose: "product" | "onboarding_evaluation";
         };
         /** DeliveryRun */
         DeliveryRun: {
@@ -3537,6 +3587,12 @@ export interface components {
             knowledge_preparation_run_id?: string | null;
             /** User Request */
             user_request: string;
+            /**
+             * Purpose
+             * @default product
+             * @enum {string}
+             */
+            purpose: "product" | "onboarding_evaluation";
             /**
              * Status
              * @enum {string}
@@ -5188,6 +5244,10 @@ export interface components {
             expected_version?: number | null;
             /** Actual Version */
             actual_version?: number | null;
+            /** Context */
+            context?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** ProductEvent */
         ProductEvent: {
@@ -5310,6 +5370,12 @@ export interface components {
              * @enum {string}
              */
             repository_mode: "backend" | "fullstack";
+            /**
+             * Onboarding Mode
+             * @default standard
+             * @enum {string}
+             */
+            onboarding_mode: "guided_evaluation" | "standard";
         };
         /** ProjectDeploymentAccess */
         ProjectDeploymentAccess: {
@@ -5370,6 +5436,7 @@ export interface components {
             repositories: components["schemas"]["ProjectRepository"][];
             /** Active Delivery Id */
             active_delivery_id?: string | null;
+            onboarding: components["schemas"]["ProjectOnboarding"];
         };
         /** ProjectExecutionSnapshot */
         ProjectExecutionSnapshot: {
@@ -5519,6 +5586,46 @@ export interface components {
             role: "owner" | "editor" | "viewer";
             /** Expected Version */
             expected_version?: number | null;
+        };
+        /** ProjectOnboarding */
+        ProjectOnboarding: {
+            /** Project Id */
+            project_id: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "guided_evaluation" | "standard";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "setup" | "in_evaluation" | "ready";
+            /** Evaluation Delivery Id */
+            evaluation_delivery_id?: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at?: string;
+            /** Completed At */
+            completed_at?: string | null;
+        };
+        /** ProjectOnboardingComplete */
+        ProjectOnboardingComplete: {
+            /** Expected Version */
+            expected_version: number;
+            /** Evaluation Delivery Id */
+            evaluation_delivery_id: string;
+            /** Expected Candidate Gate Subject Sha256 */
+            expected_candidate_gate_subject_sha256: string;
         };
         /** ProjectPatch */
         ProjectPatch: {
@@ -6398,6 +6505,49 @@ export interface components {
             features_source: "installed-acwm-adapter-manifest";
             /** Error Code */
             error_code?: string | null;
+        };
+        /** SetupReadinessCheck */
+        SetupReadinessCheck: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "blocked" | "failed" | "not_run";
+            /** Summary */
+            summary: string;
+            /** Repair */
+            repair: string;
+            /** Navigation Target */
+            navigation_target: string;
+            /**
+             * Blocking Scope
+             * @enum {string}
+             */
+            blocking_scope: "start_delivery" | "complete_onboarding" | "release_only";
+        };
+        /** SetupReadinessReport */
+        SetupReadinessReport: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "blocked" | "failed";
+            /** Project Id */
+            project_id?: string | null;
+            /** Global Checks */
+            global_checks: components["schemas"]["SetupReadinessCheck"][];
+            /**
+             * Project Checks
+             * @default []
+             */
+            project_checks: components["schemas"]["SetupReadinessCheck"][];
+            /**
+             * Optional Checks
+             * @default []
+             */
+            optional_checks: components["schemas"]["SetupReadinessCheck"][];
         };
         /** Space */
         Space: {
@@ -11520,6 +11670,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    get_setup_readiness_v1_setup_readiness_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupReadinessReport"];
+                };
+            };
+            /** @description 目标资源不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 状态或版本冲突 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 输入校验失败 */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description 运行依赖未就绪 */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    complete_project_onboarding_v1_projects__project_id__onboarding_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectOnboardingComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOnboarding"];
                 };
             };
             /** @description 目标资源不存在 */

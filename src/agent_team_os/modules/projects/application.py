@@ -26,6 +26,8 @@ from .domain import (
     ProjectKnowledgeSourceUpdate,
     ProjectMembership,
     ProjectMembershipUpdate,
+    ProjectOnboarding,
+    ProjectOnboardingComplete,
     ProjectPatch,
     ProjectPipelineBinding,
     ProjectRole,
@@ -153,7 +155,21 @@ class ProjectCatalog:
             created_at=now,
             updated_at=now,
         )
-        self.repository.create(project, workspace, legacy_repository=not workcell_project)
+        onboarding = ProjectOnboarding(
+            project_id=project.id,
+            mode=request.onboarding_mode,
+            status="setup" if request.onboarding_mode == "guided_evaluation" else "ready",
+            version=1,
+            created_at=now,
+            updated_at=now,
+            completed_at=None if request.onboarding_mode == "guided_evaluation" else now,
+        )
+        self.repository.create(
+            project,
+            workspace,
+            legacy_repository=not workcell_project,
+            onboarding=onboarding,
+        )
         if workcell_project:
             assert request.team_template_revision_id is not None
             assert self.team_governance is not None
@@ -321,6 +337,15 @@ class ProjectCatalog:
         workspace = self.repository.get_workspace(project_id)
         if workspace is None:
             raise _not_found()
+        onboarding = self.repository.get_onboarding(project_id)
+        if onboarding is None:
+            raise ProductError(
+                code="PROJECT_ONBOARDING_NOT_FOUND",
+                title="项目引导状态缺失",
+                detail="当前项目没有可读的 onboarding 状态。",
+                repair="运行最新数据库 Migration 后重试。",
+                status_code=503,
+            )
         return ProjectDetail(
             project=project,
             workspace=workspace,
@@ -330,7 +355,69 @@ class ProjectCatalog:
             knowledge_source_approvals=self.repository.list_knowledge_source_approvals(project_id),
             repositories=self.repository.list_repositories(project_id),
             active_delivery_id=self.repository.active_delivery_id(project_id),
+            onboarding=onboarding,
         )
+
+    def complete_onboarding(
+        self,
+        project_id: str,
+        request: ProjectOnboardingComplete,
+        *,
+        validate_evidence: Callable[[str, str, str], None],
+    ) -> ProjectOnboarding:
+        self._project(project_id)
+        current = self.repository.get_onboarding(project_id)
+        if current is None:
+            raise ProductError(
+                code="PROJECT_ONBOARDING_NOT_FOUND",
+                title="项目引导状态缺失",
+                detail="当前项目没有可读的 onboarding 状态。",
+                repair="运行最新数据库 Migration 后重试。",
+                status_code=503,
+            )
+        if current.version != request.expected_version:
+            raise ProductError(
+                code="PROJECT_ONBOARDING_VERSION_CONFLICT",
+                title="项目引导版本冲突",
+                detail="onboarding 状态已被其他操作更新。",
+                repair="刷新项目和 Evidence 后重新确认。",
+                expected_version=request.expected_version,
+                actual_version=current.version,
+            )
+        if current.status == "ready":
+            if current.evaluation_delivery_id in {None, request.evaluation_delivery_id}:
+                return current
+            raise _conflict(
+                "PROJECT_ONBOARDING_DELIVERY_CONFLICT",
+                "评测交付不匹配",
+                "刷新项目 onboarding 状态后重试。",
+            )
+        if current.status != "in_evaluation" or (
+            current.evaluation_delivery_id != request.evaluation_delivery_id
+        ):
+            raise _conflict(
+                "PROJECT_ONBOARDING_DELIVERY_CONFLICT",
+                "评测交付不匹配",
+                "只能使用当前项目绑定的评测交付完成引导。",
+            )
+        validate_evidence(
+            project_id,
+            request.evaluation_delivery_id,
+            request.expected_candidate_gate_subject_sha256,
+        )
+        try:
+            return self.repository.complete_onboarding(
+                project_id,
+                request.evaluation_delivery_id,
+                request.expected_version,
+            )
+        except RuntimeError as error:
+            code = str(error)
+            raise _conflict(
+                code,
+                "项目引导状态冲突",
+                "刷新项目和 Evidence 后重试。",
+            ) from error
 
     def provision_fullstack(self, project_id: str) -> ProjectDetail:
         project = self._project(project_id)

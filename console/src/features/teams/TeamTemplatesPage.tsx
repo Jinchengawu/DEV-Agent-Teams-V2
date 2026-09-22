@@ -109,7 +109,15 @@ function DraftEditor({ draft }: { draft: TeamTemplateDraft }) {
 }
 
 function WorkcellDefinitionCard({ workcell, workcellKeys, topology, onlyWorkcell, update, remove, updateTargets }: { workcell: WorkcellDefinition; workcellKeys: string[]; topology: TeamTopology; onlyWorkcell: boolean; update: (value: Partial<WorkcellDefinition>) => void; remove: () => void; updateTargets: (targets: string[]) => void }) {
-  const policy = workcell.delegation_policy ?? { max_children: 3, max_concurrency: 2, max_writers: 1, max_depth: 1 as const, wall_clock_budget_seconds: 900 };
+  const policy = workcell.delegation_policy ?? {
+    max_children: 3,
+    max_concurrency: 2,
+    max_writers: 1,
+    max_depth: 1 as const,
+    wall_clock_budget_seconds: 900,
+    max_transient_attempts: 1,
+    transient_retry_backoff_seconds: 0,
+  };
   return <article className="workcell-definition"><header><span><GitFork size={15}/><code>{workcell.workcell_key}</code></span><Button type="text" danger aria-label={`删除 ${workcell.name}`} icon={<Trash2 size={14}/>} disabled={onlyWorkcell} onClick={remove}/></header><label>显示名称<Input value={workcell.name} onChange={(event) => update({ name: event.target.value })}/></label><label>职责<Input.TextArea rows={2} value={workcell.responsibility} onChange={(event) => update({ responsibility: event.target.value })}/></label><div className="workcell-policy-grid"><label>Child 上限<InputNumber min={0} max={3} value={policy.max_children} onChange={(value) => update({ delegation_policy: { ...policy, max_children: Number(value ?? 0) } })}/></label><label>并发上限<InputNumber min={1} max={2} value={policy.max_concurrency} onChange={(value) => update({ delegation_policy: { ...policy, max_concurrency: Number(value ?? 1) } })}/></label><label>Writer 上限<InputNumber min={0} max={1} value={policy.max_writers} onChange={(value) => update({ delegation_policy: { ...policy, max_writers: Number(value ?? 0) } })}/></label><label>预算（秒）<InputNumber min={30} max={3600} value={policy.wall_clock_budget_seconds} onChange={(value) => update({ delegation_policy: { ...policy, wall_clock_budget_seconds: Number(value ?? 900) } })}/></label></div><label>允许的 Delegate Purpose<Select mode="multiple" value={workcell.delegate_purposes} onChange={(value) => update({ delegate_purposes: value as WorkcellDefinition["delegate_purposes"] })} options={["workspace_write", "artifact", "review"].map((value) => ({ value, label: value }))}/></label><label>Artifact 输出到<Select mode="multiple" value={topology.links.filter((item) => item.source_workcell_key === workcell.workcell_key).map((item) => item.target_workcell_key)} onChange={updateTargets} options={workcellKeys.filter((key) => key !== workcell.workcell_key).map((value) => ({ value, label: value }))}/></label></article>;
 }
 
@@ -140,7 +148,7 @@ export function starterTeamTemplate(id: string, name: string): TeamTemplateCreat
 }
 
 function starterWorkcell(key: string, name: string, responsibility: string, purposes: Array<"workspace_write" | "artifact" | "review"> = ["workspace_write", "review"]): WorkcellDefinition {
-  return { workcell_key: key, name, responsibility, primary_workspace: { kind: "git_repository_v1" }, delegate_purposes: purposes, delegation_policy: { max_children: 3, max_concurrency: 2, max_writers: 1, max_depth: 1, wall_clock_budget_seconds: 900 } };
+  return { workcell_key: key, name, responsibility, primary_workspace: { kind: "git_repository_v1" }, delegate_purposes: purposes, delegation_policy: { max_children: 3, max_concurrency: 2, max_writers: 1, max_depth: 1, wall_clock_budget_seconds: 900, max_transient_attempts: 1, transient_retry_backoff_seconds: 0 } };
 }
 
 function uniqueWorkcellKey(keys: string[]) {

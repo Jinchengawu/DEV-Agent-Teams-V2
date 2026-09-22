@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .domain import (
@@ -10,6 +11,7 @@ from .domain import (
     ProjectKnowledgeSource,
     ProjectKnowledgeSourceApproval,
     ProjectMembership,
+    ProjectOnboarding,
     ProjectPipelineBinding,
     ProjectRepository,
     ProjectWorkspace,
@@ -26,7 +28,17 @@ class SQLiteProjectRepository:
         workspace: ProjectWorkspace,
         *,
         legacy_repository: bool = True,
+        onboarding: ProjectOnboarding | None = None,
     ) -> None:
+        onboarding = onboarding or ProjectOnboarding(
+            project_id=project.id,
+            mode="standard",
+            status="ready",
+            version=1,
+            created_at=project.created_at,
+            updated_at=project.updated_at,
+            completed_at=project.updated_at,
+        )
         with sqlite3.connect(self.database) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("BEGIN IMMEDIATE")
@@ -43,6 +55,21 @@ class SQLiteProjectRepository:
                     project.created_by,
                     project.created_at.isoformat(),
                     project.updated_at.isoformat(),
+                ),
+            )
+            connection.execute(
+                """INSERT INTO project_onboarding(
+                project_id,mode,status,evaluation_delivery_id,version,
+                created_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?)""",
+                (
+                    onboarding.project_id,
+                    onboarding.mode,
+                    onboarding.status,
+                    onboarding.evaluation_delivery_id,
+                    onboarding.version,
+                    onboarding.created_at.isoformat(),
+                    onboarding.updated_at.isoformat(),
+                    onboarding.completed_at.isoformat() if onboarding.completed_at else None,
                 ),
             )
             connection.execute(
@@ -237,6 +264,48 @@ class SQLiteProjectRepository:
                 (project_id,),
             ).fetchall()
         return tuple(_access_audit(row) for row in rows)
+
+    def get_onboarding(self, project_id: str) -> ProjectOnboarding | None:
+        with sqlite3.connect(self.database) as connection:
+            row = connection.execute(
+                """SELECT project_id,mode,status,evaluation_delivery_id,version,
+                created_at,updated_at,completed_at
+                FROM project_onboarding WHERE project_id=?""",
+                (project_id,),
+            ).fetchone()
+        return None if row is None else _onboarding(row)
+
+    def complete_onboarding(
+        self,
+        project_id: str,
+        delivery_id: str,
+        expected_version: int,
+    ) -> ProjectOnboarding:
+        now = datetime.now(UTC)
+        with sqlite3.connect(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                """SELECT status,evaluation_delivery_id,version FROM project_onboarding
+                WHERE project_id=?""",
+                (project_id,),
+            ).fetchone()
+            if current is None:
+                raise RuntimeError("PROJECT_ONBOARDING_NOT_FOUND")
+            if int(current[2]) != expected_version:
+                raise RuntimeError("PROJECT_ONBOARDING_VERSION_CONFLICT")
+            if str(current[0]) != "in_evaluation" or str(current[1]) != delivery_id:
+                raise RuntimeError("PROJECT_ONBOARDING_DELIVERY_CONFLICT")
+            cursor = connection.execute(
+                """UPDATE project_onboarding SET status='ready',version=version+1,
+                updated_at=?,completed_at=? WHERE project_id=? AND version=?""",
+                (now.isoformat(), now.isoformat(), project_id, expected_version),
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("PROJECT_ONBOARDING_VERSION_CONFLICT")
+        result = self.get_onboarding(project_id)
+        if result is None:
+            raise RuntimeError("PROJECT_ONBOARDING_NOT_FOUND")
+        return result
 
     def get_workspace(self, project_id: str) -> ProjectWorkspace | None:
         with sqlite3.connect(self.database) as connection:
@@ -693,3 +762,17 @@ def _access_audit(row: tuple[object, ...]) -> ProjectAccessAudit:
             "created_at": row[6],
         }
     )
+
+
+def _onboarding(row: tuple[object, ...]) -> ProjectOnboarding:
+    fields = (
+        "project_id",
+        "mode",
+        "status",
+        "evaluation_delivery_id",
+        "version",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    )
+    return ProjectOnboarding.model_validate(dict(zip(fields, row, strict=True)))

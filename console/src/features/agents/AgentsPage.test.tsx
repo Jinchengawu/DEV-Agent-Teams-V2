@@ -144,7 +144,10 @@ describe("智能体角色、部署与运行实例", () => {
 
   test("可以从中文表单创建前端开发角色草稿", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: "创建智能体角色" });
+    await userEvent.click(await screen.findByRole("tab", { name: "Agent 角色" }));
+    expect(screen.queryByRole("dialog", { name: "创建智能体角色" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "创建角色" }));
+    await screen.findByRole("dialog", { name: "创建智能体角色" });
     await userEvent.clear(screen.getByLabelText("角色 ID"));
     await userEvent.type(screen.getByLabelText("角色 ID"), "frontend-engineer");
     await userEvent.clear(screen.getByLabelText("角色名称"));
@@ -160,12 +163,14 @@ describe("智能体角色、部署与运行实例", () => {
     profileItems = [existingProfile];
     renderPage();
 
-    await screen.findByRole("heading", { name: "创建智能体角色" });
+    await userEvent.click(await screen.findByRole("tab", { name: "Agent 角色" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建角色" }));
+    await screen.findByRole("dialog", { name: "创建智能体角色" });
     expect((screen.getByLabelText("角色 ID") as HTMLInputElement).value).toBe("");
     expect((screen.getByRole("button", { name: "创建角色草稿" }) as HTMLButtonElement).disabled).toBe(true);
 
     await userEvent.click(screen.getByRole("button", { name: /前端开发工程师.*frontend-engineer/ }));
-    await screen.findByRole("heading", { name: "编辑智能体角色" });
+    await screen.findByRole("dialog", { name: "编辑智能体角色" });
     expect((screen.getByLabelText("角色 ID") as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "发布不可变 Revision" }) as HTMLButtonElement).disabled).toBe(false);
   });
@@ -173,6 +178,7 @@ describe("智能体角色、部署与运行实例", () => {
   test("未保存修改不能被误当作已校验版本发布", async () => {
     profileItems = [existingProfile];
     renderPage();
+    await userEvent.click(await screen.findByRole("tab", { name: "Agent 角色" }));
     await userEvent.click(await screen.findByRole("button", { name: /前端开发工程师.*frontend-engineer/ }));
     await screen.findByText(/草稿版本 2/);
 
@@ -188,14 +194,33 @@ describe("智能体角色、部署与运行实例", () => {
   test("重复创建错误在切换到现有角色后清除", async () => {
     profileItems = [existingProfile];
     renderPage();
-    await screen.findByRole("heading", { name: "创建智能体角色" });
+    await userEvent.click(await screen.findByRole("tab", { name: "Agent 角色" }));
+    await userEvent.click(screen.getByRole("button", { name: "创建角色" }));
+    await screen.findByRole("dialog", { name: "创建智能体角色" });
     await userEvent.type(screen.getByLabelText("角色 ID"), "frontend-engineer");
     await userEvent.type(screen.getByLabelText("角色名称"), "重复角色");
     await userEvent.click(screen.getByRole("button", { name: "创建角色草稿" }));
     await screen.findByText("智能体角色已存在");
 
     await userEvent.click(screen.getByRole("button", { name: /前端开发工程师.*frontend-engineer/ }));
-    await screen.findByRole("heading", { name: "编辑智能体角色" });
+    await screen.findByRole("dialog", { name: "编辑智能体角色" });
     expect(screen.queryByText("智能体角色已存在")).toBeNull();
+  });
+
+  test("角色与 Deployment 编辑器按需打开并支持 Escape 关闭", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole("heading", { name: "后端 Codex 部署" });
+    expect(screen.queryByRole("dialog", { name: "创建 Deployment" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "创建 Deployment" }));
+    await screen.findByRole("dialog", { name: "创建 Deployment" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "创建 Deployment" })).toBeNull());
+
+    await user.click(screen.getByRole("tab", { name: "Agent 角色" }));
+    await user.click(screen.getByRole("button", { name: "创建角色" }));
+    await screen.findByRole("dialog", { name: "创建智能体角色" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "创建智能体角色" })).toBeNull());
   });
 });

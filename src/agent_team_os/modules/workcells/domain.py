@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from ...shared.hashes import Sha256
 from ...shared.verification import VerificationSnapshot
@@ -30,6 +37,19 @@ class DelegationPolicy(BaseModel):
     max_writers: int = Field(default=1, ge=0, le=1)
     max_depth: Literal[1] = 1
     wall_clock_budget_seconds: int = Field(default=900, ge=30, le=3600)
+    max_transient_attempts: int = Field(default=1, ge=1, le=2)
+    transient_retry_backoff_seconds: float = Field(default=0, ge=0, le=30)
+
+    @model_serializer(mode="wrap")
+    def serialize_legacy_retry_policy(  # type: ignore[no-untyped-def]
+        self, handler: SerializerFunctionWrapHandler
+    ):
+        payload: dict[str, Any] = handler(self)
+        if self.max_transient_attempts == 1:
+            payload.pop("max_transient_attempts", None)
+        if self.transient_retry_backoff_seconds == 0:
+            payload.pop("transient_retry_backoff_seconds", None)
+        return payload
 
     @model_validator(mode="after")
     def limits_are_coherent(self) -> DelegationPolicy:

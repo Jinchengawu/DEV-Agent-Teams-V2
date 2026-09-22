@@ -17,6 +17,8 @@ from .domain import (
     ProjectKnowledgeSourceUpdate,
     ProjectMembership,
     ProjectMembershipUpdate,
+    ProjectOnboarding,
+    ProjectOnboardingComplete,
     ProjectPatch,
     ProjectPipelineBinding,
     ProjectRepository,
@@ -24,6 +26,7 @@ from .domain import (
 )
 from .http import create_project_router
 from .integration import ProjectLeaseDeliveryRepository
+from .readiness import SetupReadinessCheck, SetupReadinessReport, SetupReadinessService
 from .repository import SQLiteProjectRepository
 
 __all__ = [
@@ -45,11 +48,16 @@ __all__ = [
     "ProjectKnowledgeSourceUpdate",
     "ProjectMembership",
     "ProjectMembershipUpdate",
+    "ProjectOnboarding",
+    "ProjectOnboardingComplete",
     "ProjectPatch",
     "ProjectPipelineBinding",
     "ProjectRepository",
     "ProjectWorkspace",
     "ProjectLeaseDeliveryRepository",
     "SQLiteProjectRepository",
+    "SetupReadinessCheck",
+    "SetupReadinessReport",
+    "SetupReadinessService",
     "create_project_router",
 ]

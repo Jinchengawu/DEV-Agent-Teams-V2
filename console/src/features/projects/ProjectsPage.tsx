@@ -22,6 +22,7 @@ export function ProjectsPage() {
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [onboardingMode, setOnboardingMode] = useState<"guided_evaluation" | "standard">("guided_evaluation");
   const activePipelines = useMemo(() => (pipelines.data ?? []).filter((pipeline) => pipeline.active_revision !== null), [pipelines.data]);
   const usableDeployments = useMemo(() => (deployments.data ?? []).filter((deployment) => deployment.enabled && deployment.qualification_status === "qualified"), [deployments.data]);
   const [pipelineRevisionId, setPipelineRevisionId] = useState("");
@@ -49,19 +50,21 @@ export function ProjectsPage() {
 
   return <div className="project-workbench-v2">
     <Card className="atos-card project-catalog" title={<div className="atos-section-title"><div><h2>项目目录</h2><p>每个项目使用独立 Git 主分支和交付租约。</p></div><Typography.Text type="secondary">{projects.data?.length ?? 0} 个项目</Typography.Text></div>}>
-      <div className="project-grid-v2">{projects.data?.length ? projects.data.map((project) => <Link className="project-card-v2" key={project.id} to={projectPath(project.id)}>
+      <div className="project-grid-v2">{projects.data?.filter((project) => project.id !== "legacy-default").length ? projects.data.filter((project) => project.id !== "legacy-default").map((project) => <Link className="project-card-v2" key={project.id} to={projectPath(project.id)}>
         <Card size="small" className="evidence-rail">
           <div className="project-card-v2-head"><FolderGit2 size={21}/><StatusBadge value={project.lifecycle_status}/></div>
           <h2>{project.name}</h2><p>{project.description || "尚未填写项目说明。"}</p>
           <small>项目 ID：{project.id} · v{project.version}</small>
         </Card>
       </Link>) : <EmptyState title="还没有项目" detail="创建项目后，系统会为它初始化独立的 Bare Git 仓库并固定默认流水线。"/>}</div>
+      {projects.data?.some((project) => project.id === "legacy-default") && <Card size="small" className="legacy-projects" title="兼容项目（1）"><Link to={projectPath("legacy-default")}>默认项目（历史迁移）</Link></Card>}
     </Card>
     <Card className="atos-card project-create-form" title={<div className="atos-section-title"><div><h2>创建项目</h2><p>初始化失败会保留可重试记录，不回退共享沙箱。</p></div></div>}>
-      <Form layout="vertical" requiredMark={false} onFinish={() => create.mutate({ id, name: name.trim(), description: description.trim(), default_pipeline_revision_id: pipelineRevisionId, deployment_ids: workcellPipeline ? [] : deploymentIds, team_template_revision_id: workcellPipeline ? teamRevisionId : undefined, repository_mode: workcellPipeline ? "backend" : pipelineRevisionId.startsWith("fullstack-product-delivery:") ? "fullstack" : "backend" })}>
+      <Form layout="vertical" requiredMark={false} onFinish={() => create.mutate({ id, name: name.trim(), description: description.trim(), default_pipeline_revision_id: pipelineRevisionId, deployment_ids: workcellPipeline ? [] : deploymentIds, team_template_revision_id: workcellPipeline ? teamRevisionId : undefined, repository_mode: workcellPipeline ? "backend" : pipelineRevisionId.startsWith("fullstack-product-delivery:") ? "fullstack" : "backend", onboarding_mode: onboardingMode })}>
         <Form.Item label="项目标识" htmlFor="project-id" required><Input id="project-id" value={id} onChange={(event) => setId(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="例如：pj1"/></Form.Item>
         <Form.Item label="项目名称" htmlFor="project-name" required><Input id="project-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：客户门户后端"/></Form.Item>
         <Form.Item label="项目说明" htmlFor="project-description"><Input.TextArea id="project-description" rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="说明项目边界和验收目标"/></Form.Item>
+        <Form.Item label="启动方式" htmlFor="project-onboarding-mode"><Select id="project-onboarding-mode" aria-label="启动方式" value={onboardingMode} onChange={setOnboardingMode} options={[{ value: "guided_evaluation", label: "引导评测（推荐）" }, { value: "standard", label: "标准项目" }]}/><p className="field-hint">引导评测会保留可审计 onboarding 状态，完成 Evidence 回读后原地转为正式项目。</p></Form.Item>
         <Form.Item label="默认流水线" htmlFor="project-pipeline" required><Select id="project-pipeline" aria-label="默认流水线" value={pipelineRevisionId || undefined} placeholder="请选择已激活的固定版本" onChange={(value) => {
           autoSelectedPipeline.current = undefined;
           setDeploymentIds([]);

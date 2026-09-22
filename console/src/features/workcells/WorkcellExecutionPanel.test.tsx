@@ -54,4 +54,23 @@ describe("Workcell 运行可观测性", () => {
     expect(await screen.findByText("#7 · open")).toBeTruthy();
     expect(screen.getByText("已推进 main")).toBeTruthy();
   });
+
+  it("Viewer 只读时不显示 Workcell cancel 或 Resume forward", async () => {
+    vi.stubGlobal("fetch", async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/workcell-runs")) return response([{
+        workcell_run: { id: "run-active", delivery_id: "delivery-1", stage_path: "frontend", workcell_key: "frontend", status: "planning", loop_iteration: 1, version: 2, workcell_snapshot_sha256: hash, workcell_snapshot: { workspace: { repository_uri: "project/frontend" }, method_snapshot_sha256: hash } },
+        agent_runs: [], attempts: [], reviews: [],
+      }]);
+      if (url.endsWith("/release-health")) return response({ project_id: "project-1", status: "release_drifted", delivery_id: "delivery-1", error_code: "REMOTE_MAIN_DRIFTED", version: 2 });
+      if (url === "/v1/releases/delivery-1") return response({ delivery_id: "delivery-1", project_id: "project-1", candidates: [], pull_requests: [], remote_apply_receipts: [], apply_attempt: { status: "needs_attention" } });
+      return response({});
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><WorkcellExecutionPanel deliveryId="delivery-1" projectId="project-1" canOperate={false}/></QueryClientProvider>);
+
+    expect(await screen.findByText("Partial Apply 需要人工继续")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "取消 Workcell" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume forward" })).toBeNull();
+  });
 });

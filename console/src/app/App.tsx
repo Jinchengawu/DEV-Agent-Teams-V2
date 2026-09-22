@@ -4,6 +4,7 @@ import { AppShell } from "./shell/AppShell";
 import { LoadingState } from "../shared/feedback/AsyncState";
 import { PageErrorBoundary } from "../shared/feedback/PageErrorBoundary";
 import { AuthGate } from "../features/identity/AuthGate";
+import { LandingRoute } from "../features/identity/LandingRoute";
 
 const DeliveriesPage = lazy(() => import("../features/deliveries/DeliveriesPage").then((module) => ({ default: module.DeliveriesPage })));
 const DeliveryRunPage = lazy(() => import("../features/deliveries/DeliveryRunPage").then((module) => ({ default: module.DeliveryRunPage })));
@@ -16,10 +17,12 @@ const KnowledgePage = lazy(() => import("../features/knowledge/KnowledgePage").t
 const ProjectsPage = lazy(() => import("../features/projects/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
 const ProjectOverviewPage = lazy(() => import("../features/projects/ProjectOverviewPage").then((module) => ({ default: module.ProjectOverviewPage })));
 const TeamTemplatesPage = lazy(() => import("../features/teams/TeamTemplatesPage").then((module) => ({ default: module.TeamTemplatesPage })));
+const SetupPage = lazy(() => import("../features/setup/SetupPage").then((module) => ({ default: module.SetupPage })));
 
 export function App() {
   return <BrowserRouter><AuthGate><PageErrorBoundary><Suspense fallback={<LoadingState label="正在打开控制台模块…"/>}><Routes><Route element={<AppShell/>}>
-    <Route index element={<Navigate to="/projects" replace/>}/>
+    <Route index element={<LandingRoute/>}/>
+    <Route path="setup" element={<SetupPage/>}/>
     <Route path="projects" element={<ProjectsPage/>}/>
     <Route path="projects/:projectId/overview" element={<ProjectOverviewPage/>}/>
     <Route path="projects/:projectId/deliveries" element={<DeliveriesPage/>}/>

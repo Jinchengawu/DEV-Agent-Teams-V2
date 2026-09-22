@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import stat
 import subprocess
@@ -50,6 +51,232 @@ def test_codex_workcell_agent_returns_only_observable_structured_attempt(
 
     assert output.runtime_identity == "codex-test"
     assert output.content == {"blocking_findings": []}
+
+
+def test_codex_workcell_agent_allows_product_assigned_non_git_control_workspace(
+    tmp_path: Path,
+) -> None:
+    event_code = """
+import json
+import sys
+
+sys.stdin.read()
+event = {
+    "type": "item.completed",
+    "item": {
+        "type": "agent_message",
+        "text": json.dumps({"argv": sys.argv[1:], "assignment_slots": []}),
+    },
+}
+print(json.dumps(event))
+"""
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", event_code),
+        runtime_identity="codex-test",
+    )
+
+    output = asyncio.run(
+        agent.run(
+            WorkcellAgentInvocation(
+                delivery_id="delivery-control-workspace",
+                workcell_run_id="workcell-control-workspace",
+                agent_run_id="agent-control-workspace",
+                phase="planning",
+                workcell_key="design",
+                stage_path="design-repair/design",
+                instruction="confirm assignments",
+                workspace=tmp_path,
+                workspace_access="none",
+            )
+        )
+    )
+
+    assert "--skip-git-repo-check" in output.content["argv"]
+    assert output.content["assignment_slots"] == []
+
+
+def test_codex_workcell_agent_bounds_shared_provider_concurrency(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "concurrency.json"
+    code = """
+import fcntl
+import json
+import os
+import sys
+import time
+
+state = os.environ["AGENT_TEAM_OS_CONCURRENCY_STATE"]
+
+def update(delta):
+    with open(state, "a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        raw = handle.read()
+        payload = json.loads(raw) if raw else {"active": 0, "maximum": 0}
+        payload["active"] += delta
+        payload["maximum"] = max(payload["maximum"], payload["active"])
+        handle.seek(0)
+        handle.truncate()
+        json.dump(payload, handle)
+        handle.flush()
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+sys.stdin.read()
+update(1)
+time.sleep(0.15)
+update(-1)
+event = {
+    "type": "item.completed",
+    "item": {"type": "agent_message", "text": json.dumps({"ok": True})},
+}
+print(json.dumps(event))
+"""
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+        max_concurrency=2,
+    )
+
+    async def run_all() -> None:
+        await asyncio.gather(
+            *(
+                agent.run(
+                    WorkcellAgentInvocation(
+                        delivery_id="delivery-concurrency",
+                        workcell_run_id="workcell-concurrency",
+                        agent_run_id=f"agent-concurrency-{index}",
+                        phase="delegate",
+                        workcell_key="frontend",
+                        stage_path="frontend-repair/frontend",
+                        instruction="review",
+                        workspace=tmp_path,
+                        workspace_access="candidate_read",
+                        environment={
+                            "AGENT_TEAM_OS_CONCURRENCY_STATE": str(state),
+                        },
+                    )
+                )
+                for index in range(3)
+            )
+        )
+
+    asyncio.run(run_all())
+
+    assert json.loads(state.read_text(encoding="utf-8")) == {
+        "active": 0,
+        "maximum": 2,
+    }
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected_code"),
+    [
+        ("Error: authentication required", "CODEX_WORKCELL_AUTH_REQUIRED"),
+        ("http/request failed: error sending request", "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE"),
+        ("request timed out", "CODEX_WORKCELL_TRANSPORT_TIMED_OUT"),
+        ("model gpt-x unavailable", "CODEX_WORKCELL_MODEL_UNAVAILABLE"),
+        ("unexpected provider failure", "CODEX_WORKCELL_ATTEMPT_FAILED"),
+    ],
+)
+def test_codex_workcell_agent_persists_stable_nonzero_exit_classification(
+    tmp_path: Path,
+    stderr: str,
+    expected_code: str,
+) -> None:
+    code = f"import sys; sys.stdin.read(); sys.stderr.write({stderr!r}); raise SystemExit(1)"
+    agent = CodexWorkcellAgent(
+        command=(sys.executable, "-c", code),
+        runtime_identity="codex-test",
+    )
+
+    with pytest.raises(ProductError) as captured:
+        asyncio.run(
+            agent.run(
+                WorkcellAgentInvocation(
+                    delivery_id="delivery-failure-classification",
+                    workcell_run_id="workcell-failure-classification",
+                    agent_run_id="agent-failure-classification",
+                    phase="planning",
+                    workcell_key="design",
+                    stage_path="design-repair/design",
+                    instruction="classify",
+                    workspace=tmp_path,
+                    workspace_access="none",
+                )
+            )
+        )
+
+    assert captured.value.code == expected_code
+    assert captured.value.context == {
+        "contract_version": "codex-cli-exit-diagnostic-v2",
+        "exit_code": 1,
+        "signals": [],
+        "stderr_bytes": len(stderr.encode()),
+        "stderr_sha256": hashlib.sha256(stderr.encode()).hexdigest(),
+        "stable_category": expected_code,
+    }
+    assert stderr not in captured.value.detail
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected_code", "expected_signal"),
+    [
+        (
+            "unexpected status 429; usage limit reached",
+            "CODEX_WORKCELL_CAPACITY_EXHAUSTED",
+            "http-429",
+        ),
+        (
+            "unexpected status 403; access denied",
+            "CODEX_WORKCELL_ACCESS_DENIED",
+            "http-403",
+        ),
+        (
+            "failed to load config: invalid configuration",
+            "CODEX_WORKCELL_CONFIG_INVALID",
+            "config-load-failed",
+        ),
+        (
+            "stream disconnected before completion",
+            "CODEX_WORKCELL_TRANSPORT_UNAVAILABLE",
+            "stream-disconnected",
+        ),
+        (
+            'event={"type":"turn.failed"}',
+            "CODEX_WORKCELL_PROTOCOL_FAILED",
+            "turn-failed",
+        ),
+    ],
+)
+def test_codex_workcell_agent_maps_safe_exit_signals(
+    tmp_path: Path,
+    stderr: str,
+    expected_code: str,
+    expected_signal: str,
+) -> None:
+    code = f"import sys; sys.stdin.read(); sys.stderr.write({stderr!r}); raise SystemExit(1)"
+    agent = CodexWorkcellAgent(command=(sys.executable, "-c", code))
+
+    with pytest.raises(ProductError) as captured:
+        asyncio.run(
+            agent.run(
+                WorkcellAgentInvocation(
+                    delivery_id="delivery-signals",
+                    workcell_run_id="workcell-signals",
+                    agent_run_id="agent-signals",
+                    phase="planning",
+                    workcell_key="design",
+                    stage_path="design-repair/design",
+                    instruction="classify",
+                    workspace=tmp_path,
+                    workspace_access="none",
+                )
+            )
+        )
+
+    assert captured.value.code == expected_code
+    assert expected_signal in captured.value.context["signals"]
 
 
 def test_codex_workcell_agent_parses_only_the_last_agent_message(
@@ -417,7 +644,11 @@ def test_codex_workcell_does_not_inherit_namespaced_service_credentials(
 
     assert error.value.code == "CODEX_WORKCELL_ATTEMPT_FAILED"
     assert credential not in error.value.detail
-    assert "not-inherited" in error.value.detail
+    assert "not-inherited" not in error.value.detail
+    assert error.value.context is not None
+    assert error.value.context["stderr_sha256"] == hashlib.sha256(
+        b"not-inherited"
+    ).hexdigest()
 
 
 def test_codex_workcell_inherits_process_only_proxy_configuration(

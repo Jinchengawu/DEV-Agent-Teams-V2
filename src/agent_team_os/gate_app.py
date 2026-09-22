@@ -8,17 +8,27 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from acwm.config import CodexCLIConfig
 from fastapi import FastAPI
 from pydantic import JsonValue
 
 from .api import create_app
+from .codex_runtime import approved_planning_codex_command
+from .codex_simulation import ACWMCodexRoleRunner, CodexPlanningService
 from .control_plane import ControlPlaneService, HealthResult
-from .delivery import DeliveryCoordinator, SQLiteDeliveryRepository
-from .git_delivery import GitCandidateApplier, GitCandidateVerifier, GitCodeExecutor
+from .delivery import DeliveryCoordinator, PlanningService, SQLiteDeliveryRepository
+from .git_delivery import (
+    ACWMCodexWorkspaceAgent,
+    GitCandidateApplier,
+    GitCandidateVerifier,
+    GitCodeExecutor,
+    WorkspaceAgent,
+)
 from .infrastructure.acwm import (
     ACWMGraphCompiler,
     ACWMPipelineGraphRuntime,
     AgentDeploymentBindingResolver,
+    CodexWorkcellAgent,
     ControlPlaneBindingResolver,
 )
 from .infrastructure.database import MigrationRunner
@@ -118,6 +128,7 @@ from .modules.workcells import (
     WorkcellStageDriver,
     builtin_release_contract,
     builtin_workcell_stage_map,
+    ensure_builtin_software_delivery_team,
 )
 from .readiness import snapshot_delivery_build_identity
 from .release import DeterministicWorkspaceAgent
@@ -249,11 +260,14 @@ def build_gate_app() -> FastAPI:
     database = data_dir / "agent-team-os.sqlite"
     MigrationRunner(database, project_root / "migrations").migrate()
     feature_flags = FeatureFlags.from_environment()
+    real_codex_runtime = os.environ.get("AGENT_TEAM_OS_GATE_CODEX_RUNTIME") == "1"
+    settings = SettingsManager(SQLiteSettingsRepository(database))
     project_workspaces = ProjectGitWorkspaces(data_dir / "browser-workspaces")
     sandbox = project_workspaces.for_workspace("backend-demo")
     sandbox.ensure_initialized()
     project_repository = SQLiteProjectRepository(database)
     team_templates = TeamTemplateCatalog(SQLiteTeamTemplateRepository(database))
+    ensure_builtin_software_delivery_team(team_templates)
     project_workcell_repository = SQLiteProjectWorkcellRepository(database)
     project_workcells = ProjectWorkcellGovernance(
         project_workcell_repository,
@@ -274,9 +288,23 @@ def build_gate_app() -> FastAPI:
         SQLiteDeliveryRepository(database), projects
     )
     candidate_applier = GitCandidateApplier(project_workspaces)
+    planning: PlanningService = DeterministicPlanningService()
+    workspace_agent: WorkspaceAgent = DeterministicWorkspaceAgent()
+    if real_codex_runtime:
+        planning = CodexPlanningService(
+            ACWMCodexRoleRunner(
+                workspace=project_root,
+                config_provider=lambda: CodexCLIConfig(
+                    command=approved_planning_codex_command(),
+                    sandbox="read-only",
+                    timeout_seconds=settings.get().planning_timeout_seconds,
+                ),
+            )
+        )
+        workspace_agent = ACWMCodexWorkspaceAgent()
     coordinator = DeliveryCoordinator(
-        planning=DeterministicPlanningService(),
-        executor=GitCodeExecutor(project_workspaces, DeterministicWorkspaceAgent()),
+        planning=planning,
+        executor=GitCodeExecutor(project_workspaces, workspace_agent),
         verifier=GitCandidateVerifier(project_workspaces),
         applier=candidate_applier,
         repository=delivery_repository,
@@ -288,8 +316,10 @@ def build_gate_app() -> FastAPI:
         probe=DeterministicGateHealthProbe(),
     )
     control_plane.import_builtin_journey(
-        planning_identity="deterministic-test",
-        execution_identity="deterministic-model-boundary",
+        planning_identity="codex-cli" if real_codex_runtime else "deterministic-test",
+        execution_identity=(
+            "codex-cli" if real_codex_runtime else "deterministic-model-boundary"
+        ),
     )
     agent_profiles = AgentProfileCatalog(SQLiteAgentProfileRepository(database))
     runtime_extensions = RuntimeExtensionCatalog(SQLiteRuntimeExtensionRepository(database))
@@ -301,23 +331,31 @@ def build_gate_app() -> FastAPI:
         provider_manifests,
         extensions=runtime_extensions,
     )
+    planning_instance_id = (
+        "builtin:codex-cli" if real_codex_runtime else "builtin:deterministic-test"
+    )
+    execution_instance_id = (
+        "builtin:codex-cli"
+        if real_codex_runtime
+        else "builtin:deterministic-model-boundary"
+    )
     builtin_assignments = ensure_builtin_agent_deployments(
         agent_profiles,
         agent_deployments,
-        planning_instance_id="builtin:deterministic-test",
-        execution_instance_id="builtin:deterministic-model-boundary",
+        planning_instance_id=planning_instance_id,
+        execution_instance_id=execution_instance_id,
     )
     fullstack_assignments = ensure_builtin_fullstack_agent_deployments(
         agent_profiles,
         agent_deployments,
-        planning_instance_id="builtin:deterministic-test",
-        execution_instance_id="builtin:deterministic-model-boundary",
+        planning_instance_id=planning_instance_id,
+        execution_instance_id=execution_instance_id,
     )
     workcell_assignments = ensure_builtin_workcell_agent_deployments(
         agent_profiles,
         agent_deployments,
-        planning_instance_id="builtin:deterministic-test",
-        execution_instance_id="builtin:deterministic-model-boundary",
+        planning_instance_id=planning_instance_id,
+        execution_instance_id=execution_instance_id,
     )
     pipeline_catalog = PipelineCatalog(
         SQLitePipelineRepository(database),
@@ -471,8 +509,8 @@ def build_gate_app() -> FastAPI:
     workcell_stage_driver = WorkcellStageDriver(
         kernel=workcell_execution,
         artifacts=artifact_storage,
-        methods=ContentAddressedMethodRuntime(method_store),
-        agent=DeterministicWorkcellAgent(),
+        methods=ContentAddressedMethodRuntime.from_environment(method_store),
+        agent=(CodexWorkcellAgent() if real_codex_runtime else DeterministicWorkcellAgent()),
         workspaces=ExternalGitWorkspaceManager(data_dir / "workcell-runtime"),
         binding_resolver=resolve_workspace_binding,
         verifier=CommandWorkcellMachineVerifier(artifact_storage),
@@ -511,11 +549,14 @@ def build_gate_app() -> FastAPI:
         wiki_service.reconcile_project_space(
             project.id, project.name, project.lifecycle_status
         )
+    from .preview import CodexPreviewReadiness
+
     result = create_app(
         coordinator,
+        readiness=CodexPreviewReadiness(project_root=project_root, data_dir=data_dir),
         control_plane=control_plane,
         evidence=evidence_ledger,
-        settings=SettingsManager(SQLiteSettingsRepository(database)),
+        settings=settings,
         identity=identity_service,
         knowledge=wiki_service,
         pipeline_catalog=pipeline_catalog,

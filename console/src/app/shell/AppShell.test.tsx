@@ -31,7 +31,7 @@ describe("移动端控制面导航", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "打开导航与账户" }));
     const navigation = screen.getByRole("dialog", { name: "导航与账户" });
-    expect(navigation.querySelectorAll("a")).toHaveLength(9);
+    expect(navigation.querySelectorAll("a")).toHaveLength(10);
     expect(within(navigation).getByRole("link", { name: "交付工作台" }).getAttribute("aria-current")).toBe("page");
     expect(navigation.querySelectorAll('a[aria-current="page"]')).toHaveLength(1);
     expect(document.querySelector(".main-sidebar")?.querySelectorAll('a[aria-current="page"]')).toHaveLength(1);

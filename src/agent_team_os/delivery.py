@@ -287,6 +287,7 @@ class DeliveryRun(ImmutableModel):
     knowledge_preparation_input: KnowledgePreparationInputV1 | None = None
     knowledge_preparation_run_id: str | None = None
     user_request: str
+    purpose: Literal["product", "onboarding_evaluation"] = "product"
     status: Literal[
         "queued",
         "preparing_context",
@@ -717,6 +718,7 @@ class DeliveryCoordinator:
         resolved_journey_sha256: str | None = None,
         resolved_pipeline_sha256: str | None = None,
         knowledge_preparation_input: KnowledgePreparationInputV1 | None = None,
+        purpose: Literal["product", "onboarding_evaluation"] = "product",
     ) -> DeliveryRun:
         self._ensure_workspace_available(workspace_id)
         journey_hash = self._require_journey_hash(resolved_journey_sha256)
@@ -749,6 +751,7 @@ class DeliveryCoordinator:
             delivery_execution_snapshot=delivery_execution_snapshot,
             knowledge_preparation_input=knowledge_preparation_input,
             user_request=user_request,
+            purpose=purpose,
             status=("preparing_context" if knowledge_preparation_input is not None else "queued"),
             version=1,
             evidence_identity=self._planning.evidence_identity,

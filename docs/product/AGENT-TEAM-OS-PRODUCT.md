@@ -15,7 +15,7 @@
 | `main` 对照 | 本地 `main@7401fa281a201728fa3cc504daa05d3a724fa7c6` 已落后于 `origin/main@cfe597c05b3b0c65af57bf12d14b7f802fe7899f` |
 | 合并状态 | v0.5.1 Feishu Knowledge/RAG 与 Release Acceptance V2 位于功能分支，尚未合并 `main`；Deterministic 通过不等于 Live Release 验收 |
 | ACWM 锁定版本 | `agent-capability-workflow-matrix==0.5.1`，Revision `ae46ea81a2795b4b6dd5c46ce8c271c68e98b9ed`；Stage Input Artifact Contract 已发布并进入产品依赖锁 |
-| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，141 条 Path、170 个 HTTP Operation |
+| 控制台契约 | [`console/openapi.json`](../../console/openapi.json)，143 条 Path、172 个 HTTP Operation |
 
 ### 0.1 能力事实等级
 
