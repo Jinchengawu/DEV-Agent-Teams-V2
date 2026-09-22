@@ -6,6 +6,10 @@
 
 ### 验收 harness 对齐（e6bbd519 后）
 
+补充隔离前置修复：4300d94 的严格R2与NR-08在干净SHA实际通过；Deterministic正式启动仍被准备度拒绝。完整只读Runtime投影7项ready，唯一锁定Method Store missing；runner为浏览器新建数据目录时未装入依赖。
+Draft：复用本地已资格化锁定Store，只复制当前Lock引用的Snapshot及文件到临时browser数据目录，不联网下载。Architecture Review：Impact Local；Findings 隔离夹具依赖初始化缺失，产品fail-closed正确；Required Revisions 显式DataDir优先、缺失才回退既有默认Store，源/目标双验证、拒绝链接与篡改、只复制锁定文件且失败清理；ADR Required No；Architecture Document Delta 无；Outcome Approved。Revise/Final：主审确认上述边界；新增正常、缺失/篡改/链接、回退及复制失败测试后实现。源Store保留，目标唯一新建，业务状态机及权限未变化。
+Implementation/Reconciliation：新增_prepare_browser_method_packs并在浏览器fixture启动前调用；结构/Release专项17 passed（0.45s），Ruff通过。后续新SHA两轨实际结果独立记录，不继承4300d94成功Receipt。
+
 Draft：e6bbd519 严格 R2 已生成成功 Receipt；Deterministic 的单仓 DAG 正式 Apply 测试因项目默认引导评测而找不到正式启动按钮。NR-08 在已有账号服务登录前收集到预期匿名401。保留这两份失败原始记录。
 Architecture Review：Architecture Impact None；Findings 产品已公开提供标准/引导模式，测试须显式选择与自身验收目的对应的标准模式；认证后的错误仍必须失败，不允许一般性忽略401；数据、权限、状态机、恢复与隔离边界均不变化；Required Revisions 保留正式启动和Apply断言、仅在认证成功后清除启动阶段错误；ADR Required No；Architecture Document Delta 无；Outcome Approved。
 Revise/Final：主审确认标准项目选择器与已有认证清理模式；添加脚本合同RED，再实施两个局部修改。Implementation/Reconciliation：合同先2 failed，修复后与Browser证据/Receipt专项合计21 passed（0.70s）。这是脚本结构保护，不代替实际浏览器；新提交必须重跑严格R2和Deterministic，e6的结果不能移作新SHA收据。

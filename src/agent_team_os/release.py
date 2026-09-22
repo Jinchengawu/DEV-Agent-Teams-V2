@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -44,6 +45,7 @@ from .journey import (
     resolve_backend_delivery_fingerprint,
 )
 from .modules.delivery import BackendDeliveryPipelinePolicy
+from .modules.extensions import ContentAddressedMethodPackStore, FrozenMethodPackSet
 from .modules.orchestration import (
     PipelineCatalog,
     PipelineCreate,
@@ -672,7 +674,54 @@ def _git_status(project_root: Path) -> str:
     ).stdout.strip()
 
 
+def _prepare_browser_method_packs(project_root: Path, target: Path) -> None:
+    """向隔离浏览器夹具复制已锁定的 Method 内容，不下载或放宽资格。"""
+    fallback = project_root / ".agent-team-os" / "method-packs"
+    configured = os.environ.get("AGENT_TEAM_OS_DATA_DIR")
+    source = Path(configured) / "method-packs" if configured else fallback
+    if not source.exists() and not source.is_symlink():
+        source = fallback
+    lock = project_root / "config" / "method-packs-v050.json"
+    if source.is_symlink() or not source.is_dir():
+        raise RuntimeError("BROWSER_METHOD_SOURCE_MISSING_OR_SYMLINK")
+    store = ContentAddressedMethodPackStore(source)
+    frozen = FrozenMethodPackSet(lock, store).snapshot()
+    files: set[Path] = set()
+    for package in frozen.packages:
+        qualification = str(package["qualification_sha256"])
+        snapshot = store.load_snapshot(qualification)
+        files.add(Path("snapshots") / f"{qualification}.json")
+        object_root = Path("objects/sha256") / snapshot.content_sha256[:2] / snapshot.content_sha256
+        files.update(object_root / item.path for item in snapshot.files)
+    # 只检查 Store 内的组成路径，不因系统 /tmp 等可信祖先别名而误拒。
+    for relative in files:
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError("BROWSER_METHOD_PATH_INVALID")
+        current = source
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                raise RuntimeError("BROWSER_METHOD_SYMLINK_REJECTED")
+        if not current.is_file():
+            raise RuntimeError("BROWSER_METHOD_FILE_MISSING")
+    target.mkdir(parents=True, exist_ok=False)
+    try:
+        for relative in sorted(files):
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, destination, follow_symlinks=False)
+        copied = FrozenMethodPackSet(lock, ContentAddressedMethodPackStore(target)).snapshot()
+        if copied != frozen:
+            raise RuntimeError("BROWSER_METHOD_COPY_QUALIFICATION_CHANGED")
+        if any(path.is_symlink() for path in target.rglob("*")):
+            raise RuntimeError("BROWSER_METHOD_SYMLINK_REJECTED")
+    except BaseException:
+        shutil.rmtree(target)
+        raise
+
+
 def _run_browser_gate(project_root: Path, runtime: Path) -> BrowserGateEvidence:
+    _prepare_browser_method_packs(project_root, runtime / "browser" / "method-packs")
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
