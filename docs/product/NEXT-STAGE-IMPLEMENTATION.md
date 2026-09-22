@@ -4,6 +4,12 @@
 
 ## 范围与基线
 
+### 验收 harness 对齐（e6bbd519 后）
+
+Draft：e6bbd519 严格 R2 已生成成功 Receipt；Deterministic 的单仓 DAG 正式 Apply 测试因项目默认引导评测而找不到正式启动按钮。NR-08 在已有账号服务登录前收集到预期匿名401。保留这两份失败原始记录。
+Architecture Review：Architecture Impact None；Findings 产品已公开提供标准/引导模式，测试须显式选择与自身验收目的对应的标准模式；认证后的错误仍必须失败，不允许一般性忽略401；数据、权限、状态机、恢复与隔离边界均不变化；Required Revisions 保留正式启动和Apply断言、仅在认证成功后清除启动阶段错误；ADR Required No；Architecture Document Delta 无；Outcome Approved。
+Revise/Final：主审确认标准项目选择器与已有认证清理模式；添加脚本合同RED，再实施两个局部修改。Implementation/Reconciliation：合同先2 failed，修复后与Browser证据/Receipt专项合计21 passed（0.70s）。这是脚本结构保护，不代替实际浏览器；新提交必须重跑严格R2和Deterministic，e6的结果不能移作新SHA收据。
+
 按 NEXT-STAGE-DELIVERY-READINESS.md 的 NR-01–08、NEXT-STAGE-DELIVERY-PLAN.md 的 S0–S6 推进。
 当前状态为 implementing，不是 Release accepted。源码基线为 `5395a4bc1a2ed5960c774a7f12bb417f896053a5`，Package 版本为 `0.5.1`；v0.5.2 是历史交互工作名称，不能代替制品版本。
 预存两份产品计划为 untracked，保留。现有 8091 服务和数据库不作评测写入。

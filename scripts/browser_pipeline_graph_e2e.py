@@ -192,6 +192,7 @@ def _create_and_publish_graph(page: Page, url: str) -> dict[str, Any]:
     page.get_by_role("link", name="项目", exact=True).click()
     page.get_by_placeholder("例如：pj1").fill(project_id)
     page.get_by_placeholder("例如：客户门户后端").fill("浏览器 DAG LOOP 项目")
+    _select_option(page, "启动方式", "标准项目")
     _select_option(
         page,
         "默认流水线",

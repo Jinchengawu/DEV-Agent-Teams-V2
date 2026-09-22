@@ -34,6 +34,7 @@ def main() -> None:
         page = desktop.new_page()
         errors = _capture_errors(page)
         _authenticate(page, args.url, password)
+        errors.clear()
         project_id = _create_guided_project(page)
         _verify_setup_and_blocked_workbench(
             page, args.url, project_id, args.evidence_dir
