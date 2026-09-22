@@ -21,9 +21,11 @@ from agent_team_os.shared.hashes import sha256_json
 
 def test_external_git_capability_probe_checks_existing_main_without_mutating_remote(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     remote = _seed_bare_repository(tmp_path)
     before = _refs(remote)
+    monkeypatch.chdir(tmp_path)
 
     receipt = ExternalGitCapabilityProbe(
         tmp_path / "probe",
@@ -40,6 +42,69 @@ def test_external_git_capability_probe_checks_existing_main_without_mutating_rem
     assert receipt.remote_main_sha == before["refs/heads/main"]
     assert receipt.direct_fast_forward_main is True
     assert receipt.transport == "local-test"
+    assert _refs(remote) == before
+    assert list((tmp_path / "probe").iterdir()) == []
+
+
+@pytest.mark.parametrize("failed_command", ["init", "fetch", "push"])
+def test_capability_probe_fails_closed_and_cleans_temporary_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_command: str,
+) -> None:
+    remote = _seed_bare_repository(tmp_path)
+    before = _refs(remote)
+    monkeypatch.chdir(tmp_path)
+    probe = ExternalGitCapabilityProbe(tmp_path / "probe", allow_local_test_transport=True)
+    original = probe._git
+    commands: list[tuple[str, ...]] = []
+
+    def run(*arguments: str, **kwargs: object) -> str:
+        commands.append(arguments)
+        if failed_command in arguments:
+            # 使用真实非零 Git 命令，验证适配器保留原失败码且不返回 ready。
+            return original("-C", str(tmp_path / "absent"), "status", **kwargs)
+        return original(*arguments, **kwargs)
+
+    monkeypatch.setattr(probe, "_git", run)
+    with pytest.raises(ProductError) as failure:
+        probe.verify(ExternalGitBinding(remote_uri=str(remote)))
+    assert failure.value.code == {
+        "init": "EXTERNAL_GIT_PROBE_UNAVAILABLE",
+        "fetch": "EXTERNAL_GIT_MAIN_UNAVAILABLE",
+        "push": "REMOTE_MAIN_APPLY_NOT_ALLOWED",
+    }[failed_command]
+    assert all("--dry-run" in command for command in commands if "push" in command)
+    assert not any("--force" in command for command in commands)
+    assert _refs(remote) == before
+    assert list((tmp_path / "probe").iterdir()) == []
+
+
+def test_capability_probe_rejects_local_transport_outside_test_mode(tmp_path: Path) -> None:
+    probe = ExternalGitCapabilityProbe(tmp_path / "probe")
+    with pytest.raises(ProductError) as failure:
+        probe.verify(ExternalGitBinding(remote_uri=str(tmp_path)))
+    assert failure.value.code == "EXTERNAL_GIT_TRANSPORT_NOT_ALLOWED"
+    assert not (tmp_path / "probe").exists()
+
+
+def test_capability_probe_ignores_inherited_repository_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = _seed_bare_repository(tmp_path)
+    before = _refs(remote)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "caller.git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(tmp_path / "caller-worktree"))
+    monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "caller-index"))
+    receipt = ExternalGitCapabilityProbe(
+        tmp_path / "probe", allow_local_test_transport=True,
+    ).verify(ExternalGitBinding(remote_uri=str(remote)))
+    assert receipt.remote_main_sha == before["refs/heads/main"]
+    assert not (tmp_path / "caller.git").exists()
+    assert not (tmp_path / "caller-index").exists()
+    assert list((tmp_path / "probe").iterdir()) == []
+    monkeypatch.delenv("GIT_DIR")
+    monkeypatch.delenv("GIT_WORK_TREE")
+    monkeypatch.delenv("GIT_INDEX_FILE")
     assert _refs(remote) == before
 
 

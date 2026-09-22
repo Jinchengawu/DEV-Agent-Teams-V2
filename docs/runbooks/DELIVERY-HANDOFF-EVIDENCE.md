@@ -33,8 +33,14 @@ Manifest Hash，不将自报 SHA 视为数字签名。
 ```sh
 AGENT_TEAM_OS_PRODUCT_ROOT=<Bundle根目录> \
 AGENT_TEAM_OS_DATA_DIR=<独立临时数据目录> \
+AGENT_TEAM_OS_VERIFICATION_TOOLS_DIR=<已准备的锁定验证工具环境绝对路径> \
 agent-team-os demo
 ```
+
+Frontend 验证工具环境须包含产品生成的 `environment.json` 与 `node_modules`；不能直接指向任意
+开发依赖目录。此环境不随 Bundle 分发，需要预先按工具环境合同准备。未指定上述变量时默认目录为
+进程 cwd 下的 `.agent-team-os/verification-tools`，不会跟随 Product Root；非 checkout 启动应使用
+绝对路径，否则资格化可能返回 `WORKCELL_VERIFICATION_ENVIRONMENT_UNQUALIFIED`。
 
 Product Root 会严格校验 config、Migration、`console/dist/index.html` 和默认 Evaluation Dataset；显式 Root 非法时
 不回退到 checkout。评测账号必须为本次交接独立生成，密码不得进入 Git、日志、

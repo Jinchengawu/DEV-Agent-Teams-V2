@@ -64,6 +64,14 @@ class ExternalGitCapabilityProbe:
         transport = self._transport(binding)
         self.scratch_root.mkdir(parents=True, exist_ok=True)
         with _credential_environment(binding.credential_reference) as environment:
+            # 外部启动器的工作树变量不能将探测重定向到调用者仓库。
+            environment = {
+                key: value for key, value in environment.items()
+                if key not in {
+                    "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+                    "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE",
+                }
+            }
             listing = self._git(
                 "ls-remote",
                 "--exit-code",
@@ -88,15 +96,27 @@ class ExternalGitCapabilityProbe:
                     "EXTERNAL_GIT_MAIN_UNAVAILABLE",
                     "远端 main 引用返回了无效 SHA。",
                 )
-            self._git(
-                "push",
-                "--dry-run",
-                "--porcelain",
-                binding.remote_uri,
-                f"{revision}:refs/heads/{binding.default_branch}",
-                environment=environment,
-                failure_code="REMOTE_MAIN_APPLY_NOT_ALLOWED",
-            )
+            # 安装制品没有 checkout；push 即使 dry-run 也需要本地 Git 仓库。
+            # 只取已观察的 main 对象，不创建候选、不更新远端引用。
+            with tempfile.TemporaryDirectory(prefix="capability-", dir=self.scratch_root) as probe:
+                self._git(
+                    "init", "--bare", probe,
+                    environment=environment,
+                    failure_code="EXTERNAL_GIT_PROBE_UNAVAILABLE",
+                )
+                self._git(
+                    "-C", probe, "fetch", "--no-tags", "--depth=1",
+                    binding.remote_uri, revision,
+                    environment=environment,
+                    failure_code="EXTERNAL_GIT_MAIN_UNAVAILABLE",
+                )
+                self._git(
+                    "-C", probe, "push", "--dry-run", "--porcelain",
+                    binding.remote_uri,
+                    f"{revision}:refs/heads/{binding.default_branch}",
+                    environment=environment,
+                    failure_code="REMOTE_MAIN_APPLY_NOT_ALLOWED",
+                )
         return ExternalGitCapabilityReceipt(
             remote_main_sha=revision,
             transport=transport,

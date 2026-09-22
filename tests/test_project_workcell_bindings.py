@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from agent_team_os.api import create_app
 from agent_team_os.delivery import DeliveryCoordinator
 from agent_team_os.infrastructure.database import MigrationRunner
-from agent_team_os.infrastructure.git import ProjectGitWorkspaces
+from agent_team_os.infrastructure.git import ExternalGitCapabilityProbe, ProjectGitWorkspaces
 from agent_team_os.modules.projects import ProjectCatalog, SQLiteProjectRepository
 from agent_team_os.modules.workcells import (
     ProjectWorkcellGovernance,
@@ -18,9 +19,13 @@ from agent_team_os.modules.workcells import (
 from agent_team_os.testing import DeterministicCodeExecutor, DeterministicPlanningService
 
 
+@pytest.mark.parametrize("external", [False, True])
 def test_project_team_onboarding_requires_four_independent_verified_workspaces(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    external: bool,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     database = tmp_path / "agent-team-os.sqlite"
     MigrationRunner(database, Path(__file__).parents[1] / "migrations").migrate()
     project_repository = SQLiteProjectRepository(database)
@@ -31,6 +36,9 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
         teams=teams,
         projects=project_repository,
         managed_git=managed_git,
+        external_git=ExternalGitCapabilityProbe(
+            tmp_path / "probe", allow_local_test_transport=True,
+        ),
     )
     projects = ProjectCatalog(
         project_repository,
@@ -81,20 +89,49 @@ def test_project_team_onboarding_requires_four_independent_verified_workspaces(
         }
 
         workspace_ids: list[str] = []
+        original = ExternalGitCapabilityProbe._git
         for workcell_key in ("design", "frontend", "backend", "qa"):
+            uri = f"projects/workcell-onboarding/{workcell_key}"
+            if external:
+                managed_git.provision(uri)
+                uri = managed_git.remote_uri(uri)
             bound = client.post(
                 "/v1/projects/workcell-onboarding/workspace-bindings",
                 json={
                     "workcell_key": workcell_key,
                     "kind": "git_repository_v1",
-                    "adapter_type": "managed-bare-git",
-                    "repository_uri": f"projects/workcell-onboarding/{workcell_key}",
+                    "adapter_type": "external-git" if external else "managed-bare-git",
+                    "repository_uri": uri,
                 },
             )
             assert bound.status_code == 201
             workspace = bound.json()["workspace_binding"]
             assert workspace["status"] == "pending"
             workspace_ids.append(workspace["id"])
+
+            if external and workcell_key == "design":
+                def reject_push(*args: str, **kwargs: object) -> str:
+                    if "push" in args:
+                        return original("-C", str(tmp_path / "absent"), "status", **kwargs)
+                    return original(*args, **kwargs)
+
+                with monkeypatch.context() as rejected_probe:
+                    rejected_probe.setattr(
+                        ExternalGitCapabilityProbe, "_git", staticmethod(reject_push),
+                    )
+                    rejected = client.post(
+                        f"/v1/workspace-bindings/{workspace['id']}/verify",
+                        json={"expected_version": workspace["version"]},
+                    )
+                assert rejected.status_code == 409
+                assert rejected.json()["code"] == "REMOTE_MAIN_APPLY_NOT_ALLOWED"
+                current = client.get("/v1/projects/workcell-onboarding/workcells").json()
+                workspace = next(
+                    item for item in current["workspace_bindings"] if item["id"] == workspace["id"]
+                )
+                assert workspace["status"] == "failed"
+                assert workspace["verification_sha256"] is None
+                assert list((tmp_path / "probe").iterdir()) == []
 
             verified = client.post(
                 f"/v1/workspace-bindings/{workspace['id']}/verify",
