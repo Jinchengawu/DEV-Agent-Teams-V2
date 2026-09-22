@@ -15,12 +15,18 @@ pnpm --dir console build
 ```
 
 Builder 仅收集 allow-list 内的 wheel、`console/dist`、`migrations/*.sql`、四个锁定
-config 和默认 `agent-team-os-mvp/1.3.0` Evaluation Dataset，并生成
+config、`pyproject.toml`、`uv.lock` 和默认 `agent-team-os-mvp/1.3.0` Evaluation Dataset，并生成
 `delivery-manifest.json`。缺失资源、版本不一致、符号链接、数据库、日志、
 `.env`、密钥或凭据文件均 fail-closed。Manifest 的 `evidence_scope` 固定将 Deterministic/
 Live 标为 `not_run`，将 Approval/Apply 标为 `not_authorized`。
 正式 Bundle 构建会拒绝 dirty worktree；`--allow-dirty` 仅用于开发验证，Manifest 必然标记
 `source_worktree_clean=false` 与 `local_bundle=development_only`，不得作为交付候选。
+
+当前 Builder 生成 `agent-team-os-delivery-bundle-v2`，先核对 wheel 后端文件与源码完全一致。
+Runtime 不依赖 Bundle 外的 `.git`：启动前校验整个 Bundle、实际加载后端与 wheel、依赖锁和
+干净构建身份。历史 v1 包仍可校验归档完整性，但不支持安装运行身份，须重新构建 v2；不得复制
+开发 checkout 的 `.git` 到包内绕过。校验是可信本机分发的完整性检查，评测者仍需核对交付的
+Manifest Hash，不将自报 SHA 视为数字签名。
 
 解压或复制 Bundle 后，启动命令必须显式设置：
 

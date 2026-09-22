@@ -133,7 +133,10 @@ def _execute_workcell_journey(
     page.get_by_text("四仓软件交付团队", exact=True).first.wait_for()
     expect(page.locator(".topology-workcell")).to_have_count(4)
     expect(page.locator(".topology-workcell").get_by_text("git_repository_v1")).to_have_count(4)
-    assert page.get_by_text("执行顺序由 Published Pipeline Revision 管理。").count() == 0
+    expect(page.get_by_text(
+        "只编辑组织拓扑和 Workcell 资源边界。执行顺序由 Published Pipeline Revision 管理。",
+        exact=True,
+    )).to_be_visible()
 
     project_id = (
         "browser-workcell-v051-knowledge"

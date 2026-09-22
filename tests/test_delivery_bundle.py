@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -41,8 +42,14 @@ def _write_delivery_inputs(root: Path) -> Path:
         root / "evaluation" / "datasets" / "agent-team-os-mvp" / "1.3.0",
     )
     (root / "dist").mkdir()
+    for name in ("pyproject.toml", "uv.lock"):
+        shutil.copyfile(ROOT / name, root / name)
+    package = root / "src/agent_team_os"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("# test package\n")
     wheel = root / "dist" / f"dev_agent_teams_v2-{PRODUCT_VERSION}-py3-none-any.whl"
-    wheel.write_bytes(b"wheel")
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.write(package / "__init__.py", "agent_team_os/__init__.py")
     return wheel
 
 
@@ -60,7 +67,7 @@ def test_delivery_bundle_has_stable_allow_list_manifest(tmp_path: Path) -> None:
 
     manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
     paths = [entry["path"] for entry in manifest["files"]]
-    assert manifest["schema"] == "agent-team-os-delivery-bundle-v1"
+    assert manifest["schema"] == "agent-team-os-delivery-bundle-v2"
     assert manifest["product_version"] == PRODUCT_VERSION == "0.5.1"
     assert manifest["git_revision"] == "a" * 40
     assert manifest["source_worktree_clean"] is True
@@ -158,3 +165,36 @@ def test_bundle_contains_loadable_real_evaluation_dataset(tmp_path: Path) -> Non
 
     assert dataset.manifest.suite_id == "agent-team-os-mvp"
     assert dataset.cases
+
+
+def test_verifier_rejects_internal_symlink_even_with_matching_bytes(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    wheel = _write_delivery_inputs(root)
+    bundle = build_delivery_bundle(
+        project_root=root, output_root=tmp_path / "output", wheel=wheel,
+        git_revision="a" * 40, worktree_clean=True,
+    ).bundle_root
+    target = bundle / "config/capabilities.yaml"
+    alias = bundle / "config/journeys.yaml"
+    target.unlink()
+    target.symlink_to(alias.name)
+    manifest = bundle / "delivery-manifest.json"
+    raw = json.loads(manifest.read_text())
+    for entry in raw["files"]:
+        if entry["path"] == "config/capabilities.yaml":
+            entry["size"] = alias.stat().st_size
+            entry["sha256"] = hashlib.sha256(alias.read_bytes()).hexdigest()
+    manifest.write_text(json.dumps(raw))
+    with pytest.raises(BundleBuildError, match="符号链接"):
+        verify_delivery_bundle(bundle)
+
+
+def test_builder_rejects_stale_wheel_for_current_source(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    wheel = _write_delivery_inputs(root)
+    (root / "src/agent_team_os/__init__.py").write_text("# changed after wheel built")
+    with pytest.raises(BundleBuildError, match="wheel 不一致"):
+        build_delivery_bundle(
+            project_root=root, output_root=tmp_path / "output", wheel=wheel,
+            git_revision="a" * 40, worktree_clean=True,
+        )

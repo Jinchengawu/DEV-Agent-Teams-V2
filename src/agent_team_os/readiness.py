@@ -111,15 +111,18 @@ def snapshot_delivery_build_identity(
 ) -> DeliveryBuildIdentitySnapshot:
     """Freeze the product and ACWM identity used to compile one Delivery."""
 
-    product_revision = _git_output(project_root, "rev-parse", "HEAD")
-    if len(product_revision) != 40:
-        raise RuntimeError("Agent-Team-OS Git Revision is unavailable")
-    product_worktree_clean = not _git_output(
-        project_root,
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=normal",
-    )
+    if (project_root / "delivery-manifest.json").exists():
+        from .delivery_bundle import verified_bundle_revision
+
+        product_revision = verified_bundle_revision(project_root)
+        product_worktree_clean = True
+    else:
+        product_revision = _git_output(project_root, "rev-parse", "HEAD")
+        if len(product_revision) != 40:
+            raise RuntimeError("Agent-Team-OS Git Revision is unavailable")
+        product_worktree_clean = not _git_output(
+            project_root, "status", "--porcelain=v1", "--untracked-files=normal",
+        )
     lock_path = project_root / "config" / "framework-lock.json"
     locked = FrameworkLock.model_validate_json(lock_path.read_text(encoding="utf-8"))
     acwm_revision = actual_acwm_revision or imported_acwm_revision()

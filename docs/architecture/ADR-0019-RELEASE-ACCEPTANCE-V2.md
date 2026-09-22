@@ -38,6 +38,10 @@ Legacy Snapshot 允许该字段缺失以保持读取兼容；缺失、Dirty 或�
 
 ### 验收 Interface
 
+2026-09-22：安装制品允许使用 ADR-0020 定义的已校验 Bundle 身份替代本地 `.git` 查询，
+同时核对正在加载的后端代码、完整资源及依赖锁。Snapshot 字段、内容 Hash、同 Revision 判定
+及只读验收语义保持不变；源码 checkout 仍使用 Git。
+
 Verifier 只接受一个已经完成的 Delivery，不启动 Agent、不重新检索、不创建 Candidate、不 Apply，
 也不修改任何领域状态。它通过现有 Repository Interface 汇总并交叉验证：
 

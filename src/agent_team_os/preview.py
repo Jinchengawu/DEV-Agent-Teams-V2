@@ -259,6 +259,9 @@ def _ensure_builtin_pipeline_for_preview(
 
 def build_preview_app() -> FastAPI:
     project_root = resolve_product_root()
+    if (project_root / "delivery-manifest.json").exists():
+        # 在启动和任何数据库写入前验证安装制品，避免创建 Delivery 时才暴露错误。
+        snapshot_delivery_build_identity(project_root)
     data_dir = Path(os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(project_root / ".agent-team-os")))
     database = data_dir / "agent-team-os.sqlite"
     migrations = MigrationRunner(database, project_root / "migrations")

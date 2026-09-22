@@ -42,3 +42,17 @@ Preview Runtime 曾从 `Path(__file__).parents[2]` 推导 config、Migration 和
 版本一致性、Bundle 正反合同、Manifest 篡改拒绝、真实 Evaluation Dataset 加载、Product Root 显式选择和无回退由
 自动化测试覆盖。本地 Bundle 成功只是 Local evidence；Deterministic、Live、Release Approval、
 Apply 与 read-back 仍需各自的同 Revision 证据和授权。
+
+## 2026-09-22 修订：安装制品的 Build Identity
+
+clean-room 安装证实 Bundle 无 `.git` 时原有 Build Identity 无法创建，阻断 NR-01 的用户主路径。
+本修订为 Cross-boundary，沿用 DeliveryBuildIdentitySnapshot 字段和 Hash，不迁移历史快照。
+
+- Builder 校验 wheel 中完整 `agent_team_os` 文件集合与当前源码一致，拒绝旧 wheel 混装；Bundle 增加 `pyproject.toml`、`uv.lock` 保留 ACWM 声明与解析资格检查。
+- 发现 Delivery Manifest 时，Runtime 首先校验全部 Manifest 文件 Hash、路径和符号链接，再校验实际加载 package 的全部非缓存文件与唯一 wheel 的字节一致。
+- 仅上述检查通过且 Manifest 为合法 SHA、`source_worktree_clean=true` 时，从受信分发 Manifest 冻结 Product Revision；无 Manifest 的源码 checkout 保留 Git 身份路径。
+- Manifest 完整性与 wheel 一致性是可信本机分发合同，不是数字签名或对抗篡改者重新制作整包的来源认证；交接者仍需核对独立传递的制品 Hash。
+- 既有 Approval/Apply、只读 V2 验收和 ACWM 权威不变。开发 dirty Bundle 不能作为正式运行身份。
+- 新构建使用 `agent-team-os-delivery-bundle-v2`；历史 v1 仍可校验归档完整性，但不能启动安装制品 Runtime。组合根在数据库写入前拒绝旧包并给出重新构建提示，不在创建 Delivery 时产生迟到的错误。
+
+测试覆盖无 Git Bundle、源码身份回归、混装/额外代码、资源漂移、dirty/非法身份与内部符号链接。独立安装和最终 Revision 三轨的执行结果见下一阶段实施记录，不由此 ADR 宣称完成。

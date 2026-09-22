@@ -138,6 +138,10 @@ AgentScope 只承载单次 Attempt 内的 Stage-local Session、消息和 Runtim
 源码 checkout 默认根。Delivery Bundle 使用 allow-list 将 wheel 与这些资源绑定到同一
 Git Revision 和 SHA-256 Manifest；该 Manifest 不拥有 Gate 或 Apply 权威。
 
+安装制品的 Build Identity 按 ADR-0020 验证全部 Bundle 资源、pyproject/uv.lock 与实际加载后端
+和 wheel 的文件集合/字节一致性后读取 Manifest Revision；无 Manifest 的源码模式仍读取 Git。
+这是可信本机分发的完整性合同，不提供签名来源认证。dirty Bundle 不具备正式身份。
+
 1. 解析数据目录并执行 checksummed Migration；
 2. 导入可识别的 Legacy 数据库；
 3. 构建 Project Git Workspace、Repository 和领域服务；

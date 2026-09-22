@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import shutil
+import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +17,7 @@ from .version import __version__
 
 PRODUCT_VERSION = __version__
 MANIFEST_NAME = "delivery-manifest.json"
-MANIFEST_SCHEMA = "agent-team-os-delivery-bundle-v1"
+MANIFEST_SCHEMA = "agent-team-os-delivery-bundle-v2"
 _CONFIG_ALLOW_LIST = (
     "capabilities.yaml",
     "framework-lock.json",
@@ -63,6 +64,7 @@ def build_delivery_bundle(
     if not wheel.is_file() or expected_wheel_token not in wheel.name or wheel.suffix != ".whl":
         raise BundleBuildError(f"后端 wheel 必须与产品版本 {PRODUCT_VERSION} 一致。")
     _validate_inputs(root)
+    _verify_package_files(root / "src" / "agent_team_os", wheel)
 
     destination = output_root.resolve() / f"agent-team-os-{PRODUCT_VERSION}"
     if destination.exists():
@@ -70,6 +72,8 @@ def build_delivery_bundle(
     destination.mkdir(parents=True)
     try:
         _copy_regular_file(wheel, destination / "backend" / wheel.name)
+        for name in ("pyproject.toml", "uv.lock"):
+            _copy_regular_file(root / name, destination / name)
         for name in _CONFIG_ALLOW_LIST:
             _copy_regular_file(root / "config" / name, destination / "config" / name)
         for source in sorted((root / "migrations").glob("*.sql")):
@@ -122,7 +126,9 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
         raw: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise BundleBuildError("Delivery Manifest 不可读或非法。") from error
-    if not isinstance(raw, dict) or raw.get("schema") != MANIFEST_SCHEMA:
+    if not isinstance(raw, dict) or raw.get("schema") not in {
+        MANIFEST_SCHEMA, "agent-team-os-delivery-bundle-v1",
+    }:
         raise BundleBuildError("Delivery Manifest schema 不受支持。")
     if raw.get("product_version") != PRODUCT_VERSION:
         raise BundleBuildError("Delivery Manifest 产品版本不一致。")
@@ -136,8 +142,15 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
         relative = entry.get("path")
         if not isinstance(relative, str) or relative in expected:
             raise BundleBuildError("Delivery Manifest 文件路径非法或重复。")
-        path = (root / relative).resolve()
-        if not path.is_relative_to(root) or not path.is_file() or path.is_symlink():
+        raw_path = Path(relative)
+        if raw_path.is_absolute() or ".." in raw_path.parts:
+            raise BundleBuildError(f"Delivery Bundle 文件路径非法：{relative}")
+        unresolved = root / relative
+        if any(part.is_symlink() for part in (unresolved, *unresolved.parents)
+               if part != root and part.is_relative_to(root)):
+            raise BundleBuildError(f"Delivery Bundle 不接受符号链接：{relative}")
+        path = unresolved.resolve()
+        if not path.is_relative_to(root) or not path.is_file():
             raise BundleBuildError(f"Delivery Bundle 文件路径非法：{relative}")
         if path.stat().st_size != entry.get("size") or _sha256(path) != entry.get("sha256"):
             raise BundleBuildError(f"Delivery Bundle SHA-256 或大小不一致：{relative}")
@@ -157,8 +170,60 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
     }
 
 
+def verified_bundle_revision(bundle_root: Path) -> str:
+    """校验受信分发包及实际加载代码；完整性校验不等于发布签名认证。"""
+    root = bundle_root.resolve()
+    verify_delivery_bundle(root)
+    raw = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    if raw.get("schema") != MANIFEST_SCHEMA:
+        raise BundleBuildError("旧版 Bundle 不支持运行身份；请从冻结候选重新构建 v2 Bundle。")
+    revision = raw.get("git_revision")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise BundleBuildError("Delivery Bundle Git Revision 非法。")
+    if raw.get("source_worktree_clean") is not True:
+        raise BundleBuildError("Delivery Bundle 必须来自干净候选。")
+    if not all((root / name).is_file() for name in ("pyproject.toml", "uv.lock")):
+        raise BundleBuildError("Delivery Bundle 缺少构建依赖锁。")
+    wheels = list((root / "backend").glob("*.whl"))
+    if len(wheels) != 1:
+        raise BundleBuildError("Delivery Bundle 必须包含唯一后端 wheel。")
+    _verify_package_files(_loaded_package_root(), wheels[0])
+    return revision
+
+
+def _loaded_package_root() -> Path:
+    return Path(__file__).parent
+
+
+def _verify_package_files(package: Path, wheel: Path) -> None:
+    """匹配完整 package 文件集合与字节，拒绝源码混装、额外代码和链接。"""
+    if not package.is_dir() or package.is_symlink():
+        raise BundleBuildError("后端 package 路径非法。")
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            names = [name for name in archive.namelist()
+                     if name.startswith("agent_team_os/") and not name.endswith("/")]
+            if not names or len(names) != len(set(names)):
+                raise BundleBuildError("后端 wheel package 为空或重复。")
+            expected = {name.removeprefix("agent_team_os/"): archive.read(name) for name in names}
+    except (OSError, zipfile.BadZipFile) as error:
+        raise BundleBuildError("后端 wheel 不可读。") from error
+    actual = {}
+    for path in package.rglob("*"):
+        relative = path.relative_to(package)
+        if path.is_symlink():
+            raise BundleBuildError("后端 package 不接受符号链接。")
+        if "__pycache__" in relative.parts:
+            continue
+        if path.is_file():
+            actual[relative.as_posix()] = path.read_bytes()
+    if actual != expected:
+        raise BundleBuildError("后端 package 与 Bundle wheel 不一致。")
+
+
 def _validate_inputs(root: Path) -> None:
     required = [root / "config" / name for name in _CONFIG_ALLOW_LIST]
+    required.extend(root / name for name in ("pyproject.toml", "uv.lock"))
     required.extend((root / "migrations", root / "console" / "dist" / "index.html"))
     required.extend(root / _EVALUATION_DATASET / name for name in _EVALUATION_ALLOW_LIST)
     missing = [path.relative_to(root).as_posix() for path in required if not path.exists()]
