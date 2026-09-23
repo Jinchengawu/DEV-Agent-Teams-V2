@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import resource
@@ -7,13 +8,14 @@ import sqlite3
 import sys
 import tempfile
 import time
-from collections.abc import Iterable
-from datetime import UTC, datetime
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime, timedelta
+from fractions import Fraction
 from math import ceil, isfinite
 from pathlib import Path
 
 from ...shared.errors import ProductError
-from ...shared.hashes import sha256_bytes, sha256_file, sha256_json
+from ...shared.hashes import Sha256, sha256_bytes, sha256_file, sha256_json
 from ...shared.ids import new_id
 from ...shared.permissions import Role
 from ..artifacts import ContentAddressedArtifactStorage
@@ -41,6 +43,16 @@ from .index_domain import (
 )
 from .index_ports import EmbeddingPort, VectorIndexPort, VectorIndexRecord
 from .index_repository import SQLiteKnowledgeIndexRepository
+from .query_execution import QueryPlanExecutor
+from .query_fusion import contribution_audit, contribution_groups
+from .query_plan import (
+    InputMeasurementPort,
+    QueryInputQualification,
+    QueryPlan,
+    QueryPlanError,
+    compile_query_plan,
+)
+from .query_repository import QueryExecutionIdentity, SQLiteKnowledgeQueryRepository
 from .tenant_domain import TenantProviderSnapshotRecord
 from .tenant_repository import SQLiteTenantKnowledgeRepository
 
@@ -59,6 +71,8 @@ class KnowledgeIndexManager:
         index_root: Path,
         embedding_port: EmbeddingPort,
         vector_index_port: VectorIndexPort,
+        query_measurement: InputMeasurementPort | None = None,
+        allow_deterministic_queries: bool = False,
     ) -> None:
         self.repository = repository
         self.tenant_repository = tenant_repository
@@ -67,6 +81,9 @@ class KnowledgeIndexManager:
         self.index_root.mkdir(parents=True, exist_ok=True)
         self.embedding_port = embedding_port
         self.vector_index_port = vector_index_port
+        self.query_measurement = query_measurement
+        self.allow_deterministic_queries = allow_deterministic_queries
+        self.query_repository = SQLiteKnowledgeQueryRepository(repository.database)
         self._verified_index_files: dict[str, tuple[str, int, int]] = {}
 
     def validate(self, retrieval_policy_revision_id: str, max_context_bytes: int) -> None:
@@ -535,9 +552,60 @@ class KnowledgeIndexManager:
                 "Knowledge Index Active Pointer 状态或版本冲突",
             ) from error
 
+    def preflight_query(self, request: KnowledgeRetrievalRequest) -> QueryPlan:
+        """仅本地编译：预算缺失时不访问 describe/embed，不猜测真实模型容量。"""
+        policy = self._policy(request.retrieval_policy_revision_id)
+        active = self.repository.get_active_index(
+            request.provider_binding_id, policy.index_profile_revision_id
+        )
+        if active is None or active.embedding_qualification_id is None:
+            raise _query_preflight_error("KNOWLEDGE_INDEX_NOT_READY", "查询缺少冻结索引")
+        base = self._qualification(active.embedding_qualification_id)
+        query_qualification: QueryInputQualification | None = None
+        if policy.query_input_qualification_sha256 is not None:
+            try:
+                query_qualification = self.query_repository.get_qualification(
+                    policy.query_input_qualification_sha256
+                )
+            except KeyError:
+                query_qualification = None
+            if query_qualification is None:
+                raise _query_preflight_error(
+                    "KNOWLEDGE_QUERY_INPUT_UNQUALIFIED", "查询输入资格记录不存在"
+                )
+        try:
+            return compile_query_plan(
+                request.query, query_qualification, self.query_measurement,
+                base_qualification_sha256=base.qualification_sha256,
+                model_digest=base.model_digest, embedding_adapter_revision=base.adapter_revision,
+                binding_sha256=sha256_json({
+                    "index_id": active.id, "storage_sha256": active.storage_sha256,
+                    "policy_sha256": policy.policy_sha256,
+                    "allowed_sources": sorted(set(request.allowed_source_ids)),
+                }),
+                allow_deterministic=self.allow_deterministic_queries,
+            )
+        except QueryPlanError as error:
+            failure = _query_preflight_error(
+                error.code, "查询输入资格或预算不可执行；请完成本地精确资格核验",
+                context={
+                    "measured_bytes": len(request.query.encode("utf-8", errors="replace")),
+                    "allowed_bytes": (query_qualification.budget.total_bytes
+                                      if query_qualification else None),
+                },
+            )
+        raise failure
+
     def retrieve(
-        self, actor: KnowledgeActor, request: KnowledgeRetrievalRequest
+        self, actor: KnowledgeActor, request: KnowledgeRetrievalRequest,
+        *, execution_identity: QueryExecutionIdentity | None = None,
+        admission: Callable[[], None] | None = None,
     ) -> KnowledgeRetrievalResult:
+        audit: list[dict[str, str | int]] = []
+        plan = (self.preflight_query(request) if execution_identity is None else
+                QueryPlan.model_validate_json(
+                    self.query_repository.get_for_execution(execution_identity).plan_json
+                ))
         policy = self._policy(request.retrieval_policy_revision_id)
         evaluation_policy = self.repository.get_evaluation_policy_for_retrieval(policy.id)
         if evaluation_policy is None:
@@ -545,11 +613,13 @@ class KnowledgeIndexManager:
                 "KNOWLEDGE_RETRIEVAL_EVALUATION_POLICY_MISSING",
                 "Retrieval Policy 尚无 Published Evaluation Policy。",
             )
-        active = self.repository.get_active_index(
-            request.provider_binding_id,
-            policy.index_profile_revision_id,
-        )
-        if active is None or active.status != "active":
+        active = (self.repository.get_active_index(
+            request.provider_binding_id, policy.index_profile_revision_id,
+        ) if execution_identity is None else self.repository.get_index_revision(
+            execution_identity.index_revision_id or ""
+        ))
+        allowed_status = {"active"} if execution_identity is None else {"active", "superseded"}
+        if active is None or active.status not in allowed_status:
             raise _not_ready(
                 "KNOWLEDGE_INDEX_NOT_READY",
                 "当前 Binding 与 Index Profile 没有 Active Index。",
@@ -559,9 +629,51 @@ class KnowledgeIndexManager:
                 "KNOWLEDGE_RETRIEVAL_EVALUATION_NOT_PASSED",
                 "Active Index 尚未通过当前 Retrieval Policy 的已发布评测。",
             )
+        if execution_identity is not None:
+            frozen = self.query_repository.get_for_execution(execution_identity)
+            self.query_repository.assert_admitted(execution_identity, plan)
+            if (
+                execution_identity.index_sha256 != active.storage_sha256
+                or execution_identity.policy_sha256 != policy.policy_sha256
+                or frozen.plan_sha256 != plan.plan_sha256
+                or execution_identity.source_ids != tuple(sorted(set(request.allowed_source_ids)))
+                or execution_identity.policy_revision_id != policy.id
+                or execution_identity.input_sha256 != sha256_bytes(request.query.encode())
+                or active.embedding_qualification_id != execution_identity.base_qualification_id
+                or sha256_json(policy.model_dump(mode="json", exclude={
+                    "policy_sha256", "published_by", "published_at"
+                })) != policy.policy_sha256
+            ):
+                raise _not_ready(
+                    "KNOWLEDGE_QUERY_EXECUTION_IDENTITY_CONFLICT",
+                    "冻结查询身份已漂移；不得切换新索引或资格继续执行",
+                )
+            if admission is None:
+                raise _not_ready("KNOWLEDGE_QUERY_ADMISSION_MISSING", "缺少逐单元授权核验")
+            admission()
+            query_qualification = self.query_repository.get_qualification(plan.qualification_sha256)
+            base = self._qualification(execution_identity.base_qualification_id or "")
+            if (
+                base.qualification_sha256 != execution_identity.base_qualification_sha256
+                or sha256_json(base.model_dump(mode="json", exclude={
+                    "id", "qualification_sha256", "status", "qualified_at"
+                })) != base.qualification_sha256
+                or base.status != "qualified"
+                or query_qualification.base_qualification_sha256 != base.qualification_sha256
+                or query_qualification.model_digest != base.model_digest
+                or query_qualification.embedding_adapter_revision != base.adapter_revision
+                or self.query_measurement is None
+                or not self.query_measurement.verify_qualification(query_qualification)
+                or (query_qualification.evidence_kind != "live"
+                    and not self.allow_deterministic_queries)
+            ):
+                raise _query_preflight_error(
+                    "KNOWLEDGE_QUERY_INPUT_UNQUALIFIED", "冻结资格或计数资产不可验证"
+                )
+            self._verified_index_files.pop(active.id, None)
+            self._index_path(active)
         assert active.embedding_qualification_id is not None
         qualification = self._qualification(active.embedding_qualification_id)
-        self._verify_qualification(qualification)
         allowed_sources = tuple(sorted(set(request.allowed_source_ids)))
         query_sha = sha256_bytes(request.query.encode("utf-8"))
         allowed_sha = sha256_json(allowed_sources)
@@ -571,28 +683,77 @@ class KnowledgeIndexManager:
             hits = ()
             empty_reason = "approved-scope-empty"
         else:
-            query_vector = self.embedding_port.embed(
-                (request.query,),
-                model_name=qualification.model_name,
-                truncate=False,
-            )
-            if len(query_vector) != 1 or len(query_vector[0]) != qualification.dimension:
-                raise _not_ready(
-                    "KNOWLEDGE_MODEL_QUALIFICATION_DRIFT",
-                    "Query Embedding 维度与资格快照不一致。",
+            provider_verified = False
+            def execute_unit(text: str) -> tuple[KnowledgeRetrievalHit, ...]:
+                nonlocal provider_verified
+                if not provider_verified:
+                    self._verify_qualification(qualification)
+                    provider_verified = True
+                query_vector = self.embedding_port.embed(
+                    (text,), model_name=qualification.model_name, truncate=False,
                 )
-            if not _embedding_vector_is_valid(query_vector[0]):
-                raise _not_ready(
-                    "KNOWLEDGE_EMBEDDING_VECTOR_INVALID",
-                    "Query Embedding 包含非有限值或为全零向量。",
+                if len(query_vector) != 1 or len(query_vector[0]) != qualification.dimension:
+                    raise _not_ready("KNOWLEDGE_MODEL_QUALIFICATION_DRIFT", "Query 向量维度漂移")
+                if not _embedding_vector_is_valid(query_vector[0]):
+                    raise _not_ready("KNOWLEDGE_EMBEDDING_VECTOR_INVALID", "Query 向量非法")
+                return self._query_index(
+                    active, text, query_vector[0], allowed_sources, policy,
+                    apply_budget=len(plan.units) == 1,
                 )
-            hits = self._query_index(
-                active,
-                request.query,
-                query_vector[0],
-                allowed_sources,
-                policy,
-            )
+            if execution_identity is not None:
+                if admission is None:
+                    raise _not_ready("KNOWLEDGE_QUERY_ADMISSION_MISSING", "缺少逐单元授权核验")
+                query_qualification = self.query_repository.get_qualification(
+                    plan.qualification_sha256
+                )
+                budget = query_qualification.budget
+                unit_hits = QueryPlanExecutor(
+                    self.query_repository, self.artifact_storage,
+                    lease_ttl=timedelta(milliseconds=budget.max_duration_ms),
+                    max_cache_bytes=budget.max_cache_bytes,
+                ).execute(
+                    execution_identity, plan, query_qualification, request.query,
+                    execute_unit, admission,
+                    max_duration_seconds=budget.max_duration_ms / 1000,
+                )
+            else:
+                query_qualification = self.query_repository.get_qualification(
+                    plan.qualification_sha256
+                )
+                budget = query_qualification.budget
+                started = time.monotonic()
+                cache_bytes = 0
+                ephemeral = []
+                for unit in plan.units:
+                    elapsed = int((time.monotonic() - started) * 1000)
+                    if elapsed > budget.max_duration_ms:
+                        raise _query_preflight_error(
+                            "KNOWLEDGE_QUERY_BUDGET_EXCEEDED", "查询执行时间预算超限",
+                            context={"measured": elapsed, "allowed": budget.max_duration_ms},
+                        )
+                    hits_for_unit = execute_unit(unit.reconstruct(request.query))
+                    cache_bytes += len(json.dumps(
+                        [hit.model_dump(mode="json") for hit in hits_for_unit],
+                        sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                    ).encode("utf-8"))
+                    elapsed = int((time.monotonic() - started) * 1000)
+                    if cache_bytes > budget.max_cache_bytes or elapsed > budget.max_duration_ms:
+                        raise _query_preflight_error(
+                            "KNOWLEDGE_QUERY_BUDGET_EXCEEDED", "查询执行预算超限",
+                            context={
+                                "measured": (cache_bytes if cache_bytes > budget.max_cache_bytes
+                                             else elapsed),
+                                "allowed": (budget.max_cache_bytes
+                                            if cache_bytes > budget.max_cache_bytes
+                                            else budget.max_duration_ms),
+                            },
+                        )
+                    ephemeral.append(hits_for_unit)
+                unit_hits = tuple(ephemeral)
+            audit = contribution_audit(tuple(unit_hits),
+                                       tuple(str(unit.input_sha256) for unit in plan.units))
+            hits = (unit_hits[0] if len(unit_hits) == 1
+                    else _merge_query_hits(tuple(unit_hits), policy))
             if not hits:
                 empty_reason = "no-qualified-hit"
                 if policy.empty_result_policy == "fail":
@@ -617,6 +778,7 @@ class KnowledgeIndexManager:
             {
                 "receipt": receipt.model_dump(mode="json"),
                 "hits": [hit.model_dump(mode="json") for hit in hits],
+                "query_contributions": audit,
             },
             media_type="application/vnd.agent-team-os.retrieval-receipt+json",
         )
@@ -627,6 +789,44 @@ class KnowledgeIndexManager:
             hit_count=len(hits),
         )
         return KnowledgeRetrievalResult(receipt=receipt, hits=hits)
+
+    def freeze_query(
+        self, request: KnowledgeRetrievalRequest, *, preparation_run_id: str,
+        stage_path: str, authorization_epoch_hash: str,
+    ) -> QueryExecutionIdentity:
+        identity, plan, _ = self.draft_query(
+            request, preparation_run_id=preparation_run_id, stage_path=stage_path,
+            authorization_epoch_hash=authorization_epoch_hash,
+        )
+        self.query_repository.freeze_plan(identity, plan=plan)
+        return identity
+
+    def draft_query(
+        self, request: KnowledgeRetrievalRequest, *, preparation_run_id: str,
+        stage_path: str, authorization_epoch_hash: str,
+    ) -> tuple[QueryExecutionIdentity, QueryPlan, QueryInputQualification]:
+        plan = self.preflight_query(request)
+        policy = self._policy(request.retrieval_policy_revision_id)
+        active = self.repository.get_active_index(
+            request.provider_binding_id, policy.index_profile_revision_id
+        )
+        assert active is not None and active.storage_sha256 is not None
+        identity = QueryExecutionIdentity(
+            preparation_run_id=preparation_run_id, stage_path=stage_path,
+            binding_id=request.provider_binding_id, input_sha256=plan.source_sha256,
+            index_sha256=active.storage_sha256, policy_sha256=policy.policy_sha256,
+            qualification_sha256=plan.qualification_sha256,
+            budget_sha256=plan.budget_sha256,
+            authorization_epoch_hash=Sha256.validate(authorization_epoch_hash),
+            index_revision_id=active.id,
+            base_qualification_id=active.embedding_qualification_id,
+            base_qualification_sha256=self._qualification(
+                active.embedding_qualification_id or ""
+            ).qualification_sha256,
+            source_ids=tuple(sorted(set(request.allowed_source_ids))),
+            policy_revision_id=policy.id,
+        )
+        return identity, plan, self.query_repository.get_qualification(plan.qualification_sha256)
 
     def _write_lexical_index(
         self,
@@ -754,6 +954,8 @@ class KnowledgeIndexManager:
         query_vector: tuple[float, ...],
         allowed_sources: tuple[str, ...],
         policy: RetrievalPolicyRevision,
+        *,
+        apply_budget: bool = True,
     ) -> tuple[KnowledgeRetrievalHit, ...]:
         path = self._index_path(revision)
         placeholders = ",".join("?" for _ in allowed_sources)
@@ -811,11 +1013,11 @@ class KnowledgeIndexManager:
         hits: list[KnowledgeRetrievalHit] = []
         consumed = 0
         for score, chunk_id, row, lexical_rank, vector_rank in ranked:
-            if score < policy.min_score or len(hits) >= policy.top_k:
+            if apply_budget and (score < policy.min_score or len(hits) >= policy.top_k):
                 continue
             content = str(row["content"])
             size = len(content.encode("utf-8"))
-            if consumed + size > policy.max_context_bytes:
+            if apply_budget and consumed + size > policy.max_context_bytes:
                 continue
             consumed += size
             lexical_row = lexical.get(chunk_id)
@@ -912,6 +1114,8 @@ class KnowledgeIndexManager:
                 "Index Storage URI 与 Revision 不一致。",
             )
         path = self.index_root / f"{revision.id}.sqlite"
+        if path.is_symlink() or path.parent.is_symlink():
+            raise _not_ready("KNOWLEDGE_INDEX_STORAGE_INVALID", "Index 不允许符号链接")
         try:
             stat = path.stat()
         except FileNotFoundError as error:
@@ -1091,6 +1295,16 @@ def _not_ready(code: str, detail: str) -> ProductError:
     )
 
 
+def _query_preflight_error(
+    code: str, detail: str, *, context: dict[str, int | None] | None = None,
+) -> ProductError:
+    return ProductError(
+        code=code, title="查询输入不可执行", detail=detail,
+        repair="修复本地输入资格与冻结预算后重新提交。", status_code=422,
+        context=context,
+    )
+
+
 def _not_found(code: str, detail: str) -> ProductError:
     return ProductError(
         code=code,
@@ -1109,3 +1323,46 @@ def _capacity_exceeded(code: str, detail: str) -> ProductError:
         repair="缩小 Approved Source Scope，或发布并重新评测新的 Index Profile。",
         status_code=409,
     )
+
+
+def _merge_query_hits(
+    units: tuple[tuple[KnowledgeRetrievalHit, ...], ...], policy: RetrievalPolicyRevision
+) -> tuple[KnowledgeRetrievalHit, ...]:
+    """内部等权 RRF；只在全部单元成功后一次应用最终预算。"""
+    scores: dict[tuple[str, str, str], Fraction] = {}
+    canonical: dict[tuple[str, str, str], KnowledgeRetrievalHit] = {}
+    groups = contribution_groups(units)
+    for ordinal, hits in enumerate(units):
+        if groups[ordinal][0] != ordinal:
+            continue
+        seen: set[tuple[str, str, str]] = set()
+        for rank, hit in enumerate(hits, 1):
+            key = (hit.source_id, hit.snapshot_id, hit.chunk_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            previous = canonical.get(key)
+            if previous is not None and (
+                previous.content_sha256 != hit.content_sha256
+                or previous.citation_id != hit.citation_id
+            ):
+                raise _not_ready("KNOWLEDGE_QUERY_HIT_IDENTITY_DRIFT", "同一命中内容身份漂移")
+            canonical[key] = hit
+            scores[key] = scores.get(key, Fraction()) + Fraction(1, 60 + rank)
+    quantized = {key: round(float(score), policy.score_precision)
+                 for key, score in scores.items()}
+    ranked = sorted(scores, key=lambda key: (-quantized[key], key))
+    output: list[KnowledgeRetrievalHit] = []
+    consumed = 0
+    for key in ranked:
+        hit = canonical[key]
+        score = quantized[key]
+        size = len(hit.content.encode("utf-8"))
+        if score < policy.min_score or len(output) >= policy.top_k:
+            continue
+        if consumed + size > policy.max_context_bytes:
+            continue
+        consumed += size
+        # 多 query 无单个 lexical/vector rank；原形状不变，不伪报某片排名。
+        output.append(hit.model_copy(update={"score": RetrievalScore(rrf_score=score)}))
+    return tuple(output)

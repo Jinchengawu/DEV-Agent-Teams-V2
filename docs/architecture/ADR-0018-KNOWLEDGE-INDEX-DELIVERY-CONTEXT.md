@@ -209,3 +209,54 @@ queued → leased/running → retry_wait
 可变飞书内容和向量运行时被编译为 Delivery 可审计的不可变 Artifact，而不是 Agent 的隐式上下文。
 代价是增加 Preparation 状态、索引 Revision、资格和撤权门禁，但这些复杂度直接服务于恢复、权限和
 证据边界。
+
+## 2026-09-23 修订：内部 Query Executability（实施中）
+
+关联 `ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY`，Architecture Impact：Cross-boundary。
+本轮仅授权本地 F0–F3；真实输入资格、Bundle、实例升级与新 Live Delivery 分别需要授权。
+模型有效输入容量尚无本修订资格证据，必须保持 blocked，禁止硬编码 L2 字节区间。
+
+- Query Plan、QueryInputQualification、Unit Receipt 是 Knowledge 内部事实；ACWM
+  `knowledge-context-v1@1.0.0` 外部字段与语义不变。原 `query/query_sha256` 始终指完整意图。
+- 输入资格 sidecar 绑定原 Embedding Qualification、模型 digest、本地精确 tokenizer/measurement
+  资产与有效容量证据；不重签、不迁移旧 Index。证据缺失或不可证时新执行失败关闭。
+- Provider I/O 前编译完整有界计划，校验 token/byte 与总量预算；覆盖分片不得摘要、截断或丢
+  Acceptance。性质与语义 Dataset 必须全部通过，字符覆盖不等于语义证明。
+- Retrieval Policy 拥有确定性分片/融合；每片 Scope-before-recall，一次最终 Context 预算，
+  Citation 仍指原 Snapshot/Chunk。Plan 不进入 ACWM Stage Artifact。
+- Preparation 保持唯一 Lease/调度权威。冻结计划与单元接纳使用 CAS，部分结果不生成完整
+  Snapshot，重启不偷换 Active 身份。升级阻断进行中 Preparation/Delivery，终态不可恢复。
+- 错误只留存安全 code/category/HTTP status/hash/尺寸/correlation id，不复制请求正文、
+  原响应、向量、知识正文或凭据到诊断证据。
+
+当前是接受的实施边界，不是已完成验收；真实资格和 Live 仍未运行。
+
+### 本地 Architecture Reconciliation（2026-09-23）
+
+- 已落盘：纯 Query compiler/预算哈希、内部资格记录、Migration 0047、fenced 串行 Unit
+  Receipt、累计时限/缓存、Context 同事务关联、脱敏错误 DTO/API/UI。只在受控临时数据库与
+  mock Provider 上验证，未升级现有运行实例。
+- 保持：ACWM Stage-facing 字段、完整 query/query_sha256；无旧 Index 重签或迁移；无自动
+  恢复终态 Delivery；任何有效容量缺失均 fail-closed。
+- 尚未实现/验收：真实 tokenizer Measurement Adapter 与其锁定资产/有效容量证据、可用的
+  真实资格管理闭环、产品认可的语义 Dataset 100%、完整 S0–S3 与 Live。
+- 现有合成语义样本只验证 exact-term oracle 与字符覆盖，不能把通过数替代真实检索语义。
+  本轮不新增依赖或下载模型以掩盖此缺口；也不把 accepted 状态提升成完整交付。
+
+### 二次整改对账
+
+恢复唯一语义为 `resume-frozen-if-valid`：冻结 Index ID/内容 SHA、Policy ID/hash、基础与查询
+资格、SourceSet 和授权 epoch；恢复不读取 Active Pointer，不重编译 Query Plan。Pointer
+变化本身不失败；旧冻结文件、资格、策略完整且授权/来源仍有效才能续跑，禁止切换新索引。
+
+Stage/Preparation 五类预算通过 `PreparationQueryBudget` 显式本地配置并在 Provider 前原子
+admission；time/cache 保守预留每 Query 最大值之和。配置不存在或Stage集合不匹配时422，
+不自动估算。`AGENT_TEAM_OS_QUERY_BUDGET_FILE` 只接受本地绝对非链接文件。
+LocalQueryMeasurement 生产接线核对 manifest/实现/资产/独立可信证据；真实 tokenizer 注册实现
+与资产仍缺失，默认返回未配置而不是字符计数。公开 preflight 错误只回传稳定码与数值allowlist。
+本地模型资格仍 blocked；Dataset 已按 hash 获 PM 输入签认，但未自动升格为完整语义通过。
+融合前仅幂等折叠完整有序 canonical key/content SHA/citation ID 相同的贡献组，代表为最小
+unit ordinal；部分重叠、顺序或身份不同仍等权 RRF k=60。所有 unit 仍执行与授权检查，保留
+原始缓存，内部 manifest 保存 unit ordinal/input hash → group hash → representative 映射。
+公开无 execution_identity 检索只使用本地累计时限与 canonical JSON 缓存字节预算，不创建
+Preparation/Lease；超限停止后续调用并不发布部分 receipt，不宣称中断已进入的同步 Provider。

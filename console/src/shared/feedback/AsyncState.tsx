@@ -13,7 +13,14 @@ export function EmptyState({ title, detail }: { title: string; detail: string })
 export function ErrorState({ error, retry }: { error: Error; retry?: () => void }) {
   const problem = error instanceof ApiProblem ? error.problem : { detail: error.message };
   const detail = [problem.detail, problem.repair ? `修复建议：${problem.repair}` : null].filter(Boolean).join(" ");
-  return <Result className="atos-state" status="error" title={problem.title ?? "数据读取失败"} subTitle={detail} extra={retry ? <Button type="primary" onClick={retry}>重新加载</Button> : undefined}/>;
+  const queryProblem = error instanceof ApiProblem && error.problem.code?.startsWith("KNOWLEDGE_QUERY_");
+  const context = error instanceof ApiProblem ? error.problem.context : undefined;
+  const fields = [["measured_bytes", "输入字节"], ["allowed_bytes", "字节上限"], ["measured", "实测总量"], ["allowed", "允许总量"]] as const;
+  const safeBudget = queryProblem ? fields.flatMap(([key, label]) => {
+    const value = context?.[key];
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? [`${label}：${value}`] : [];
+  }) : [];
+  return <Result className="atos-state" status="error" title={problem.title ?? "数据读取失败"} subTitle={<>{detail}{safeBudget.length > 0 && <p aria-label="查询预算诊断">{safeBudget.join("；")}</p>}</>} extra={retry ? <Button type="primary" onClick={retry}>重新加载</Button> : undefined}/>;
 }
 
 export function ConflictState({ error, children }: { error?: Error | null; children?: ReactNode }) {

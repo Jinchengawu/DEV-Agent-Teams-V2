@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from ...shared.hashes import Sha256
 from ..artifacts import ArtifactReference
@@ -90,6 +90,14 @@ class RetrievalPolicyCreate(BaseModel):
     min_score: float = Field(default=0.0, ge=0.0)
     max_context_bytes: int = Field(default=65_536, ge=1, le=2_000_000)
     empty_result_policy: Literal["allow-empty", "fail"] = "allow-empty"
+    query_input_qualification_sha256: Sha256 | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_compatible(self, handler: Any):  # type: ignore[no-untyped-def]
+        result: dict[str, Any] = handler(self)
+        if self.query_input_qualification_sha256 is None:
+            result.pop("query_input_qualification_sha256", None)
+        return result
 
 
 class RetrievalPolicyRevision(RetrievalPolicyCreate):
@@ -245,7 +253,8 @@ class KnowledgeRetrievalRequest(BaseModel):
     project_id: str = Field(min_length=1, max_length=120)
     provider_binding_id: str = Field(min_length=1, max_length=180)
     retrieval_policy_revision_id: str = Field(min_length=1, max_length=180)
-    query: str = Field(min_length=1, max_length=10_000)
+    # 完整 Delivery 目标加项目/Stage 元数据；可执行容量由 Query Plan 双预算决定。
+    query: str = Field(min_length=1)
     allowed_source_ids: tuple[str, ...]
 
 

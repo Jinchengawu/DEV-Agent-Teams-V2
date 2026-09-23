@@ -1723,13 +1723,17 @@ def create_app(
                         tree.workcell_run.id
                     )
         citation_ids = sorted(set(stage_paths_by_citation) | set(workcell_runs_by_citation))
+        preparation = (
+            None if knowledge_context_repository is None
+            else knowledge_context_repository.get_for_delivery(delivery.id)
+        )
         return DeliveryKnowledgeContextOverview(
             delivery_id=delivery.id,
             delivery_status=delivery.status,
-            preparation_run=(
-                None
-                if knowledge_context_repository is None
-                else knowledge_context_repository.get_for_delivery(delivery.id)
+            preparation_run=preparation,
+            query_errors=(
+                () if knowledge_context_repository is None or preparation is None
+                else knowledge_context_repository.query_errors(preparation.id)
             ),
             contexts=contexts,
             unavailable=unavailable,

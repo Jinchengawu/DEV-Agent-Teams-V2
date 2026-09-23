@@ -13,11 +13,17 @@ from .context_domain import (
     KnowledgeContextPreparationRun,
     KnowledgeContextStageResult,
 )
+from .query_safety import QuerySafeError
 
 
 class SQLiteKnowledgeContextRepository:
     def __init__(self, database: Path) -> None:
         self.database = database
+
+    def query_errors(self, preparation_run_id: str) -> tuple[QuerySafeError, ...]:
+        from .query_repository import SQLiteKnowledgeQueryRepository
+
+        return SQLiteKnowledgeQueryRepository(self.database).list_safe_errors(preparation_run_id)
 
     def create_or_get(
         self,
@@ -159,10 +165,22 @@ class SQLiteKnowledgeContextRepository:
         assert row is not None
         return _run(row)
 
-    def put_stage_result(self, result: KnowledgeContextStageResult) -> None:
+    def put_stage_result(
+        self,
+        result: KnowledgeContextStageResult,
+        *,
+        query_binding_ids: tuple[str, ...] | None = None,
+    ) -> None:
         context = result.context
         reference = context.artifact_reference
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if query_binding_ids is not None:
+                from .query_repository import SQLiteKnowledgeQueryRepository
+
+                SQLiteKnowledgeQueryRepository.link_context_in_transaction(
+                    connection, result, query_binding_ids
+                )
             existing = connection.execute(
                 """SELECT artifact_sha256,authorization_epoch_hash
                 FROM knowledge_context_stage_results

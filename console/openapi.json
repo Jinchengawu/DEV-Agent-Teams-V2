@@ -15296,6 +15296,14 @@
             "type": "array",
             "title": "Citations",
             "default": []
+          },
+          "query_errors": {
+            "items": {
+              "$ref": "#/components/schemas/QuerySafeError"
+            },
+            "type": "array",
+            "title": "Query Errors",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -21191,6 +21199,171 @@
         ],
         "title": "ProviderSpace"
       },
+      "QuerySafeError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "KNOWLEDGE_QUERY_INPUT_LIMIT",
+              "KNOWLEDGE_QUERY_PROVIDER_FAILED",
+              "KNOWLEDGE_QUERY_BUDGET_EXCEEDED"
+            ],
+            "title": "Code"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "input_limit",
+              "invalid_request",
+              "rate_limited",
+              "provider_error",
+              "timeout",
+              "transport",
+              "invalid_response",
+              "unknown",
+              "budget"
+            ],
+            "title": "Category"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Correlation Id"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 599.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "unit": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unit"
+          },
+          "plan_sha256": {
+            "type": "string",
+            "title": "Plan Sha256"
+          },
+          "qualification_sha256": {
+            "type": "string",
+            "title": "Qualification Sha256"
+          },
+          "budget_sha256": {
+            "type": "string",
+            "title": "Budget Sha256"
+          },
+          "measured_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Measured Tokens"
+          },
+          "allowed_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Allowed Tokens"
+          },
+          "measured_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Measured Bytes"
+          },
+          "allowed_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Allowed Bytes"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Attempt"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Duration Ms"
+          },
+          "measured_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Duration Ms"
+          },
+          "allowed_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Duration Ms"
+          },
+          "measured_cache_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured Cache Bytes"
+          },
+          "allowed_cache_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Cache Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "category",
+          "correlation_id",
+          "unit",
+          "plan_sha256",
+          "qualification_sha256",
+          "budget_sha256",
+          "measured_tokens",
+          "allowed_tokens",
+          "measured_bytes",
+          "allowed_bytes",
+          "attempt",
+          "occurred_at",
+          "duration_ms"
+        ],
+        "title": "QuerySafeError"
+      },
       "ReleaseApplyAttemptV2": {
         "properties": {
           "delivery_id": {
@@ -22216,6 +22389,17 @@
             ],
             "title": "Empty Result Policy",
             "default": "allow-empty"
+          },
+          "query_input_qualification_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Input Qualification Sha256"
           }
         },
         "additionalProperties": false,
@@ -22309,6 +22493,17 @@
             ],
             "title": "Empty Result Policy",
             "default": "allow-empty"
+          },
+          "query_input_qualification_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Input Qualification Sha256"
           },
           "policy_sha256": {
             "type": "string",

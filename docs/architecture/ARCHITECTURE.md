@@ -4,7 +4,7 @@ document_version: "1.6"
 product_version: "0.5.2-in-progress"
 truth_scope: repository_revision_containing_this_file
 initial_audit_baseline: 7401fa281a201728fa3cc504daa05d3a724fa7c6
-last_reviewed: 2026-09-20
+last_reviewed: 2026-09-23
 language: zh-CN
 ---
 
@@ -189,6 +189,9 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - HTTP、SQLite Repository、ACWM Gateway、Git、GitHub、Codex、Feishu、Ollama 和
   `sqlite-vec` 都是 Adapter。Knowledge Application 只通过 `EmbeddingPort` 和 `VectorIndexPort`
   访问模型与向量引擎。
+- `InputMeasurementPort` 只允许纯本地精确测量；LocalQueryMeasurement 核对 manifest、资产、
+  实现及 qualification receipt 身份。缺受支持的锁定 tokenizer 或容量证据时阻断，不调用模型
+  猜测 token 数；Query Plan/Admission 是产品内部事实，不进入 ACWM Artifact。
 - Domain Model 和 Application Service 保持 Runtime/Framework 无关。
 - `sqlite-vec` Adapter 需要 Python SQLite Runtime 开放 `enable_load_extension`；推荐运行时为
   Python 3.12。该能力由 Knowledge Live Readiness 单独投影，缺失时 Fail Closed，不回退为
@@ -204,7 +207,11 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 
 - `agent-team-os.sqlite` 保存产品状态、Revision、Event、Reference 和 Receipt；
 - SQLite 连接启用 Foreign Key、WAL 和 busy timeout；
-- Migration `0001–0046` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- Migration `0001–0047` 按校验和串行执行，已应用文件被修改时 Fail Closed；
+- 0047 引入 Query qualification/plan/unit receipt/safe error/preparation admission；应用前阻断
+  活动 Delivery/Preparation。全部 Stage×Binding 的五类预算先在同事务冻结，之后才允许
+  Provider I/O。恢复使用冻结 Index/Policy/qualification/SourceSet，不重新解析 Active Pointer；
+  Pointer 漂移可继续，冻结资产/授权/Scope/资格失效则失败关闭，禁止切换新 Index。
 - `project_onboarding` 独立持久化 `setup → in_evaluation → ready`，使用 version CAS；
   既有 Project 幂等回填 `standard/ready`，不改变 Project lifecycle。
 - Command Handler 使用 UnitOfWork，使 Aggregate 状态和 Product Event 在同一事务提交；
@@ -430,6 +437,30 @@ Python 使用隔离启动并禁用字节码，先载入标准库测试 Runner �
   `.env`、密钥和凭据文件 Fail Closed。运行数据始终位于独立 Data Root。
 
 ## 11. Knowledge、Evidence 与当前成熟度
+
+### 内部 Query Executability 实施切片
+
+`ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY`：`Accepted/Not Implemented`，本地实施中。
+Cross-boundary Review 已批准 Final Plan；见 ADR-0018 的 2026-09-23 修订。
+Knowledge 拥有内部输入资格 sidecar、Query Plan 与 Unit Receipt；本地 InputMeasurementPort
+只测量冻结 tokenizer 下的精确 token/byte，不能联网。旧 Index 不迁移，ACWM
+`knowledge-context-v1@1.0.0` 外部契约保持。缺少真实容量资格时新执行 blocked；历史 failed
+Delivery 不恢复，活动 Preparation/Delivery 阻断升级。尚未完成该切片测试与正式 S0–S3，
+不得继承 7ff 的 Bundle/Gate 证据或宣称 Live 通过。
+
+本地实施对账（2026-09-23）：内部 compiler、资格 sidecar/hash、Migration 0047、fenced
+单元缓存、Context 同事务关联、安全错误管理 DTO/UI 已有本地确定性测试；旧 ACWM Artifact
+字段保留，Index 未迁移。此处仅这些组件可称本地实现/验证，整体条目仍未晋升：仓库没有
+锁定的真实 tokenizer 实现/资产与容量资格；本地锁定 Measurement Adapter 已接线但真实资格、
+经产品审阅的语义 Dataset 100% 和完整正式 S0–S3 尚未完成。合成 exact-term oracle
+不证明自然语言检索语义。生产缺资格时新查询阻断，不依赖字符估算或 L2 阈值。
+
+二次整改补充：Stage/Preparation admission 对 units/tokens/UTF-8 bytes/time/cache 显式冻结，
+time/cache 按每 Query 最大值保守预留；首个 Provider 前原子接纳。恢复语义唯一为
+`resume-frozen-if-valid`，不因 Pointer 单独漂移失败。公开输入失败以 422 和 allowlist 尺寸
+返回；19case Dataset 已获产品按 hash 输入签认，实际逐case语义100%仍未完成，结构 seed
+不能作为语义通过证据。完整有序 canonical/content/citation 相同贡献组幂等融合并保留全部
+unit执行与审计映射；部分重叠不折叠。无Preparation的公开查询采用本地累计time/cache预算。
 
 ### 11.1 Knowledge 与 Feishu
 
@@ -894,6 +925,7 @@ Acceptance evidence required:
 | `ARCH-20260920-01` | 2026-09-20 | `Implemented/Verified` | allow-list Delivery Bundle、稳定 Manifest 与 fail-closed Product Root | ADR-0020 | 版本、Bundle 正反合同、Manifest 篡改、真实 Evaluation Dataset 加载与 Root 回退拒绝测试通过；clean-room/browser 由主任务独立复验，Live `blocked/not_run` |
 | `ARCH-20260920-02` | 2026-09-20 | `Implemented/Verified` | 独立 Project onboarding CAS、只读 Setup Readiness 组合与 Delivery 创建失败关闭 | ADR-0021 | Migration/onboarding/409/原子绑定/权限/OpenAPI/Console 本地合同验证；Deterministic 与真实 Codex local-PR Browser 均到 Candidate/Evidence/onboarding ready 且无 Apply/远端写；正式同 Revision Live Release Gate 未运行 |
 | `ARCH-20260922-01` | 2026-09-22 | `Implemented/Verified` | 对无候选副作用的 Main/Reviewer transient Provider 失败追加一次可观测 Attempt；合同 retry 共享 phase 上限，并以 Workcell 总 deadline 准入 | ADR-0014 修订 | 历史 Snapshot max=1 兼容、新内置 Revision max=2/backoff=1/wall=3600、非硬编码 ordinal、只读 retry、预算不足不产生新 Attempt 与 Release Acceptance 回归已验证；Python 3.12 全量 677 passed/1 skipped；Live fresh 闭环仍单独验收 |
+| `ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY` | 2026-09-23 | `Accepted/Not Implemented` | 内部精确输入资格、覆盖分片、原子聚合 admission、冻结恢复、安全错误 | ADR-0018 修订 | 局部确定性测试；真实 tokenizer/capacity、产品签认语义100%、正式 S0–S3 未完成，不继承 7ff 证据 |
 
 ## 14. Plan Architecture Review 与文档对账
 

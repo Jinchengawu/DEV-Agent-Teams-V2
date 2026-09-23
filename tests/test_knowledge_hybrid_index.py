@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
+from query_test_support import install_deterministic_query_qualification
 
 from agent_team_os.api import create_app
 from agent_team_os.delivery import DeliveryCoordinator
@@ -269,12 +270,14 @@ def _publish_build_contracts(
         actor,
         EmbeddingQualificationRequest(model_name="bge-m3"),
     )
+    query_qualification = install_deterministic_query_qualification(indexes, qualification)
     policy = indexes.publish_retrieval_policy(
         actor,
         RetrievalPolicyCreate(
             id=f"{profile_id}-policy",
             display_name=f"{profile_id} policy",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=query_qualification.qualification_sha256,
         ),
     )
     indexes.publish_evaluation_policy(
@@ -408,6 +411,9 @@ def test_hybrid_index_is_immutable_qualified_and_scope_filtered(tmp_path: Path) 
             id="retrieval-v1",
             display_name="Retrieval v1",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=install_deterministic_query_qualification(
+                indexes, qualification
+            ).qualification_sha256,
             lexical_candidates=20,
             vector_candidates=20,
             top_k=4,
@@ -519,6 +525,9 @@ def test_model_digest_drift_fails_closed_at_retrieval(tmp_path: Path) -> None:
             id="drift-policy",
             display_name="Drift Policy",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=install_deterministic_query_qualification(
+                indexes, qualification
+            ).qualification_sha256,
         ),
     )
     cases = (
@@ -657,6 +666,9 @@ async def test_retrieval_api_compiles_scope_server_side(tmp_path: Path) -> None:
             id="api-policy",
             display_name="API Policy",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=install_deterministic_query_qualification(
+                indexes, qualification
+            ).qualification_sha256,
         ),
     )
     cases = (
@@ -797,6 +809,9 @@ def test_failed_evaluation_is_persisted_and_cannot_be_activated(tmp_path: Path) 
             id="failed-eval-policy",
             display_name="Failed Evaluation Policy",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=install_deterministic_query_qualification(
+                indexes, qualification
+            ).qualification_sha256,
         ),
     )
     cases = (
@@ -870,6 +885,9 @@ def test_index_build_failure_is_persisted(tmp_path: Path) -> None:
             id="failed-build-policy",
             display_name="Failed Build Policy",
             index_profile_revision_id=profile.id,
+            query_input_qualification_sha256=install_deterministic_query_qualification(
+                indexes, qualification
+            ).qualification_sha256,
         ),
     )
     cases = (

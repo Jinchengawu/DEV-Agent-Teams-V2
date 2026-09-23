@@ -3,6 +3,19 @@ import { EmptyState, ErrorState, LoadingState } from "../../shared/feedback/Asyn
 import { StatusBadge } from "../../shared/ui/StatusBadge";
 import { useDeliveryKnowledgeContext } from "../knowledge/tenantApi";
 
+// 仅显式读取安全投影字段；不渲染请求文本或 Provider 原文。
+interface SafeQueryErrorProjection {
+  code: string;
+  category: string;
+  http_status: number | null;
+  unit: number;
+  measured_tokens: number;
+  allowed_tokens: number;
+  measured_bytes: number;
+  allowed_bytes: number;
+  correlation_id: string;
+}
+
 export function KnowledgeContextPanel({ projectId, deliveryId }: { projectId: string; deliveryId: string }) {
   const overview = useDeliveryKnowledgeContext(projectId, deliveryId);
 
@@ -11,6 +24,9 @@ export function KnowledgeContextPanel({ projectId, deliveryId }: { projectId: st
   if (!overview.data) return null;
 
   const { preparation_run: preparation, contexts, unavailable, citations } = overview.data;
+  const inputFailure = preparation?.error_code?.startsWith("KNOWLEDGE_QUERY_")
+    || preparation?.error_code === "KNOWLEDGE_OLLAMA_REQUEST_FAILED";
+  const queryErrors = (overview.data as { query_errors?: SafeQueryErrorProjection[] }).query_errors ?? [];
   return <section className="knowledge-context-panel stage-shell evidence-rail">
     <header className="knowledge-context-head">
       <div><span className="eyebrow">FROZEN DATA CONTEXT</span><h2>Delivery Knowledge Context</h2><p>外部知识按 ACWM Artifact Contract 冻结；它是 <code>external-collaborative</code> 数据，不具备指令权威。</p></div>
@@ -28,6 +44,25 @@ export function KnowledgeContextPanel({ projectId, deliveryId }: { projectId: st
       <BookLock size={17}/><div><b>Preparation Run · {preparation.id}</b><small>Input SHA-256 <code>{preparation.input_sha256}</code></small><small>Knowledge Binding Hash <code>{preparation.knowledge_binding_hash}</code></small><small>Authorization Epoch <code>{preparation.authorization_epoch_hash ?? "未冻结"}</code></small>{preparation.error_code && <small>错误码 <code>{preparation.error_code}</code></small>}</div>
     </div>}
 
+    {inputFailure ? <aside className="knowledge-preparation-receipt" aria-label="知识输入失败处理建议">
+      <CircleOff size={17}/><div>
+        <b>输入资格与预算检查未通过，或模型请求失败</b>
+        <p>请核查固定模型的输入资格、精确计数与单元及总预算；缺少资格证据时保持阻塞。此错误码本身不能证明输入超限。</p>
+        <p>不会截断原始需求，也不会自动重试输入限制错误。终态不会在此恢复；新交付需另行授权。</p>
+      </div>
+    </aside> : null}
+
+    {queryErrors.length > 0 ? <section className="knowledge-context-records" aria-label="查询安全诊断">
+      <h3>查询安全诊断（只读）</h3>
+      {queryErrors.map((error) => <div key={error.correlation_id}>
+        <code>{error.code}</code>
+        <small>HTTP {error.http_status ?? "未知"} · {error.category} · Unit {error.unit}</small>
+        <small>{error.measured_tokens} / {error.allowed_tokens} tokens</small>
+        <small>{error.measured_bytes} / {error.allowed_bytes} bytes</small>
+        <small>本地关联 ID <code>{error.correlation_id}</code></small>
+      </div>)}
+    </section> : null}
+
     {!preparation && contexts.length === 0 && unavailable.length === 0 ? <EmptyState title="该 Delivery 未要求外部知识上下文" detail="Legacy 或未声明 Knowledge Context Binding 的 Pipeline 不会被补造上下文。"/> : <div className="knowledge-context-grid">
       <article>
         <header><FileCheck2 size={17}/><div><h3>冻结的 Stage 输入</h3><p>Artifact SHA、Citation 与授权纪元一起进入不可变 Delivery Snapshot。</p></div></header>
@@ -44,7 +79,7 @@ export function KnowledgeContextPanel({ projectId, deliveryId }: { projectId: st
           <span><b>{item.stage_path}</b><code>{item.receipt_reference.sha256}</code></span>
           <StatusBadge value="unavailable"/>
           <small>{item.error_code}</small>
-        </div>) : <EmptyState title="没有不可用回执" detail="所有声明输入均已冻结，或 Pipeline 未声明外部知识。"/>}</div>
+        </div>) : <EmptyState title="没有不可用回执" detail="没有不可用回执不代表输入已成功冻结；请结合 Preparation 状态与冻结记录判断。"/>}</div>
       </article>
 
       <article className="knowledge-citation-ledger">

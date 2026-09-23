@@ -92,38 +92,66 @@ class OllamaEmbeddingAdapter:
         return tuple(vectors)
 
     def _get_json(self, path: str) -> Mapping[str, object]:
+        failure = None
         try:
             response = self.client.get(path)
         except httpx.HTTPError as error:
-            raise EmbeddingFailure(
-                "KNOWLEDGE_OLLAMA_UNAVAILABLE", "Ollama request failed"
-            ) from error
+            failure = EmbeddingFailure(
+                "KNOWLEDGE_OLLAMA_UNAVAILABLE", "Ollama request failed",
+                category="timeout" if isinstance(error, httpx.TimeoutException) else "transport",
+            )
+        if failure is not None:
+            raise failure
         return _decode(response)
 
     def _post_json(self, path: str, body: object) -> Mapping[str, object]:
+        failure = None
         try:
             response = self.client.post(path, json=body)
         except httpx.HTTPError as error:
-            raise EmbeddingFailure(
-                "KNOWLEDGE_OLLAMA_UNAVAILABLE", "Ollama request failed"
-            ) from error
+            failure = EmbeddingFailure(
+                "KNOWLEDGE_OLLAMA_UNAVAILABLE", "Ollama request failed",
+                category="timeout" if isinstance(error, httpx.TimeoutException) else "transport",
+            )
+        if failure is not None:
+            raise failure
         return _decode(response)
 
 
 def _decode(response: httpx.Response) -> Mapping[str, object]:
     if response.status_code >= 400:
+        # 只分类有界错误片段；正文不跨 Adapter、不进入异常链或诊断持久化。
+        fragment = response.content[:4096].decode("utf-8", errors="replace").lower()
+        category = "invalid_request"
+        if response.status_code == 429:
+            category = "rate_limited"
+        elif response.status_code >= 500:
+            category = "provider_error"
+        elif any(word in fragment for word in ("context", "token", "input length")) and any(
+            word in fragment for word in ("exceed", "too long", "maximum", "too large")
+        ):
+            category = "input_limit"
+        del fragment
         raise EmbeddingFailure(
             "KNOWLEDGE_OLLAMA_REQUEST_FAILED",
             f"Ollama returned HTTP {response.status_code}",
+            http_status=response.status_code,
+            category=category,  # type: ignore[arg-type]
         )
+    invalid_json = False
     try:
         payload = response.json()
-    except ValueError as error:
+    except ValueError:
+        invalid_json = True
+        payload = None
+    if invalid_json:
         raise EmbeddingFailure(
-            "KNOWLEDGE_OLLAMA_RESPONSE_INVALID", "Ollama returned invalid JSON"
-        ) from error
+            "KNOWLEDGE_OLLAMA_RESPONSE_INVALID", "Ollama returned invalid JSON",
+            category="invalid_response",
+        )
     if not isinstance(payload, Mapping):
         raise EmbeddingFailure(
-            "KNOWLEDGE_OLLAMA_RESPONSE_INVALID", "Ollama response is not an object"
+            "KNOWLEDGE_OLLAMA_RESPONSE_INVALID", "Ollama response is not an object",
+            category="invalid_response",
         )
     return payload

@@ -40,6 +40,10 @@ from .infrastructure.git import (
     ProjectGitWorkspaces,
 )
 from .infrastructure.knowledge import SQLiteVectorIndexAdapter
+from .infrastructure.knowledge.local_query_measurement import (
+    local_query_measurement_from_environment,
+)
+from .infrastructure.knowledge.query_configuration import preparation_query_budget_from_environment
 from .journey import (
     load_agent_workcell_delivery_definition,
     load_backend_delivery_definition,
@@ -462,6 +466,7 @@ def build_gate_app() -> FastAPI:
             index_root=data_dir / "knowledge-indexes",
             embedding_port=DeterministicGateEmbeddingPort(),
             vector_index_port=SQLiteVectorIndexAdapter(),
+            query_measurement=local_query_measurement_from_environment(),
         )
         pipeline_catalog.configure_knowledge_binding_policy(knowledge_indexes)
     if feature_flags.delivery_knowledge_context_v1:
@@ -475,6 +480,9 @@ def build_gate_app() -> FastAPI:
             authorization=authorization,
             projects=projects,
             artifacts=artifact_storage,
+            indexes=knowledge_indexes,
+            tenant=tenant_knowledge,
+            query_budget=preparation_query_budget_from_environment(),
         )
         knowledge_runtime_guard = KnowledgeContextRuntimeGuard(
             authorization=authorization,
@@ -534,6 +542,7 @@ def build_gate_app() -> FastAPI:
         knowledge_context_repository = SQLiteKnowledgeContextRepository(database)
         knowledge_preparer = DeliveryKnowledgeContextPreparationService(
             knowledge_context_repository,
+            query_budget=preparation_query_budget_from_environment(),
             authorization=authorization,
             projects=projects,
             tenant=tenant_knowledge,

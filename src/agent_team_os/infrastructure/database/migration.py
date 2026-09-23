@@ -42,6 +42,8 @@ class MigrationRunner:
                     continue
                 try:
                     connection.execute("BEGIN IMMEDIATE")
+                    if version == 47:
+                        _check_query_upgrade_idle(connection)
                     for statement in _statements(sql):
                         connection.execute(statement)
                     connection.execute(
@@ -187,6 +189,22 @@ def _statements(sql: str) -> tuple[str, ...]:
     if buffer:
         raise ValueError("migration contains an incomplete SQL statement")
     return tuple(statements)
+
+
+def _check_query_upgrade_idle(connection: sqlite3.Connection) -> None:
+    """维护边界内仅检查事实；不得自动取消或重写旧运行。"""
+    if connection.execute("SELECT 1 FROM project_delivery_leases LIMIT 1").fetchone():
+        raise RuntimeError("KNOWLEDGE_QUERY_UPGRADE_ACTIVE_DELIVERY")
+    if connection.execute(
+        """SELECT 1 FROM knowledge_context_preparation_runs
+        WHERE status IN ('queued','leased','running','retry_wait') LIMIT 1"""
+    ).fetchone():
+        raise RuntimeError("KNOWLEDGE_QUERY_UPGRADE_ACTIVE_PREPARATION")
+    if connection.execute(
+        """SELECT 1 FROM deliveries WHERE COALESCE(json_extract(snapshot_json,'$.status'),'')
+        NOT IN ('completed','rejected','failed','cancelled') LIMIT 1"""
+    ).fetchone():
+        raise RuntimeError("KNOWLEDGE_QUERY_UPGRADE_ACTIVE_DELIVERY")
 
 
 def _table_exists(connection: sqlite3.Connection, name: str) -> bool:

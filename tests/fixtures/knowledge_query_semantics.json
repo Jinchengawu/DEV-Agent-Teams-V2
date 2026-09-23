@@ -1,0 +1,32 @@
+{
+  "schema": "knowledge-query-synthetic-semantics-v1",
+  "evidence_kind": "deterministic-exact-term-oracle",
+  "product_review": "pending",
+  "limitations": [
+    "不是真实 tokenizer、Ollama 或 BM25/vector 召回证据",
+    "结构覆盖和精确词项召回分别断言，不能证明自然语言语义理解",
+    "需产品审查 fixture 与期望，并在真实资格下重跑语义 Dataset"
+  ],
+  "required_citations": ["accept-start", "accept-middle", "accept-tail", "deny", "exception", "prerequisite", "second-condition"],
+  "forbidden_citations": ["revoked-source", "irrelevant", "opposite-clause"],
+  "relations": [
+    {"kind": "negation", "citations": ["deny", "accept-tail"]},
+    {"kind": "exception", "citations": ["exception", "deny"]},
+    {"kind": "prerequisite", "citations": ["prerequisite", "accept-tail"]},
+    {"kind": "double-condition", "citations": ["prerequisite", "second-condition", "accept-tail"]}
+  ],
+  "cases": [
+    {"id": "ascii-short", "language": "ascii", "characters": 220},
+    {"id": "ascii-boundary", "language": "ascii", "characters": 513},
+    {"id": "ascii-maximum", "language": "ascii", "characters": 20000},
+    {"id": "cjk-short", "language": "cjk", "characters": 220},
+    {"id": "cjk-boundary", "language": "cjk", "characters": 513},
+    {"id": "cjk-maximum", "language": "cjk", "characters": 20000},
+    {"id": "mixed-short", "language": "mixed", "characters": 220},
+    {"id": "mixed-boundary", "language": "mixed", "characters": 513},
+    {"id": "mixed-maximum", "language": "mixed", "characters": 20000},
+    {"id": "unicode-short", "language": "unicode", "characters": 220},
+    {"id": "unicode-boundary", "language": "unicode", "characters": 513},
+    {"id": "unicode-maximum", "language": "unicode", "characters": 20000}
+  ]
+}

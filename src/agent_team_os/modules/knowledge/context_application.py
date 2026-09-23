@@ -35,6 +35,13 @@ from .context_repository import SQLiteKnowledgeContextRepository
 from .domain import KnowledgeActor
 from .index_application import KnowledgeIndexManager
 from .index_domain import KnowledgeRetrievalRequest
+from .query_admission import (
+    PreparationQueryBudget,
+    QueryAdmissionError,
+    admit_query_plans,
+)
+from .query_plan import QueryInputQualification, QueryPlan
+from .query_repository import QueryExecutionIdentity
 from .tenant_application import TenantKnowledgeManager
 
 _ACCESS_ADAPTER: TypeAdapter[AuthorizationAccessComponent] = TypeAdapter(
@@ -232,10 +239,16 @@ class KnowledgePreparationInputCompiler:
         authorization: KnowledgeAuthorizationResolver,
         projects: ProjectCatalog,
         artifacts: ContentAddressedArtifactStorage,
+        indexes: KnowledgeIndexManager | None = None,
+        tenant: TenantKnowledgeManager | None = None,
+        query_budget: PreparationQueryBudget | None = None,
     ) -> None:
         self.authorization = authorization
         self.projects = projects
         self.artifacts = artifacts
+        self.indexes = indexes
+        self.tenant = tenant
+        self.query_budget = query_budget
 
     def compile(
         self,
@@ -308,12 +321,79 @@ class KnowledgePreparationInputCompiler:
             "stage_bindings": base_snapshot.knowledge_context_bindings,
             "stage_responsibilities": responsibilities,
         }
-        return KnowledgePreparationInputV1.model_validate(
+        compiled = KnowledgePreparationInputV1.model_validate(
             {
                 **payload,
                 "input_sha256": sha256_json(payload),
             }
         )
+        if self.indexes is None or self.tenant is None:
+            raise _context_error("KNOWLEDGE_QUERY_INPUT_UNQUALIFIED", "查询测量与资格未配置")
+        approvals = self.projects.repository.list_knowledge_source_approvals(project_id)
+        entries = []
+        for stage_path, raw in sorted(compiled.stage_bindings.items()):
+            binding = KnowledgeContextBinding.model_validate(raw)
+            query = _query_intent(
+                compiled, stage_path, {"name": project.name, "description": project.description}
+            )
+            for approval in approvals:
+                if approval.id not in compiled.approved_knowledge_approval_ids:
+                    continue
+                request = KnowledgeRetrievalRequest(
+                    project_id=project_id, provider_binding_id=approval.binding_id,
+                    retrieval_policy_revision_id=binding.retrieval_policy_revision_id,
+                    query=query,
+                    allowed_source_ids=self.tenant.available_source_ids(approval.binding_id),
+                )
+                entries.append(self.indexes.draft_query(
+                    request, preparation_run_id=delivery_id, stage_path=stage_path,
+                    authorization_epoch_hash=str(compiled.input_sha256),
+                ))
+        _admit_preparation_queries(entries, self.query_budget)
+        return compiled
+
+
+def _admit_preparation_queries(
+    entries: list[tuple[QueryExecutionIdentity, QueryPlan, QueryInputQualification]],
+    budget: PreparationQueryBudget | None,
+) -> None:
+    if budget is None:
+        raise ProductError(
+            code="KNOWLEDGE_QUERY_AGGREGATE_BUDGET_MISSING", title="查询总预算未配置",
+            detail="Stage 与 Preparation 必须提供明确冻结预算。",
+            repair="配置本地聚合预算后重新提交。", status_code=422,
+        )
+    try:
+        admit_query_plans(
+            tuple((i.stage_path, i.execution_key, p, q) for i, p, q in entries), budget
+        )
+    except QueryAdmissionError as error:
+        raise ProductError(
+            code=error.code, title="查询总预算超限", detail="完整查询集合超过冻结执行预算。",
+            repair="审阅完整输入与预算，不得截断输入。", status_code=422,
+            context=error.safe_context,
+        ) from None
+    except ValueError:
+        raise ProductError(
+            code="KNOWLEDGE_QUERY_ADMISSION_INVALID", title="查询接纳配置不一致",
+            detail="Stage 集合或查询身份无法完整接纳。", repair="修复本地冻结预算配置。",
+            status_code=422,
+        ) from None
+
+
+def _query_intent(
+    preparation_input: KnowledgePreparationInputV1,
+    stage_path: str,
+    project_description: dict[str, object],
+) -> str:
+    responsibility = preparation_input.stage_responsibilities.get(stage_path, stage_path)
+    return (
+        f"Project Name: {project_description.get('name', '')}\n"
+        f"Project Description: {project_description.get('description', '')}\n"
+        f"Delivery Goal: {preparation_input.delivery_goal}\n"
+        f"Stage Path: {stage_path}\n"
+        f"Stage Responsibility: {responsibility}"
+    )
 
 
 class DeliveryKnowledgeContextPreparationService:
@@ -332,6 +412,7 @@ class DeliveryKnowledgeContextPreparationService:
         max_attempts: int = 3,
         retry_base_delay_seconds: float = 1.0,
         lease_ttl: timedelta = timedelta(minutes=5),
+        query_budget: PreparationQueryBudget | None = None,
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
@@ -349,6 +430,7 @@ class DeliveryKnowledgeContextPreparationService:
         self.max_attempts = max_attempts
         self.retry_base_delay_seconds = retry_base_delay_seconds
         self.lease_ttl = lease_ttl
+        self.query_budget = query_budget
 
     async def prepare(
         self, preparation_input: KnowledgePreparationInputV1
@@ -529,6 +611,42 @@ class DeliveryKnowledgeContextPreparationService:
                 "KNOWLEDGE_PROJECT_DESCRIPTION_SNAPSHOT_INVALID",
                 "Project Description Snapshot 与冻结输入不一致",
             )
+        # 全部 Stage 本地预算成功后才允许第一个 Provider 请求；不产生部分 Snapshot。
+        entries = []
+        frozen_count = 0
+        for stage_path, raw_binding in sorted(preparation_input.stage_bindings.items()):
+            binding = KnowledgeContextBinding.model_validate(raw_binding)
+            for approval in sorted(approvals, key=lambda item: item.binding_id):
+                existing_plan = self.indexes.query_repository.get_stage_plan(
+                    run_id, stage_path, approval.binding_id
+                )
+                if existing_plan is not None:
+                    frozen_count += 1
+                    plan = QueryPlan.model_validate_json(existing_plan.plan_json)
+                    self.indexes.query_repository.assert_admitted(existing_plan.identity, plan)
+                    entries.append((existing_plan.identity, plan,
+                                    self.indexes.query_repository.get_qualification(
+                                        plan.qualification_sha256)))
+                    continue
+                entries.append(self.indexes.draft_query(
+                    KnowledgeRetrievalRequest(
+                        project_id=preparation_input.project_id,
+                        provider_binding_id=approval.binding_id,
+                        retrieval_policy_revision_id=binding.retrieval_policy_revision_id,
+                        query=_query_intent(preparation_input, stage_path, project_description),
+                        allowed_source_ids=self.tenant.available_source_ids(approval.binding_id),
+                    ),
+                    preparation_run_id=run_id, stage_path=stage_path,
+                    authorization_epoch_hash=str(stamp.authorization_epoch_hash),
+                ))
+        if frozen_count not in (0, len(entries)):
+            raise _context_error("KNOWLEDGE_QUERY_ADMISSION_INCOMPLETE", "冻结查询集合不完整")
+        if frozen_count == 0:
+            _admit_preparation_queries(entries, self.query_budget)
+            assert self.query_budget is not None
+            self.indexes.query_repository.freeze_preparation(
+                tuple(entries), budget=self.query_budget
+            )
         for stage_path, raw_binding in sorted(preparation_input.stage_bindings.items()):
             binding = KnowledgeContextBinding.model_validate(raw_binding)
             if stage_path in existing:
@@ -590,20 +708,28 @@ class DeliveryKnowledgeContextPreparationService:
         stage_path: str,
         project_description: dict[str, object],
     ) -> DeliveryKnowledgeContextSnapshot:
-        responsibility = preparation_input.stage_responsibilities.get(stage_path, stage_path)
-        query = (
-            f"Project Name: {project_description.get('name', '')}\n"
-            f"Project Description: {project_description.get('description', '')}\n"
-            f"Delivery Goal: {preparation_input.delivery_goal}\n"
-            f"Stage Path: {stage_path}\n"
-            f"Stage Responsibility: {responsibility}"
-        )
+        query = _query_intent(preparation_input, stage_path, project_description)
         query_sha = sha256_bytes(query.encode("utf-8"))
         retrievals: list[dict[str, object]] = []
         citation_ids: list[str] = []
         consumed = 0
         for approval in sorted(approvals, key=lambda item: item.binding_id):
             allowed_sources = self.tenant.available_source_ids(approval.binding_id)
+            def admit_query(
+                binding_id: str = approval.binding_id,
+                frozen_sources: tuple[str, ...] = allowed_sources,
+            ) -> None:
+                current = self.authorization.resolve(
+                    project_id=preparation_input.project_id,
+                    principal_id=preparation_input.authorized_principal_id,
+                    frozen_access_component=preparation_input.authorization_access_component,
+                    frozen_approval_ids=preparation_input.approved_knowledge_approval_ids,
+                )
+                if current.authorization_epoch_hash != stamp.authorization_epoch_hash:
+                    raise _authorization_revoked("Query 单元执行期间授权版本发生变化")
+                if self.tenant.available_source_ids(binding_id) != frozen_sources:
+                    raise _authorization_revoked("Query 单元执行期间可用 Source Scope 发生变化")
+
             retrieval = self.indexes.retrieve(
                 actor,
                 KnowledgeRetrievalRequest(
@@ -613,6 +739,10 @@ class DeliveryKnowledgeContextPreparationService:
                     query=query,
                     allowed_source_ids=allowed_sources,
                 ),
+                execution_identity=self.indexes.query_repository.get_stage_plan(
+                    run_id, stage_path, approval.binding_id
+                ).identity,  # type: ignore[union-attr]
+                admission=admit_query,
             )
             selected: list[dict[str, object]] = []
             for hit in retrieval.hits:
@@ -672,7 +802,8 @@ class DeliveryKnowledgeContextPreparationService:
                 retrieval_policy_revision_id=binding.retrieval_policy_revision_id,
                 context=context,
                 created_at=datetime.now(UTC),
-            )
+            ),
+            query_binding_ids=tuple(approval.binding_id for approval in approvals),
         )
         return context
 

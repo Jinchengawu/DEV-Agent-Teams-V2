@@ -13,6 +13,7 @@ from ...delivery import (
 )
 from ...shared.hashes import Sha256
 from ..artifacts import ArtifactReference
+from .query_safety import QuerySafeError
 
 
 class MembershipAuthorizationComponent(BaseModel):
@@ -145,3 +146,5 @@ class DeliveryKnowledgeContextOverview(BaseModel):
     contexts: tuple[DeliveryKnowledgeContextSnapshot, ...] = ()
     unavailable: tuple[DeliveryKnowledgeContextUnavailableSnapshot, ...] = ()
     citations: tuple[KnowledgeCitationUsage, ...] = ()
+    # 产品诊断投影，不进入 ACWM Stage Artifact。
+    query_errors: tuple[QuerySafeError, ...] = ()

@@ -1,0 +1,2843 @@
+{
+  "schema": "query-semantic-candidate-v1",
+  "product_review": "pending",
+  "evidence_scope": "candidate-only-not-executed-semantic-acceptance",
+  "boundary_note": "1025是合成切片边界候选，不是模型token上限",
+  "oracles": {
+    "coverage": "codepoint/UTF-8 reconstruction only",
+    "retrieval": "actual product returned canonical citations; no identifier-hit oracle",
+    "relation": "explicit predicate truth cases, no LLM self-score"
+  },
+  "source_manifest_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+  "sources": [
+    {
+      "id": "release-rule",
+      "text": "A release requires passing tests AND current owner approval. 发布需要测试通过且负责人批准有效。",
+      "source_fixture_sha256": "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+      "canonical_citation": [
+        "binding-fixture",
+        "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+        "release-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "deny-rule",
+      "text": "Required security failure forbids release even with owner approval. 安全检查失败即禁止发布。",
+      "source_fixture_sha256": "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+      "canonical_citation": [
+        "binding-fixture",
+        "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+        "deny-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "exception-rule",
+      "text": "Emergency waiver exempts only optional performance checks, never required security checks. 紧急豁免仅免可选性能检查，不能免安全检查。",
+      "source_fixture_sha256": "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+      "canonical_citation": [
+        "binding-fixture",
+        "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+        "exception-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "prerequisite-rule",
+      "text": "Artifact hash must match the reviewed artifact before any release or waiver. 任何发布和豁免均以制品哈希匹配为前提。",
+      "source_fixture_sha256": "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+      "canonical_citation": [
+        "binding-fixture",
+        "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+        "prerequisite-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "opposite-rule",
+      "text": "Obsolete and invalid guidance: approval alone permits release. 已废止错误指引：仅批准即可发布。",
+      "source_fixture_sha256": "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+      "canonical_citation": [
+        "binding-fixture",
+        "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+        "opposite-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "unrelated-rule",
+      "text": "Office lights close at 21:00. 办公室灯在晚间关闭。",
+      "source_fixture_sha256": "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+      "canonical_citation": [
+        "binding-fixture",
+        "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+        "unrelated-rule"
+      ],
+      "authorized": true
+    },
+    {
+      "id": "revoked-rule",
+      "text": "Revoked private source: checks are unnecessary. 已撤权来源：无需检查。",
+      "source_fixture_sha256": "81d855b11c90f23e4c3be202609febf4420ef3df07c92db43b325c87730f9d16",
+      "canonical_citation": [
+        "binding-fixture",
+        "81d855b11c90f23e4c3be202609febf4420ef3df07c92db43b325c87730f9d16",
+        "revoked-rule"
+      ],
+      "authorized": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "ascii-short",
+      "language": "ascii",
+      "length_band": "short",
+      "query_recipe": {
+        "metadata": "Project: isolated synthetic product.\nStage: requirements\n",
+        "start": "Acceptance A1: when is release permitted?\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.",
+        "filler": "project background ",
+        "goal_characters": 320
+      },
+      "query_sha256": "f7c549e017ad98144a710e47e04661b7450763b4ab2afdb368c144643d275bd7",
+      "goal_sha256": "6e3ced280d7fccf4a12bda9c6f865b712fb30ae21833b622690037b4cada0c59",
+      "query_characters": 377,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "ascii-boundary",
+      "language": "ascii",
+      "length_band": "boundary",
+      "query_recipe": {
+        "metadata": "Project: isolated synthetic product.\nStage: requirements\n",
+        "start": "Acceptance A1: when is release permitted?\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.",
+        "filler": "project background ",
+        "goal_characters": 1025
+      },
+      "query_sha256": "654b0286a77a615beb06b4f1f44b049c3ba48d9a7613bef9eaefa3819abf73d8",
+      "goal_sha256": "47ae87f2442485dfe08cf50b7393f980431f9770c73702962f44daf702661b22",
+      "query_characters": 1082,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "ascii-maximum",
+      "language": "ascii",
+      "length_band": "maximum",
+      "query_recipe": {
+        "metadata": "Project: isolated synthetic product.\nStage: requirements\n",
+        "start": "Acceptance A1: when is release permitted?\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.",
+        "filler": "project background ",
+        "goal_characters": 20000
+      },
+      "query_sha256": "70879d01414e6c43a2353cca9fed984335c463adeaf25f353ef4ebe334065351",
+      "goal_sha256": "8ae697eb0cc23b594f1e5ee03b234ee10c3363776ba5653638b3a01d8cbbb2a7",
+      "query_characters": 20057,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "cjk-short",
+      "language": "cjk",
+      "length_band": "short",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "项目背景说明",
+        "goal_characters": 320
+      },
+      "query_sha256": "e1518ad6fe9eb26fe8fbdba616d8198eb2115634435dd2e3147c0dd8c86ad4b0",
+      "goal_sha256": "e7f9618c8112f0784840f78599bbce29d26ab5f95c3f065877c78bcec42ca4e3",
+      "query_characters": 337,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "cjk-boundary",
+      "language": "cjk",
+      "length_band": "boundary",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "项目背景说明",
+        "goal_characters": 1025
+      },
+      "query_sha256": "91891df10417322e2e581b06881c922788dbb12a29a0509177fe0cd839fcd0aa",
+      "goal_sha256": "cb363e1562b7b82ebbde9c461aa38538bc5b6abd4196f754669efb1e82ab8dc2",
+      "query_characters": 1042,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "cjk-maximum",
+      "language": "cjk",
+      "length_band": "maximum",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "项目背景说明",
+        "goal_characters": 20000
+      },
+      "query_sha256": "993938508c46185d9fc5917072230f45178100277692b959c2a3f128c03dddb2",
+      "goal_sha256": "f308a4d1ec286d72f4a6a7420e06a853f8b77022d8d9ef92fb0dd4791617e881",
+      "query_characters": 20017,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "mixed-short",
+      "language": "mixed",
+      "length_band": "short",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 320
+      },
+      "query_sha256": "84b3ae9824427016e629567111af7d8e928cf59589182238ed10d28be3e435fb",
+      "goal_sha256": "a1ede398a32d53832b6776e6c6bb2bcda73985589ea28c322489671d93aa984c",
+      "query_characters": 337,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "mixed-boundary",
+      "language": "mixed",
+      "length_band": "boundary",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 1025
+      },
+      "query_sha256": "01a63ff8266e7950a1f477c5cbf3fe7e8e5aafa96edddf83c8256005404a879a",
+      "goal_sha256": "1e497d59f489058d382d8d15b885aa34dfbb1f4e22ab82733da06d5c86ffe4c9",
+      "query_characters": 1042,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "mixed-maximum",
+      "language": "mixed",
+      "length_band": "maximum",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 20000
+      },
+      "query_sha256": "1bd3a49546d2cb848dd896b59e2447899410128d827120974af1f724952f36f0",
+      "goal_sha256": "555deba41a3d2f3997328e31020c39ef1877f39d049ac5bb1151334e9447d351",
+      "query_characters": 20017,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "emoji-combining-short",
+      "language": "emoji-combining",
+      "length_band": "short",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n🙂é",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n🙂é",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。🙂é",
+        "filler": "界面🙂é说明 ",
+        "goal_characters": 320
+      },
+      "query_sha256": "a86cb4c5c1a894c4c2e194df71024894a72b83349e32225a964aa5e9fca28530",
+      "goal_sha256": "decc2b55269888cb8439038f8abb1916aeab13e083d1300211128f1d8332be3f",
+      "query_characters": 337,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "emoji-combining-boundary",
+      "language": "emoji-combining",
+      "length_band": "boundary",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n🙂é",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n🙂é",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。🙂é",
+        "filler": "界面🙂é说明 ",
+        "goal_characters": 1025
+      },
+      "query_sha256": "df2d0d3169c42c343215a2665a7fe2a9cfc22b462d1910cbdb94ef4b7c59f2ee",
+      "goal_sha256": "d3f60a4f7f214182e224c414cb3b20299d97c90be2605e4a041e2d38729834c1",
+      "query_characters": 1042,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "emoji-combining-maximum",
+      "language": "emoji-combining",
+      "length_band": "maximum",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "验收一：何时允许发布？\n🙂é",
+        "middle": "\n验收二：紧急豁免是否能覆盖安全检查失败？\n🙂é",
+        "end": "\n验收三：说明测试、批准与制品哈希的共同前提。🙂é",
+        "filler": "界面🙂é说明 ",
+        "goal_characters": 20000
+      },
+      "query_sha256": "b0c5b35f8951aaed02a632c13076d022eb8b703cecec7301625467fdec465650",
+      "goal_sha256": "24951faa4bf44a2db9295730a2f50bec71a4a2d971ac40b59c412b405e0653d8",
+      "query_characters": 20017,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "zero-hit",
+      "language": "ascii",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "",
+        "start": "How many moons orbit fictional planet Q?",
+        "middle": "",
+        "end": "",
+        "filler": " ",
+        "goal_characters": 60
+      },
+      "query_sha256": "ea5d225b1a6d85c737fbe32cb59762e377ee8ca9f25724889466e0af7012c8ac",
+      "goal_sha256": "ea5d225b1a6d85c737fbe32cb59762e377ee8ca9f25724889466e0af7012c8ac",
+      "query_characters": 60,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [],
+      "forbidden_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule",
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [],
+      "context_budget_bytes": 8192,
+      "expected_decisions": []
+    },
+    {
+      "id": "revoked-source",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "项目：已撤权来源不能恢复权限\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "背景 ",
+        "goal_characters": 320
+      },
+      "query_sha256": "eeca8da6cf0a78b30b84535eb47ba828c50f598d97ed3bfb7462425c53d57207",
+      "goal_sha256": "eb9a9dd847aaf190352cd6d3d55a73663bdf65cfefe404798108d8b4db348ea5",
+      "query_characters": 335,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ]
+    },
+    {
+      "id": "failure-400-structural",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "Project: synthetic scope\nStage: requirements\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "完整目标和验收说明 ",
+        "goal_characters": 7100
+      },
+      "query_sha256": "1664abf3a3f45764f02a8de5426b5bc0b96fea5fc9fe9e41464aa987ac0b2c54",
+      "goal_sha256": "7ea3354f0aa903adf442ece094ad0c7dc385a7d106be0173533da8c5bb1842fb",
+      "query_characters": 7145,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ],
+      "structural_equivalence": "完整目标+Project+Stage，7100字符合成Goal；不复制历史正文、不声称复现真实400阈值"
+    },
+    {
+      "id": "long-metadata",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "Project: 合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。合成项目边界。\nStage: requirements\n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "项目说明 ",
+        "goal_characters": 320
+      },
+      "query_sha256": "7c231ca27e68402e3acfa830b44a1ac7b37c3bd77cf42d04d509f56f7538ae13",
+      "goal_sha256": "89f3545ea018dd74069136a752aa26ab2220d7e0a0070df2e07a43375fc742dc",
+      "query_characters": 5250,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ],
+      "metadata_contract_note": "压力候选，不宣称当前产品metadata合法上界已证明"
+    },
+    {
+      "id": "duplicate-control",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "Tests and current owner approval are both required; a waiver never overrides security failure. ",
+        "middle": "Explain the release constraints. ",
+        "end": "Confirm artifact hash prerequisites.",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 800
+      },
+      "query_sha256": "83a158faf95d91ee438d3a01e2e47dcc957e3efb9cde8390c7ebe96ce63c0263",
+      "goal_sha256": "849889a07e9d776c35e3e8547baf64663ae257919ebbef1b997bd1d69eca8313",
+      "query_characters": 817,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ],
+      "expected_final_order": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ]
+    },
+    {
+      "id": "duplicate-clauses",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "项目：无秘密合成产品\n阶段：需求\n",
+        "start": "Tests and current owner approval are both required; a waiver never overrides security failure. Tests and current owner approval are both required; a waiver never overrides security failure. ",
+        "middle": "Tests and current owner approval are both required; a waiver never overrides security failure. ",
+        "end": "Tests and current owner approval are both required; a waiver never overrides security failure. Confirm artifact hash prerequisites.",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 1600
+      },
+      "query_sha256": "76620181d083d9834f70c9f05a067e1a6c75125b4d3ca08fc98995b93f11ab76",
+      "goal_sha256": "79053bae45108913c356132bcc233d6dbd7e1630176fac935a86ba0ef9737983",
+      "query_characters": 1617,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ],
+      "expected_final_order": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "duplicate_oracle": {
+        "control_case_id": "duplicate-control",
+        "repeated_clause": "Tests and current owner approval are both required; a waiver never overrides security failure. ",
+        "control_unit_rankings": [
+          [
+            "release-rule",
+            "deny-rule",
+            "exception-rule",
+            "prerequisite-rule"
+          ]
+        ],
+        "repeated_unit_rankings": [
+          [
+            "release-rule",
+            "deny-rule",
+            "exception-rule",
+            "prerequisite-rule"
+          ],
+          [
+            "release-rule",
+            "deny-rule",
+            "exception-rule",
+            "prerequisite-rule"
+          ],
+          [
+            "release-rule",
+            "deny-rule",
+            "exception-rule",
+            "prerequisite-rule"
+          ],
+          [
+            "release-rule",
+            "deny-rule",
+            "exception-rule",
+            "prerequisite-rule"
+          ]
+        ],
+        "canonical_dedup_key": [
+          "binding",
+          "source_snapshot",
+          "chunk_id"
+        ],
+        "expected_final_occurrences": {
+          "release-rule": 1,
+          "deny-rule": 1,
+          "exception-rule": 1,
+          "prerequisite-rule": 1
+        },
+        "expected_final_order": [
+          "release-rule",
+          "deny-rule",
+          "exception-rule",
+          "prerequisite-rule"
+        ],
+        "scores_equal_to_control": true,
+        "no_required_citation_displaced": true,
+        "comparison_rule": "Exact duplicate clause/query contributions are idempotent; compare canonical scores/order/counts, not only set membership."
+      }
+    },
+    {
+      "id": "long-project-stage-metadata",
+      "language": "mixed",
+      "length_band": "supplemental",
+      "query_recipe": {
+        "metadata": "Project description: synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project bounda\nStage path: synthetic-stage/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/requirements\nStage responsibility: Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and \n",
+        "start": "Acceptance A1: when is release permitted?\n验收一：何时允许发布？\n",
+        "middle": "\nAcceptance A2: can emergency waiver override failed security checks?\n\n验收二：紧急豁免是否能覆盖安全检查失败？\n",
+        "end": "\nAcceptance A3: explain tests, approval and artifact hash prerequisites.\n验收三：说明测试、批准与制品哈希的共同前提。",
+        "filler": "Project项目 context上下文 ",
+        "goal_characters": 320
+      },
+      "query_sha256": "060c4da092b8f20df5e9ee0e29a604da9b72a7970a5a4476ec10d195ac860673",
+      "goal_sha256": "a1ede398a32d53832b6776e6c6bb2bcda73985589ea28c322489671d93aa984c",
+      "query_characters": 9486,
+      "source_fixture_sha256": "f031bb887331a72c403424df4f92745f27859b090939cbdb1779641b8c187d3b",
+      "authorized_citations": [
+        [
+          "binding-fixture",
+          "5e160abc402d832317f6a3bf4c2f8e3c7bc426d1eb85e1de31e1c9255fa80729",
+          "release-rule"
+        ],
+        [
+          "binding-fixture",
+          "19b0d1aa33200c9621a0df6464ae983b04f2f8013cad7aba14824de1c7b26336",
+          "deny-rule"
+        ],
+        [
+          "binding-fixture",
+          "2d6b71244bbf9727bf7f110fcd8b82f7624be78cfc6c2774c74386ffb8316a3c",
+          "exception-rule"
+        ],
+        [
+          "binding-fixture",
+          "0a0d10819592f2554e9330912b5a6ee8e243bce88d626fbcc20ede1da9906611",
+          "prerequisite-rule"
+        ],
+        [
+          "binding-fixture",
+          "8340d83891fe40f9a05659afe39bf283c000bd91c3d11a1a52e81f0a9f59f4bc",
+          "opposite-rule"
+        ],
+        [
+          "binding-fixture",
+          "00ef8a365eaf0453d15b86906bd7976666a478875ef6e5d5732d0ff3777276f2",
+          "unrelated-rule"
+        ]
+      ],
+      "required_citations": [
+        "release-rule",
+        "deny-rule",
+        "exception-rule",
+        "prerequisite-rule"
+      ],
+      "forbidden_citations": [
+        "opposite-rule",
+        "unrelated-rule",
+        "revoked-rule"
+      ],
+      "relations": [
+        {
+          "kind": "double-condition",
+          "sources": [
+            "release-rule"
+          ],
+          "predicate": "tests_pass AND approval_current"
+        },
+        {
+          "kind": "negation",
+          "sources": [
+            "deny-rule"
+          ],
+          "predicate": "security_failed IMPLIES NOT release"
+        },
+        {
+          "kind": "exception",
+          "sources": [
+            "exception-rule",
+            "deny-rule"
+          ],
+          "predicate": "waiver DOES_NOT_OVERRIDE security_failed"
+        },
+        {
+          "kind": "prerequisite",
+          "sources": [
+            "prerequisite-rule",
+            "release-rule"
+          ],
+          "predicate": "release IMPLIES artifact_hash_matches"
+        }
+      ],
+      "context_budget_bytes": 8192,
+      "expected_decisions": [
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 1,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": false
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 1
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 0
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 1,
+            "approval_current": 0,
+            "security_failed": 0,
+            "waiver": 1,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        },
+        {
+          "facts": {
+            "tests_pass": 0,
+            "approval_current": 1,
+            "security_failed": 0,
+            "waiver": 0,
+            "artifact_hash_matches": 1
+          },
+          "release": 0
+        }
+      ],
+      "metadata_fields": {
+        "project_description": "synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project boundary. synthetic project bounda",
+        "stage_path": "synthetic-stage/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/nested-segment/requirements",
+        "stage_responsibility": "Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and both prerequisites. Stage preserves negation, exception and "
+      },
+      "metadata_contract_note": "Explicit field stress candidate; current legal Stage path/responsibility bounds remain to be established."
+    }
+  ]
+}

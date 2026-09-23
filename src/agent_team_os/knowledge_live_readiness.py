@@ -20,6 +20,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from .infrastructure.feishu import SystemSecretReferenceResolver
 from .infrastructure.git import resolve_git_credential
 from .infrastructure.knowledge import SQLiteVectorIndexAdapter
+from .infrastructure.knowledge.local_query_measurement import (
+    local_query_measurement_from_environment,
+)
 from .infrastructure.ollama import OllamaEmbeddingAdapter
 from .infrastructure.verification.command_toolchain import LocalVerificationToolchain
 from .modules.delivery.runtime_adapters import PRODUCT_RUNTIME_ADAPTER_CONTRACTS
@@ -31,6 +34,8 @@ from .modules.knowledge import (
 )
 from .modules.knowledge.index_ports import EmbeddingPort, VectorIndexPort
 from .modules.knowledge.provider_ports import ProviderFailure
+from .modules.knowledge.query_plan import InputMeasurementPort
+from .modules.knowledge.query_repository import SQLiteKnowledgeQueryRepository
 from .modules.orchestration import SQLitePipelineRepository
 from .modules.projects import SQLiteProjectRepository
 from .modules.workcells import SQLiteProjectWorkcellRepository
@@ -43,6 +48,7 @@ from .readiness import (
 )
 from .shared.errors import ProductError
 from .shared.features import FeatureFlags
+from .shared.hashes import Sha256
 
 EXPECTED_RELEASE_WORKCELLS = frozenset({"design", "frontend", "backend", "qa"})
 EXPECTED_WORKCELL_STAGE_PATHS = frozenset(
@@ -110,6 +116,7 @@ class KnowledgeLiveFacts(_ImmutableModel):
     active_index_count: int = Field(default=0, ge=0)
     passed_evaluation_count: int = Field(default=0, ge=0)
     qualified_ollama_model_count: int = Field(default=0, ge=0)
+    qualified_query_input_policy_count: int = Field(default=0, ge=0)
     verified_index_policy_count: int = Field(default=0, ge=0)
     live_ollama_model_count: int = Field(default=0, ge=0)
     vector_index_runtime_ready: bool = False
@@ -142,6 +149,7 @@ class KnowledgeLiveFactsCollector:
         git_credential_resolver: Callable[[str], str] = resolve_git_credential,
         embedding_port: EmbeddingPort | None = None,
         vector_index_port: VectorIndexPort | None = None,
+        query_measurement: InputMeasurementPort | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.database = database
@@ -149,6 +157,7 @@ class KnowledgeLiveFactsCollector:
         self.git_credential_resolver = git_credential_resolver
         self.embedding_port = embedding_port or OllamaEmbeddingAdapter()
         self.vector_index_port = vector_index_port or SQLiteVectorIndexAdapter()
+        self.query_measurement = query_measurement
         self.clock = clock or (lambda: datetime.now(UTC))
 
     def collect(self, project_id: str) -> KnowledgeLiveFacts:
@@ -345,6 +354,7 @@ class KnowledgeLiveFactsCollector:
         active_index_ids: set[str] = set()
         passed_policy_ids: set[str] = set()
         qualified_policy_ids: set[str] = set()
+        qualified_query_policy_ids: set[str] = set()
         verified_index_policy_ids: set[str] = set()
         live_model_policy_ids: set[str] = set()
         live_qualification_cache: dict[str, bool] = {}
@@ -354,6 +364,20 @@ class KnowledgeLiveFactsCollector:
             evaluation_policy = indexes.get_evaluation_policy_for_retrieval(policy_id)
             if policy is None or evaluation_policy is None:
                 continue
+            # 一个 Policy 被多个已批准 Binding 使用时，必须逐 Binding 全部合格。
+            # 不复用下方旧模型探针的 any/break 投影，避免首个合格源掩盖其余源。
+            query_bases: list[EmbeddingQualificationSnapshot | None] = []
+            for source_id in sorted(ready_source_ids):
+                source_index = indexes.get_active_index(source_id, policy.index_profile_revision_id)
+                query_bases.append(
+                    indexes.get_qualification(source_index.embedding_qualification_id)
+                    if source_index is not None and source_index.status == "active"
+                    and source_index.embedding_qualification_id is not None else None
+                )
+            if self._all_query_inputs_are_qualified(
+                policy.query_input_qualification_sha256, tuple(query_bases)
+            ):
+                qualified_query_policy_ids.add(policy_id)
             for source_id in sorted(resolvable_source_ids):
                 active = indexes.get_active_index(source_id, policy.index_profile_revision_id)
                 if active is None or active.status != "active":
@@ -454,6 +478,7 @@ class KnowledgeLiveFactsCollector:
             active_index_count=len(active_index_ids),
             passed_evaluation_count=len(passed_policy_ids),
             qualified_ollama_model_count=len(qualified_policy_ids),
+            qualified_query_input_policy_count=len(qualified_query_policy_ids),
             verified_index_policy_count=len(verified_index_policy_ids),
             live_ollama_model_count=len(live_model_policy_ids),
             vector_index_runtime_ready=vector_descriptor is not None,
@@ -483,6 +508,34 @@ class KnowledgeLiveFactsCollector:
             descriptor.engine_version,
             descriptor.adapter_revision,
         )
+
+    def _all_query_inputs_are_qualified(
+        self, digest: Sha256 | None,
+        bases: tuple[EmbeddingQualificationSnapshot | None, ...],
+    ) -> bool:
+        return bool(bases) and all(
+            base is not None and self._query_input_is_qualified(digest, base) for base in bases
+        )
+
+    def _query_input_is_qualified(
+        self, digest: Sha256 | None, base: EmbeddingQualificationSnapshot,
+    ) -> bool:
+        """本地输入能力核验；status/hash本身不是资格证明，也不调用模型。"""
+        if digest is None or self.query_measurement is None:
+            return False
+        try:
+            query = SQLiteKnowledgeQueryRepository(self.database).get_qualification(digest)
+            return (
+                query.status == "qualified"
+                and base.status == "qualified"
+                and query.evidence_kind == "live"
+                and query.base_qualification_sha256 == base.qualification_sha256
+                and query.model_digest == base.model_digest
+                and query.embedding_adapter_revision == base.adapter_revision
+                and self.query_measurement.verify_qualification(query) is True
+            )
+        except Exception:
+            return False
 
     @staticmethod
     def _qualification_is_current(
@@ -538,7 +591,10 @@ def inspect_knowledge_live_readiness(
             flags = FeatureFlags.from_environment()
         except ProductError:
             flags = FeatureFlags()
-    facts = (collector or KnowledgeLiveFactsCollector(data_dir / "agent-team-os.sqlite")).collect(
+    facts = (collector or KnowledgeLiveFactsCollector(
+        data_dir / "agent-team-os.sqlite",
+        query_measurement=local_query_measurement_from_environment(),
+    )).collect(
         project_id
     )
     planning_runtime_kind: Literal["hermes", "codex"] = (
@@ -769,6 +825,14 @@ def evaluate_knowledge_live_readiness(
             blocked_detail=(
                 "项目已批准 Source 尚无通过 Published Evaluation Policy 并激活的 Hybrid Index。"
             ),
+        ),
+        _check(
+            "query-input-qualification",
+            facts.required_retrieval_policy_count > 0
+            and facts.qualified_query_input_policy_count == facts.required_retrieval_policy_count,
+            "查询输入资格已绑定基础模型，并通过本地精确计数与容量证据核验。",
+            "准备锁定 tokenizer 资产和真实容量资格证据，再绑定新 Policy；不得估算或截断。",
+            blocked_detail="缺少真实查询输入资格或本地精确计数能力；基础 Embedding 资格不能替代。",
         ),
         _check(
             "ollama-model",

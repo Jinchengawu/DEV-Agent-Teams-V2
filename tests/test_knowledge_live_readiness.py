@@ -9,6 +9,7 @@ import pytest
 
 from agent_team_os.knowledge_live_readiness import (
     KnowledgeLiveFacts,
+    KnowledgeLiveFactsCollector,
     _runtime_bindings_wired,
     evaluate_knowledge_live_readiness,
 )
@@ -67,6 +68,7 @@ def _ready_facts() -> KnowledgeLiveFacts:
         active_index_count=1,
         passed_evaluation_count=1,
         qualified_ollama_model_count=1,
+        qualified_query_input_policy_count=1,
         verified_index_policy_count=1,
         live_ollama_model_count=1,
         vector_index_runtime_ready=True,
@@ -114,6 +116,62 @@ def test_live_readiness_is_ready_but_not_run_when_every_precondition_is_proven()
     assert report.execution_status == "not_run"
     assert report.capability == "feishu-knowledge-delivery-v1"
     assert all(check.status == "ready" for check in report.checks)
+
+
+def test_base_model_ready_without_query_input_capability_is_blocked() -> None:
+    report = evaluate_knowledge_live_readiness(
+        project_id="alpha",
+        facts=_ready_facts().model_copy(update={"qualified_query_input_policy_count": 0}),
+        flags=FeatureFlags(feishu_tenant_sync_v1=True, knowledge_hybrid_index_v1=True,
+                           delivery_knowledge_context_v1=True),
+        framework_revision=DependencyCheck(name="python:acwm-revision", status="ready"),
+        runtime=_runtime_ready(),
+    )
+    assert report.status == "blocked"
+    assert report.execution_status == "not_run"
+    checks = {check.name: check for check in report.checks}
+    assert checks["query-input-qualification"].status == "blocked"
+    assert checks["ollama-model"].status == "ready"
+    assert KnowledgeLiveFacts().qualified_query_input_policy_count == 0
+
+
+def test_local_query_readiness_requires_live_evidence_and_verifying_adapter(tmp_path) -> None:
+    from query_test_support import install_deterministic_query_qualification
+    from test_knowledge_hybrid_index import _fixture
+
+    from agent_team_os.modules.knowledge import EmbeddingQualificationRequest
+
+    actor, _, _, indexes, *_ = _fixture(tmp_path)
+    base = indexes.qualify_embedding(actor, EmbeddingQualificationRequest(model_name="bge-m3"))
+    fixture = install_deterministic_query_qualification(indexes, base)
+    collector = KnowledgeLiveFactsCollector(indexes.repository.database)
+    # 本测试不调用 collect/inspect，不触发 Git、Feishu 或模型探针。
+    assert not collector._query_input_is_qualified(fixture.qualification_sha256, base)
+    collector.query_measurement = indexes.query_measurement
+    assert not collector._query_input_is_qualified(fixture.qualification_sha256, base)
+    forged_live = fixture.model_copy(update={"evidence_kind": "live"})
+    indexes.query_repository.put_qualification(forged_live)
+    # 修改标签/status/hash不能冒充真实容量证据，fixture verifier拒绝。
+    assert not collector._query_input_is_qualified(forged_live.qualification_sha256, base)
+    assert not collector._query_input_is_qualified(None, base)
+    # 纯本地注入验证器以隔离聚合规则，不代表真实模型资格。
+    class FixtureVerifier:
+        def verify_qualification(self, query):
+            return query.qualification_sha256 == forged_live.qualification_sha256
+
+        def measure(self, text):
+            raise AssertionError("readiness must not measure or invoke Provider")
+
+    collector.query_measurement = FixtureVerifier()
+    assert collector._all_query_inputs_are_qualified(forged_live.qualification_sha256, (base,))
+    mismatched = base.model_copy(update={"model_digest": "different-binding-model"})
+    assert not collector._all_query_inputs_are_qualified(
+        forged_live.qualification_sha256, (base, mismatched)
+    )
+    assert not collector._all_query_inputs_are_qualified(
+        forged_live.qualification_sha256, (base, None)
+    )
+    assert not collector._all_query_inputs_are_qualified(forged_live.qualification_sha256, ())
 
 
 def test_live_readiness_fails_closed_without_leaking_credentials() -> None:

@@ -3508,6 +3508,11 @@ export interface components {
              * @default []
              */
             citations: components["schemas"]["KnowledgeCitationUsage"][];
+            /**
+             * Query Errors
+             * @default []
+             */
+            query_errors: components["schemas"]["QuerySafeError"][];
         };
         /** DeliveryKnowledgeContextSnapshot */
         DeliveryKnowledgeContextSnapshot: {
@@ -5852,6 +5857,59 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** QuerySafeError */
+        QuerySafeError: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "KNOWLEDGE_QUERY_INPUT_LIMIT" | "KNOWLEDGE_QUERY_PROVIDER_FAILED" | "KNOWLEDGE_QUERY_BUDGET_EXCEEDED";
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "input_limit" | "invalid_request" | "rate_limited" | "provider_error" | "timeout" | "transport" | "invalid_response" | "unknown" | "budget";
+            /**
+             * Correlation Id
+             * Format: uuid
+             */
+            correlation_id: string;
+            /** Http Status */
+            http_status?: number | null;
+            /** Unit */
+            unit: number;
+            /** Plan Sha256 */
+            plan_sha256: string;
+            /** Qualification Sha256 */
+            qualification_sha256: string;
+            /** Budget Sha256 */
+            budget_sha256: string;
+            /** Measured Tokens */
+            measured_tokens: number;
+            /** Allowed Tokens */
+            allowed_tokens: number;
+            /** Measured Bytes */
+            measured_bytes: number;
+            /** Allowed Bytes */
+            allowed_bytes: number;
+            /** Attempt */
+            attempt: number;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Measured Duration Ms */
+            measured_duration_ms?: number | null;
+            /** Allowed Duration Ms */
+            allowed_duration_ms?: number | null;
+            /** Measured Cache Bytes */
+            measured_cache_bytes?: number | null;
+            /** Allowed Cache Bytes */
+            allowed_cache_bytes?: number | null;
+        };
         /** ReleaseApplyAttemptV2 */
         ReleaseApplyAttemptV2: {
             /** Delivery Id */
@@ -6292,6 +6350,8 @@ export interface components {
              * @enum {string}
              */
             empty_result_policy: "allow-empty" | "fail";
+            /** Query Input Qualification Sha256 */
+            query_input_qualification_sha256?: string | null;
         };
         /** RetrievalPolicyRevision */
         RetrievalPolicyRevision: {
@@ -6348,6 +6408,8 @@ export interface components {
              * @enum {string}
              */
             empty_result_policy: "allow-empty" | "fail";
+            /** Query Input Qualification Sha256 */
+            query_input_qualification_sha256?: string | null;
             /** Policy Sha256 */
             policy_sha256: string;
             /** Published By */

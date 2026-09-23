@@ -3,16 +3,28 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from .index_domain import EmbeddingModelDescriptor
 
 
 class EmbeddingFailure(RuntimeError):
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        http_status: int | None = None,
+        category: Literal[
+            "input_limit", "invalid_request", "rate_limited", "provider_error",
+            "timeout", "transport", "invalid_response", "unknown",
+        ] = "unknown",
+    ) -> None:
         super().__init__(detail)
         self.code = code
         self.detail = detail
+        self.http_status = http_status
+        self.category = category
 
 
 class EmbeddingPort(Protocol):
