@@ -3,6 +3,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from test_knowledge_query_execution import setup
 
 from agent_team_os.modules.knowledge.query_admission import (
     AggregateQueryBudget,
@@ -10,7 +11,6 @@ from agent_team_os.modules.knowledge.query_admission import (
 )
 from agent_team_os.modules.knowledge.query_execution import QueryPlanExecutor
 from agent_team_os.shared.hashes import Sha256
-from tests.test_knowledge_query_execution import setup
 
 
 def test_multibinding_aggregate_rejects_before_freezing_any_plan(tmp_path: Path) -> None:
