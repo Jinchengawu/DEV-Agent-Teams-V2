@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
+import stat
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -46,6 +48,16 @@ class BundleBuildResult:
     bundle_root: Path
     manifest_path: Path
     manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class VerifiedBundleMethodLock:
+    manifest_sha256: str
+    manifest_identity: tuple[int, int]
+    product_revision: str
+    lock_bytes: bytes
+    lock_sha256: str
+    lock_identity: tuple[int, int]
 
 
 def build_delivery_bundle(
@@ -118,13 +130,41 @@ def build_delivery_bundle(
 
 
 def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
+    result, _locked = _verify_delivery_bundle(bundle_root, capture_method_lock=False)
+    return result
+
+
+def verify_delivery_bundle_with_method_lock(bundle_root: Path) -> VerifiedBundleMethodLock:
+    """Return Method Lock bytes attested by the same Manifest verification pass."""
+    result, locked = _verify_delivery_bundle(bundle_root, capture_method_lock=True)
+    if locked is None:
+        raise BundleBuildError("Delivery Bundle 缺少已验 Method Pack Lock。")
+    raw, manifest_identity, lock_bytes, lock_identity = locked
+    revision = raw.get("git_revision")
+    if not isinstance(revision, str):
+        raise BundleBuildError("Delivery Bundle Product Revision 缺失。")
+    return VerifiedBundleMethodLock(
+        manifest_sha256=result["manifest_sha256"],
+        manifest_identity=manifest_identity,
+        product_revision=revision,
+        lock_bytes=lock_bytes,
+        lock_sha256=hashlib.sha256(lock_bytes).hexdigest(),
+        lock_identity=lock_identity,
+    )
+
+
+def _verify_delivery_bundle(
+    bundle_root: Path, *, capture_method_lock: bool
+) -> tuple[
+    dict[str, str],
+    tuple[dict[str, Any], tuple[int, int], bytes, tuple[int, int]] | None,
+]:
     root = bundle_root.resolve()
     manifest_path = root / MANIFEST_NAME
-    if manifest_path.is_symlink():
-        raise BundleBuildError("Delivery Manifest 不得是符号链接。")
     try:
-        raw: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        manifest_bytes, manifest_identity = _read_pinned_regular(manifest_path)
+        raw: Any = json.loads(manifest_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise BundleBuildError("Delivery Manifest 不可读或非法。") from error
     if not isinstance(raw, dict) or raw.get("schema") not in {
         MANIFEST_SCHEMA, "agent-team-os-delivery-bundle-v1",
@@ -136,6 +176,8 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
     if not isinstance(entries, list):
         raise BundleBuildError("Delivery Manifest files 必须是列表。")
     expected: set[str] = set()
+    method_lock_bytes: bytes | None = None
+    method_lock_identity: tuple[int, int] | None = None
     for entry in entries:
         if not isinstance(entry, dict):
             raise BundleBuildError("Delivery Manifest 文件条目非法。")
@@ -152,7 +194,14 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
         path = unresolved.resolve()
         if not path.is_relative_to(root) or not path.is_file():
             raise BundleBuildError(f"Delivery Bundle 文件路径非法：{relative}")
-        if path.stat().st_size != entry.get("size") or _sha256(path) != entry.get("sha256"):
+        if capture_method_lock and relative == "config/method-packs-v050.json":
+            method_lock_bytes, method_lock_identity = _read_pinned_regular(unresolved)
+            actual_size = len(method_lock_bytes)
+            actual_sha256 = hashlib.sha256(method_lock_bytes).hexdigest()
+        else:
+            actual_size = path.stat().st_size
+            actual_sha256 = _sha256(path)
+        if actual_size != entry.get("size") or actual_sha256 != entry.get("sha256"):
             raise BundleBuildError(f"Delivery Bundle SHA-256 或大小不一致：{relative}")
         expected.add(relative)
     actual = {
@@ -163,11 +212,44 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
     if expected != actual:
         raise BundleBuildError("Delivery Bundle 实际文件与 Manifest 不一致。")
     resolve_product_root(root)
-    return {
+    result = {
         "status": "verified",
-        "manifest_sha256": _sha256(manifest_path),
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "product_version": PRODUCT_VERSION,
     }
+    if not capture_method_lock:
+        return result, None
+    if method_lock_bytes is None or method_lock_identity is None:
+        raise BundleBuildError("Delivery Bundle Manifest 缺少 Method Pack Lock。")
+    return result, (raw, manifest_identity, method_lock_bytes, method_lock_identity)
+
+
+def _read_pinned_regular(path: Path) -> tuple[bytes, tuple[int, int]]:
+    """Read one no-follow file and reject inode/content drift during the read."""
+    if path.is_symlink():
+        raise BundleBuildError(f"Delivery Bundle 不接受符号链接：{path.name}")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise BundleBuildError(f"Delivery Bundle 文件类型非法：{path.name}")
+            chunks: list[bytes] = []
+            while chunk := os.read(descriptor, 65_536):
+                chunks.append(chunk)
+            after = os.fstat(descriptor)
+            current = path.lstat()
+            if (
+                (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+                != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+                or (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino)
+            ):
+                raise BundleBuildError(f"Delivery Bundle 文件读取期间漂移：{path.name}")
+            return b"".join(chunks), (before.st_dev, before.st_ino)
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise BundleBuildError(f"Delivery Bundle 文件不可读：{path.name}") from error
 
 
 def verified_bundle_revision(bundle_root: Path) -> str:

@@ -249,6 +249,25 @@ Console 按 feature slice 组织，feature 不能导入其他 feature 的实现�
 - Project Support 脚本必须来自同一内容寻址 Snapshot；内部 Source 路径不传给
   Codex 子进程。Overlay 通过 Attempt 局部 Git Exclude 隐藏，在 Candidate 冻结前删除，
   Candidate Path Policy 仍独立禁止 `_bmad/**`。冲突、篡改或清理失败均 Fail Closed。
+- Method Pack 官方归档经精确 URL、无代理/重定向的 TLS 下载与双 Hash、内容/资格预验后，
+  才进入 Store 排他锁的批次发布；正式 FrozenSet、Runtime Overlay 与 Release Browser
+  复制在同根共享锁下整组复核。Bundle verifier 同次捕获 Manifest 所验 Lock 字节，
+  配置解析、预验、commit、FrozenSet 和回执同字节；ready 前再验整个 Bundle 与冻结身份。
+  Overlay 在共享锁及 pending 检查后才创建临时根。pending 崩溃残留失败关闭；
+  已发布对象/快照不可覆盖或删除。
+  缺根 Store 的构造及正式 Reader 零写拒绝；只有安装 Writer 能在已存在的安全父目录
+  下首次独占建 owner `0700` 根、owner `0600` 锁，再依 EX/pending 合同发布。
+  Writer 首建经已验父目录 fd 相对创建；父 inode 漂移仅清本批可验证空根，无法清理
+  即失败关闭并需独立恢复，不触替代父目录或他人根。child-open 后须核 owner/
+  精确 `0700` mode/空目录，不对归属未证实的 fd 做 `fchmod`；恶意同 UID 瞬时
+  换入空 `0700` 目录不在本地 POSIX 切片保证内。
+  显式 S1 Data Root 必须 owner `0700`；源码默认 Data Root 可为 owner `0755`，但仅在
+  owner-safe 父链下新建 owner `0700` Store 自身为私有 anchor。两者都逐段 no-follow/inode
+  核验且不放宽旧 Store/可写父链。
+  Preview readiness 只将安全确认不存在或全空的私有 Store、以及已有锁但缺 Snapshot
+  归为 `missing`；非空缺锁、pending、链接、权限或身份不确定归为 `failed` 且不给
+  自动安装建议。诊断不创建 Store，也不放宽正式 reader 的缺锁拒绝。
+  这只是本地 Method 来源/一致性合同，不授予 Method 或 Registry 交付 Gate/Apply 权威。
 - `candidate_read` Reviewer 的 Overlay 由产品在 Provider 启动前通过短暂 root owner-write
   租约装配；运行期间 Detached View 根目录、Overlay 和 Candidate 文件保持只读，
   Codex 同时使用 `read-only` Sandbox。最后一个并发 Reviewer 结束后由产品移除
@@ -881,6 +900,39 @@ Remaining evidence: 冻结同一 Revision 后的正式 Browser/Deterministic/Liv
                     Candidate/Release Gate 决策与 Apply 未授权且未执行。
 ```
 
+#### 12.2.10 `ARCH-20260926-METHOD-STORE` Method Pack 来源与同 Store 发布
+
+```text
+State: Implemented/Verified
+Maturity: 候选提交前本地未提交 diff 阶段的实现与验证；CI、独立 S1 和正式 Release 未验收
+Accepted at: 2026-09-26
+Architecture Impact: Cross-boundary
+Decision: 两入口只接受冻结官方 URL、无代理/跳转 TLS 下载；Bundle verifier 同次冻结已验 Lock
+          字节，source 锁亦单次冻结，资格各阶段消费同一字节并在 ready 前重验 Bundle；完整预验
+          后以同根 EX flock + pending 发布新对象，旧项原样复用；正式读侧先 SH/pending，
+          完成整组验证后才创建 Overlay 并复制。崩溃残留失败关闭。Release Browser
+          本次独占新目标另建 owner0600 独立锁，源 SH 释放后再取目标 SH。Preview
+          只读区分安全缺安装与损坏/不确定状态，后者不给自动安装建议。缺根 constructor
+          不建目录；仅安装 Writer 在已存在的安全父目录 fd 下首次创建 Store 根与锁，
+          父路径漂移只清本批可验证空根，不确定则停并保留残余。
+Affected authorities/modules/data/states: Registry Adapter、Extensions Store、Workcell Method Runtime、
+                                         Release Browser Fixture；不改变 ACWM、Provider 或 Apply 权威。
+Compatibility and migration: 无 DB Migration；公共 install_archive 保留但进入相同锁合同；源码自定义锁
+                             不产生 Bundle-ready。源码默认 0755 Data Root 仅允许新 0700 Store
+                             作 anchor；显式 S1 仍须 0700 Data Root。旧不合作 Writer、断电、
+                             Windows/跨机锁保证不在本切片。
+Plan/ADR reference: ADR-0014、ADR-0020（2026-09-26 修订）；受审 Method Pack S1 Final Plan。
+Implemented evidence: 候选提交前本地未提交 diff 阶段的假 Transport、三窗口换锁、Bundle 同字节 inode 替换、
+                      B 预置、双 Hash/第二包失败、pending/Overlay 零早写、回滚、SIGKILL、
+                      Browser 源/目标独立锁、缺根 Reader 零写/Writer 首建、Preview/Gate App
+                      构造及 Preview missing/failed/ready 测试；强化父 inode 替换零残留与
+                      不可清理 fail-closed、child-open 替换、umask 收紧及非空替换
+                      负例局部通过；本地 9 模块 140 passed，Ruff/Mypy/diff check
+                      通过。CI 与独立 S1 须按新 SHA 重跑。
+Remaining evidence: 独立 wheel/Bundle/Build Identity、Method Pack 安装、Browser/Deterministic/Live
+                    同 Revision 零 FAIL/WARN/skipped 报告与正式 Release/Apply 授权。
+```
+
 新条目必须使用以下结构：
 
 ```text
@@ -926,6 +978,7 @@ Acceptance evidence required:
 | `ARCH-20260920-02` | 2026-09-20 | `Implemented/Verified` | 独立 Project onboarding CAS、只读 Setup Readiness 组合与 Delivery 创建失败关闭 | ADR-0021 | Migration/onboarding/409/原子绑定/权限/OpenAPI/Console 本地合同验证；Deterministic 与真实 Codex local-PR Browser 均到 Candidate/Evidence/onboarding ready 且无 Apply/远端写；正式同 Revision Live Release Gate 未运行 |
 | `ARCH-20260922-01` | 2026-09-22 | `Implemented/Verified` | 对无候选副作用的 Main/Reviewer transient Provider 失败追加一次可观测 Attempt；合同 retry 共享 phase 上限，并以 Workcell 总 deadline 准入 | ADR-0014 修订 | 历史 Snapshot max=1 兼容、新内置 Revision max=2/backoff=1/wall=3600、非硬编码 ordinal、只读 retry、预算不足不产生新 Attempt 与 Release Acceptance 回归已验证；Python 3.12 全量 677 passed/1 skipped；Live fresh 闭环仍单独验收 |
 | `ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY` | 2026-09-23 | `Accepted/Not Implemented` | 内部精确输入资格、覆盖分片、原子聚合 admission、冻结恢复、安全错误 | ADR-0018 修订 | 局部确定性测试；真实 tokenizer/capacity、产品签认语义100%、正式 S0–S3 未完成，不继承 7ff 证据 |
+| `ARCH-20260926-METHOD-STORE` | 2026-09-26 | `Implemented/Verified`（仅本地） | 锁定官方 Method 归档、已验 Lock Bytes 与同 Store EX/SH 锁、pending 批次发布/缺根读侧零写；Release 目标独立锁与 Preview 安全诊断 | ADR-0014、ADR-0020 修订 | 候选提交前本地未提交 diff 阶段的 9 模块 140 passed、Ruff/Mypy/diff check exit0；新 SHA 的 CI、独立安装与正式 Gate 尚未运行 |
 
 ## 14. Plan Architecture Review 与文档对账
 

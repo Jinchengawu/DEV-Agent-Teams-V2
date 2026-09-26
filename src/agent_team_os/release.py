@@ -10,6 +10,7 @@ import re
 import secrets
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -685,31 +686,60 @@ def _prepare_browser_method_packs(project_root: Path, target: Path) -> None:
     if source.is_symlink() or not source.is_dir():
         raise RuntimeError("BROWSER_METHOD_SOURCE_MISSING_OR_SYMLINK")
     store = ContentAddressedMethodPackStore(source)
-    frozen = FrozenMethodPackSet(lock, store).snapshot()
-    files: set[Path] = set()
-    for package in frozen.packages:
-        qualification = str(package["qualification_sha256"])
-        snapshot = store.load_snapshot(qualification)
-        files.add(Path("snapshots") / f"{qualification}.json")
-        object_root = Path("objects/sha256") / snapshot.content_sha256[:2] / snapshot.content_sha256
-        files.update(object_root / item.path for item in snapshot.files)
-    # 只检查 Store 内的组成路径，不因系统 /tmp 等可信祖先别名而误拒。
-    for relative in files:
-        if relative.is_absolute() or ".." in relative.parts:
-            raise RuntimeError("BROWSER_METHOD_PATH_INVALID")
-        current = source
-        for part in relative.parts:
-            current = current / part
-            if current.is_symlink():
-                raise RuntimeError("BROWSER_METHOD_SYMLINK_REJECTED")
-        if not current.is_file():
-            raise RuntimeError("BROWSER_METHOD_FILE_MISSING")
-    target.mkdir(parents=True, exist_ok=False)
+    with store.read_lock():
+        frozen = FrozenMethodPackSet(lock, store)._snapshot_locked()
+        files: set[Path] = set()
+        for package in frozen.packages:
+            qualification = str(package["qualification_sha256"])
+            snapshot = store._load_snapshot_locked(qualification)
+            files.add(Path("snapshots") / f"{qualification}.json")
+            object_root = (
+                Path("objects/sha256") / snapshot.content_sha256[:2] / snapshot.content_sha256
+            )
+            files.update(object_root / item.path for item in snapshot.files)
+        # 源 Store 的共享锁覆盖整组校验和复制，不能逐包解锁。
+        for relative in files:
+            if relative.is_absolute() or ".." in relative.parts:
+                raise RuntimeError("BROWSER_METHOD_PATH_INVALID")
+            current = source
+            for part in relative.parts:
+                current = current / part
+                if current.is_symlink():
+                    raise RuntimeError("BROWSER_METHOD_SYMLINK_REJECTED")
+            if not current.is_file():
+                raise RuntimeError("BROWSER_METHOD_FILE_MISSING")
+        target.mkdir(parents=True, exist_ok=False, mode=0o700)
+        try:
+            target_lock = target / ".install.lock"
+            descriptor = os.open(
+                target_lock,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+            )
+            try:
+                os.fchmod(descriptor, 0o600)
+                created = os.fstat(descriptor)
+                named = target_lock.lstat()
+                source_lock = (source / ".install.lock").lstat()
+                if (
+                    not stat.S_ISREG(created.st_mode)
+                    or created.st_uid != os.getuid()
+                    or stat.S_IMODE(created.st_mode) != 0o600
+                    or (created.st_dev, created.st_ino) != (named.st_dev, named.st_ino)
+                    or (created.st_dev, created.st_ino)
+                    == (source_lock.st_dev, source_lock.st_ino)
+                ):
+                    raise RuntimeError("BROWSER_METHOD_TARGET_LOCK_INVALID")
+            finally:
+                os.close(descriptor)
+            for relative in sorted(files):
+                destination = target / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source / relative, destination, follow_symlinks=False)
+        except BaseException:
+            shutil.rmtree(target)
+            raise
     try:
-        for relative in sorted(files):
-            destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source / relative, destination, follow_symlinks=False)
         copied = FrozenMethodPackSet(lock, ContentAddressedMethodPackStore(target)).snapshot()
         if copied != frozen:
             raise RuntimeError("BROWSER_METHOD_COPY_QUALIFICATION_CHANGED")

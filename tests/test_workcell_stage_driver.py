@@ -95,9 +95,7 @@ def test_legacy_profile_does_not_claim_unqualified_frontend_node_capabilities() 
         "python-unittest-v1", LocalVerificationToolchain()
     )
 
-    assert (
-        workcell_stage_driver._verification_capability_contract("frontend", profile) == ""
-    )
+    assert workcell_stage_driver._verification_capability_contract("frontend", profile) == ""
 
 
 def test_content_addressed_method_runtime_discovers_explicit_codex_auth_reference(
@@ -115,6 +113,24 @@ def test_content_addressed_method_runtime_discovers_explicit_codex_auth_referenc
 
     assert runtime.codex_auth_file == auth_file
     assert credential not in repr(runtime.__dict__)
+
+
+def test_method_runtime_rejects_pending_store_before_overlay(tmp_path: Path) -> None:
+    store = ContentAddressedMethodPackStore(tmp_path / "method-packs")
+    store.root.mkdir(mode=0o700)
+    (store.root / ".install-in-progress").write_text("pending")
+    snapshot = DeliveryMethodSnapshot(
+        snapshot_id="pending-test",
+        qualification_sha256="a" * 64,
+        packages=({"qualification_sha256": "b" * 64},),
+        method_entries={},
+    )
+    with (
+        pytest.raises(ProductError) as error,
+        ContentAddressedMethodRuntime(store).activate(snapshot),
+    ):
+        pass
+    assert error.value.code == "METHOD_PACK_STORE_PENDING"
 
 
 def test_machine_verifier_disables_python_bytecode_writes(

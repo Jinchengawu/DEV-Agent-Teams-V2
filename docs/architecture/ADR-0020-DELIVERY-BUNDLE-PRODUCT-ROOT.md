@@ -56,3 +56,14 @@ clean-room 安装证实 Bundle 无 `.git` 时原有 Build Identity 无法创建�
 - 新构建使用 `agent-team-os-delivery-bundle-v2`；历史 v1 仍可校验归档完整性，但不能启动安装制品 Runtime。组合根在数据库写入前拒绝旧包并给出重新构建提示，不在创建 Delivery 时产生迟到的错误。
 
 测试覆盖无 Git Bundle、源码身份回归、混装/额外代码、资源漂移、dirty/非法身份与内部符号链接。独立安装和最终 Revision 三轨的执行结果见下一阶段实施记录，不由此 ADR 宣称完成。
+
+## 2026-09-26 修订：Method Lock 的已验字节身份
+
+Bundle 完整性校验须在同一次权威 verifier 调用中，以 no-follow 文件描述符读取并校验
+Manifest 原始字节及其 `config/method-packs-v050.json` 条目。返回的 Manifest Hash
+来自实际解析的同一组字节；供 Method 安装消费的 Lock Bytes、大小、SHA-256 和 inode
+必须与该 Manifest 条目一致，不能在校验后重新打开路径并把新内容冒充已验内容。
+安装输出 `ready` 前再次执行完整权威 Bundle 校验，并比较冻结的 Manifest/Lock
+Hash 与 inode；若中途路径替换、内容漂移或其余 Bundle 资源失配，则失败关闭、无
+`ready` 回执。此约束是单次安装的可信快照合同，不使可写文件系统在命令返回后
+永久不可变，也不把 Manifest 升格为来源签名或 Release/Apply 权威。

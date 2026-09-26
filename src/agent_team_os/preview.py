@@ -8,11 +8,13 @@ import json
 import logging
 import os
 import shutil
+import stat
 import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib import import_module
 from pathlib import Path
+from typing import Literal
 
 import uvicorn
 from acwm.config import CodexCLIConfig
@@ -224,20 +226,118 @@ class CodexPreviewReadiness:
         )
 
 
+def _method_store_absence_state(
+    store_root: Path,
+) -> Literal["missing", "proceed", "failed"]:
+    """Classify only an absent or verified empty private Store without creating it."""
+    root = Path(os.path.abspath(store_root.expanduser()))
+    try:
+        before = root.lstat()
+    except FileNotFoundError:
+        ancestor = root.parent
+        missing = [root]
+        while True:
+            try:
+                ancestor_before = ancestor.lstat()
+                break
+            except FileNotFoundError:
+                if ancestor == ancestor.parent:
+                    return "failed"
+                missing.append(ancestor)
+                ancestor = ancestor.parent
+            except OSError:
+                return "failed"
+        try:
+            ContentAddressedMethodPackStore._check_path_components(
+                ancestor, require_private=False
+            )
+            ancestor_after = ancestor.lstat()
+            mode = stat.S_IMODE(ancestor_before.st_mode)
+            writable = (
+                ancestor_before.st_uid == os.getuid() and mode & 0o300 == 0o300
+            ) or (
+                ancestor_before.st_uid == 0
+                and mode & stat.S_ISVTX
+                and mode & 0o003 == 0o003
+            )
+            if (
+                not stat.S_ISDIR(ancestor_before.st_mode)
+                or (ancestor_before.st_dev, ancestor_before.st_ino)
+                != (ancestor_after.st_dev, ancestor_after.st_ino)
+                or not writable
+            ):
+                return "failed"
+            for path in missing:
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    continue
+                return "failed"
+        except (OSError, ProductError):
+            return "failed"
+        return "missing"
+    except OSError:
+        return "failed"
+    if not stat.S_ISDIR(before.st_mode):
+        return "failed"
+    descriptor = -1
+    try:
+        ContentAddressedMethodPackStore._check_path_components(root)
+        if before.st_uid != os.getuid() or stat.S_IMODE(before.st_mode) != 0o700:
+            return "failed"
+        descriptor = os.open(
+            root, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+        )
+        opened = os.fstat(descriptor)
+        entries = os.listdir(descriptor)
+        repeated = os.listdir(descriptor)
+        after = os.fstat(descriptor)
+        named = root.lstat()
+        identity = (before.st_dev, before.st_ino)
+        if (
+            identity != (opened.st_dev, opened.st_ino)
+            or identity != (after.st_dev, after.st_ino)
+            or identity != (named.st_dev, named.st_ino)
+            or (before.st_ctime_ns, before.st_mtime_ns)
+            != (opened.st_ctime_ns, opened.st_mtime_ns)
+            or (opened.st_ctime_ns, opened.st_mtime_ns)
+            != (after.st_ctime_ns, after.st_mtime_ns)
+            or (after.st_ctime_ns, after.st_mtime_ns)
+            != (named.st_ctime_ns, named.st_mtime_ns)
+            or entries != repeated
+        ):
+            return "failed"
+        return "missing" if not entries else "proceed"
+    except (OSError, ProductError):
+        return "failed"
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _inspect_method_pack_store(lock_file: Path, store_root: Path) -> DependencyCheck:
+    install_repair = (
+        "运行 `.venv/bin/python scripts/install_method_packs.py`，"
+        "安装并验证锁定的 BMAD/TEA Package Snapshot。"
+    )
+    absence = _method_store_absence_state(store_root)
+    if absence != "proceed":
+        return DependencyCheck(
+            name="method-packs:bmad-tea-v050",
+            status=absence,
+            repair=install_repair if absence == "missing" else None,
+        )
     try:
         FrozenMethodPackSet(
             lock_file,
             ContentAddressedMethodPackStore(store_root),
         ).snapshot()
     except ProductError as error:
+        missing = error.code == "METHOD_PACK_SNAPSHOT_MISSING"
         return DependencyCheck(
             name="method-packs:bmad-tea-v050",
-            status=("missing" if error.code == "METHOD_PACK_SNAPSHOT_MISSING" else "failed"),
-            repair=(
-                "运行 `.venv/bin/python scripts/install_method_packs.py`，"
-                "安装并验证锁定的 BMAD/TEA Package Snapshot。"
-            ),
+            status="missing" if missing else "failed",
+            repair=install_repair if missing else None,
         )
     return DependencyCheck(
         name="method-packs:bmad-tea-v050",

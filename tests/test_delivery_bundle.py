@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
 
 import pytest
 
+from agent_team_os import delivery_bundle as bundle_module
 from agent_team_os.delivery_bundle import (
     PRODUCT_VERSION,
     BundleBuildError,
     build_delivery_bundle,
     verify_delivery_bundle,
+    verify_delivery_bundle_with_method_lock,
 )
 from agent_team_os.modules.evaluation import load_evaluation_dataset
 
@@ -79,6 +82,64 @@ def test_delivery_bundle_has_stable_allow_list_manifest(tmp_path: Path) -> None:
     assert f"backend/{wheel.name}" in paths
     assert all(not path.startswith((".agent-team-os/", "node_modules/")) for path in paths)
     assert verify_delivery_bundle(result.bundle_root)["status"] == "verified"
+
+
+def test_verified_method_lock_is_captured_from_same_manifest_bytes(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    wheel = _write_delivery_inputs(root)
+    bundle = build_delivery_bundle(
+        project_root=root,
+        output_root=tmp_path / "output",
+        wheel=wheel,
+        git_revision="a" * 40,
+        worktree_clean=True,
+    ).bundle_root
+    verified = verify_delivery_bundle_with_method_lock(bundle)
+    manifest_bytes = (bundle / "delivery-manifest.json").read_bytes()
+    lock_bytes = (bundle / "config/method-packs-v050.json").read_bytes()
+    assert verified.manifest_sha256 == hashlib.sha256(manifest_bytes).hexdigest()
+    assert verified.lock_bytes == lock_bytes
+    assert verified.lock_sha256 == hashlib.sha256(lock_bytes).hexdigest()
+    assert verified.product_revision == "a" * 40
+
+
+def test_verified_method_lock_rejects_tamper_and_in_read_inode_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "source"
+    wheel = _write_delivery_inputs(root)
+    bundle = build_delivery_bundle(
+        project_root=root,
+        output_root=tmp_path / "output",
+        wheel=wheel,
+        git_revision="a" * 40,
+        worktree_clean=True,
+    ).bundle_root
+    lock = bundle / "config/method-packs-v050.json"
+    original = lock.read_bytes()
+    lock.write_bytes(b"changed")
+    with pytest.raises(BundleBuildError, match="SHA-256"):
+        verify_delivery_bundle_with_method_lock(bundle)
+    lock.write_bytes(original)
+
+    original_read = bundle_module.os.read
+    original_inode = lock.stat().st_ino
+    swapped = False
+
+    def swap_after_lock_read(descriptor: int, count: int) -> bytes:
+        nonlocal swapped
+        chunk = original_read(descriptor, count)
+        if not swapped and os.fstat(descriptor).st_ino == original_inode and chunk:
+            replacement = lock.with_suffix(".replacement")
+            replacement.write_bytes(original)
+            os.replace(replacement, lock)
+            swapped = True
+        return chunk
+
+    monkeypatch.setattr(bundle_module.os, "read", swap_after_lock_read)
+    with pytest.raises(BundleBuildError, match="读取期间漂移"):
+        verify_delivery_bundle_with_method_lock(bundle)
+    assert swapped
 
 
 def test_delivery_bundle_fails_closed_for_missing_or_sensitive_inputs(tmp_path: Path) -> None:

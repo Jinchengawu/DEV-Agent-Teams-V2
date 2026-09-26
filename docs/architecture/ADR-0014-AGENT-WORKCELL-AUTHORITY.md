@@ -102,6 +102,52 @@ Evidence。Overlay 清理只移除引用，禁止跟随链接修改或删除凭�
 Codex Attempt 的 Credential Transport，不改变 Provider Binding、Runtime Identity 或 Live Gate
 的证据要求。
 
+## 2026-09-26 修订：Method Pack 来源与 Store 发布边界
+
+两个公共 Method Pack CLI 只从已验 Product Root 的冻结锁接受两条精确官方 npm URL；下载
+Adapter 禁用代理、拒绝重定向与最终 URL 漂移、保持 TLS 证书验证，并限定单包/批次字节与时间。
+网络下载、双 Hash、安全解包、内容及资格计算先在 Store 外完成；官方来源本身不拥有
+Method 资格、Workcell、Release 或 Apply 权威。源码自定义锁仅可形成 `source-qualified`，
+不得冒称 Bundle `ready`。
+
+同一 canonical Store 以常驻锁文件的跨进程共享/排他 `flock` 协调正式读取与批次发布。
+已存在 Store 的构造和正式读者只核验身份与 pending，不补结构或锁文件；缺锁直接拒绝。
+缺根的构造也仅只读核验现存祖先，不创建目录；正式 Reader 对缺根直接拒绝且零写。
+仅安装 Writer 可在已存在的安全父目录下独占创建 owner `0700` 根，再在无 pending
+的预检后建立常驻 owner `0600` 锁，取得排他锁并复检 pending，
+随后先写 pending，才补齐新对象/快照目录。Browser Fixture 由本次独占新建的 owner
+`0700` 目标自行以 `O_EXCL|O_NOFOLLOW` 建独立锁，不复制源锁；源共享锁覆盖复制，
+释放后再持目标共享锁核验，不同时持两 Store 锁。失败只清本次新目标。
+Writer 首建 Store 根须持逐段 no-follow 核验过的父目录 fd，用相对独占 `mkdirat`
+建根并复核父路径与新根 inode/owner/精确 `0700` mode；不得在新根归属确认前
+`fchmod` 修复权限。若权限受 umask 收紧、child-open 后发现替换或非空目录，
+不得把该 inode 记为可清理的本批对象，保留现场并要求单独恢复。若父路径漂移，
+只经同一父 fd 清除在合作同 UID Writer 边界内仍可核验的本批空根，不碰替代父或
+他人根；身份或清理无法证明时失败关闭，不得继续建 lock、pending 或 payload。
+普通 POSIX `mkdirat/openat` 无法证明恶意同 UID 进程瞬时换入另一个空 `0700`
+目录的绝对归属；该对抗模型不在本地保证内，扩大威胁边界须另审平台级原子方案。
+Bundle 安装只消费 ADR-0020 同次校验捕获的 Lock Bytes；源码自定义锁也单次冻结字节。
+配置解析、预验、Store commit、FrozenSet 与回执均使用同一快照，阶段漂移拒绝；
+安装完成前再次权威核验整个 Bundle，不能把多次路径读取的不同内容合并成 `ready`。
+显式 S1 安装以 owner `0700` Data Root 为私有 anchor；源码默认运行即使先创建 owner
+`0755` Data Root，也只在其父链不可由他人写入且新 Store 自身独占创建为 owner
+`0700` 时接受。两模式均逐段 no-follow/inode 复核；既有 `0755` Store、可写/异 UID
+受控父链、链接及替换拒绝，不改权限兜底。可信 root-owned `01777` sticky 临时祖先
+可存在，但不替代 Store 私有 anchor。
+Writer 持排他锁、在任何可见对象/快照写入前创建 pending 标记；已有对象和 Snapshot
+只核验复用，绝不覆盖。新对象以独占创建、inode/Hash 记录；失败只在身份与内容可核时
+回滚本批新项，未知归属、崩溃或清理失败保留 pending 并失败关闭。全部资格与 FrozenSet
+重验通过后才移除 pending 并输出 ready。`install_archive` 公共接口也遵守该合同。
+`load_snapshot`、整组 FrozenSet、Workcell Overlay 冻结和 Release Browser Fixture 源 Store
+复制均在共享锁下检查 pending 与完整组字节。已发布对象不可变、不可被合规 Writer 删除，
+因此 BMAD 长期脚本引用不在 Overlay 生命周期内指向会被回滚的对象。
+Overlay 必须先取得共享锁、检查 pending 并完整验证输入 Snapshot/Object，之后才能在
+Store 根创建临时目录；
+失败关闭不得留下读前可见的临时对象。
+
+该本地 POSIX 切片不宣称 Windows 锁适用、跨机文件系统一致性、断电级持久化或对旧版
+不合作 Writer 的并发兼容；这些情形必须静默旧 Writer、失败关闭或另行审查恢复。
+
 ## 结果
 
 - 四个角色的 Git 边界与 Agent 组织边界一致。

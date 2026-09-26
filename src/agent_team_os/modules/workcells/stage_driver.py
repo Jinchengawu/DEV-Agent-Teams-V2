@@ -119,7 +119,7 @@ class ContentAddressedMethodRuntime:
                     "Delivery Method Snapshot 缺少 Package Qualification Hash。",
                 )
             qualifications.append(qualification)
-        packages = tuple(self.store.load_snapshot(item) for item in qualifications)
+        packages = self.store.load_snapshots(tuple(qualifications))
         available = {entry.method_id for package in packages for entry in package.method_entries}
         if available != set(snapshot.method_entries):
             raise _error(

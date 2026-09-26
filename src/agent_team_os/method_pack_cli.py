@@ -1,71 +1,188 @@
-"""Install the Product Root's pinned Method Packs into an isolated data store."""
+"""Install only fully qualified locked Method Packs into an isolated Store."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import urllib.request
+import stat
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
-from urllib.parse import urlparse
 
+from .delivery_bundle import verify_delivery_bundle_with_method_lock
+from .infrastructure.method_pack_registry import LockedMethodPackArchiveFetcher
 from .modules.extensions import (
     ContentAddressedMethodPackStore,
     FrozenMethodPackSet,
     MethodPackInstall,
 )
 from .product_root import resolve_product_root
+from .readiness import snapshot_delivery_build_identity
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+@dataclass(frozen=True)
+class _SourceLockSnapshot:
+    content: bytes
+    identity: tuple[int, int]
+
+
+def _read_source_lock(path: Path) -> _SourceLockSnapshot:
+    if path.is_symlink():
+        raise RuntimeError("METHOD_PACK_LOCK_INVALID")
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError("METHOD_PACK_LOCK_INVALID")
+        chunks: list[bytes] = []
+        while chunk := os.read(descriptor, 65_536):
+            chunks.append(chunk)
+        after = os.fstat(descriptor)
+        current = path.lstat()
+        if (
+            (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            or (before.st_dev, before.st_ino) != (current.st_dev, current.st_ino)
+        ):
+            raise RuntimeError("METHOD_PACK_LOCK_CHANGED")
+        return _SourceLockSnapshot(b"".join(chunks), (before.st_dev, before.st_ino))
+    finally:
+        os.close(descriptor)
+
+
+def main(argv: Sequence[str] | None = None, *, source_root: Path | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent-team-os-method-packs")
     parser.add_argument("--lock", type=Path)
     parser.add_argument("--store", type=Path)
     arguments = parser.parse_args(argv)
 
-    product_root = resolve_product_root()
-    lock_file = (
-        arguments.lock or product_root / "config" / "method-packs-v050.json"
-    ).resolve()
+    product_root = source_root.resolve() if source_root is not None else resolve_product_root()
+    canonical_lock = product_root / "config" / "method-packs-v050.json"
+    lock_file = arguments.lock or canonical_lock
+    if lock_file.is_symlink() or not lock_file.is_file():
+        raise RuntimeError("METHOD_PACK_LOCK_INVALID")
+    lock_file = Path(os.path.abspath(lock_file.expanduser()))
+    bundle_mode = (product_root / "delivery-manifest.json").is_file()
+    manifest_hash: str | None = None
+    product_revision: str | None = None
+    if bundle_mode:
+        if lock_file != canonical_lock:
+            raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_OVERRIDE_DENIED")
+        verified = verify_delivery_bundle_with_method_lock(product_root)
+        manifest_hash = verified.manifest_sha256
+        frozen_lock = verified.lock_bytes
+        frozen_identity = verified.lock_identity
+        identity = snapshot_delivery_build_identity(product_root)
+        if not identity.product_worktree_clean or identity.framework_dependency_status != "ready":
+            raise RuntimeError("METHOD_PACK_BUILD_IDENTITY_NOT_READY")
+        if identity.product_revision != verified.product_revision:
+            raise RuntimeError("METHOD_PACK_BUILD_IDENTITY_CHANGED")
+        product_revision = identity.product_revision
+    else:
+        source_lock = _read_source_lock(lock_file)
+        frozen_lock = source_lock.content
+        frozen_identity = source_lock.identity
+
+    def assert_lock_stable() -> None:
+        if bundle_mode:
+            latest = verify_delivery_bundle_with_method_lock(product_root)
+            if (
+                latest.manifest_sha256 != manifest_hash
+                or latest.manifest_identity != verified.manifest_identity
+                or latest.lock_bytes != frozen_lock
+                or latest.lock_identity != frozen_identity
+                or latest.product_revision != product_revision
+            ):
+                raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_CHANGED")
+        else:
+            latest_source = _read_source_lock(lock_file)
+            if latest_source.content != frozen_lock or latest_source.identity != frozen_identity:
+                raise RuntimeError("METHOD_PACK_LOCK_CHANGED")
+
+    configuration = json.loads(frozen_lock)
+    raw_packages = configuration.get("packages")
+    if (
+        configuration.get("policy_version") != "method-pack-store-v1"
+        or not isinstance(raw_packages, list)
+        or not raw_packages
+    ):
+        raise RuntimeError("METHOD_PACK_LOCK_PACKAGES_MISSING")
+    if bundle_mode and len(raw_packages) != 2:
+        raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_SET_INVALID")
+
+    explicit_data_root = "AGENT_TEAM_OS_DATA_DIR" in os.environ
     data_root = Path(
         os.environ.get("AGENT_TEAM_OS_DATA_DIR", str(product_root / ".agent-team-os"))
-    ).resolve()
-    store_root = (arguments.store or data_root / "method-packs").resolve()
-    configuration = json.loads(lock_file.read_text(encoding="utf-8"))
-    raw_packages = configuration.get("packages")
-    if not isinstance(raw_packages, list) or not raw_packages:
-        raise RuntimeError("METHOD_PACK_LOCK_PACKAGES_MISSING")
+    ).expanduser()
+    data_root = Path(os.path.abspath(data_root))
+    if not data_root.exists() and not data_root.is_symlink():
+        ContentAddressedMethodPackStore._check_path_components(
+            data_root.parent, require_private=False
+        )
+        parent_before = data_root.parent.lstat()
+        data_root.mkdir(mode=0o700)
+        ContentAddressedMethodPackStore._check_path_components(data_root, require_private=False)
+        parent_after = data_root.parent.lstat()
+        if (parent_before.st_dev, parent_before.st_ino) != (
+            parent_after.st_dev,
+            parent_after.st_ino,
+        ):
+            raise RuntimeError("METHOD_PACK_DATA_ROOT_REPLACED")
+    ContentAddressedMethodPackStore._check_path_components(data_root, require_private=False)
+    if (
+        data_root.is_symlink()
+        or data_root.stat().st_uid != os.getuid()
+        or data_root.stat().st_mode & (0o077 if explicit_data_root else 0o022)
+    ):
+        raise RuntimeError("METHOD_PACK_DATA_ROOT_UNSAFE")
+    store_root = Path(os.path.abspath((arguments.store or data_root / "method-packs").expanduser()))
+    anchor = (
+        data_root
+        if store_root.is_relative_to(data_root) and data_root.stat().st_mode & 0o077 == 0
+        else None
+    )
 
-    store = ContentAddressedMethodPackStore(store_root)
-    installed: list[dict[str, object]] = []
+    fetcher = LockedMethodPackArchiveFetcher()
+    installations: list[tuple[MethodPackInstall, bytes, str, str]] = []
+    assert_lock_stable()
     for raw in raw_packages:
         if not isinstance(raw, dict) or not isinstance(raw.get("install"), dict):
             raise RuntimeError("METHOD_PACK_LOCK_PACKAGE_INVALID")
         request = MethodPackInstall.model_validate(raw["install"])
-        archive = _download(request)
-        snapshot = store.install_archive(request, archive)
-        if snapshot.content_sha256 != raw.get("expected_content_sha256"):
-            raise RuntimeError("METHOD_PACK_CONTENT_HASH_DRIFT")
-        if snapshot.qualification_sha256 != raw.get("expected_qualification_sha256"):
-            raise RuntimeError("METHOD_PACK_QUALIFICATION_HASH_DRIFT")
-        installed.append(
-            {
-                "package_name": snapshot.package_name,
-                "package_version": snapshot.package_version,
-                "archive_sha256": snapshot.archive_sha256,
-                "content_sha256": snapshot.content_sha256,
-                "qualification_sha256": snapshot.qualification_sha256,
-                "store_uri": snapshot.store_uri,
-            }
-        )
+        content = raw.get("expected_content_sha256")
+        qualification = raw.get("expected_qualification_sha256")
+        if not isinstance(content, str) or not isinstance(qualification, str):
+            raise RuntimeError("METHOD_PACK_LOCK_QUALIFICATION_MISSING")
+        archive = fetcher.fetch(request, request.tarball_uri)
+        installations.append((request, archive, content, qualification))
 
-    frozen_set = FrozenMethodPackSet(lock_file, store).snapshot()
+    assert_lock_stable()
+    store = ContentAddressedMethodPackStore(store_root, security_anchor=anchor)
+    snapshots = store.install_locked_batch(tuple(installations), lock_file, lock_bytes=frozen_lock)
+    frozen_set = FrozenMethodPackSet(lock_file, store, lock_bytes=frozen_lock).snapshot()
+    assert_lock_stable()
+    installed = [
+        {
+            "package_name": snapshot.package_name,
+            "package_version": snapshot.package_version,
+            "official_url": snapshot.tarball_uri,
+            "archive_sha256": snapshot.archive_sha256,
+            "content_sha256": snapshot.content_sha256,
+            "qualification_sha256": snapshot.qualification_sha256,
+            "store_uri": snapshot.store_uri,
+        }
+        for snapshot in snapshots
+    ]
     print(
         json.dumps(
             {
-                "status": "ready",
+                "status": "ready" if bundle_mode else "source-qualified",
+                "product_revision": product_revision,
+                "bundle_manifest_sha256": manifest_hash,
+                "lock_sha256": hashlib.sha256(frozen_lock).hexdigest(),
+                "transport": {"proxy": "disabled", "redirects": 0},
                 "store": str(store_root),
                 "method_pack_set_sha256": frozen_set.qualification_sha256,
                 "method_entries": sorted(frozen_set.method_entries),
@@ -76,16 +193,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     )
     return 0
-
-
-def _download(request: MethodPackInstall) -> bytes:
-    with urllib.request.urlopen(request.tarball_uri, timeout=60) as response:  # noqa: S310
-        if urlparse(response.geturl()).scheme != "https":
-            raise RuntimeError("METHOD_PACK_DOWNLOAD_REDIRECT_NOT_HTTPS")
-        archive = cast(bytes, response.read(request.max_unpacked_bytes + 1))
-    if len(archive) > request.max_unpacked_bytes:
-        raise RuntimeError("METHOD_PACK_DOWNLOAD_SIZE_LIMIT_EXCEEDED")
-    return archive
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@ import base64
 import hashlib
 import io
 import json
+import stat
 import tarfile
+import threading
 
 import pytest
 
@@ -20,6 +22,7 @@ from agent_team_os.shared.errors import ProductError
 def package(tmp_path, monkeypatch):
     root = tmp_path / "product"
     store_root = root / ".agent-team-os/method-packs"
+    store_root.parent.mkdir(parents=True, mode=0o700)
     store = ContentAddressedMethodPackStore(store_root)
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w:gz") as archive:
@@ -65,6 +68,15 @@ def test_fixture_copies_only_locked_files_and_verifies(package, tmp_path):
     (source / "unrelated-secret").write_text("not copied")
     target = tmp_path / "browser/method-packs"
     release._prepare_browser_method_packs(root, target)
+    source_lock = (source / ".install.lock").lstat()
+    target_lock = (target / ".install.lock").lstat()
+    assert stat.S_ISREG(target_lock.st_mode)
+    assert stat.S_IMODE(target_lock.st_mode) == 0o600
+    assert not (target / ".install.lock").is_symlink()
+    assert (target_lock.st_dev, target_lock.st_ino) != (
+        source_lock.st_dev,
+        source_lock.st_ino,
+    )
     assert not (target / "unrelated-secret").exists()
     assert FrozenMethodPackSet(lock, ContentAddressedMethodPackStore(target)).snapshot() == (
         FrozenMethodPackSet(lock, ContentAddressedMethodPackStore(source)).snapshot()
@@ -123,3 +135,115 @@ def test_copy_failure_cleans_only_owned_destination(package, tmp_path, monkeypat
         release._prepare_browser_method_packs(root, target)
     assert not target.exists()
     assert source.is_dir()
+
+
+def test_pending_source_blocks_browser_copy(package, tmp_path):
+    root, source, _, _ = package
+    (source / ".install-in-progress").write_text("pending")
+    target = tmp_path / "browser/method-packs"
+    with pytest.raises(ProductError) as error:
+        release._prepare_browser_method_packs(root, target)
+    assert error.value.code == "METHOD_PACK_STORE_PENDING"
+    assert not target.exists()
+
+
+def test_source_removed_after_check_is_not_recreated_by_reader(
+    package, tmp_path, monkeypatch
+):
+    root, source, _, _ = package
+    target = tmp_path / "browser/method-packs"
+    moved = source.with_name("method-packs-moved")
+    original = release.ContentAddressedMethodPackStore
+
+    def remove_before_constructor(path):
+        if path == source:
+            source.rename(moved)
+        return original(path)
+
+    monkeypatch.setattr(release, "ContentAddressedMethodPackStore", remove_before_constructor)
+    with pytest.raises(ProductError) as error:
+        release._prepare_browser_method_packs(root, target)
+    assert error.value.code == "METHOD_PACK_STORE_MISSING"
+    assert not source.exists()
+    assert moved.is_dir()
+    assert not target.exists()
+
+
+def test_existing_browser_target_is_never_overwritten(package, tmp_path):
+    root, _, _, _ = package
+    target = tmp_path / "browser/method-packs"
+    target.mkdir(parents=True)
+    marker = target / "owned-by-another-run"
+    marker.write_text("keep")
+    with pytest.raises(FileExistsError):
+        release._prepare_browser_method_packs(root, target)
+    assert marker.read_text() == "keep"
+
+
+def test_target_validation_holds_no_source_lock(package, tmp_path, monkeypatch):
+    root, source, _, _ = package
+    original = release.FrozenMethodPackSet.snapshot
+
+    def validate_without_source_lock(self):
+        if self.store.root != source:
+            acquired = threading.Event()
+
+            def writer():
+                with ContentAddressedMethodPackStore(source)._lock(exclusive=True):
+                    acquired.set()
+
+            thread = threading.Thread(target=writer)
+            thread.start()
+            assert acquired.wait(1), "目标校验期间仍持有源 Store 共享锁"
+            thread.join(timeout=1)
+        return original(self)
+
+    monkeypatch.setattr(release.FrozenMethodPackSet, "snapshot", validate_without_source_lock)
+    release._prepare_browser_method_packs(root, tmp_path / "browser/method-packs")
+
+
+def test_failed_target_validation_removes_only_new_target(package, tmp_path, monkeypatch):
+    root, source, _, _ = package
+    source_lock = (source / ".install.lock").lstat()
+    original = release.FrozenMethodPackSet.snapshot
+
+    def reject_target(self):
+        if self.store.root != source:
+            raise RuntimeError("injected-target-validation-failure")
+        return original(self)
+
+    monkeypatch.setattr(release.FrozenMethodPackSet, "snapshot", reject_target)
+    target = tmp_path / "browser/method-packs"
+    with pytest.raises(RuntimeError, match="injected-target-validation-failure"):
+        release._prepare_browser_method_packs(root, target)
+    assert not target.exists()
+    assert (source / ".install.lock").lstat().st_ino == source_lock.st_ino
+    assert ContentAddressedMethodPackStore(source).root == source
+
+
+def test_browser_copy_keeps_source_shared_lock_for_the_whole_copy(package, tmp_path, monkeypatch):
+    root, source, _, _ = package
+    store = ContentAddressedMethodPackStore(source)
+    attempted = threading.Event()
+    acquired = threading.Event()
+    threads = []
+    original = release.shutil.copyfile
+
+    def attempt_writer():
+        attempted.set()
+        with store._lock(exclusive=True):  # noqa: SLF001
+            acquired.set()
+
+    def copy_while_writer_waits(*args, **kwargs):
+        if not threads:
+            thread = threading.Thread(target=attempt_writer)
+            thread.start()
+            threads.append(thread)
+            assert attempted.wait(1)
+            assert not acquired.wait(0.05)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(release.shutil, "copyfile", copy_while_writer_waits)
+    release._prepare_browser_method_packs(root, tmp_path / "browser/method-packs")
+    threads[0].join(timeout=2)
+    assert acquired.is_set()

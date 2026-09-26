@@ -57,6 +57,42 @@ AGENT_TEAM_OS_DATA_DIR=<独立临时数据目录> \
 agent-team-os-method-packs
 ```
 
+此入口只接受 Bundle 锁中的两条精确 `registry.npmjs.org` HTTPS 归档；禁代理、禁跳转、
+验证 SHA-256/SRI 与 content/qualification 后才在同一 Store 排他锁内发布两包。
+正式读侧取共享锁，看到 `.install-in-progress` 必须停止；崩溃残留不得自行删除、
+复用旧缓存或改用镜像，应保留现场并另行审批恢复。
+既有私有 Store 的构造与读取不会自动补 `objects/sha256` 或 `.install.lock`；缺锁、
+缺对象结构或 pending 均失败关闭且无读前写入。只有 Writer 在无 pending 的预检后
+建立常驻 owner `0600` 锁，持排他锁并先标 pending，才允许发布新结构。
+缺根 Store 的构造、Preview/Gate App 构造与正式 Reader 也不创建目录；Reader 缺根
+直接失败关闭。仅安装 Writer 可在已存在的安全父目录下独占创建 owner `0700` 根，
+缺父目录时停止，不递归补 Data Root。
+首次建根时父目录 inode 漂移会失败关闭；只可清理经同一父目录 fd 核实仍属本批的
+空根。若身份或清理不确定，保留残余现场并申请独立恢复，禁止继续建锁、pending、
+对象或重试另一来源。child-open 后必须核 owner、精确 `0700` mode 与空目录；
+不得用 `fchmod` 修复归属未证实的新根。受 umask 收紧、替换或非空目录时保留现场并
+报 `METHOD_PACK_STORE_RECOVERY_REQUIRED`。本地方案依赖合作同 UID Writer；恶意
+同 UID 瞬时换入空 `0700` 目录的绝对防护未获证明，需另审平台级原子方案。
+Release Browser Fixture 的新目标由创建者独占建 owner `0700` 根与自己的 owner
+`0600` 锁；不复制源锁，释放源共享锁后才取目标共享锁做资格复核。复制或复核失败
+只清本次新目标，既有源 Store 不变。
+Preview readiness 仅把安全地确认不存在或 owner `0700` 且全空的私有 Store、以及已有锁但
+缺冻结 Snapshot 的情况列为 `missing` 并给安装指引；非空缺锁、pending、链接、权限或
+身份不确定状态列为 `failed`，不提示自动重装，也不为检查而创建 Store。
+Data Root 应为本次新建的当前用户私有 `0700` 目录；既有非私有目录不静默修改权限。
+CLI `status=ready`
+仅表示当前锁定 Method Set 的本地资格；源码脚本/自定义锁只能得到
+`source-qualified`，均不能替代独立安装、Browser、Deterministic 或 Live Gate。
+源码默认运行可能先有 owner `0755` Data Root；仅当父链同 UID、不可他人写且 Store
+自身以 owner `0700` 独占新建时，才视为私有 anchor。显式 S1 安装仍必须使用新的
+owner `0700` Data Root；既有 `0755` Store、链接、可写/异 UID 父链或 inode 漂移
+直接停止，不通过 `chmod` 或旧缓存修复。
+回执仅含 Product/Manifest/Lock、官方 URL、禁代理/跳转与归档/内容/资格 Hash，
+不得包含凭据、归档正文或秘密请求头。
+Method 安装在配置解析、下载、发布、FrozenSet 和回执间使用同一已验 Lock 字节；
+`ready` 前再次完整验证 Bundle 并比较 Manifest/Lock 身份。中途换锁、同字节替换 inode
+或任何 Bundle 文件漂移均无成功回执；已完整发布但未获 `ready` 的对象不等于 S1 验收。
+
 ## Formal Live 交接
 
 `scripts/check_delivery_handoff.py` 只关联已有原生报告。`reference_check=consistent` 表示三轨引用
