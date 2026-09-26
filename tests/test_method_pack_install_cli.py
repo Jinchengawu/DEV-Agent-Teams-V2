@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -19,7 +20,12 @@ from agent_team_os.modules.extensions import (
     MethodPackInstall,
 )
 from agent_team_os.shared.errors import ProductError
-from scripts import install_method_packs
+
+_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "install_method_packs.py"
+_spec = importlib.util.spec_from_file_location("install_method_packs_script", _SCRIPT_PATH)
+assert _spec is not None and _spec.loader is not None
+install_method_packs = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(install_method_packs)
 
 
 def _fixture_package(
@@ -117,6 +123,7 @@ def test_second_pack_drift_writes_no_payload(tmp_path, monkeypatch, capsys):
 
 def test_legacy_script_entry_delegates_to_common_cli(monkeypatch):
     calls = []
+    assert Path(install_method_packs.__file__).resolve() == _SCRIPT_PATH
 
     def fake_main(*, source_root: Path) -> int:
         calls.append(source_root)
