@@ -61,6 +61,12 @@ agent-team-os-method-packs
 验证 SHA-256/SRI 与 content/qualification 后才在同一 Store 排他锁内发布两包。
 正式读侧取共享锁，看到 `.install-in-progress` 必须停止；崩溃残留不得自行删除、
 复用旧缓存或改用镜像，应保留现场并另行审批恢复。
+新对象目录的原子提升必须拒绝先占目标：macOS 使用 `renamex_np(RENAME_EXCL)`，
+Linux 使用 `renameat2(RENAME_NOREPLACE)`，且仅在当前本地文件系统实际支持时可用。
+缺 libc 符号、内核/文件系统不支持、跨挂载或目标先占均须失败关闭；不得回退到
+普通 `rename`、`replace`、先查再改或目录复制。目标/本批 staging 归属不确定时
+保留 pending，禁止自动清理、重试另一来源或给出 `ready`。Linux 原生支持须由
+同 SHA 的 Linux CI 正反测试确认；macOS 本地测试或 fake libc 参数断言不替代。
 既有私有 Store 的构造与读取不会自动补 `objects/sha256` 或 `.install.lock`；缺锁、
 缺对象结构或 pending 均失败关闭且无读前写入。只有 Writer 在无 pending 的预检后
 建立常驻 owner `0600` 锁，持排他锁并先标 pending，才允许发布新结构。

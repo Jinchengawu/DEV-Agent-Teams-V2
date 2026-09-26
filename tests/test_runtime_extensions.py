@@ -1,4 +1,5 @@
 import base64
+import errno
 import hashlib
 import io
 import os
@@ -10,6 +11,7 @@ import tarfile
 import tempfile
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -482,6 +484,107 @@ def test_no_replace_race_never_overwrites_or_deletes_foreign_target(
     assert error.value.code == "METHOD_PACK_STORE_PENDING"
 
 
+@pytest.mark.parametrize("target_kind", ("empty", "nonempty", "symlink"))
+def test_native_directory_promotion_never_replaces_an_occupied_target(
+    tmp_path: Path, target_kind: str
+) -> None:
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (staging / "payload").write_bytes(b"new")
+    target = tmp_path / "target"
+    if target_kind == "symlink":
+        foreign = tmp_path / "foreign"
+        foreign.mkdir()
+        (foreign / "payload").write_bytes(b"foreign")
+        target.symlink_to(foreign, target_is_directory=True)
+    else:
+        target.mkdir()
+        if target_kind == "nonempty":
+            (target / "payload").write_bytes(b"foreign")
+    target_inode = target.lstat().st_ino
+    source_inode = staging.stat().st_ino
+    with pytest.raises(ProductError):
+        method_pack_module._promote_directory_no_replace(staging, target)  # noqa: SLF001
+    assert target.lstat().st_ino == target_inode
+    assert target.is_symlink() == (target_kind == "symlink")
+    if target_kind == "empty":
+        assert not list(target.iterdir())
+    else:
+        assert (target / "payload").read_bytes() == b"foreign"
+    assert staging.stat().st_ino == source_inode
+    assert (staging / "payload").read_bytes() == b"new"
+
+
+def test_linux_directory_promotion_uses_noreplace_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[int, bytes, int, bytes, int]] = []
+
+    class FakeRenameAt2:
+        argtypes = None
+        restype = None
+
+        def __call__(self, *arguments):
+            calls.append(arguments)
+            return 0
+
+    rename = FakeRenameAt2()
+    monkeypatch.setattr(method_pack_module, "sys", SimpleNamespace(platform="linux"), raising=False)
+    monkeypatch.setattr(
+        method_pack_module.ctypes,
+        "CDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(renameat2=rename),
+    )
+    staging, target = tmp_path / "staging", tmp_path / "target"
+    method_pack_module._promote_directory_no_replace(staging, target)  # noqa: SLF001
+    assert calls == [(-100, os.fsencode(staging), -100, os.fsencode(target), 1)]
+    assert len(rename.argtypes) == 5
+    assert rename.restype is method_pack_module.ctypes.c_int
+
+
+@pytest.mark.parametrize(
+    "unsupported_errno", (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP, errno.EXDEV)
+)
+def test_linux_directory_promotion_without_supported_flag_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unsupported_errno: int
+) -> None:
+    class FakeRenameAt2:
+        argtypes = None
+        restype = None
+
+        def __call__(self, *_arguments):
+            return -1
+
+    monkeypatch.setattr(method_pack_module, "sys", SimpleNamespace(platform="linux"), raising=False)
+    monkeypatch.setattr(
+        method_pack_module.ctypes,
+        "CDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(renameat2=FakeRenameAt2()),
+    )
+    monkeypatch.setattr(method_pack_module.ctypes, "get_errno", lambda: unsupported_errno)
+    with pytest.raises(ProductError) as error:
+        method_pack_module._promote_directory_no_replace(  # noqa: SLF001
+            tmp_path / "staging", tmp_path / "target"
+        )
+    assert error.value.code == "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED"
+
+
+def test_linux_directory_promotion_without_symbol_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(method_pack_module, "sys", SimpleNamespace(platform="linux"), raising=False)
+    monkeypatch.setattr(
+        method_pack_module.ctypes,
+        "CDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    with pytest.raises(ProductError) as error:
+        method_pack_module._promote_directory_no_replace(  # noqa: SLF001
+            tmp_path / "staging", tmp_path / "target"
+        )
+    assert error.value.code == "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED"
+
+
 def test_snapshot_link_failure_rolls_back_only_new_payload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -786,7 +889,20 @@ def test_first_root_cleanup_uncertain_requires_manual_recovery(
 
 
 def test_root_owned_sticky_tmp_ancestor_allows_private_store() -> None:
-    with tempfile.TemporaryDirectory(prefix="atos-method-lock-", dir="/private/tmp") as root:
+    candidates = (Path("/private/tmp"), Path("/tmp"))
+    sticky_parent = next(
+        (
+            candidate
+            for candidate in candidates
+            if not candidate.is_symlink()
+            and candidate.is_dir()
+            and candidate.stat().st_uid == 0
+            and candidate.stat().st_mode & 0o7777 == 0o1777
+        ),
+        None,
+    )
+    assert sticky_parent is not None, "没有可验证的 root-owned 01777 临时祖先"
+    with tempfile.TemporaryDirectory(prefix="atos-method-lock-", dir=sticky_parent) as root:
         store = ContentAddressedMethodPackStore(Path(root) / "store")
         assert not store.root.exists()
         request, archive = _simple_method_pack("writer")

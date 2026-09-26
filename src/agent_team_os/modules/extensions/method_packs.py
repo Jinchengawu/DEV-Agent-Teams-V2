@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import ctypes
+import errno
 import fcntl
 import hashlib
 import hmac
@@ -11,6 +12,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import tarfile
 import tempfile
 import threading
@@ -1165,18 +1167,47 @@ def _safe_relative_path(value: str) -> str:
 
 
 def _promote_directory_no_replace(staging: Path, target: Path) -> None:
-    """macOS POSIX same-volume atomic rename that refuses an existing target."""
+    """使用平台原生原子重命名，绝不覆盖既有目标。"""
     library = ctypes.CDLL(None, use_errno=True)
-    rename = getattr(library, "renamex_np", None)
-    if rename is None:
+    if sys.platform == "darwin":
+        rename = getattr(library, "renamex_np", None)
+        if rename is None:
+            raise _method_pack_error(
+                "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED",
+                "当前平台缺少不覆盖目标的原子目录提升原语。",
+            )
+        rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rename.restype = ctypes.c_int
+        result = rename(os.fsencode(staging), os.fsencode(target), 0x00000004)
+    elif sys.platform == "linux":
+        rename = getattr(library, "renameat2", None)
+        if rename is None:
+            raise _method_pack_error(
+                "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED",
+                "当前平台缺少不覆盖目标的原子目录提升原语。",
+            )
+        rename.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename.restype = ctypes.c_int
+        # 绝对路径使 AT_FDCWD 不参与解析；Linux RENAME_NOREPLACE 的标志值为 1。
+        result = rename(-100, os.fsencode(staging), -100, os.fsencode(target), 1)
+    else:
         raise _method_pack_error(
             "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED",
             "当前平台缺少不覆盖目标的原子目录提升原语。",
         )
-    rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
-    rename.restype = ctypes.c_int
-    if rename(os.fsencode(staging), os.fsencode(target), 0x00000004) != 0:
+    if result != 0:
         error = ctypes.get_errno()
+        if error in {errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP, errno.EXDEV}:
+            raise _method_pack_error(
+                "METHOD_PACK_ATOMIC_PROMOTION_UNSUPPORTED",
+                f"当前平台或文件系统不支持不覆盖目标的原子目录提升（errno={error}）。",
+            )
         raise _method_pack_error(
             "METHOD_PACK_ATOMIC_PROMOTION_FAILED",
             f"Method Pack 对象原子提升失败（errno={error}）。",

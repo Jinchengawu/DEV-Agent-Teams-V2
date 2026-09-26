@@ -148,6 +148,21 @@ Store 根创建临时目录；
 该本地 POSIX 切片不宣称 Windows 锁适用、跨机文件系统一致性、断电级持久化或对旧版
 不合作 Writer 的并发兼容；这些情形必须静默旧 Writer、失败关闭或另行审查恢复。
 
+### 2026-09-26 平台原子提升补充
+
+Store 对象只有在完整预验后才从本批 staging 原子提升到内容地址目标。macOS 使用
+`renamex_np(RENAME_EXCL)`；Linux 只使用 libc `renameat2(RENAME_NOREPLACE)`。
+二者均不得覆盖先占目标；普通 `rename`/`replace`、先查目标再重命名或目录复制
+都不是可接受的回退。Linux 若缺符号、内核或底层本地文件系统不支持该 flag，
+或遇到跨挂载 `EXDEV`，须失败关闭；目标碰撞不能删除对方对象。失败后的本批
+staging/目标仍按 inode、Hash 和 pending 合同核验归属，无法确定时保留 pending
+并申请独立恢复，不改变既有旧对象、Snapshot 和正式读侧资格。
+
+该补充仅扩展本地 macOS/Linux 的原语实现，不声称任意 Linux 文件系统均可用；
+NFS/跨机、Windows、恶意同 UID 瞬时替换与断电级持久化仍在本 ADR 既有边界外。
+macOS fake Linux libc 测试只能证明分派和参数，Linux 能力必须以新 SHA 的
+原生 runner/文件系统正反测试确认；正式 S1/Release 另验。
+
 ## 结果
 
 - 四个角色的 Git 边界与 Agent 组织边界一致。
