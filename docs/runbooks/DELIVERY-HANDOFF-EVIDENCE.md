@@ -1,5 +1,28 @@
 # 四仓 R2 交接证据索引
 
+## B0 CI 静态 Bundle 审计候选（无 Artifact 上传）
+
+B0 的当前变更集只在 CI `quality` job 中接入同次 JUnit、既有 Builder 和静态审计；
+Bundle 与脱敏回执只留在 runner 临时目录，不新增 Artifact 上传。此接线尚无远端 CI 运行证据，
+也不是 S1 独立安装、可复现构建、Browser/Deterministic/Live Gate 或 Release/Apply。
+当前 CI 没有 B0 Bundle 上传步骤；
+不得把此前成功 CI、本机 wheel、direct Vite 诊断 dist 或本节计划当作已留存的同 SHA 制品。
+未来若另获授权，必须先核公开仓库及 Artifact 可见性、Actions/存储额度、三天保留期、
+一次运行零新增费用、上传 action 权限和归档 digest 语义；任何一项未知即停止外部阶段。
+
+拟议审计先消费现有 Bundle Verifier 的 Manifest↔实际路径/size/SHA、Product Root 与链接
+完整性结果，再施加有限的路径类别、容量、ZIP 成员与具体凭据值/格式扫描。它不重复或证明
+Builder 的完整 allow-list，也不能证明“绝无秘密”。Manifest 顶层最多 200 项、wheel ZIP
+成员最多 400 项，非 wheel 文件加 wheel 展开成员合计最多 16 MiB，单件最多 8 MiB；
+拒绝路径逃逸、链接、嵌套归档及未知二进制 wheel 成员。普通 `token` 或
+`Authorization` 字段名不是凭据值。CI 必须用同次测试的测试 ID 和跳过原因确认唯一预期
+Live Codex 跳过项；旧 CI 的一个静态 skip 候选不是该次日志确证。
+
+未来上传归档的 Artifact digest 与 Bundle 内 `delivery-manifest.json` SHA-256 是不同身份，
+独立下载的 digest warning 或任何文件复核不一致均须硬拒。`uv build` 维持既有隔离方法，
+Hatchling 与传递构建依赖来源暂记 `Unknown`，不得宣称完整可复现。审计失败、CI 失败或
+资格不明时不得上传；上传、下载、提交和推送均须另行明确授权。
+
 ## v0.5.1 Local Evaluation Delivery Candidate
 
 交接前先在已构建 Console 的同一 Revision 上构建 Python 制品与 Delivery Bundle：

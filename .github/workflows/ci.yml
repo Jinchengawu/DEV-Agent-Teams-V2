@@ -52,7 +52,7 @@ jobs:
       - name: Mypy
         run: uv run mypy
       - name: Pytest
-        run: uv run pytest -q
+        run: uv run pytest -q --junitxml="$RUNNER_TEMP/agent-team-os-pytest.xml"
       - name: Build Python package
         run: uv build
       - name: Verify generated OpenAPI contract
@@ -65,3 +65,38 @@ jobs:
         run: pnpm --dir console test
       - name: Build console
         run: pnpm --dir console build
+      - name: Audit CI static delivery bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          junit="$RUNNER_TEMP/agent-team-os-pytest.xml"
+          bundle_parent="$RUNNER_TEMP/agent-team-os-ci-bundle"
+          receipt="$RUNNER_TEMP/agent-team-os-b0-audit-receipt.json"
+          [[ -f "$junit" && ! -L "$junit" ]]
+          [[ ! -e "$bundle_parent" && ! -L "$bundle_parent" ]]
+          [[ ! -e "$receipt" && ! -L "$receipt" ]]
+          shopt -s nullglob
+          wheels=(dist/dev_agent_teams_v2-*.whl)
+          sdists=(dist/dev_agent_teams_v2-*.tar.gz)
+          [[ ${#wheels[@]} -eq 1 && ${#sdists[@]} -eq 1 ]]
+          [[ -f "${wheels[0]}" && ! -L "${wheels[0]}" ]]
+          [[ -f "${sdists[0]}" && ! -L "${sdists[0]}" ]]
+          revision="$(git rev-parse --verify HEAD)"
+          if ! uv run --no-sync python scripts/build_delivery_bundle.py \
+            --project-root "$PWD" \
+            --output-root "$bundle_parent" \
+            --wheel "${wheels[0]}" \
+            --git-revision "$revision" >/dev/null 2>&1; then
+            printf '%s\n' 'b0_builder=failed'
+            exit 1
+          fi
+          bundles=("$bundle_parent"/agent-team-os-*)
+          [[ ${#bundles[@]} -eq 1 && -d "${bundles[0]}" && ! -L "${bundles[0]}" ]]
+          if ! uv run --no-sync python scripts/audit_ci_bundle_artifact.py "${bundles[0]}" \
+            --project-root "$PWD" \
+            --pytest-junit "$RUNNER_TEMP/agent-team-os-pytest.xml" \
+            --receipt "$receipt" \
+            --expected-revision "$revision" 2>/dev/null; then
+            printf '%s\n' 'b0_audit=failed'
+            exit 1
+          fi
