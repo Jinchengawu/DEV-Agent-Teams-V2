@@ -96,8 +96,15 @@ owner `0700` Data Root；既有 `0755` Store、链接、可写/异 UID 父链或
 回执仅含 Product/Manifest/Lock、官方 URL、禁代理/跳转与归档/内容/资格 Hash，
 不得包含凭据、归档正文或秘密请求头。
 Method 安装在配置解析、下载、发布、FrozenSet 和回执间使用同一已验 Lock 字节；
-`ready` 前再次完整验证 Bundle 并比较 Manifest/Lock 身份。中途换锁、同字节替换 inode
-或任何 Bundle 文件漂移均无成功回执；已完整发布但未获 `ready` 的对象不等于 S1 验收。
+`ready` 前再次完整验证 Bundle 并比较 Manifest/Lock 身份。检查点可观察的中途换锁、
+同字节替换 inode 或任一 Bundle 文件在权威重验时失配均无成功回执；已完整发布但
+未获 `ready` 的对象不等于 S1 验收。
+本次安装须从同次权威校验起持有 Bundle Manifest/Lock 或 source Lock 的 no-follow
+fd 及受核父目录身份至结束，异常必须关闭；各阶段核 fd/路径/冻结字节，防止普通
+双替换造成 inode 复用 ABA。进入此路径前保证 owner-private 受控根、合作 Writer
+停写；source 自定义锁仍不是 Bundle-ready。fd pin 与检查点不证明在仍可写的目录中
+路径每一瞬连续；恶意同 UID 写者若在威胁范围内，停止并先取得另审的 OS 强制
+写隔离，不可拿本地焦点测试、CI 或最终 Hash 冒充该保证。
 
 ## Formal Live 交接
 

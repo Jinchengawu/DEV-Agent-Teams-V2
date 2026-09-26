@@ -60,6 +60,99 @@ class VerifiedBundleMethodLock:
     lock_identity: tuple[int, int]
 
 
+class PinnedRegularFile:
+    """在单次安装期间持有已验普通文件的原 inode。"""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(os.path.abspath(path))
+        self._parent_fd = -1
+        self._file_fd = -1
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        try:
+            self._parent_fd = os.open(
+                self.path.parent, flags | getattr(os, "O_DIRECTORY", 0)
+            )
+            self._parent_stat = os.fstat(self._parent_fd)
+            if not stat.S_ISDIR(self._parent_stat.st_mode):
+                raise BundleBuildError("已验文件父目录类型非法。")
+            self._file_fd = os.open(self.path.name, flags, dir_fd=self._parent_fd)
+            before = os.fstat(self._file_fd)
+            if not stat.S_ISREG(before.st_mode):
+                raise BundleBuildError("已验文件类型非法。")
+            self.content = self._read_fd()
+            self._file_stat = os.fstat(self._file_fd)
+            if self._signature(before) != self._signature(self._file_stat):
+                raise BundleBuildError("已验文件读取期间漂移。")
+            self.assert_stable()
+        except BaseException:
+            self.close()
+            raise
+
+    @staticmethod
+    def _signature(metadata: os.stat_result) -> tuple[int, int, int, int, int, int]:
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+            metadata.st_mode,
+        )
+
+    @property
+    def identity(self) -> tuple[int, int]:
+        return self._file_stat.st_dev, self._file_stat.st_ino
+
+    def _read_fd(self) -> bytes:
+        chunks: list[bytes] = []
+        offset = 0
+        while chunk := os.pread(self._file_fd, 65_536, offset):
+            chunks.append(chunk)
+            offset += len(chunk)
+        return b"".join(chunks)
+
+    def assert_stable(self) -> None:
+        """拒绝路径不再指向原 inode 或原文件内容发生漂移。"""
+        try:
+            parent = self.path.parent.lstat()
+            file_at_path = self.path.lstat()
+            file_at_parent = os.stat(
+                self.path.name, dir_fd=self._parent_fd, follow_symlinks=False
+            )
+            if (
+                not stat.S_ISDIR(parent.st_mode)
+                or (parent.st_dev, parent.st_ino)
+                != (self._parent_stat.st_dev, self._parent_stat.st_ino)
+                or self._signature(os.fstat(self._parent_fd))
+                != self._signature(self._parent_stat)
+                or not stat.S_ISREG(file_at_path.st_mode)
+                or self._signature(file_at_path) != self._signature(self._file_stat)
+                or self._signature(file_at_parent) != self._signature(self._file_stat)
+                or self._signature(os.fstat(self._file_fd)) != self._signature(self._file_stat)
+                or self._read_fd() != self.content
+            ):
+                raise BundleBuildError("已验文件路径或字节发生漂移。")
+        except OSError as error:
+            raise BundleBuildError("已验文件路径不可核验。") from error
+
+    def close(self) -> None:
+        file_fd, parent_fd = self._file_fd, self._parent_fd
+        self._file_fd = -1
+        self._parent_fd = -1
+        try:
+            if file_fd >= 0:
+                os.close(file_fd)
+        finally:
+            if parent_fd >= 0:
+                os.close(parent_fd)
+
+    def __enter__(self) -> PinnedRegularFile:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+
 def build_delivery_bundle(
     *,
     project_root: Path,
@@ -134,9 +227,21 @@ def verify_delivery_bundle(bundle_root: Path) -> dict[str, str]:
     return result
 
 
-def verify_delivery_bundle_with_method_lock(bundle_root: Path) -> VerifiedBundleMethodLock:
+def verify_delivery_bundle_with_method_lock(
+    bundle_root: Path,
+    *,
+    pinned_manifest: PinnedRegularFile | None = None,
+    pinned_lock: PinnedRegularFile | None = None,
+) -> VerifiedBundleMethodLock:
     """Return Method Lock bytes attested by the same Manifest verification pass."""
-    result, locked = _verify_delivery_bundle(bundle_root, capture_method_lock=True)
+    if (pinned_manifest is None) != (pinned_lock is None):
+        raise BundleBuildError("Manifest 与 Method Lock 必须一起冻结。")
+    result, locked = _verify_delivery_bundle(
+        bundle_root,
+        capture_method_lock=True,
+        pinned_manifest=pinned_manifest,
+        pinned_lock=pinned_lock,
+    )
     if locked is None:
         raise BundleBuildError("Delivery Bundle 缺少已验 Method Pack Lock。")
     raw, manifest_identity, lock_bytes, lock_identity = locked
@@ -154,7 +259,11 @@ def verify_delivery_bundle_with_method_lock(bundle_root: Path) -> VerifiedBundle
 
 
 def _verify_delivery_bundle(
-    bundle_root: Path, *, capture_method_lock: bool
+    bundle_root: Path,
+    *,
+    capture_method_lock: bool,
+    pinned_manifest: PinnedRegularFile | None = None,
+    pinned_lock: PinnedRegularFile | None = None,
 ) -> tuple[
     dict[str, str],
     tuple[dict[str, Any], tuple[int, int], bytes, tuple[int, int]] | None,
@@ -162,7 +271,13 @@ def _verify_delivery_bundle(
     root = bundle_root.resolve()
     manifest_path = root / MANIFEST_NAME
     try:
-        manifest_bytes, manifest_identity = _read_pinned_regular(manifest_path)
+        if pinned_manifest is None:
+            manifest_bytes, manifest_identity = _read_pinned_regular(manifest_path)
+        else:
+            if pinned_manifest.path != manifest_path:
+                raise BundleBuildError("已验 Manifest 路径不匹配。")
+            pinned_manifest.assert_stable()
+            manifest_bytes, manifest_identity = pinned_manifest.content, pinned_manifest.identity
         raw: Any = json.loads(manifest_bytes)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise BundleBuildError("Delivery Manifest 不可读或非法。") from error
@@ -195,7 +310,13 @@ def _verify_delivery_bundle(
         if not path.is_relative_to(root) or not path.is_file():
             raise BundleBuildError(f"Delivery Bundle 文件路径非法：{relative}")
         if capture_method_lock and relative == "config/method-packs-v050.json":
-            method_lock_bytes, method_lock_identity = _read_pinned_regular(unresolved)
+            if pinned_lock is None:
+                method_lock_bytes, method_lock_identity = _read_pinned_regular(unresolved)
+            else:
+                if pinned_lock.path != unresolved:
+                    raise BundleBuildError("已验 Method Lock 路径不匹配。")
+                pinned_lock.assert_stable()
+                method_lock_bytes, method_lock_identity = pinned_lock.content, pinned_lock.identity
             actual_size = len(method_lock_bytes)
             actual_sha256 = hashlib.sha256(method_lock_bytes).hexdigest()
         else:
@@ -221,6 +342,9 @@ def _verify_delivery_bundle(
         return result, None
     if method_lock_bytes is None or method_lock_identity is None:
         raise BundleBuildError("Delivery Bundle Manifest 缺少 Method Pack Lock。")
+    if pinned_manifest is not None and pinned_lock is not None:
+        pinned_manifest.assert_stable()
+        pinned_lock.assert_stable()
     return result, (raw, manifest_identity, method_lock_bytes, method_lock_identity)
 
 

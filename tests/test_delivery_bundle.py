@@ -13,6 +13,7 @@ from agent_team_os import delivery_bundle as bundle_module
 from agent_team_os.delivery_bundle import (
     PRODUCT_VERSION,
     BundleBuildError,
+    PinnedRegularFile,
     build_delivery_bundle,
     verify_delivery_bundle,
     verify_delivery_bundle_with_method_lock,
@@ -101,6 +102,54 @@ def test_verified_method_lock_is_captured_from_same_manifest_bytes(tmp_path: Pat
     assert verified.lock_bytes == lock_bytes
     assert verified.lock_sha256 == hashlib.sha256(lock_bytes).hexdigest()
     assert verified.product_revision == "a" * 40
+
+
+@pytest.mark.parametrize(
+    "changed_name", ("delivery-manifest.json", "config/method-packs-v050.json")
+)
+def test_pinned_bundle_verifier_rejects_two_same_byte_replacements(
+    tmp_path: Path, changed_name: str
+) -> None:
+    root = tmp_path / "source"
+    wheel = _write_delivery_inputs(root)
+    bundle = build_delivery_bundle(
+        project_root=root,
+        output_root=tmp_path / "output",
+        wheel=wheel,
+        git_revision="a" * 40,
+        worktree_clean=True,
+    ).bundle_root
+    manifest = bundle / "delivery-manifest.json"
+    lock = bundle / "config/method-packs-v050.json"
+    with PinnedRegularFile(manifest) as manifest_pin, PinnedRegularFile(lock) as lock_pin:
+        verified = verify_delivery_bundle_with_method_lock(
+            bundle, pinned_manifest=manifest_pin, pinned_lock=lock_pin
+        )
+        assert verified.lock_bytes == lock_pin.content
+        changed = bundle / changed_name
+        original_inode = changed.stat().st_ino
+        for index in range(2):
+            replacement = changed.with_suffix(f".replacement-{index}")
+            replacement.write_bytes(changed.read_bytes())
+            os.replace(replacement, changed)
+        assert changed.stat().st_ino != original_inode
+        with pytest.raises(BundleBuildError):
+            verify_delivery_bundle_with_method_lock(
+                bundle, pinned_manifest=manifest_pin, pinned_lock=lock_pin
+            )
+        pinned_descriptor = (manifest_pin if changed == manifest else lock_pin)._file_fd  # noqa: SLF001
+    with pytest.raises(OSError):
+        os.fstat(pinned_descriptor)
+
+
+def test_pinned_regular_file_closes_descriptor_on_exception(tmp_path: Path) -> None:
+    lock = tmp_path / "method-lock.json"
+    lock.write_bytes(b"frozen")
+    with pytest.raises(RuntimeError, match="injected-abort"), PinnedRegularFile(lock) as pinned:
+        descriptor = pinned._file_fd  # noqa: SLF001
+        raise RuntimeError("injected-abort")
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
 
 
 def test_verified_method_lock_rejects_tamper_and_in_read_inode_swap(

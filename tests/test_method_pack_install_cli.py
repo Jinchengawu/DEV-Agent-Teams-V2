@@ -216,7 +216,7 @@ def test_cli_rejects_three_lock_swap_windows(
         manifest = product / "delivery-manifest.json"
         manifest.write_text("test manifest", encoding="utf-8")
 
-        def verify(_root: Path) -> VerifiedBundleMethodLock:
+        def verify(_root: Path, **_pins: object) -> VerifiedBundleMethodLock:
             payload = lock_file.read_bytes()
             metadata = lock_file.stat()
             manifest_metadata = manifest.stat()
@@ -316,7 +316,7 @@ def test_bundle_cli_rejects_identical_lock_bytes_with_replaced_inode(
     data_root.mkdir(mode=0o700)
     monkeypatch.setenv("AGENT_TEAM_OS_DATA_DIR", str(data_root))
 
-    def verify(_root: Path) -> VerifiedBundleMethodLock:
+    def verify(_root: Path, **_pins: object) -> VerifiedBundleMethodLock:
         payload = lock_file.read_bytes()
         metadata = lock_file.stat()
         manifest_metadata = manifest.stat()
@@ -340,16 +340,135 @@ def test_bundle_cli_rejects_identical_lock_bytes_with_replaced_inode(
         ),
     )
     _Fetcher.archives = {request.package_name: archive for request, archive in packages}
+    original_identity = (lock_file.stat().st_dev, lock_file.stat().st_ino)
+    replacements = 0
 
     class ReplacingFetcher(_Fetcher):
         def fetch(self, request: MethodPackInstall, exact_locked_url: str) -> bytes:
-            replacement = lock_file.with_suffix(".replacement")
-            replacement.write_bytes(lock_file.read_bytes())
-            os.replace(replacement, lock_file)
+            nonlocal replacements
+            if replacements == 0:
+                replacement = lock_file.with_suffix(".replacement")
+                replacement.write_bytes(lock_file.read_bytes())
+                os.replace(replacement, lock_file)
+                assert (lock_file.stat().st_dev, lock_file.stat().st_ino) != original_identity
+                replacements += 1
             return super().fetch(request, exact_locked_url)
 
     monkeypatch.setattr(method_pack_cli, "LockedMethodPackArchiveFetcher", ReplacingFetcher)
     with pytest.raises(RuntimeError, match="METHOD_PACK_BUNDLE_LOCK_CHANGED"):
+        method_pack_cli.main([], source_root=product)
+    assert replacements == 1
+    assert not capsys.readouterr().out
+    assert not (data_root / "method-packs").exists()
+
+
+@pytest.mark.parametrize("changed_path", ("lock", "manifest"))
+@pytest.mark.parametrize("swap_window", ("after_fetch", "after_commit"))
+def test_bundle_cli_rejects_two_swaps_even_if_verifier_reports_original_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    changed_path: str,
+    swap_window: str,
+) -> None:
+    packages = [
+        _fixture_package("bmad-method", "6.11.0", "bmad"),
+        _fixture_package("bmad-method-test-architecture-enterprise", "1.23.4", "tea"),
+    ]
+    product = _lock(tmp_path, packages)
+    lock_file = product / "config/method-packs-v050.json"
+    manifest = product / "delivery-manifest.json"
+    manifest.write_text("test manifest", encoding="utf-8")
+    changed = lock_file if changed_path == "lock" else manifest
+    lock_bytes = lock_file.read_bytes()
+    lock_stat, manifest_stat = lock_file.stat(), manifest.stat()
+    frozen = VerifiedBundleMethodLock(
+        manifest_sha256=hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        manifest_identity=(manifest_stat.st_dev, manifest_stat.st_ino),
+        product_revision="a" * 40,
+        lock_bytes=lock_bytes,
+        lock_sha256=hashlib.sha256(lock_bytes).hexdigest(),
+        lock_identity=(lock_stat.st_dev, lock_stat.st_ino),
+    )
+    monkeypatch.setattr(
+        method_pack_cli, "verify_delivery_bundle_with_method_lock", lambda _root, **_pins: frozen
+    )
+    monkeypatch.setattr(
+        method_pack_cli,
+        "snapshot_delivery_build_identity",
+        lambda _root: SimpleNamespace(
+            product_worktree_clean=True,
+            framework_dependency_status="ready",
+            product_revision="a" * 40,
+        ),
+    )
+    data_root = tmp_path / "data"
+    data_root.mkdir(mode=0o700)
+    monkeypatch.setenv("AGENT_TEAM_OS_DATA_DIR", str(data_root))
+    _Fetcher.archives = {request.package_name: archive for request, archive in packages}
+    replacements = 0
+
+    def replace_same_bytes() -> None:
+        nonlocal replacements
+        replacement = changed.with_suffix(f".replacement-{replacements}")
+        replacement.write_bytes(changed.read_bytes())
+        os.replace(replacement, changed)
+        replacements += 1
+
+    class ReplacingFetcher(_Fetcher):
+        def fetch(self, request: MethodPackInstall, exact_locked_url: str) -> bytes:
+            if swap_window == "after_fetch":
+                replace_same_bytes()
+            return super().fetch(request, exact_locked_url)
+
+    monkeypatch.setattr(method_pack_cli, "LockedMethodPackArchiveFetcher", ReplacingFetcher)
+    if swap_window == "after_commit":
+        original = method_pack_cli.FrozenMethodPackSet.snapshot
+
+        def swap_after_snapshot(frozen):
+            result = original(frozen)
+            replace_same_bytes()
+            replace_same_bytes()
+            return result
+
+        monkeypatch.setattr(method_pack_cli.FrozenMethodPackSet, "snapshot", swap_after_snapshot)
+    with pytest.raises(RuntimeError, match="METHOD_PACK_BUNDLE_LOCK_CHANGED"):
+        method_pack_cli.main([], source_root=product)
+    assert replacements == 2
+    assert not capsys.readouterr().out
+    if swap_window == "after_fetch":
+        assert not (data_root / "method-packs").exists()
+    else:
+        store = ContentAddressedMethodPackStore(data_root / "method-packs")
+        for request, archive in packages:
+            snapshot = store.prepare_archive(request, archive).snapshot
+            assert store.load_snapshot(snapshot.qualification_sha256) == snapshot
+        assert not (store.root / ".install-in-progress").exists()
+
+
+def test_source_cli_rejects_two_swaps_even_if_reader_reports_original_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    package = _fixture_package("bmad-method", "6.11.0", "bmad")
+    product = _lock(tmp_path, [package])
+    lock_file = product / "config/method-packs-v050.json"
+    frozen = method_pack_cli._read_source_lock(lock_file)  # noqa: SLF001
+    monkeypatch.setattr(method_pack_cli, "_read_source_lock", lambda _path: frozen)
+    data_root = tmp_path / "data"
+    data_root.mkdir(mode=0o700)
+    monkeypatch.setenv("AGENT_TEAM_OS_DATA_DIR", str(data_root))
+    _Fetcher.archives = {package[0].package_name: package[1]}
+
+    class ReplacingFetcher(_Fetcher):
+        def fetch(self, request: MethodPackInstall, exact_locked_url: str) -> bytes:
+            for index in range(2):
+                replacement = lock_file.with_suffix(f".replacement-{index}")
+                replacement.write_bytes(lock_file.read_bytes())
+                os.replace(replacement, lock_file)
+            return super().fetch(request, exact_locked_url)
+
+    monkeypatch.setattr(method_pack_cli, "LockedMethodPackArchiveFetcher", ReplacingFetcher)
+    with pytest.raises(RuntimeError, match="METHOD_PACK_LOCK_CHANGED"):
         method_pack_cli.main([], source_root=product)
     assert not capsys.readouterr().out
     assert not (data_root / "method-packs").exists()
@@ -417,7 +536,7 @@ def test_bundle_cli_never_mixes_new_a_install_with_preexisting_b_frozen_set(
     _Fetcher.archives = {request.package_name: archive for request, archive in a}
     monkeypatch.setattr(method_pack_cli, "LockedMethodPackArchiveFetcher", _Fetcher)
 
-    def verify(_root: Path) -> VerifiedBundleMethodLock:
+    def verify(_root: Path, **_pins: object) -> VerifiedBundleMethodLock:
         payload = lock_file.read_bytes()
         metadata = lock_file.stat()
         manifest_metadata = manifest.stat()

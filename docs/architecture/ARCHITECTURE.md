@@ -903,8 +903,8 @@ Remaining evidence: 冻结同一 Revision 后的正式 Browser/Deterministic/Liv
 #### 12.2.10 `ARCH-20260926-METHOD-STORE` Method Pack 来源与同 Store 发布
 
 ```text
-State: Implemented/Verified（macOS 本地）；Linux 扩展 Accepted/Not Implemented（原生 CI 待验）
-Maturity: 候选提交前本地未提交 diff 阶段的 macOS 实现与验证；Linux、独立 S1 和正式 Release 未验收
+State: Implemented/Verified（macOS 本地）；Linux 扩展 Accepted/Not Implemented（新 SHA 原生 CI 待验）
+Maturity: 5e834391 后未提交的身份补强仅有本地焦点证据；新 SHA CI、独立 S1 和正式 Release 未验收
 Accepted at: 2026-09-26
 Architecture Impact: Cross-boundary
 Decision: 两入口只接受冻结官方 URL、无代理/跳转 TLS 下载；Bundle verifier 同次冻结已验 Lock
@@ -918,6 +918,10 @@ Decision: 两入口只接受冻结官方 URL、无代理/跳转 TLS 下载；Bun
           对象目录提升在 macOS 使用 renamex_np(RENAME_EXCL)，Linux 使用
           renameat2(RENAME_NOREPLACE)；缺原语/文件系统资格或跨挂载失败关闭，
           不回退普通 rename/复制，也不改变 pending/回滚归属。
+          Bundle Manifest/Lock 与 source Lock 在单次安装中以 no-follow fd 固定，
+          权威 verifier 消费所持同一 fd 的已验字节；父目录/路径与原 fd 的身份、
+          字节在各阶段重验，异常关闭。普通双替换不能借 inode 复用 ABA 越过
+          ready；不宣称在恶意同 UID 可写目录中证明路径每一瞬连续。
 Affected authorities/modules/data/states: Registry Adapter、Extensions Store、Workcell Method Runtime、
                                          Release Browser Fixture；不改变 ACWM、Provider 或 Apply 权威。
 Compatibility and migration: 无 DB Migration；公共 install_archive 保留但进入相同锁合同；源码自定义锁
@@ -931,8 +935,11 @@ Implemented evidence: 候选提交前本地未提交 diff 阶段的假 Transport
                       构造及 Preview missing/failed/ready 测试；强化父 inode 替换零残留与
                       不可清理 fail-closed、child-open 替换、umask 收紧及非空替换
                       负例局部通过；本地 9 模块 140 passed，Ruff/Mypy/diff check
-                      通过。Linux 分派仅有本地 fake libc 参数证据；原生 Linux CI
-                      与独立 S1 须按新 SHA 重跑，不由此晋升平台资格。
+                      通过。5e834391 后身份补强的本地 Bundle/source 双替换、
+                      Manifest 同类 ABA、提交后无 ready 与 fd 异常关闭负例，
+                      新焦点 9 模块 157 passed；Linux 分派仍须以新 SHA 原生 CI
+                      验证。全量本地 Pytest 因 Node PATH/loopback 权限阻断，
+                      不由焦点证据晋升完整平台或 S1 资格。
 Remaining evidence: 独立 wheel/Bundle/Build Identity、Method Pack 安装、Browser/Deterministic/Live
                     同 Revision 零 FAIL/WARN/skipped 报告与正式 Release/Apply 授权。
 ```
@@ -982,7 +989,7 @@ Acceptance evidence required:
 | `ARCH-20260920-02` | 2026-09-20 | `Implemented/Verified` | 独立 Project onboarding CAS、只读 Setup Readiness 组合与 Delivery 创建失败关闭 | ADR-0021 | Migration/onboarding/409/原子绑定/权限/OpenAPI/Console 本地合同验证；Deterministic 与真实 Codex local-PR Browser 均到 Candidate/Evidence/onboarding ready 且无 Apply/远端写；正式同 Revision Live Release Gate 未运行 |
 | `ARCH-20260922-01` | 2026-09-22 | `Implemented/Verified` | 对无候选副作用的 Main/Reviewer transient Provider 失败追加一次可观测 Attempt；合同 retry 共享 phase 上限，并以 Workcell 总 deadline 准入 | ADR-0014 修订 | 历史 Snapshot max=1 兼容、新内置 Revision max=2/backoff=1/wall=3600、非硬编码 ordinal、只读 retry、预算不足不产生新 Attempt 与 Release Acceptance 回归已验证；Python 3.12 全量 677 passed/1 skipped；Live fresh 闭环仍单独验收 |
 | `ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY` | 2026-09-23 | `Accepted/Not Implemented` | 内部精确输入资格、覆盖分片、原子聚合 admission、冻结恢复、安全错误 | ADR-0018 修订 | 局部确定性测试；真实 tokenizer/capacity、产品签认语义100%、正式 S0–S3 未完成，不继承 7ff 证据 |
-| `ARCH-20260926-METHOD-STORE` | 2026-09-26 | `Implemented/Verified`（macOS 本地）；Linux 扩展 `Accepted/Not Implemented`（原生 CI 待验） | 锁定官方 Method 归档、已验 Lock Bytes 与同 Store EX/SH 锁、pending 批次发布/缺根读侧零写；Release 目标独立锁与 Preview 安全诊断 | ADR-0014、ADR-0020 修订 | 候选提交前本地未提交 diff 阶段的 macOS 9 模块 140 passed、Ruff/Mypy/diff check exit0；Linux no-replace 原生测试、新 SHA CI、独立安装与正式 Gate 尚未通过 |
+| `ARCH-20260926-METHOD-STORE` | 2026-09-26 | `Implemented/Verified`（macOS 本地）；Linux 扩展 `Accepted/Not Implemented`（新 SHA CI 待验） | 锁定官方 Method 归档、同次已验 Manifest/Lock fd 与 source Lock fd、同 Store EX/SH 锁、pending 批次发布/缺根读侧零写；Release 目标独立锁与 Preview 安全诊断 | ADR-0014、ADR-0020 修订 | 历史 macOS 9 模块 140 passed；5e834391 后未提交身份补强焦点 9 模块 157 passed；新 SHA Linux CI、独立安装与正式 Gate 尚未通过 |
 
 ## 14. Plan Architecture Review 与文档对账
 

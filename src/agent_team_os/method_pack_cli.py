@@ -8,10 +8,15 @@ import json
 import os
 import stat
 from collections.abc import Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from .delivery_bundle import verify_delivery_bundle_with_method_lock
+from .delivery_bundle import (
+    BundleBuildError,
+    PinnedRegularFile,
+    verify_delivery_bundle_with_method_lock,
+)
 from .infrastructure.method_pack_registry import LockedMethodPackArchiveFetcher
 from .modules.extensions import (
     ContentAddressedMethodPackStore,
@@ -57,6 +62,13 @@ def main(argv: Sequence[str] | None = None, *, source_root: Path | None = None) 
     parser.add_argument("--lock", type=Path)
     parser.add_argument("--store", type=Path)
     arguments = parser.parse_args(argv)
+    with ExitStack() as lock_lifetime:
+        return _install_with_pinned_lock(arguments, source_root, lock_lifetime)
+
+
+def _install_with_pinned_lock(
+    arguments: argparse.Namespace, source_root: Path | None, lock_lifetime: ExitStack
+) -> int:
 
     product_root = source_root.resolve() if source_root is not None else resolve_product_root()
     canonical_lock = product_root / "config" / "method-packs-v050.json"
@@ -64,13 +76,34 @@ def main(argv: Sequence[str] | None = None, *, source_root: Path | None = None) 
     if lock_file.is_symlink() or not lock_file.is_file():
         raise RuntimeError("METHOD_PACK_LOCK_INVALID")
     lock_file = Path(os.path.abspath(lock_file.expanduser()))
+    ContentAddressedMethodPackStore._check_path_components(  # noqa: SLF001
+        lock_file.parent, require_private=False
+    )
     bundle_mode = (product_root / "delivery-manifest.json").is_file()
     manifest_hash: str | None = None
     product_revision: str | None = None
     if bundle_mode:
         if lock_file != canonical_lock:
             raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_OVERRIDE_DENIED")
-        verified = verify_delivery_bundle_with_method_lock(product_root)
+        ContentAddressedMethodPackStore._check_path_components(  # noqa: SLF001
+            product_root, require_private=False
+        )
+        manifest_pin = lock_lifetime.enter_context(
+            PinnedRegularFile(product_root / "delivery-manifest.json")
+        )
+        lock_pin = lock_lifetime.enter_context(PinnedRegularFile(lock_file))
+        verified = verify_delivery_bundle_with_method_lock(
+            product_root, pinned_manifest=manifest_pin, pinned_lock=lock_pin
+        )
+        if (
+            manifest_pin.identity != verified.manifest_identity
+            or hashlib.sha256(manifest_pin.content).hexdigest() != verified.manifest_sha256
+            or lock_pin.identity != verified.lock_identity
+            or lock_pin.content != verified.lock_bytes
+        ):
+            raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_CHANGED")
+        manifest_pin.assert_stable()
+        lock_pin.assert_stable()
         manifest_hash = verified.manifest_sha256
         frozen_lock = verified.lock_bytes
         frozen_identity = verified.lock_identity
@@ -81,13 +114,23 @@ def main(argv: Sequence[str] | None = None, *, source_root: Path | None = None) 
             raise RuntimeError("METHOD_PACK_BUILD_IDENTITY_CHANGED")
         product_revision = identity.product_revision
     else:
+        lock_pin = lock_lifetime.enter_context(PinnedRegularFile(lock_file))
         source_lock = _read_source_lock(lock_file)
+        if source_lock.content != lock_pin.content or source_lock.identity != lock_pin.identity:
+            raise RuntimeError("METHOD_PACK_LOCK_CHANGED")
         frozen_lock = source_lock.content
         frozen_identity = source_lock.identity
 
     def assert_lock_stable() -> None:
         if bundle_mode:
-            latest = verify_delivery_bundle_with_method_lock(product_root)
+            try:
+                manifest_pin.assert_stable()
+                lock_pin.assert_stable()
+            except BundleBuildError as error:
+                raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_CHANGED") from error
+            latest = verify_delivery_bundle_with_method_lock(
+                product_root, pinned_manifest=manifest_pin, pinned_lock=lock_pin
+            )
             if (
                 latest.manifest_sha256 != manifest_hash
                 or latest.manifest_identity != verified.manifest_identity
@@ -96,10 +139,23 @@ def main(argv: Sequence[str] | None = None, *, source_root: Path | None = None) 
                 or latest.product_revision != product_revision
             ):
                 raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_CHANGED")
+            try:
+                manifest_pin.assert_stable()
+                lock_pin.assert_stable()
+            except BundleBuildError as error:
+                raise RuntimeError("METHOD_PACK_BUNDLE_LOCK_CHANGED") from error
         else:
+            try:
+                lock_pin.assert_stable()
+            except BundleBuildError as error:
+                raise RuntimeError("METHOD_PACK_LOCK_CHANGED") from error
             latest_source = _read_source_lock(lock_file)
             if latest_source.content != frozen_lock or latest_source.identity != frozen_identity:
                 raise RuntimeError("METHOD_PACK_LOCK_CHANGED")
+            try:
+                lock_pin.assert_stable()
+            except BundleBuildError as error:
+                raise RuntimeError("METHOD_PACK_LOCK_CHANGED") from error
 
     configuration = json.loads(frozen_lock)
     raw_packages = configuration.get("packages")

@@ -67,3 +67,20 @@ Manifest 原始字节及其 `config/method-packs-v050.json` 条目。返回的 M
 Hash 与 inode；若中途路径替换、内容漂移或其余 Bundle 资源失配，则失败关闭、无
 `ready` 回执。此约束是单次安装的可信快照合同，不使可写文件系统在命令返回后
 永久不可变，也不把 Manifest 升格为来源签名或 Release/Apply 权威。
+
+### 同次安装的 fd 生命周期与 ABA 边界
+
+Method 安装在权威 verifier 读取前，以 no-follow fd 固定 Manifest 与 Lock 原对象；
+verifier 在同一次校验中消费这两个 fd 的原始字节，并核 Manifest 条目与 Lock
+大小/SHA-256。fd 连同受核父目录身份持有到安装成功或异常退出，配置、下载、
+发布与回执只消费冻结字节；各检查点比较 fd、路径、字节和完整 Bundle 资格。
+普通两次 `os.replace` 即使内容相同，也不得借释放并复用最初 inode 形成 ABA
+而发出 `ready`。异常退出必须关闭 fd；提交后才发现漂移时不捏造成功回执，
+也不擅自回滚已完整发布的旧/新 Store 对象。
+
+本合同采用受控 owner-private Bundle 根、合作 Writer 停写的本地威胁模型；
+同 UID 恶意或不合作进程在可写目录内换走又恢复**原 inode**，不能由 fd pin
+加离散检查点证明“路径每一瞬均未替换”。因此上述“中途路径替换失败关闭”指
+本模型内可观察的漂移及已排除的 inode 复用 ABA，不是对任意可写目录的
+绝对时间连续性证明。若要纳入对抗性同 UID 写者，须另审由 OS 强制的目录
+写权限隔离；仅加最终 Hash、mtime 或合作 `flock` 均不构成该保证。

@@ -129,6 +129,12 @@ Writer 首建 Store 根须持逐段 no-follow 核验过的父目录 fd，用相�
 Bundle 安装只消费 ADR-0020 同次校验捕获的 Lock Bytes；源码自定义锁也单次冻结字节。
 配置解析、预验、Store commit、FrozenSet 与回执均使用同一快照，阶段漂移拒绝；
 安装完成前再次权威核验整个 Bundle，不能把多次路径读取的不同内容合并成 `ready`。
+Bundle Manifest/Lock 和 source 自定义 Lock 在单次安装内须持有已验 no-follow fd
+直到成功或异常退出；持 fd 阻止普通覆盖后原 inode 被释放复用，阶段检查还核
+原 fd 与受控路径/父目录仍对应、内容未漂移。source `--lock` 不因此获得 Bundle
+`ready`，依旧只能产生 `source-qualified`。该机制不声称在恶意同 UID 可写目录中
+证明路径每一瞬未被换走又恢复；正式 S1 应以受控 owner-private 根及合作 Writer
+停写为前置。扩大到对抗性同 UID 写者须另审 OS 强制写隔离。
 显式 S1 安装以 owner `0700` Data Root 为私有 anchor；源码默认运行即使先创建 owner
 `0755` Data Root，也只在其父链不可由他人写入且新 Store 自身独占创建为 owner
 `0700` 时接受。两模式均逐段 no-follow/inode 复核；既有 `0755` Store、可写/异 UID
