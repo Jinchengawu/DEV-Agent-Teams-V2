@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   quality:
@@ -100,3 +101,70 @@ jobs:
             printf '%s\n' 'b0_audit=failed'
             exit 1
           fi
+      - name: Prepare audited B0 artifact
+        id: b0_prepare
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/codex/method-pack-s1-candidate-20260926' &&
+          github.repository == 'Jinchengawu/DEV-Agent-Teams-V2' &&
+          github.event.repository.full_name == github.repository &&
+          github.event.before == 'f26ae975965773a5572a753b801c2e90e2e1f820' &&
+          github.run_attempt == 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! uv run --no-sync python scripts/verify_ci_artifact_archive.py prepare \
+            --bundle-parent "$RUNNER_TEMP/agent-team-os-ci-bundle" \
+            --receipt "$RUNNER_TEMP/agent-team-os-b0-audit-receipt.json" \
+            --expected-revision "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT" >/dev/null 2>&1; then
+            printf '%s\n' 'b0_artifact_prepare=failed'
+            exit 1
+          fi
+      - name: Upload audited B0 artifact
+        id: b0_upload
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/codex/method-pack-s1-candidate-20260926' &&
+          github.repository == 'Jinchengawu/DEV-Agent-Teams-V2' &&
+          github.event.repository.full_name == github.repository &&
+          github.event.before == 'f26ae975965773a5572a753b801c2e90e2e1f820' &&
+          github.run_attempt == 1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1, Node 24
+        with:
+          name: agent-team-os-b0-${{ github.sha }}
+          path: ${{ steps.b0_prepare.outputs.bundle_path }}
+          if-no-files-found: error
+          include-hidden-files: false
+          archive: true
+          overwrite: false
+          retention-days: 3
+      - name: Read back audited B0 artifact
+        if: >-
+          github.event_name == 'push' &&
+          github.ref == 'refs/heads/codex/method-pack-s1-candidate-20260926' &&
+          github.repository == 'Jinchengawu/DEV-Agent-Teams-V2' &&
+          github.event.repository.full_name == github.repository &&
+          github.event.before == 'f26ae975965773a5572a753b801c2e90e2e1f820' &&
+          github.run_attempt == 1
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          B0_ARTIFACT_ID: ${{ steps.b0_upload.outputs.artifact-id }}
+          B0_ARTIFACT_DIGEST: ${{ steps.b0_upload.outputs.artifact-digest }}
+          B0_MANIFEST_SHA256: ${{ steps.b0_prepare.outputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          if ! uv run --no-sync python scripts/verify_ci_artifact_archive.py fetch-verify \
+            --work-root "$RUNNER_TEMP" \
+            --artifact-id "$B0_ARTIFACT_ID" \
+            --artifact-name "agent-team-os-b0-$GITHUB_SHA" \
+            --upload-digest "$B0_ARTIFACT_DIGEST" \
+            --expected-manifest-sha256 "$B0_MANIFEST_SHA256" \
+            --expected-revision "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --repository "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '%s\n' 'b0_artifact_readback=failed'
+            exit 1
+          fi
+          printf '%s\n' 'b0_artifact_readback=passed; scope=ci_static_integrity_only'

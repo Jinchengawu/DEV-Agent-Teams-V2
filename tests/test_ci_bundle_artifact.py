@@ -47,9 +47,61 @@ def test_ci_uses_same_run_pytest_receipt_for_static_bundle_audit() -> None:
     assert "--allow-dirty" not in audit_command
     assert ">/dev/null 2>&1; then" in audit_command
     assert "b0_builder=failed" in audit_command
-    assert "upload-artifact" not in (ROOT / ".github/workflows/ci.yml").read_text(
-        encoding="utf-8"
+    prepare_index, prepare_step = named["Prepare audited B0 artifact"]
+    upload_index, upload_step = named["Upload audited B0 artifact"]
+    readback_index, readback_step = named["Read back audited B0 artifact"]
+    assert audit_index < prepare_index < upload_index < readback_index
+
+    trusted_candidate_push = (
+        "github.event_name == 'push' && "
+        "github.ref == 'refs/heads/codex/method-pack-s1-candidate-20260926' && "
+        "github.repository == 'Jinchengawu/DEV-Agent-Teams-V2' && "
+        "github.event.repository.full_name == github.repository && "
+        "github.event.before == 'f26ae975965773a5572a753b801c2e90e2e1f820' && "
+        "github.run_attempt == 1"
     )
+    for step in (prepare_step, upload_step, readback_step):
+        assert step["if"] == trusted_candidate_push
+        assert "continue-on-error" not in step
+    assert "refs/heads/main" not in trusted_candidate_push
+    assert "github.event.head_commit.message" not in trusted_candidate_push
+
+    assert workflow["permissions"] == {"contents": "read", "actions": "read"}
+    assert prepare_step["id"] == "b0_prepare"
+    prepare_command = prepare_step["run"]
+    assert "scripts/verify_ci_artifact_archive.py prepare" in prepare_command
+    assert '--bundle-parent "$RUNNER_TEMP/agent-team-os-ci-bundle"' in prepare_command
+    assert '--receipt "$RUNNER_TEMP/agent-team-os-b0-audit-receipt.json"' in prepare_command
+    assert '--expected-revision "$GITHUB_SHA"' in prepare_command
+    assert '--github-output "$GITHUB_OUTPUT"' in prepare_command
+
+    assert upload_step["id"] == "b0_upload"
+    assert upload_step["uses"] == (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+    )
+    assert upload_step["with"] == {
+        "name": "agent-team-os-b0-${{ github.sha }}",
+        "path": "${{ steps.b0_prepare.outputs.bundle_path }}",
+        "if-no-files-found": "error",
+        "include-hidden-files": False,
+        "archive": True,
+        "overwrite": False,
+        "retention-days": 3,
+    }
+    assert "scripts/verify_ci_artifact_archive.py fetch-verify" in readback_step["run"]
+    assert readback_step["env"] == {
+        "GITHUB_TOKEN": "${{ github.token }}",
+        "B0_ARTIFACT_ID": "${{ steps.b0_upload.outputs.artifact-id }}",
+        "B0_ARTIFACT_DIGEST": "${{ steps.b0_upload.outputs.artifact-digest }}",
+        "B0_MANIFEST_SHA256": "${{ steps.b0_prepare.outputs.manifest_sha256 }}",
+    }
+    readback_command = readback_step["run"]
+    assert '--artifact-id "$B0_ARTIFACT_ID"' in readback_command
+    assert '--upload-digest "$B0_ARTIFACT_DIGEST"' in readback_command
+    assert '--expected-manifest-sha256 "$B0_MANIFEST_SHA256"' in readback_command
+    assert '--run-id "$GITHUB_RUN_ID"' in readback_command
+    assert '--repository "$GITHUB_REPOSITORY"' in readback_command
+    assert "b0_artifact_readback=failed" in readback_command
 
 
 def _source(tmp_path: Path, *, area: str | None = None) -> tuple[Path, Path]:

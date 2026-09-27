@@ -1,27 +1,54 @@
 # 四仓 R2 交接证据索引
 
-## B0 CI 静态 Bundle 审计候选（无 Artifact 上传）
+## B0 CI 静态 Bundle 审计与 Artifact 回读候选（f26 历史状态）
 
-B0 的当前变更集只在 CI `quality` job 中接入同次 JUnit、既有 Builder 和静态审计；
-Bundle 与脱敏回执只留在 runner 临时目录，不新增 Artifact 上传。此接线尚无远端 CI 运行证据，
-也不是 S1 独立安装、可复现构建、Browser/Deterministic/Live Gate 或 Release/Apply。
-当前 CI 没有 B0 Bundle 上传步骤；
-不得把此前成功 CI、本机 wheel、direct Vite 诊断 dist 或本节计划当作已留存的同 SHA 制品。
-未来若另获授权，必须先核公开仓库及 Artifact 可见性、Actions/存储额度、三天保留期、
-一次运行零新增费用、上传 action 权限和归档 digest 语义；任何一项未知即停止外部阶段。
+B0 已在 CI `quality` job 接入同次 JUnit、既有 Builder 和静态审计；Bundle 与脱敏回执只留在
+runner 临时目录，不新增 Artifact 上传。主任务委派 Agent 对 GitHub API 元数据的只读回执为：
+[`f26ae975…` push run 36302936929](https://github.com/Jinchengawu/DEV-Agent-Teams-V2/actions/runs/36302936929)
+`completed/success`，其 [quality job 108573912485](https://github.com/Jinchengawu/DEV-Agent-Teams-V2/actions/runs/36302936929/job/108573912485)
+第 21 步 `Audit CI static delivery bundle` 亦 `completed/success`，该步骤无
+`continue-on-error`；PM 将其分类为 B0 静态审计远端成功。本子任务未独立查询远端日志或原始
+runner 临时回执。该 run 的 Artifact API `total_count=0`，因此没有同 SHA Artifact 留存。
+仓库 API `visibility=public`、`private=false` 是已核仓库可见性事实，不证明未来 Artifact
+或日志可被匿名读取。B0 静态成功也不是 S1 独立安装、可复现构建、Browser/Deterministic/
+Live Gate 或 Release/Apply。不得把本机 wheel、direct Vite 诊断 dist 或本节计划当作已
+留存的同 SHA 制品。
 
-拟议审计先消费现有 Bundle Verifier 的 Manifest↔实际路径/size/SHA、Product Root 与链接
+当时本地增加了上传前范围复核和同 run REST 原始 ZIP 的离线验证器合同候选，但该 f26
+CI 工作流尚未接线。拟议的未来 push 上传修改被自动权限审查拒绝；不得改走其他入口绕过。
+Artifact 具体可见性、Actions/存储额度与费用仍为 `Unknown`；三天保留期、
+上传 action 权限和原始 ZIP digest 语义须在获准后的真实 CI 中核验。
+这些未知不影响离线脚本测试，但阻止将其描述为已经留存的交付制品。
+
+现有 B0 审计先消费 Bundle Verifier 的 Manifest↔实际路径/size/SHA、Product Root 与链接
 完整性结果，再施加有限的路径类别、容量、ZIP 成员与具体凭据值/格式扫描。它不重复或证明
 Builder 的完整 allow-list，也不能证明“绝无秘密”。Manifest 顶层最多 200 项、wheel ZIP
 成员最多 400 项，非 wheel 文件加 wheel 展开成员合计最多 16 MiB，单件最多 8 MiB；
 拒绝路径逃逸、链接、嵌套归档及未知二进制 wheel 成员。普通 `token` 或
-`Authorization` 字段名不是凭据值。CI 必须用同次测试的测试 ID 和跳过原因确认唯一预期
-Live Codex 跳过项；旧 CI 的一个静态 skip 候选不是该次日志确证。
+`Authorization` 字段名不是凭据值。CI 用同次测试的测试 ID 和跳过原因确认唯一预期
+Live Codex 跳过项；本子任务没有复核该 run 的 JUnit 原始字节。
 
 未来上传归档的 Artifact digest 与 Bundle 内 `delivery-manifest.json` SHA-256 是不同身份，
 独立下载的 digest warning 或任何文件复核不一致均须硬拒。`uv build` 维持既有隔离方法，
 Hatchling 与传递构建依赖来源暂记 `Unknown`，不得宣称完整可复现。审计失败、CI 失败或
-资格不明时不得上传；上传、下载、提交和推送均须另行明确授权。
+资格不明时不得上传；该 f26 轮 Artifact 候选没有真实上传、回读、提交或推送证据。
+
+### 2026-09-28 本地接线与远端止损门槛
+
+用户后来明确授权在公开仓库当前候选分支做一次受控 B0 上传与同 run 回读，不授权 main、
+Gate、Apply 或额外付费。隔离候选本地已加入 `prepare → upload → readback` 工作流切片：
+只在候选 ref、冻结 f26 `before` SHA、首次 run 的可信 push 前置筛选后执行；`prepare` 对
+事件文件和 runner 环境做大小写敏感严格复核，包括本次唯一提交消息、非新建/非强推和
+推送后 SHA。上传仅使用重新审计的唯一 allow-list Bundle，留存三天，回读 action ID/digest、
+REST metadata、原始 ZIP 和 Bundle Manifest/内部 Hash；异常失败关闭。
+
+本段是**本地实现与测试证据**，不是已提交/推送或远端 Artifact 证据。聚焦 B0 测试
+`71 passed`、Ruff、Python 3.11 语法、工作流 YAML 和三段 shell 语法检查通过；
+真实 GitHub Action、Artifact 可见性、ZIP digest 同义、账户共享存储和费用仍未验。
+推送前必须重新确认远端 ref 仍为 f26，并由账户有权限者提供当前及本周期累计
+Artifact/Packages 共享存储用量、套餐额度与预算回执，证明最多 24 MiB ZIP 三天留存
+不会产生额外费用。当前 CLI 无读取该摘要的授权；未经费用证明只能停在本地，
+不得以本仓 Artifact=0 或公开仓库 runner 免费代替账户级账单判断。
 
 ## v0.5.1 Local Evaluation Delivery Candidate
 

@@ -606,6 +606,27 @@ Remaining acceptance evidence: 发布、推送并在产品 Lock 中固定含 Sta
 [ADR-0017](./ADR-0017-FEISHU-TENANT-KNOWLEDGE.md)、
 [ADR-0018](./ADR-0018-KNOWLEDGE-INDEX-DELIVERY-CONTEXT.md)。
 
+### 12.1.3 `ARCH-20260927-02` B0 CI Artifact 留存与同 run 回读
+
+```text
+State: Accepted/Not Implemented
+Accepted at: 2026-09-27
+Architecture Impact: Cross-boundary
+Decision: 本次授权只在公开仓库 Jinchengawu/DEV-Agent-Teams-V2 当前候选 ref 的可信 push，
+          以冻结 before SHA、单次提交消息和首次运行共同限定上传；B0 成功后重新审计唯一
+          Bundle 目录；上传前大小写敏感复核 GitHub 事件文件与 runner 环境，弥补 workflow
+          表达式字符串相等不区分大小写的边界。同 run REST 原始 ZIP 分别核 action/REST/ZIP 身份及 Bundle
+          Manifest/内部 Hash，失败使 quality 失败。PR/fork/main/其他 ref 不上传；
+          Artifact digest 不等同 Manifest SHA；不新增 Release/Apply 权威。
+Affected authorities/modules/data/states: CI Build/Distribution、GitHub Actions Artifact、B0 静态审计；
+                                         不改变 ACWM、Workcell、产品运行时或业务数据。
+Compatibility and migration: 无 API/数据库 Migration；保留现有 CI B0 审计；
+                             仅本地工作流接线与测试不算远端 Artifact 已留存。
+Plan/ADR reference: docs/plans/2026-09-27-B0-CI-ARTIFACT-RETENTION-PLAN.md；ADR-0020 B0 修订。
+Acceptance evidence required: 获准后的工作流接线测试、同 run 真实 Artifact ID/REST metadata/原始 ZIP
+                              及双 Hash 回读；Artifact 可见性、零额外费用、保留期和权限复核。
+```
+
 ### 12.2 `Implemented/Verified`
 
 #### 12.2.1 `ARCH-20260902-04` Release Acceptance V2
@@ -990,6 +1011,7 @@ Acceptance evidence required:
 | `ARCH-20260922-01` | 2026-09-22 | `Implemented/Verified` | 对无候选副作用的 Main/Reviewer transient Provider 失败追加一次可观测 Attempt；合同 retry 共享 phase 上限，并以 Workcell 总 deadline 准入 | ADR-0014 修订 | 历史 Snapshot max=1 兼容、新内置 Revision max=2/backoff=1/wall=3600、非硬编码 ordinal、只读 retry、预算不足不产生新 Attempt 与 Release Acceptance 回归已验证；Python 3.12 全量 677 passed/1 skipped；Live fresh 闭环仍单独验收 |
 | `ARCH-20260923-KNOWLEDGE-QUERY-EXECUTABILITY` | 2026-09-23 | `Accepted/Not Implemented` | 内部精确输入资格、覆盖分片、原子聚合 admission、冻结恢复、安全错误 | ADR-0018 修订 | 局部确定性测试；真实 tokenizer/capacity、产品签认语义100%、正式 S0–S3 未完成，不继承 7ff 证据 |
 | `ARCH-20260926-METHOD-STORE` | 2026-09-26 | `Implemented/Verified`（macOS 本地）；Linux 扩展 `Accepted/Not Implemented`（新 SHA CI 待验） | 锁定官方 Method 归档、同次已验 Manifest/Lock fd 与 source Lock fd、同 Store EX/SH 锁、pending 批次发布/缺根读侧零写；Release 目标独立锁与 Preview 安全诊断 | ADR-0014、ADR-0020 修订 | 历史 macOS 9 模块 140 passed；5e834391 后未提交身份补强焦点 9 模块 157 passed；新 SHA Linux CI、独立安装与正式 Gate 尚未通过 |
+| `ARCH-20260927-02` | 2026-09-27；范围修订 2026-09-28 | `Accepted/Not Implemented` | B0 静态 Bundle 仅当前候选 ref 的受限可信 push 上传与同 run REST 原始 ZIP 独立回读 | ADR-0020 修订 | f26 远端 B0 静态审计 success、Artifact=0；候选分支本地接线/测试与真实同 run Artifact 分开验，费用/具体可见性未验证 |
 
 ## 14. Plan Architecture Review 与文档对账
 

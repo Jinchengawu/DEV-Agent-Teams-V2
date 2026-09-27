@@ -84,3 +84,44 @@ verifier 在同一次校验中消费这两个 fd 的原始字节，并核 Manife
 本模型内可观察的漂移及已排除的 inode 复用 ABA，不是对任意可写目录的
 绝对时间连续性证明。若要纳入对抗性同 UID 写者，须另审由 OS 强制的目录
 写权限隔离；仅加最终 Hash、mtime 或合作 `flock` 均不构成该保证。
+
+## 2026-09-27 修订：B0 CI Artifact 留存与同 run 回读（待接线）
+
+CI `quality` 的 B0 静态审计与未来 GitHub Actions Artifact 留存属于 Build/Distribution 的
+外部分发信任边界，不构成新的 Release、Approval、Apply 或 ACWM 权威。上传范围只能是
+B0 成功后重新审计的唯一 allow-list Bundle 目录；不从 runner 临时父目录、receipt、日志、
+数据库、秘密或未审计路径取材。仅可信仓库 `push` 可进入上传与同 run 回读，PR 不上传；
+上传失败、缺文件、回读失败或身份不一致必须使 `quality` 失败，不得降为 warning。
+
+回读应以 action 的 `artifact-id` 与 `artifact-digest` 定位当前 run 的 REST metadata 和原始 ZIP；
+独立核对 metadata 的 ID、name、run ID、head SHA、digest 与 ZIP 字节 SHA-256，随后限量
+安全解包并重跑 B0 Bundle/Manifest/内部文件校验。Artifact ZIP SHA 与 Bundle Manifest SHA
+是不同对象，不能相互替代。REST 302 的签名 URL 不得接收 `GITHUB_TOKEN`，token、URL 与
+异常响应正文不得进入日志。最小 token 权限为 `actions:read` 与 `contents:read`。
+
+本地离线验证器和模拟测试不代表上述 CI 接线或远端回读已发生。未来 push 自动上传的工作流
+编辑被权限审查拒绝，当前维持 `Accepted/Not Implemented`；仓库公开性已由 GitHub API
+确认，但未来 Artifact 具体可见性、存储费用及真实
+GitHub ZIP digest 语义仍需单独确证。不得凭静态 Manifest 自报 Hash 或本地合成 ZIP
+升格为正式交付、S1 或三轨 Release Gate 证据。
+
+## 2026-09-28 修订：本次候选分支的单次 B0 分发范围
+
+前节记录的是 2026-09-27 的权限和设计状态。用户现已明确授权在公开仓库
+`Jinchengawu/DEV-Agent-Teams-V2` 的当前候选分支做一次 CI 上传与同 run 回读；这不追认
+旧 main-only 范围，也不开放 main、PR、fork 或其他分支上传。可信触发须同时精确绑定仓库、
+`push`、`refs/heads/codex/method-pack-s1-candidate-20260926`、冻结的远端
+`before=f26ae975965773a5572a753b801c2e90e2e1f820`、首次运行和本次唯一完整提交消息。
+该组合阻止普通后续 push 与 rerun 意外再分发，但不抵御有写权限者故意 force-push 回旧
+`before` 并重用消息；本次禁止 force-push 和第二次 push，后续修改分支前须另行移除或变更
+接线。上传内容、B0 审计、REST/ZIP/Manifest 双身份及失败关闭规则保持前节不变。
+GitHub 表达式字符串相等比较不区分大小写，故仅靠 workflow step 的 `if` 不足以保证精确
+ref/仓库/提交消息；上传前 `prepare` 必须大小写敏感地复核事件文件及 runner 环境，失配以
+固定错误码失败关闭，不向日志回显事件正文或秘密。
+
+这项决策只改变 CI Build/Distribution 的外部出口，不改变 Product Root、Manifest、ACWM、
+产品运行态、Release/Approval/Apply 或数据库权威。工作流本地接线和 mock 测试不证明真实
+GitHub 存储、下载权限、ZIP digest 或零额外费用；真实同 run 回读通过前，架构条目继续
+`Accepted/Not Implemented`。公开仓库的标准托管 runner 分钟数免费，但 Artifact 存储与
+Packages 共用账户额度；推送前若无法只读核清当前及本周期累计共享存储、额度和预算，必须
+停止在本地，不以小制品或三天保留推断零额外付费。不购买额度或修改账单设置。
